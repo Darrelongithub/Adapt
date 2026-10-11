@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/* One dark-first palette, deliberately: this is a study tool people open late, and the
+   only thing that should ever be loud on screen is a question that is waiting for an
+   answer. */
+:root {
+  --bg: oklch(0.17 0.012 265);
+  --panel: oklch(0.215 0.014 265);
+  --line: oklch(0.3 0.014 265);
+  --ink: oklch(0.94 0.006 265);
+  --muted: oklch(0.72 0.014 265);
+  --accent: oklch(0.78 0.13 195);
+  --good: oklch(0.8 0.14 150);
+  --warn: oklch(0.82 0.15 85);
+  --bad: oklch(0.72 0.17 25);
+  --think: oklch(0.75 0.11 300);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-think: var(--think);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A hint is text the learner has to read twice: give it air. */
+.prose-tutor p {
+  margin-bottom: 0.6rem;
+  line-height: 1.65;
+}
+
+kbd {
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+  padding: 0 0.28rem;
+  font-size: 0.75em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

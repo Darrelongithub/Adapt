@@ -1,0 +1,32 @@
+fastapi<1.0,>=0.115
+uvicorn[standard]<1.0,>=0.34
+sqlalchemy<3.0,>=2.0
+alembic<2.0,>=1.14
+pydantic<3.0,>=2.10
+pydantic-settings<3.0,>=2.7
+httpx<1.0,>=0.28
+python-multipart>=0.0.20
+websockets<16,>=14
+numpy>=1.26
+cryptography>=44.0
+argon2-cffi>=23.1
+typer>=0.15
+rich>=13.9
+
+[:platform_machine == "x86_64" or platform_machine == "aarch64"]
+sqlcipher3-binary>=0.5.4
+
+[dev]
+pytest>=8.3
+pytest-asyncio>=0.25
+anyio>=4.6
+ruff>=0.9
+mypy>=1.14
+
+[voice]
+faster-whisper<2.0,>=1.1
+kokoro<0.10,>=0.9.4
+soundfile>=0.13
+
+[voice:python_version < "3.13"]
+webrtcvad>=2.0.10

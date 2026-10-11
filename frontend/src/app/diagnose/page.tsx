@@ -1,0 +1,209 @@
+"use client";
+
+/** Placement: twelve unaided questions, then the analysis that seeds your first band
+ *  estimates. `aidless` is not cosmetic — a hint during placement would measure the
+ *  wrong thing and every later decision would inherit that error.
+ */
+import { useEffect, useState } from "react";
+
+import { Question, ReceiptView } from "@/components/question";
+import { Btn, Card, Err, Notice, Tag } from "@/components/ui";
+import { summarise, type AnalyzeRaw, type AnalyzeSummary } from "@/lib/analyze";
+import { useFlow } from "@/lib/flow";
+import type { DiagnosticResponse, Receipt } from "@/lib/types";
+import { ApiError, get, post } from "@/lib/api";
+
+export default function Diagnose() {
+  const flow = useFlow("diagnostic");
+  const [items, setItems] = useState<DiagnosticResponse["items"]>([]);
+  const [i, setI] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [last, setLast] = useState<Receipt | null>(null);
+  const [report, setReport] = useState<AnalyzeSummary | null>(null);
+  const [framing, setFraming] = useState<{ purpose?: string; how?: string; time?: string }>({});
+  const [started, setStarted] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        await flow.ready();
+        if (cancelled) return;
+        setStarted(Date.now());
+        const data = await get<DiagnosticResponse>("/api/v1/assessment/diagnostic");
+        if (cancelled) return;
+        if (data.error || !data.data) setError(data.error ?? "no response from the assessment endpoint");
+        else {
+          setItems(data.data.items);
+          setFraming({ purpose: data.data.purpose, how: data.data.how_it_is_used, time: data.data.note_on_time });
+        }
+      } catch (err) {
+        if (!cancelled) setError(errMessage(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function submit(itemId: string, answer: unknown, extra: { teachback_text?: string; attempt_no?: number }): Promise<Receipt> {
+    // Timings, first-action and change counts are added by useFlow.submit: this page only
+    // says which item and what was typed, which is the whole reason the flow lives in one
+    // hook instead of being re-implemented per screen.
+    const receipt = await flow.submit(itemId, answer, extra);
+    setLast(receipt);
+    return receipt;
+  }
+
+  async function finish() {
+    setLoading(true);
+    setError(null);
+    try {
+      const out = await post<AnalyzeRaw>(`/api/v1/analyze?session_id=${encodeURIComponent(flow.sessionId ?? "")}`, {});
+      setReport(summarise(out));
+    } catch (err) {
+      // No loop yet is a real answer, not a crash: with one data point per topic there is
+      // nothing to propose, and pretending otherwise would be the app flattering itself.
+      if (err instanceof ApiError && err.status === 409) {
+        setReport({ loop: [], hypotheses: 0, proposals: 0, note: errMessage(err), next: ["practise a few more sessions"] , evidence: 0, provider: null });
+      } else setError(errMessage(err));
+    }
+    await flow.finish();
+    setLoading(false);
+  }
+
+  // question_shown is pushed here, on the transition, not inside an effect in Question:
+  // the timestamp has to be the moment the learner actually saw this item.
+  useEffect(() => {
+    const e = items[i];
+    if (e) flow.onShown({ item: e.item, topic_id: e.topic_id, reason: e.reason, presentation: e.presentation, utility: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i, items.length]);
+
+  if (loading)
+    return (
+      <Card title="Placement" tone="muted">
+        <p className="text-sm text-[var(--muted)]">starting the session…</p>
+      </Card>
+    );
+
+  if (report)
+    return (
+      <div className="space-y-4">
+        <Card title="Placement done" tone={report.proposals ? "good" : "muted"}>
+          <p className="text-sm">{report.note ?? `${report.hypotheses} hypotheses on file from ${report.evidence} evidence rows.`}</p>
+          <ol className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+            {report.loop.map((l, i) => (
+              <li key={i}>
+                <span className="text-[var(--fg)]/70">{l.step}</span> — {l.done}
+                {l.evidence ? <span className="opacity-70"> ({l.evidence})</span> : null}
+              </li>
+            ))}
+          </ol>
+          {report.next.length ? (
+            <ul className="mt-2 list-disc pl-5 text-sm text-[var(--muted)]">
+              {report.next.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="mt-3 flex gap-2">
+            <Btn kind="primary" href="/learn">
+              Start practising
+            </Btn>
+            <Btn href="/proposals">Changes waiting</Btn>
+            <Btn href="/progress">See the estimates</Btn>
+          </div>
+        </Card>
+      </div>
+    );
+
+  if (error && items.length === 0) return <Err error={error} status={null} />;
+
+  const entry = items[i];
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold">Placement</h1>
+        <span className="text-sm text-[var(--muted)]">
+          question {Math.min(i + 1, items.length)} of {items.length}
+        </span>
+        {started ? <Tag tone="line">{Math.round((Date.now() - started) / 60000)} min in</Tag> : null}
+        <div className="ml-auto flex gap-2">
+          <Btn
+            onClick={() => {
+              if (i > 0) {
+                setI(i - 1);
+                setLast(null);
+              }
+            }}
+            disabled={i === 0}
+          >
+            Back
+          </Btn>
+          {i + 1 >= items.length || last ? (
+            <Btn kind="primary" onClick={finish}>
+              {i + 1 >= items.length ? "Finish and analyse" : "Next"}
+            </Btn>
+          ) : (
+            <Btn
+              kind="primary"
+              onClick={() => {
+                setI(i + 1);
+                setLast(null);
+              }}
+              disabled={!last}
+            >
+              Next
+            </Btn>
+          )}
+          <Btn kind="ghost" onClick={finish}>
+            stop here
+          </Btn>
+        </div>
+      </div>
+      <div className="h-1 w-full overflow-hidden rounded bg-[var(--line)]">
+        <div className="h-full bg-[var(--accent)] transition-all" style={{ width: `${(i / Math.max(items.length, 1)) * 100}%` }} />
+      </div>
+      {flow.error ? <Notice tone="warn">session: {flow.error}</Notice> : null}
+      <div className="space-y-1 text-xs text-[var(--muted)]">
+        {framing.purpose ? <p>{framing.purpose} — and no hints or examples while it happens, because a placed band has to measure what you can do unaided.</p> : null}
+        {framing.how ? <p>{framing.how}</p> : null}
+        {framing.time ? <p>{framing.time}</p> : null}
+      </div>
+      {entry ? (
+        <Question
+          key={entry.item.id}
+          entry={{
+            item: entry.item,
+            topic_id: entry.topic_id,
+            reason: entry.reason,
+            presentation: entry.presentation,
+            utility: 0,
+          }}
+          aidless
+          attemptNo={i + 1}
+          onSubmit={submit}
+          onInteract={flow.onInteract}
+          onChange={flow.onChange}
+          onHint={flow.onHint}
+          onExample={flow.onExample}
+          onExplanation={flow.onExplanation}
+        />
+      ) : null}
+      {last ? <ReceiptView receipt={last} /> : null}
+      {error ? <Notice tone="warn">{error}</Notice> : null}
+    </div>
+  );
+}
+
+function errMessage(err: unknown): string {
+  const e = err as { shown?: string; message?: string };
+  return e?.shown ?? e?.message ?? String(err);
+}

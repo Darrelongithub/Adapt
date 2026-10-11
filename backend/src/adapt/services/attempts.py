@@ -1,0 +1,331 @@
+"""Answer submission: grade, record, trace, and feed back -- in that order.
+
+Ordering matters. The Attempt row is written *before* AI 1 is asked to update the
+knowledge trace, and the raw event log is written alongside both, so a crash in the
+learning step cannot leave a graded answer invisible to the next analysis (and
+cannot silently invent one).
+
+The feedback returned to the student is the rule-based grade comment plus AI 2's
+optional enrichment; correctness itself is always computed by
+:func:`adapt.assessment.grading.grade`, never by a model, because a model that
+mis-grades a correct answer teaches a misconception with confidence.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import timedelta
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..assessment.grading import grade as grade_answer
+from ..db.models import (
+    ActiveAdaptation,
+    Attempt,
+    Item,
+    LearningSession,
+    RetentionSchedule,
+    Topic,
+    utcnow,
+)  # noqa: E501
+from ..learning import telemetry as T
+from . import telemetry
+
+log = logging.getLogger("adapt.attempts")
+
+ITEM_FIELDS = (
+    "id",
+    "topic_id",
+    "kind",
+    "stem",
+    "stem_template",
+    "experience_mode",
+    "prompt_context",
+    "visual_spec",
+    "choices",
+    "answer_spec",
+    "solution_steps",
+    "hints",
+    "rubric",
+    "difficulty",
+    "est_seconds",
+    "numbas_ref",
+)
+
+
+def item_payload(s: Session, item_id: str) -> dict[str, Any] | None:
+    """The *private* item dict (answers included). Server-side only, always."""
+    it = s.get(Item, item_id)
+    if it is None or not it.active:
+        return None
+    out = {f: getattr(it, f) for f in ITEM_FIELDS}
+    out["tags"] = it.tags
+    out["source"] = it.source
+    out["active"] = bool(it.active)
+    if not out.get("stem_template"):
+        out.pop("stem_template", None)
+    return out
+
+
+def item_dict(s: Session, item_id: str) -> dict[str, Any] | None:
+    """Alias kept for readability at call sites that only read, never grade."""
+    return item_payload(s, item_id)
+
+
+def active_strategies(s: Session, student_id: str) -> list[dict[str, Any]]:
+    rows = s.execute(
+        select(ActiveAdaptation).where(ActiveAdaptation.student_id == student_id, ActiveAdaptation.active.is_(True))
+    ).scalars().all()
+    return [{"strategy": r.strategy, "action": r.action, "payload": r.payload or {}, "id": r.id} for r in rows]
+
+
+def history_ms(s: Session, student_id: str, *, limit: int = 60) -> list[int]:
+    vals = s.execute(
+        select(Attempt.time_on_item_ms)
+        .where(Attempt.student_id == student_id, Attempt.time_on_item_ms.is_not(None))
+        .order_by(Attempt.submitted_at.desc())
+        .limit(limit)
+    ).scalars().all()
+    return [int(v) for v in reversed(vals) if v]
+
+
+@dataclass
+class SubmitResult:
+    attempt_id: str
+    item_id: str
+    topic_id: str
+    correct: bool | None
+    score: float | None
+    method: str
+    feedback: str
+    trace: dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    teachback: dict[str, Any] | None = None
+    retention: dict[str, Any] | None = None
+    flags: list[str] = field(default_factory=list)
+    proposals_expected: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "attempt_id": self.attempt_id,
+            "item_id": self.item_id,
+            "topic_id": self.topic_id,
+            "correct": self.correct,
+            "score": self.score,
+            "grading_method": self.method,
+            "feedback": self.feedback,
+            "mastery": self.trace,
+            "derived_metrics": self.metrics,
+            "teachback": self.teachback,
+            "retention": self.retention,
+            "flags": self.flags,
+            "proposals_expected": self.proposals_expected,
+        }
+
+
+async def submit(
+    services: Any,
+    *,
+    student_id: str,
+    session_id: str,
+    item_id: str,
+    answer: Any,
+    attempt_no: int | None = None,
+    teachback_text: str | None = None,
+    client_ts: str | None = None,
+) -> SubmitResult:
+    """Record one answer and let both intelligences react to it.
+
+    The work happens in short transactions, in this order: write the attempt, ask
+    AI 2 for feedback, then let AI 1 update the trace. Each step commits before the
+    next one opens its own session. That is not tidiness -- SQLite (even in WAL mode)
+    has one writer at a time, so a request that held an open write transaction while
+    calling into another component would deadlock against itself and surface as
+    "database is locked" exactly when a learner is mid-answer.
+    """
+    # ---- phase 1: read context, grade, persist the attempt ---------------- #
+    with services.scope() as s:
+        sess = s.get(LearningSession, session_id)
+        if sess is None or sess.student_id != student_id:
+            raise ValueError("unknown session for this learner")
+        raw_item = item_payload(s, item_id)
+        if raw_item is None:
+            raise ValueError("unknown or retired item")
+        # Grading and feedback read the *rendered* variant, using the same per-(learner, item)
+        # seed the plan used to build the question on screen. A parametric item stored as
+        # template + ranges has no single correct answer: "6x + 8 = 33" and "3x + 11 = 49"
+        # are different questions with different answers, and grading the stored default
+        # against an answer to the sampled one marks a correct learner wrong.
+        from ..assessment.bank import render_item_for, variant_seed
+
+        item = render_item_for(raw_item, seed=variant_seed(student_id, item_id))
+        metrics = telemetry.metrics_for_attempt(s, session_id=session_id, item_id=item_id)
+        m: dict[str, Any] = metrics.as_dict() if metrics else {}
+        graded = grade_answer(item, answer, student_text=teachback_text)
+        correct = graded.correct if graded.correct is not None else None
+        score = graded.score
+        if attempt_no is None:
+            attempt_no = int(
+                s.execute(
+                    select(func.count())
+                    .select_from(Attempt)
+                    .where(Attempt.student_id == student_id, Attempt.item_id == item_id)
+                ).scalar_one()
+            ) + 1
+        lat_hist = history_ms(s, student_id)
+        time_on = m.get("time_on_item_ms")
+        z = T.latency_z(int(time_on), lat_hist) if time_on else None
+        strategies = active_strategies(s, student_id)
+        att = Attempt(
+            session_id=session_id,
+            student_id=student_id,
+            item_id=item_id,
+            topic_id=item["topic_id"],
+            experience_mode=item.get("experience_mode") or "read",
+            attempt_no=attempt_no,
+            first_answer={"value": m.get("first_answer")} if m.get("first_answer") is not None else None,
+            final_answer={"value": answer} if not isinstance(answer, dict) else answer,
+            correct=correct,
+            score=score,
+            graded_by="rules",
+            time_to_first_ms=m.get("first_interaction_ms"),
+            time_on_item_ms=time_on,
+            change_count=int(m.get("change_count") or 0),
+            changed_from_correct=bool((m.get("answer_changes") or []) and m.get("first_answer") != m.get("final_answer")),
+            hints_used=int(m.get("hints_used") or 0),
+            examples_opened=int(m.get("examples_opened") or 0),
+            explanation_opened=bool(m.get("explanation_opened")),
+            away_ms=int(m.get("away_ms") or 0),
+            latency_z=None if z is None else float(z),
+            intervention_ids=[x["id"] for x in strategies] or None,
+        )
+        s.add(att)
+        s.flush()
+        attempt_id = att.id
+        flags: list[str] = []
+        if time_on and item.get("est_seconds") and time_on < 1000 * max(3.0, float(item["est_seconds"]) * 0.2):
+            flags.append("answered unusually fast -- treat this score as weak evidence")
+        if (m.get("hints_used") or 0) >= 2 and correct:
+            flags.append("correct after 2+ hints: scaffolding may be doing the work")
+        if att.changed_from_correct:
+            flags.append("changed from a first answer that was right")
+    # ---- phase 2: AI 2 (opens its own sessions; reads the committed attempt) ---- #
+    teachback = None
+    if item["kind"] == "teachback" and teachback_text:
+        teachback = await services.ai2.review_teachback(student_id, item, teachback_text)
+    feedback = services.ai2.feedback(student_id, item, answer, correct=bool(correct), score=score)
+
+    # ---- phase 3: persist what AI 2 produced, and close the event log for this Q #
+    with services.scope() as s:
+        att = s.get(Attempt, attempt_id)
+        if teachback is not None:
+            att.teachback_score = float(teachback.get("score") or 0.0)
+            if correct is None:
+                correct = att.teachback_score >= float((item.get("rubric") or {}).get("pass_fraction", 0.6))
+                att.correct = correct
+                score = score if score is not None else att.teachback_score
+        att.ai_feedback = feedback
+        telemetry.append_event(
+            s,
+            session_id=session_id,
+            student_id=student_id,
+            type="answer_submitted",
+            payload={"correct": bool(correct), "attempt_no": attempt_no, "score": score},
+            item_id=item_id,
+            attempt_id=attempt_id,
+            ms_since_question=time_on,
+        )
+        sess = s.get(LearningSession, session_id)
+        if sess is not None:
+            end_ts = utcnow()
+            total_ms = int((end_ts - sess.started_at).total_seconds() * 1000)
+            sess.active_ms = T.active_ms(total_ms, sess.away_seconds * 1000)
+    # ---- phase 4: AI 1 (traces, retention schedule, strategy credit) ------ #
+    trace = services.ai1.record_attempt(
+        student_id=student_id,
+        topic_id=item["topic_id"],
+        correct=bool(correct),
+        score=score,
+        difficulty=float(item.get("difficulty") or 0.5),
+        self_explain=float(teachback.get("score") or 0.0) if teachback else 0.0,
+        active_strategies=[x["strategy"] for x in strategies],
+    )
+    with services.scope() as s:
+        sched = s.get(RetentionSchedule, (student_id, item["topic_id"]))
+        review_was_due = bool(sched is not None and sched.due_at is not None and sched.due_at <= utcnow() + timedelta(minutes=5))
+        recent_n = int(
+            s.execute(
+                select(func.count())
+                .select_from(Attempt)
+                .where(Attempt.student_id == student_id, Attempt.submitted_at >= utcnow() - timedelta(days=7))
+            ).scalar_one()
+        )
+    retention = None
+    if review_was_due:
+        retention = services.ai1.record_retention_check(
+            student_id=student_id,
+            topic_id=item["topic_id"],
+            item_id=item_id,
+            correct=bool(correct),
+            score=score,
+            latency_ms=int(time_on) if time_on else None,
+            kind="scheduled",
+        )
+        retention["was_due"] = True
+    return SubmitResult(
+        attempt_id=attempt_id,
+        item_id=item_id,
+        topic_id=item["topic_id"],
+        correct=correct,
+        score=score,
+        method=graded.method,
+        feedback=feedback,
+        trace=trace,
+        metrics=m,
+        teachback=teachback,
+        retention=retention,
+        flags=flags,
+        proposals_expected=recent_n >= services.settings.min_evidence_for_proposal,
+    )
+
+
+def attempts_for(s: Session, student_id: str, *, limit: int = 200, topic_id: str | None = None) -> list[dict[str, Any]]:
+    conds = [Attempt.student_id == student_id]
+    if topic_id:
+        conds.append(Attempt.topic_id == topic_id)
+    rows = s.execute(select(Attempt).where(*conds).order_by(Attempt.submitted_at.desc()).limit(limit)).scalars().all()
+    titles = {t.id: t.title for t in s.execute(select(Topic)).scalars().all()}
+    out = []
+    for a in rows:
+        out.append(
+            {
+                "id": a.id,
+                "session_id": a.session_id,
+                "item_id": a.item_id,
+                "topic_id": a.topic_id,
+                "topic_title": titles.get(a.topic_id, a.topic_id),
+                "kind": None,
+                "experience_mode": a.experience_mode,
+                "attempt_no": a.attempt_no,
+                "correct": a.correct,
+                "score": a.score,
+                "graded_by": a.graded_by,
+                "time_to_first_ms": a.time_to_first_ms,
+                "time_on_item_ms": a.time_on_item_ms,
+                "change_count": a.change_count,
+                "changed_from_correct": a.changed_from_correct,
+                "hints_used": a.hints_used,
+                "examples_opened": a.examples_opened,
+                "explanation_opened": a.explanation_opened,
+                "away_ms": a.away_ms,
+                "latency_z": a.latency_z,
+                "teachback_score": a.teachback_score,
+                "interventions": a.intervention_ids or [],
+                "feedback": a.ai_feedback,
+                "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
+            }
+        )
+    return out
