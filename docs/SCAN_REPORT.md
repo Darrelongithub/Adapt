@@ -145,6 +145,11 @@ that fails if the defect returns.
 * `ResourceService.search` slicing at `max(6, limit*2)` is by design; the route now truncates.
 * Local-mode 500 responses include the exception text on purpose (`app.py`); on a tunnel they
   carry a request id instead.
+* A stray `POST /api/v1/analyze?session_id=undefined` in an old log is **not reachable from the
+  current code**: both pages interpolate `encodeURIComponent(sessionId ?? "")`, the probe uses an
+  id it just fetched, and `scripts/demo.mjs` throws on a failed `POST /sessions` before it can
+  interpolate an undefined one. It came from an earlier version of one of those drivers, and the
+  new 404 (C4) is what would surface it if it ever happened again.
 
 ---
 
@@ -161,8 +166,9 @@ npm run lint        # contract ok: 58 routes / 16 calls, tsc clean
 npm run build       # built (static pages)
 cd .. && node scripts/demo.mjs --json          # warnings: []
 
-# the UI probe: one fresh API + fresh data dir per scenario (warm buckets fail spuriously)
-bash /tmp/scans/all.sh full                     # 139/139 checks passed
+# the UI probe: one fresh API + fresh data dir per run (warm buckets fail spuriously)
+bash scripts/probe-fresh.sh all                 # 139/139 checks passed
+bash scripts/probe-fresh.sh learn               # one scenario: 19/19
 #   scenarios individually: learn 19/19, proposals 36/36, onboarding 12/12, diagnose 21/21,
 #   home 10/10, progress 5/5, voice 8/8, settings 12/12, review 1/1, failures 14/14
 
@@ -178,10 +184,10 @@ cd backend && ADAPT_DATA_DIR=/tmp/mig-fresh ../.venv/bin/python -m alembic upgra
 # (+ the app booted against it: "curriculum=55 items", /healthz {"ok":"true"})
 ```
 
-Evidence kept: `/tmp/scans/probe-*.txt` (raw probe output per scenario), `/tmp/scans/cli-demo.txt`.
-The per-scenario runner (`/tmp/scans/one.sh`) is scratch and not part of the repo: it exists to
-give each scenario a fresh API and data directory, which is the only way the rate limiter does
-not turn one scenario's spending into the next one's failure.
+`scripts/probe-fresh.sh` starts a throwaway API and web pair on ports 8010/3001 (leaving a dev
+pair on 8000/3000 alone), waits for both, runs the probe, and tears them down -- the fresh
+process is what makes a re-run comparable to the first one. Raw output for this pass is in
+`/tmp/scans/probe-*.txt` and `/tmp/scans/cli-demo.txt`.
 
 ---
 
