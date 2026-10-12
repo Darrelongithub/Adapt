@@ -61,11 +61,10 @@ PREFERENCE_KEYS = {
     "want_review_reminders": bool,
 }
 
-# Onboarding answers that map straight onto a catalog strategy. The map itself lives in
-# ``learning.strategies`` (next to the catalog it points into) because AI 1 has to read
-# it too when it builds the profile: a copy here was once the only place that knew, and
+# Onboarding answers that map straight onto a catalog strategy live in
+# ``learning.strategies``, next to the catalog they point into, because AI 1 has to read
+# them too when it builds the profile: a copy here was once the only place that knew, and
 # the stated preference never reached the tutor.
-from ..learning.strategies import PREFERENCE_STRATEGIES  # noqa: E402  (re-exported)
 
 
 def get_or_create_student(

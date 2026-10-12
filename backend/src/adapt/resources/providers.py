@@ -112,9 +112,9 @@ class ArXiv(Provider):
         out: list[Resource] = []
         for e in entries[: n * 2]:
             link = ""
-            for l in e.get("link", []) if isinstance(e.get("link"), list) else []:
-                if isinstance(l, dict) and l.get("title") == "doi":
-                    link = l.get("href", "")
+            for entry in e.get("link", []) if isinstance(e.get("link"), list) else []:
+                if isinstance(entry, dict) and entry.get("title") == "doi":
+                    link = entry.get("href", "")
             out.append(
                 Resource(
                     provider=self.name,
@@ -336,7 +336,10 @@ def _atom_entries(payload: dict[str, Any]) -> list[dict[str, Any]]:
             node = e.find(f"{ns}{tag}")
             return node.text if node is not None else None
 
-        links = [{"href": l.get("href"), "title": l.get("title"), "rel": l.get("rel")} for l in e.findall(f"{ns}link")]
+        links = [
+            {"href": node.get("href"), "title": node.get("title"), "rel": node.get("rel")}
+            for node in e.findall(f"{ns}link")
+        ]
         entries.append(
             {
                 "id": _t("id"),

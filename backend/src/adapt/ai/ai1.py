@@ -279,7 +279,16 @@ class LearningIntelligence:
             state.n_obs += 1
             state.correct_count += 1 if correct else 0
             state.streak = state.streak + 1 if correct else 0
-            state.mastery_band = params.band(new_p, proficient=self.settings.mastery_proficient, developing=self.settings.mastery_developing)
+            state.mastery_band = params.band(
+                new_p,
+                proficient=self.settings.mastery_proficient,
+                developing=self.settings.mastery_developing,
+                # The learner's own count on this topic -- never the cohort's, which
+                # is what `params` carries when it came from `train_params`. One
+                # answer is not a gap; the class's 400 answers are not this
+                # learner's evidence either.
+                observations=state.n_obs,
+            )
             state.last_practice_at = utcnow()
             state.updated_at = utcnow()
             schedule = self._update_schedule(
@@ -417,8 +426,26 @@ class LearningIntelligence:
     # cohort-level BKT parameter learning
     # ------------------------------------------------------------------ #
 
-    def train_params(self, *, scope: str = "global", min_learners: int = 3) -> dict[str, Any]:
-        """Fit BKT parameters by EM on every learner's answer sequence."""
+    def train_params(
+        self,
+        *,
+        scope: str = "global",
+        min_learners: int = 3,
+        min_sequences_per_topic: int = 12,
+    ) -> dict[str, Any]:
+        """Fit BKT parameters by EM: one cohort row, plus a row per topic with data.
+
+        Two rows matter to :meth:`params_for`, and both are written here: the
+        ``(scope, "*")`` row every learner falls back to, and one
+        ``(scope, topic_id)`` row per topic that has enough of its own sequences
+        to be worth estimating. Per-topic fits are what the small-data literature
+        recommends (skills differ in guess/slip; a single cohort value is an
+        average over every question in the bank), but they are also where the
+        degeneracy problem bites, so each topic fit starts from the *cohort*
+        estimate and is only written above ``min_sequences_per_topic``. Below
+        that the read path falls through to the cohort row, which is the honest
+        "we don't know this topic specifically" answer.
+        """
         with self.sf() as s:
             stmt = (
                 select(Attempt.student_id, Attempt.topic_id, Attempt.correct, Attempt.submitted_at, Attempt.score)
@@ -439,7 +466,45 @@ class LearningIntelligence:
                 "using literature-informed priors meanwhile"
             )
             return diag
-        params, em = B.fit_em(sequences, init=B.BKTParams())
+        # ``model="online"``: fit the transition rule ``update`` actually applies.
+        # Fitting the classic rule here and filtering with the online one
+        # understates p_learn by roughly 6x (see the consistency test), and those
+        # numbers then steer item selection through information_gain().
+        params, em = B.fit_em(sequences, init=B.BKTParams(), model="online")
+        if not params.bounds_ok():
+            # Do not publish a parameter set that contradicts the model's own
+            # meaning (guessing beating knowing). The previous row -- or the
+            # priors -- stay in force, and the caller is told why.
+            diag.update({k: v for k, v in em.items()})
+            diag["params"] = params.as_dict()
+            diag["sanity"] = (
+                "degenerate fit (guess/slip outside cognitive bounds); previous "
+                "parameters kept rather than written"
+            )
+            return diag
+        by_topic: dict[str, list[list[int]]] = {}
+        for (_student, topic_id), seq in per.items():
+            if len(seq) >= 2:
+                by_topic.setdefault(topic_id, []).append(seq)
+
+        per_topic: dict[str, dict[str, Any]] = {}
+        for topic_id, topic_sequences in sorted(by_topic.items()):
+            if len(topic_sequences) < min_sequences_per_topic:
+                continue
+            topic_params, topic_em = B.fit_em(
+                topic_sequences, init=params, model="online"
+            )
+            if not topic_params.bounds_ok():
+                # A degenerate fit is a finding, not a parameter set: keep the
+                # cohort row for this topic and say so in the diagnostics.
+                diag.setdefault("topics_kept_on_cohort", []).append(topic_id)
+                continue
+            per_topic[topic_id] = {
+                "params": topic_params,
+                "sequences": len(topic_sequences),
+                "log_likelihood": float(topic_em.get("log_likelihood", 0.0)),
+            }
+
         with self.sf() as s:
             row = s.get(BktParams, (scope, "*")) or BktParams(scope=scope, topic_id="*")
             row.p_learn, row.p_guess, row.p_slip, row.p_forget, row.p_init = (
@@ -454,10 +519,58 @@ class LearningIntelligence:
             row.trained_at = utcnow()
             row.note = json.dumps({k: v for k, v in em.items()})[:500]
             s.merge(row)
+            for topic_id, fitted in per_topic.items():
+                trow = s.get(BktParams, (scope, topic_id)) or BktParams(scope=scope, topic_id=topic_id)
+                tp = fitted["params"]
+                trow.p_learn, trow.p_guess, trow.p_slip, trow.p_forget, trow.p_init = (
+                    tp.p_learn,
+                    tp.p_guess,
+                    tp.p_slip,
+                    tp.p_forget,
+                    tp.p_init,
+                )
+                trow.n_sequences = int(fitted["sequences"])
+                trow.log_likelihood = float(fitted["log_likelihood"])
+                trow.trained_at = utcnow()
+                trow.note = "per-topic fit, shrunken toward the cohort estimate"
+                s.merge(trow)
+            stale = (
+                s.execute(
+                    select(BktParams).where(
+                        BktParams.scope == scope, BktParams.topic_id != "*"
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for old_row in stale:
+                if old_row.topic_id not in per_topic:
+                    # A topic that stopped having enough data must not keep a
+                    # parameter row nothing would refresh: fall back to cohort.
+                    s.delete(old_row)
+            # The parameters belong to the filter, the belief belongs to the learner.
+            # Every existing trace is re-pointed at the fit now in force while its
+            # p_know is left alone; otherwise `train_params` reaches only learners
+            # who have not answered yet, and everyone who practised during the week
+            # that produced the data keeps the priors forever. The history stays
+            # coherent because anything that reads a trace replays it
+            # (`rebuild_traces`) under whatever parameters are current.
+            refreshed = 0
+            for state in s.execute(select(BktState)).scalars().all():
+                chosen = per_topic.get(str(state.topic_id))
+                fitted = chosen["params"] if chosen else params
+                state.p_learn = fitted.p_learn
+                state.p_guess = fitted.p_guess
+                state.p_slip = fitted.p_slip
+                state.p_forget = fitted.p_forget
+                refreshed += 1
             s.commit()
         diag.update({k: v for k, v in em.items()})
         diag["params"] = params.as_dict()
-        diag["sanity"] = "ok" if params.bounds_ok() else "params outside cognitive bounds; keeping priors"
+        diag["sanity"] = "ok"
+        diag["topics_fitted"] = sorted(per_topic)
+        diag["min_sequences_per_topic"] = min_sequences_per_topic
+        diag["traces_refreshed"] = refreshed
         return diag
 
     # ------------------------------------------------------------------ #
@@ -749,6 +862,7 @@ class LearningIntelligence:
                     state.p_know,
                     proficient=self.settings.mastery_proficient,
                     developing=self.settings.mastery_developing,
+                    observations=len(items),
                 )
                 state.first_seen_at = first_ts or state.first_seen_at or utcnow()
                 state.last_practice_at = last_ts or state.last_practice_at

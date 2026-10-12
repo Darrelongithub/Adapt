@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import Depends, Header, HTTPException, Request, Response
+from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from ..config import Settings, get_settings
