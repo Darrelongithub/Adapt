@@ -188,28 +188,35 @@ def main() -> int:
 
         print("\n3. analysis and proposals")
         status, out = c.call("POST", f"/api/v1/analyze?session_id={sid}", {})
-        pathlib.Path("/tmp/scans/analyze.json").write_text(json.dumps(out, indent=1))
-        print(f"     analyze keys: {sorted(out)} | traces={len(out.get('traces') or [])} "
-              f"observations={len(out.get('observations') or [])} hypotheses={len(out.get('hypotheses') or [])} "
-              f"proposals={len(out.get('proposals') or [])}")
-
         check(status == 200, "analysis runs on the recorded session", f"{status} {str(out)[:200]}")
-        status, pending = c.call("GET", "/api/v1/adaptations/pending")
-        proposals = pending.get("pending") or []
-        check(status == 200, "pending proposals are listed", f"{len(proposals)} waiting")
-        if not proposals:
-            print("     (no proposal this run: the loop is allowed to find nothing, and the gate is still tested below)")
+        analysis_proposals = out.get("proposals") or []
+        print(f"     analyze: {len(out.get('traces') or [])} traces, {len(out.get('hypotheses') or [])} hypotheses, "
+              f"{len(analysis_proposals)} proposals")
+
+        def active_now() -> list:
+            return (c.call("GET", "/api/v1/adaptations/active")[1] or {}).get("active") or []
+
+        def decided_ids() -> set:
+            rows = (c.call("GET", "/api/v1/adaptations/history")[1] or {}).get("decisions") or []
+            return {d.get("id") for d in rows}
 
         print("\n4. the approval gate (backend endpoints and stored rows, not buttons)")
         status, pending = c.call("GET", "/api/v1/adaptations/pending")
         proposals = pending.get("proposals") or []
         check(status == 200, "pending proposals are listed", f"{len(proposals)} waiting")
+
+        # What the analysis said it proposed has to be *findable*: pending, already decided,
+        # or active. A learner told "a change is waiting for your answer" and then shown an
+        # empty list has been misled, and this cross-check is how that shows up.
+        if analysis_proposals:
+            visible = {p.get("id") for p in proposals} | {a.get("proposal_id") for a in active_now()} | decided_ids()
+            missing = [p.get("id") for p in analysis_proposals if p.get("id") not in visible]
+            check(not missing, "every proposal the analysis reported is visible in the gate",
+                  f"reported {len(analysis_proposals)}, invisible {missing}")
+
         if len(proposals) < 3:                      # a second analysis may find another pattern
             c.call("POST", f"/api/v1/analyze?session_id={sid}", {})
             proposals = (c.call("GET", "/api/v1/adaptations/pending")[1] or {}).get("proposals") or []
-
-        def active_now() -> list:
-            return (c.call("GET", "/api/v1/adaptations/active")[1] or {}).get("active") or []
 
         before = active_now()
         check(bool(proposals), "the loop proposed something once it had evidence", str(len(proposals)))
