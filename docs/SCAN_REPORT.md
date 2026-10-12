@@ -24,7 +24,7 @@ failure matrix and the backend suite — plus two end-to-end demos. All pass:
 
 | Path | What it drives | Result |
 |---|---|---|
-| UI probe (`bash scripts/probe-fresh.sh all`, jsdom against the real Next.js server) | every screen, form, button, refresh and error path, plus the lesson engine | **169/169 checks** |
+| UI probe (`bash scripts/probe-fresh.sh all`, jsdom against the real Next.js server) | every screen, form, button, refresh and error path, plus the lesson engine | **169/169 checks**, twice in a row |
 | Data-layer journey (`scripts/journey_check.py`) | records, approvals, shutdown/restart | **59/59 checks** |
 | Failure matrix (`scripts/failure_matrix_check.py`) | bad input, auth, floods, dead providers | **25/25 checks** |
 | Backend suite (`pytest -q`) | routes, learner model, grading, adapters, voice, migrations, the engine, LLM plumbing | **559 passed** |
@@ -322,7 +322,17 @@ process is what makes a re-run comparable to the first one. Raw output for this 
    25/25 against a default-limits API, and the probe's flood check floods the bucket the server
    reports. What is *not* verified is a paced whole-suite run's screen-by-screen behaviour: it is
    the configuration the probe itself documents, not one anything ships with.
-0b. **The placement answer box was seen cleared once under that load** (a paced run, element still
+0a. **The loop stays silent until it has 8 attempts on one topic.** Measured while fixing the
+   probe's under-powered stuck learner: the detectors need `2 × min_n` rows on one topic before
+   they will propose anything, so a learner who is wrong on fourteen *different* topics gets no
+   question asked. That gate is deliberate (`docs/REVIEW.md` §2.1) and is left alone; what changed
+   is that the probe now produces the evidence it claims instead of hoping the queue spreads well.
+0b. **A paced whole-suite run's screens are only covered at the rehearsal ceiling.** Two earlier
+   intermittent failures at default limits were harness races, not app defects (a panel judged
+   mid-load; an under-powered stuck learner), and both are fixed — but a run at *default* limits
+   still spends the per-IP bucket partway through, so the screen-by-screen behaviour under pacing
+   is verified by the failure matrix rather than by this suite.
+0c. **The placement answer box was seen cleared once under that load** (a paced run, element still
    connected, value `""`), and not reproduced in isolation (21/21 alone, 43/43 with its
    predecessors, and clean in every rehearsal-ceiling run since). It is recorded here rather than
    claimed fixed: what is known is that a busy run can catch the screen mid-render.

@@ -221,11 +221,15 @@ session is the expected result, not a bug.
   and screens are judged while the limiter holds them. The limiter is verified at its real ceiling
   elsewhere (failure matrix, and the probe's own flood check, which reads the effective bucket from
   `GET /api/v1/quotas`). A paced whole-suite run's screen-by-screen behaviour is *not* verified.
-* **One paced-run artefact, recorded not fixed.** In one default-limits run the placement answer
-  box read back empty immediately after being typed into, with the element still connected — the
-  shape of a state reset under the learner. It has not reproduced in isolation (21/21 alone, 43/43
-  with its predecessors) or in any rehearsal-ceiling run since. Treat it as a known unknown, not a
-  repaired defect.
+* **Two of the three whole-suite flakes were harness races, now fixed; the third is a known
+  unknown.** (a) The proposals check read the "On right now" panel while it was still loading and
+  reported an applied change as missing — it now waits for the panel. (b) The "clearly struggling"
+  learner answered 14 items spread across topics while the detectors need 8 attempts on *one*
+  topic, so the evidence the check claimed did not exist — it now concentrates its wrong answers.
+  (c) The placement answer box was seen read back empty once, with the element still connected,
+  in a default-limits run; it has not reproduced in isolation (21/21 alone, 43/43 with its
+  predecessors) or in any rehearsal-ceiling run since. Treat (c) as a known unknown rather than a
+  repaired defect — what is known is that a heavily paced run can catch a screen mid-render.
 * **The 0002 collision is a real-world migration hazard for anyone who ran the pre-merge branch.**
   A database stamped `0002` by *this* branch before the merge (item calibration) cannot be told
   apart from one stamped `0002` by `main` (learning engine); the merged chain reads it as the
