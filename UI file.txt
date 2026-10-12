@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADAPT — Visual System Snapshot v3</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
+
+:root{
+  --bg: oklch(94% 0.02 85);
+  --panel: oklch(97% 0.015 85);
+  --panel-2: oklch(90% 0.02 82);
+  --line: oklch(76% 0.02 75);
+  --ink: oklch(22% 0.01 60);
+  --muted: oklch(40% 0.015 60);
+  --accent: oklch(47% 0.16 258);
+  --accent-dim: oklch(90% 0.04 258);
+  --good: oklch(50% 0.12 150);
+  --warn: oklch(55% 0.15 70);
+  --bad: oklch(50% 0.18 25);
+  --fs: 'Fraunces', serif;
+  --fm: 'JetBrains Mono', monospace;
+  --fn: 'Inter', sans-serif;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{background:var(--bg); color:var(--ink); font-family:var(--fn); -webkit-font-smoothing:antialiased;}
+button{font:inherit; color:inherit;}
+a{color:inherit;}
+
+.sr-only{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;}
+.skip-link{position:fixed; top:-50px; left:8px; z-index:500; background:var(--ink); color:var(--bg);
+  padding:10px 16px; font-family:var(--fm); font-size:12px; border-radius:2px; transition:top .15s;}
+.skip-link:focus{top:8px;}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;}
+
+.grain{position:fixed; inset:0; opacity:0.03; pointer-events:none; z-index:1;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)'/%3E%3C/svg%3E");}
+
+/* ============ PROTOTYPE DISCLOSURE STRIP ============ */
+.proto-banner{position:fixed; top:0; left:0; right:0; z-index:150; height:30px; display:flex; align-items:center;
+  justify-content:center; gap:10px; background:var(--panel); border-bottom:1px dashed var(--line);
+  font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.02em;}
+.proto-banner b{color:var(--accent);}
+.wiring-details{position:fixed; bottom:0; left:0; z-index:150; max-width:420px; font-family:var(--fm); font-size:11px;}
+.wiring-details summary{cursor:pointer; background:var(--ink); color:var(--bg); padding:8px 14px; list-style:none;
+  letter-spacing:.06em; text-transform:uppercase; font-size:10px;}
+.wiring-details summary::-webkit-details-marker{display:none;}
+.wiring-details[open] summary{background:var(--accent);}
+.wiring-box{background:var(--panel); border:1px solid var(--line); border-bottom:none; padding:14px 16px; max-height:260px; overflow:auto;}
+.wiring-box div{padding:5px 0; border-bottom:1px dotted var(--line); color:var(--muted);}
+.wiring-box code{color:var(--ink);}
+
+/* ============ OPENING ============ */
+#opening{position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center;
+  background:var(--bg); transition:opacity .35s ease;}
+#opening.exit{opacity:0;}
+.o-mark{position:absolute; top:36px; left:50%; transform:translateX(-50%);
+  font-family:var(--fm); font-size:11px; letter-spacing:.25em; color:var(--muted); text-transform:uppercase;}
+.o-mark b{color:var(--accent);}
+.o-phrase-wrap{max-width:820px; padding:0 40px; text-align:center;}
+.o-phrase{font-family:var(--fs); font-weight:500; font-size:clamp(26px,4.6vw,56px); line-height:1.2; letter-spacing:-0.01em;}
+.o-phrase .w{display:inline-block; opacity:0; filter:blur(5px); transform:translateY(14px);
+  animation:oreveal .55s cubic-bezier(.2,.8,.2,1) forwards;}
+.o-phrase .w.blue{color:var(--accent);}
+@keyframes oreveal{to{opacity:1; filter:blur(0); transform:translateY(0);}}
+.o-skip{position:absolute; bottom:40px; right:40px; font-family:var(--fm); font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted); cursor:pointer; background:none; border:none; border-bottom:1px solid transparent;}
+.o-skip:hover{color:var(--ink); border-color:var(--line);}
+.o-hint{position:absolute; bottom:40px; left:40px; font-family:var(--fm); font-size:10px; color:var(--muted); opacity:.6;}
+@media (prefers-reduced-motion: reduce){ .o-phrase .w{animation:none; opacity:1; filter:none; transform:none;} }
+
+/* ============ APP SHELL ============ */
+#app{position:fixed; inset:0; top:30px; display:none;}
+#app.active{display:block;}
+.index-tab{position:fixed; top:30px; left:0; z-index:60; background:var(--ink); color:var(--bg);
+  font-family:var(--fm); font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+  padding:10px 18px; cursor:pointer; border:none; border-bottom-right-radius:3px; transition:background .15s;}
+.index-tab:hover{background:var(--accent);}
+.status-corner{position:fixed; bottom:16px; left:18px; z-index:50; display:flex; gap:12px;
+  font-family:var(--fm); font-size:10px; color:var(--muted); align-items:center;}
+.status-corner .d{width:5px; height:5px; border-radius:50%; display:inline-block; margin-right:5px;}
+.status-corner .d.good{background:var(--good);} .status-corner .d.warn{background:var(--warn);}
+
+.index-overlay{position:fixed; inset:0; top:30px; z-index:100; background:var(--bg); display:none;
+  flex-direction:column; justify-content:center; padding:clamp(28px,8vw,90px);}
+.index-overlay.open{display:flex;}
+.index-brand{font-family:var(--fs); font-style:italic; font-size:15px; color:var(--muted); margin-bottom:40px; cursor:pointer;
+  width:fit-content; background:none; border:none;}
+.index-brand b{color:var(--accent); font-style:normal;}
+.index-list{display:flex; flex-direction:column;}
+.index-row{display:flex; align-items:baseline; gap:28px; cursor:pointer; padding:11px 0; border-bottom:1px solid transparent;
+  background:none; border-top:none; border-left:none; border-right:none; text-align:left; width:100%;}
+.index-row:hover{border-color:var(--line);}
+.index-row .n{font-family:var(--fm); color:var(--muted); font-size:13px; width:26px;}
+.index-row .t{font-family:var(--fs); font-size:clamp(20px,3.2vw,38px); font-weight:500; transition:color .15s;}
+.index-row:hover .t{color:var(--accent);}
+.index-close{position:absolute; top:34px; right:clamp(16px,6vw,44px); font-family:var(--fm); font-size:10.5px; color:var(--muted);
+  cursor:pointer; letter-spacing:.08em; text-transform:uppercase; background:none; border:none;}
+.index-close:hover{color:var(--ink);}
+
+#stage{position:absolute; inset:0; z-index:5;}
+.page{display:none; height:100%; overflow:auto;}
+.page.active{display:block;}
+
+/* ============ HOME ============ */
+.page-home{padding:clamp(40px,8vw,90px) clamp(24px,8vw,90px) 60px;}
+.home-greet{font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase;}
+.home-title{font-family:var(--fs); font-size:clamp(22px,3.6vw,42px); max-width:640px; margin-top:16px; line-height:1.3; font-weight:500;}
+.home-title b{color:var(--accent); font-style:italic; font-weight:500;}
+.word-field{display:flex; flex-wrap:wrap; gap:clamp(20px,4vw,48px) clamp(28px,5vw,64px); margin-top:clamp(36px,6vw,56px);}
+.wf-item{cursor:pointer; font-family:var(--fs); font-weight:500; color:var(--ink); background:none; border:none;
+  text-align:left; transition:color .15s, transform .2s;}
+.wf-item:hover, .wf-item:focus-visible{color:var(--accent); transform:translateY(-3px);}
+.wf-item .n{display:block; font-family:var(--fm); font-size:10px; color:var(--muted); margin-bottom:6px; font-weight:400;}
+.wf-item:hover .n, .wf-item:focus-visible .n{color:var(--accent);}
+
+/* ============ PRACTICE ============ */
+.page-practice{padding:clamp(40px,8vw,80px) clamp(24px,8vw,100px) 140px; position:relative; min-height:100%;}
+.pz-label{font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-bottom:40px;}
+.pz-q{font-family:var(--fs); font-size:clamp(22px,3.1vw,38px); line-height:1.45; max-width:660px; font-weight:500;}
+.pz-rule{width:70px; height:2px; background:var(--accent); margin:30px 0;}
+.pz-opts{display:flex; flex-direction:column; gap:16px; max-width:520px;}
+.pz-opt{font-family:var(--fn); font-size:17px; padding:12px 0; border:none; border-bottom:1px solid var(--line);
+  background:none; cursor:pointer; display:flex; gap:16px; transition:all .15s; color:var(--ink); text-align:left; width:100%;}
+.pz-opt .l{font-family:var(--fm); color:var(--muted); font-size:12px;}
+.pz-opt:hover{border-color:var(--accent);}
+.pz-opt[aria-checked="true"]{border-color:var(--accent); color:var(--accent); font-weight:500;}
+.pz-opt[aria-checked="true"] .l{color:var(--accent);}
+.pz-opt:disabled{opacity:.6; cursor:default;}
+.pz-opt.correct{color:var(--good); border-color:var(--good);}
+.pz-opt.incorrect{color:var(--bad); border-color:var(--bad);}
+
+.marginalia{display:flex; flex-wrap:wrap; gap:24px; margin-top:40px; max-width:620px;}
+.tag-corner, .tag-vert{font-family:var(--fm); font-size:10px; color:var(--muted);}
+.tag-corner b, .tag-vert b{display:block; font-family:var(--fs); font-style:italic; font-size:15px; color:var(--ink); font-weight:500; margin-top:3px;}
+@media (min-width: 900px){
+  .marginalia{position:absolute; top:70px; right:90px; flex-direction:column; align-items:flex-end; text-align:right; max-width:220px;}
+  .tag-corner{transform:rotate(1deg);}
+  .tag-vert{transform:rotate(1deg);}
+}
+
+.pz-bottom{display:flex; flex-wrap:wrap; gap:18px; justify-content:space-between; align-items:center; margin-top:48px;
+  max-width:660px; padding-top:20px; border-top:1px solid var(--line);}
+.pz-due{font-family:var(--fm); font-size:11px; color:var(--muted);}
+.pz-submit{font-family:var(--fm); font-size:12px; text-transform:uppercase; letter-spacing:.06em; padding:13px 28px;
+  border:1px solid var(--ink); background:var(--ink); color:var(--bg); cursor:pointer; border-radius:2px; transition:all .15s;}
+.pz-submit:hover:not(:disabled){transform:translateY(-1px); box-shadow:0 3px 0 var(--line);}
+.pz-submit:disabled{opacity:.35; cursor:not-allowed;}
+.pz-stamp{font-family:var(--fm); font-size:11.5px; padding:10px 16px; border-radius:2px; max-width:620px;
+  display:none; margin-top:18px;}
+.pz-stamp.show{display:block;}
+.pz-stamp.ok{color:var(--good); border:1px dashed var(--good); background:oklch(50% 0.12 150 / 0.06);}
+.pz-stamp.bad{color:var(--bad); border:1px dashed var(--bad); background:oklch(50% 0.18 25 / 0.06);}
+.wire{font-family:var(--fm); font-size:9.5px; color:var(--muted); opacity:.75;}
+.wire::before{content:"→ would call ";}
+
+/* ============ CHANGES ============ */
+.page-changes{padding:clamp(40px,8vw,80px) clamp(24px,8vw,100px) 60px;}
+.cf-head{font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px;}
+.cf-sub{font-family:var(--fs); font-size:clamp(20px,2.6vw,28px); font-weight:500; margin-bottom:46px;}
+.case{max-width:740px; padding:28px 0; border-top:1px dashed var(--line); position:relative;}
+.case:first-of-type{border-top:1px solid var(--ink);}
+.case-time{font-family:var(--fm); font-size:10px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase;}
+.case-title{font-family:var(--fs); font-size:21px; font-weight:600; margin:10px 0 14px;}
+.case-ev{font-family:var(--fn); font-size:14.5px; line-height:1.75; color:var(--ink); max-width:620px;}
+.case-cite{font-family:var(--fm); font-size:10px; background:var(--panel); border:1px solid var(--line);
+  padding:3px 9px; display:inline-block; transform:rotate(-1.4deg); box-shadow:2px 2px 0 rgba(0,0,0,.06); margin:0 2px;}
+.case-stamps{display:flex; flex-wrap:wrap; gap:12px; margin-top:20px;}
+.stamp-btn{font-family:var(--fm); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+  padding:9px 18px; border:2px solid var(--ink); border-radius:40px; background:transparent; cursor:pointer;
+  transition:all .15s; color:var(--ink);}
+.stamp-btn[aria-pressed="true"].yes{border-color:var(--good); color:var(--good); background:oklch(50% 0.12 150/0.08);}
+.stamp-btn[aria-pressed="true"].no{border-color:var(--bad); color:var(--bad); background:oklch(50% 0.18 25/0.08);}
+.stamp-btn[aria-pressed="true"].change,.stamp-btn[aria-pressed="true"].later{border-color:var(--accent); color:var(--accent); background:var(--accent-dim);}
+.case-status{font-family:var(--fm); font-size:10.5px; color:var(--muted); margin-top:10px;}
+.case-revoke{font-family:var(--fm); font-size:10px; text-decoration:underline; color:var(--muted); background:none; border:none; cursor:pointer; margin-top:8px;}
+.ledger-log{margin-top:50px; max-width:740px; border-top:1px solid var(--ink); padding-top:16px;}
+.ledger-log h5{font-family:var(--fm); font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:10px;}
+.ledger-log ul{list-style:none; display:flex; flex-direction:column; gap:6px; font-family:var(--fm); font-size:11px; color:var(--ink);}
+.ledger-log .empty{color:var(--muted); font-style:italic; font-family:var(--fn);}
+
+/* ============ REVIEW ============ */
+.page-review{padding:clamp(40px,8vw,80px) clamp(24px,8vw,100px) 60px;}
+.rv-head{font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase;}
+.rv-sub{font-family:var(--fs); font-size:clamp(20px,2.6vw,28px); font-weight:500; margin-top:8px;}
+.horizon{position:relative; height:220px; margin-top:60px; max-width:900px; overflow-x:auto; overflow-y:visible;}
+.now-line{position:absolute; left:55%; top:-26px; bottom:30px; width:1px; background:var(--ink);}
+.now-label{position:absolute; left:55%; top:-46px; transform:translateX(-50%); font-family:var(--fm); font-size:9.5px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--ink);}
+.rv-item{position:absolute; bottom:30px; display:flex; flex-direction:column; align-items:center; gap:8px; transition:left .6s cubic-bezier(.2,.8,.2,1);}
+.rv-dot{width:13px; height:13px; border-radius:50%; border:2px solid var(--muted); background:var(--bg); transition:all .3s;}
+.rv-item.due .rv-dot{background:var(--accent); border-color:var(--accent); box-shadow:0 0 0 7px var(--accent-dim);}
+.rv-label{font-family:var(--fm); font-size:10px; color:var(--muted); white-space:nowrap; text-align:center;}
+.rv-label b{display:block; color:var(--ink); font-size:10.5px;}
+.rv-rate{display:flex; flex-wrap:wrap; gap:10px; margin-top:40px; align-items:center;}
+.rv-rate span{font-family:var(--fm); font-size:11px; color:var(--muted);}
+.rate-btn{font-family:var(--fm); font-size:11px; text-transform:uppercase; padding:9px 18px; border:1px solid var(--line);
+  background:transparent; cursor:pointer; color:var(--ink); transition:all .15s;}
+.rate-btn:hover:not(:disabled){border-color:var(--accent); color:var(--accent);}
+.rate-btn:disabled{opacity:.3; cursor:not-allowed;}
+
+/* ============ PROGRESS ============ */
+.page-progress{padding:clamp(40px,8vw,80px) clamp(24px,8vw,100px) 60px;}
+.pg-head{font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase;}
+.pg-sub{font-family:var(--fs); font-size:clamp(20px,2.6vw,28px); font-weight:500; margin:8px 0 10px;}
+.pg-note{font-family:var(--fn); font-size:13.5px; color:var(--muted); max-width:640px; margin-bottom:30px; line-height:1.6;}
+.topo-wrap{max-width:820px;}
+.topo{width:100%; height:auto; display:block;}
+.topo-legend{font-family:var(--fm); font-size:10.5px; color:var(--muted); margin-top:18px; max-width:680px; line-height:1.9;}
+.topo-legend b{color:var(--ink);}
+.topo-table{margin-top:28px; width:100%; max-width:680px; border-collapse:collapse; font-family:var(--fm); font-size:12px;}
+.topo-table caption{text-align:left; font-family:var(--fm); font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:10px;}
+.topo-table th, .topo-table td{text-align:left; padding:9px 14px 9px 0; border-bottom:1px solid var(--line);}
+.topo-table th{color:var(--muted); font-weight:500; font-size:10.5px; text-transform:uppercase;}
+
+/* ============ LESSONS ============ */
+.page-lessons{padding:clamp(40px,8vw,80px) clamp(24px,8vw,100px) 60px;}
+.ls-head{font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase;}
+.ls-sub{font-family:var(--fs); font-size:clamp(20px,2.6vw,28px); font-weight:500; margin:8px 0 36px;}
+.film{display:flex; gap:10px; overflow-x:auto; padding-bottom:16px; border-bottom:1px solid var(--line); max-width:760px;}
+.frame{min-width:96px; height:64px; flex-shrink:0; background:var(--panel); border:1px solid var(--line);
+  display:flex; align-items:center; justify-content:center; font-family:var(--fm); font-size:10px; color:var(--muted);
+  cursor:pointer; transition:all .15s;}
+.frame[aria-selected="true"]{border-color:var(--accent); color:var(--accent); background:var(--accent-dim);}
+.frame-main{margin-top:32px; max-width:620px;}
+.frame-main h4{font-family:var(--fs); font-size:21px; font-weight:600; margin-bottom:12px;}
+.frame-main p{font-family:var(--fn); font-size:14.5px; line-height:1.7; color:var(--muted); margin-bottom:20px;}
+.frame-actions{display:flex; flex-wrap:wrap; gap:10px;}
+.fa-btn{font-family:var(--fm); font-size:10.5px; text-transform:uppercase; padding:9px 16px; border:1px solid var(--line); background:transparent; cursor:pointer;}
+.fa-btn:hover{border-color:var(--accent); color:var(--accent);}
+
+/* ============ VOICE ============ */
+.page-voice{padding:clamp(40px,8vw,80px) clamp(24px,8vw,100px) 60px;}
+.vc-head{font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase;}
+.vc-sub{font-family:var(--fs); font-size:clamp(20px,2.6vw,28px); font-weight:500; margin:8px 0 36px;}
+.signal-box{max-width:620px; border:1px solid var(--line); background:var(--panel); padding:28px;}
+.signal-line{width:100%; height:50px;}
+.signal-note{font-family:var(--fm); font-size:12px; color:var(--warn); margin-top:14px;}
+.signal-fallback{font-family:var(--fn); font-size:14px; color:var(--ink); margin-top:12px; max-width:460px; line-height:1.6;}
+.typed-input{margin-top:18px; width:100%; max-width:420px; padding:12px 14px; border:1px solid var(--line);
+  background:var(--bg); font-family:var(--fn); font-size:14px; color:var(--ink);}
+
+/* ============ SETTINGS ============ */
+.page-settings{padding:clamp(40px,8vw,80px) clamp(24px,8vw,100px) 60px;}
+.st-head{font-family:var(--fm); font-size:10.5px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase;}
+.st-sub{font-family:var(--fs); font-size:clamp(20px,2.6vw,28px); font-weight:500; margin:8px 0 36px;}
+.st-list{max-width:560px;}
+.st-row{display:flex; justify-content:space-between; gap:12px; padding:14px 0; border-bottom:1px solid var(--line); font-family:var(--fn); font-size:14px;}
+.st-row dt{color:var(--muted); font-family:var(--fm); font-size:11px; text-transform:uppercase; letter-spacing:.06em;}
+.st-row dd{font-weight:500;}
+</style>
+</head>
+<body>
+<a href="#stage" class="skip-link">Skip to content</a>
+<div class="grain"></div>
+<div class="proto-banner" role="note">
+  <span>STATIC DESIGN PROTOTYPE</span> · <span><b>no network calls are made</b></span> · interactions are simulated locally — see “wiring map” ↘
+</div>
+<div id="liveRegion" class="sr-only" role="status" aria-live="polite"></div>
+
+<!-- ============ OPENING ============ -->
+<div id="opening">
+  <div class="o-mark">A·D·A·P·T</div>
+  <div class="o-phrase-wrap"><div class="o-phrase" id="oPhrase"></div></div>
+  <div class="o-hint">press anything to continue</div>
+  <button class="o-skip" id="oSkip">skip →</button>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+  <button class="index-tab" id="indexTab" aria-haspopup="dialog" aria-expanded="false" aria-controls="indexOverlay">§ ADAPT</button>
+  <div class="status-corner">
+    <span><span class="d good"></span>api</span>
+    <span><span class="d good"></span>llm</span>
+    <span><span class="d warn"></span>encrypted</span>
+  </div>
+
+  <div class="index-overlay" id="indexOverlay" role="dialog" aria-modal="true" aria-label="Section index">
+    <button class="index-close" id="indexClose">close ✕</button>
+    <button class="index-brand" data-nav="home">ad<b>apt</b> — index</button>
+    <nav class="index-list" aria-label="Sections">
+      <button class="index-row" data-nav="practice"><span class="n">01</span><span class="t">Practise</span></button>
+      <button class="index-row" data-nav="lessons"><span class="n">02</span><span class="t">Lessons</span></button>
+      <button class="index-row" data-nav="changes"><span class="n">03</span><span class="t">Changes</span></button>
+      <button class="index-row" data-nav="review"><span class="n">04</span><span class="t">Review</span></button>
+      <button class="index-row" data-nav="progress"><span class="n">05</span><span class="t">Progress</span></button>
+      <button class="index-row" data-nav="voice"><span class="n">06</span><span class="t">Voice</span></button>
+      <button class="index-row" data-nav="settings"><span class="n">07</span><span class="t">Settings</span></button>
+    </nav>
+  </div>
+
+  <main id="stage">
+
+    <!-- HOME -->
+    <section class="page active" id="page-home" aria-label="Home">
+      <div class="page-home">
+        <div class="home-greet">Good evening, Guest learner</div>
+        <h1 class="home-title">Nothing changes about how you learn <b>without you deciding it</b>.</h1>
+        <nav class="word-field" aria-label="Jump to a section">
+          <button class="wf-item" data-nav="practice" style="font-size:clamp(28px,4vw,52px);"><span class="n">01</span>Practise</button>
+          <button class="wf-item" data-nav="lessons" style="font-size:clamp(20px,2.6vw,34px);"><span class="n">02</span>Lessons</button>
+          <button class="wf-item" data-nav="changes" style="font-size:clamp(22px,3vw,40px);"><span class="n">03</span>Changes</button>
+          <button class="wf-item" data-nav="review" style="font-size:clamp(18px,2.4vw,30px);"><span class="n">04</span>Review</button>
+          <button class="wf-item" data-nav="progress" style="font-size:clamp(24px,3.4vw,46px);"><span class="n">05</span>Progress</button>
+          <button class="wf-item" data-nav="voice" style="font-size:clamp(16px,2vw,26px);"><span class="n">06</span>Voice</button>
+          <button class="wf-item" data-nav="settings" style="font-size:clamp(14px,1.8vw,22px);"><span class="n">07</span>Settings</button>
+        </nav>
+      </div>
+    </section>
+
+    <!-- PRACTICE -->
+    <section class="page" id="page-practice" aria-label="Practise">
+      <div class="page-practice">
+        <div class="pz-label" id="pzLabel">§ 01 · Practise — item 1 of 2</div>
+        <h2 class="pz-q" id="pzQ"></h2>
+        <div class="pz-rule"></div>
+        <div class="pz-opts" id="pzOpts" role="radiogroup" aria-labelledby="pzQ"></div>
+
+        <div class="marginalia">
+          <div class="tag-corner">topic<b>Ratios · mid</b></div>
+          <div class="tag-vert">adaptations on:<b>worked examples first · shorter batches</b></div>
+        </div>
+
+        <div class="pz-bottom">
+          <div class="pz-due">6 due for review</div>
+          <button class="pz-submit" id="submitBtn" disabled>Submit answer</button>
+        </div>
+        <div class="pz-stamp" id="pStamp"></div>
+        <div class="wire">POST /api/v1/attempts, then POST /api/v1/analyze?session_id=…</div>
+      </div>
+    </section>
+
+    <!-- CHANGES -->
+    <section class="page" id="page-changes" aria-label="Changes">
+      <div class="page-changes">
+        <div class="cf-head">§ 03 · Changes</div>
+        <h2 class="cf-sub">Nothing here takes effect until you decide.</h2>
+        <div id="casesRoot"></div>
+        <div class="ledger-log">
+          <h5>Decisions made this session</h5>
+          <ul id="caseLog"><li class="empty">Nothing decided yet.</li></ul>
+        </div>
+        <div class="wire" style="margin-top:14px;">POST /api/v1/adaptations/&#123;id&#125;/decision, POST /api/v1/adaptations/&#123;id&#125;/revoke</div>
+      </div>
+    </section>
+
+    <!-- REVIEW -->
+    <section class="page" id="page-review" aria-label="Review">
+      <div class="page-review">
+        <div class="rv-head">§ 04 · Review</div>
+        <h2 class="rv-sub">What the forgetting curve says is due.</h2>
+        <div class="horizon" id="horizon">
+          <div class="now-label">now</div>
+          <div class="now-line"></div>
+        </div>
+        <div class="rv-rate" id="rvRate"></div>
+        <div class="ledger-log">
+          <h5>Reviews completed this session</h5>
+          <ul id="reviewLog"><li class="empty">Nothing reviewed yet.</li></ul>
+        </div>
+        <div class="wire" style="margin-top:14px;">POST /api/v1/review/complete &#123; item_id, rating &#125;</div>
+      </div>
+    </section>
+
+    <!-- PROGRESS -->
+    <section class="page" id="page-progress" aria-label="Progress">
+      <div class="page-progress">
+        <div class="pg-head">§ 05 · Progress</div>
+        <h2 class="pg-sub">Measured, not guessed.</h2>
+        <p class="pg-note">Position is the estimate. Line width is the uncertainty around it — wider means less evidence pins it down. Circle size is how many attempts that estimate rests on. A bigger circle is not a better score, it's a more confident one. Two topics are only comparable by position.</p>
+        <div class="topo-wrap">
+          <svg class="topo" viewBox="0 0 760 280" role="img" aria-label="Mastery estimates across five topics, each shown as a position on a low-to-high scale with an uncertainty range and evidence count. See the table below for exact figures.">
+            <!-- band backgrounds, neutral (not red/green) -->
+            <rect x="60" y="20" width="186" height="220" fill="var(--panel-2)" opacity="0.5"/>
+            <rect x="246" y="20" width="258" height="220" fill="var(--panel-2)" opacity="0.25"/>
+            <rect x="504" y="20" width="196" height="220" fill="var(--panel-2)" opacity="0.5"/>
+            <text x="153" y="252" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="var(--muted)">low</text>
+            <text x="375" y="252" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="var(--muted)">mid</text>
+            <text x="602" y="252" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="var(--muted)">high</text>
+            <line x1="60" y1="20" x2="60" y2="240" stroke="var(--line)" stroke-width="1"/>
+            <g id="topoLanes"></g>
+          </svg>
+          <table class="topo-table">
+            <caption>Per-topic estimate — the numbers behind the chart above</caption>
+            <thead><tr><th>Topic</th><th>Band</th><th>Estimate</th><th>Uncertainty</th><th>Attempts</th></tr></thead>
+            <tbody id="topoTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- LESSONS -->
+    <section class="page" id="page-lessons" aria-label="Lessons">
+      <div class="page-lessons">
+        <div class="ls-head">§ 02 · Lessons</div>
+        <h2 class="ls-sub">Play a frame, predict, then see what happened.</h2>
+        <div class="film" id="film" role="tablist" aria-label="Lesson frames"></div>
+        <div class="frame-main" id="frameMain" role="tabpanel"></div>
+      </div>
+    </section>
+
+    <!-- VOICE -->
+    <section class="page" id="page-voice" aria-label="Voice">
+      <div class="page-voice">
+        <div class="vc-head">§ 06 · Voice</div>
+        <h2 class="vc-sub">Says exactly what's missing. Never fakes it.</h2>
+        <div class="signal-box">
+          <svg class="signal-line" viewBox="0 0 400 50" aria-hidden="true"><line x1="0" y1="25" x2="400" y2="25" stroke="var(--muted)" stroke-width="1.5"/></svg>
+          <div class="signal-note" role="status">⚠ microphone unavailable — this page isn't served over https</div>
+          <div class="signal-fallback">Typing works exactly the same as speaking. Nothing here is a lesser path.</div>
+          <label for="typedInput" class="sr-only">Type your message instead of speaking</label>
+          <input id="typedInput" class="typed-input" placeholder="Type instead of speaking…">
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="page-settings" aria-label="Settings">
+      <div class="page-settings">
+        <div class="st-head">§ 07 · Settings</div>
+        <h2 class="st-sub">Plain, on purpose — this isn't a learning moment.</h2>
+        <dl class="st-list">
+          <div class="st-row"><dt>Weekly minutes</dt><dd>120</dd></div>
+          <div class="st-row"><dt>Session length</dt><dd>20 min</dd></div>
+          <div class="st-row"><dt>Avoid</dt><dd>timed drills</dd></div>
+          <div class="st-row"><dt>Encourage</dt><dd>worked examples</dd></div>
+          <div class="st-row"><dt>LLM status</dt><dd>connected</dd></div>
+        </dl>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<details class="wiring-details">
+  <summary>Wiring map (nothing on this page calls these)</summary>
+  <div class="wiring-box">
+    <div>Submit answer → <code>POST /api/v1/attempts</code> then <code>POST /api/v1/analyze?session_id=</code></div>
+    <div>Approve / decline / revise a change → <code>POST /api/v1/adaptations/&#123;id&#125;/decision</code> <code>&#123;decision: accept|reject|modify|later&#125;</code></div>
+    <div>Revoke a decided change → <code>POST /api/v1/adaptations/&#123;id&#125;/revoke</code></div>
+    <div>Rate a review item → <code>POST /api/v1/review/complete</code> <code>&#123;item_id, rating&#125;</code></div>
+    <div>Open a lesson frame → <code>POST /api/v1/lessons/run/&#123;id&#125;/progress</code>, content from <code>GET /api/v1/lessons/&#123;id&#125;</code></div>
+    <div>Voice typed fallback → <code>POST /api/v1/voice/speak</code> or text frame over <code>WS /ws/voice</code></div>
+    <div>Progress numbers → <code>GET /api/v1/dashboard</code>, <code>GET /api/v1/journey</code></div>
+  </div>
+</details>
+
+<script>
+/* ============ OPENING ============ */
+const phrases = [
+ {text:"Are you ready to ADAPT?", blue:"ADAPT"},
+ {text:"Let's learn the right way.", blue:"right"},
+ {text:"Your next breakthrough starts here.", blue:"breakthrough"},
+ {text:"Time to learn differently.", blue:"differently"},
+ {text:"Let's ADAPT.", blue:"ADAPT"},
+ {text:"What you know is just the beginning.", blue:"beginning"},
+ {text:"Built around how you learn.", blue:"learn"},
+ {text:"Ready to learn? The ADAPT way.", blue:"ADAPT"}
+];
+const SEEN_KEY='adapt:seen-opening', IDX_KEY='adapt:phrase-idx';
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const opening = document.getElementById('opening');
+const app = document.getElementById('app');
+let autoTimer;
+
+function pickPhrase(){
+  let i = parseInt(localStorage.getItem(IDX_KEY)||'0',10);
+  localStorage.setItem(IDX_KEY, String((i+1)%phrases.length));
+  return phrases[i % phrases.length];
+}
+function renderPhrase(p){
+  const el = document.getElementById('oPhrase');
+  el.innerHTML='';
+  let delay=0;
+  p.text.split(' ').forEach(w=>{
+    const span=document.createElement('span');
+    span.className='w'+(w.replace(/[?.!,]/g,'')===p.blue||w.includes(p.blue)?' blue':'');
+    span.textContent=w+' ';
+    span.style.animationDelay=delay+'s';
+    el.appendChild(span);
+    delay+=0.08;
+  });
+}
+function enterApp(instant){
+  sessionStorage.setItem(SEEN_KEY,'1');
+  clearTimeout(autoTimer);
+  if(instant){ opening.style.display='none'; app.classList.add('active'); return; }
+  opening.classList.add('exit');
+  setTimeout(()=>{ opening.style.display='none'; app.classList.add('active'); }, 350);
+}
+if(sessionStorage.getItem(SEEN_KEY)){
+  enterApp(true);
+}else{
+  renderPhrase(pickPhrase());
+  autoTimer=setTimeout(()=>enterApp(false), reduced?500:1500);
+  opening.addEventListener('click', ()=>enterApp(false));
+  document.getElementById('oSkip').addEventListener('click', (e)=>{e.stopPropagation(); enterApp(false);});
+  window.addEventListener('keydown', ()=>enterApp(false), {once:true});
+}
+
+/* ============ NAV + DIALOG ============ */
+const indexTab = document.getElementById('indexTab');
+const overlay = document.getElementById('indexOverlay');
+let lastFocused = null;
+
+function openOverlay(){
+  lastFocused = document.activeElement;
+  overlay.classList.add('open');
+  indexTab.setAttribute('aria-expanded','true');
+  overlay.querySelector('button').focus();
+}
+function closeOverlay(){
+  overlay.classList.remove('open');
+  indexTab.setAttribute('aria-expanded','false');
+  (lastFocused||indexTab).focus();
+}
+indexTab.addEventListener('click', ()=> overlay.classList.contains('open') ? closeOverlay() : openOverlay());
+document.getElementById('indexClose').addEventListener('click', closeOverlay);
+overlay.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){ closeOverlay(); return; }
+  if(e.key==='Tab'){
+    const f = overlay.querySelectorAll('button');
+    const first=f[0], last=f[f.length-1];
+    if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+  }
+});
+
+const labels={home:'§ ADAPT',practice:'§ 01 · Practise',lessons:'§ 02 · Lessons',changes:'§ 03 · Changes',review:'§ 04 · Review',progress:'§ 05 · Progress',voice:'§ 06 · Voice',settings:'§ 07 · Settings'};
+function navigate(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  closeOverlay();
+  indexTab.textContent = labels[page]||'§ ADAPT';
+  document.getElementById('stage').focus?.();
+}
+document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', ()=>navigate(el.getAttribute('data-nav'))));
+
+function announce(msg){ document.getElementById('liveRegion').textContent = msg; }
+
+/* ============ PRACTICE — real correctness, real gating ============ */
+const practiceItems = [
+  { q:"A recipe uses 3 cups of flour for every 2 cups of sugar. How much flour is needed for 10 cups of sugar?",
+    opts:["15 cups","12 cups","6.6 cups","20 cups"], correct:0 },
+  { q:"A tap fills a 40L tank at 5L per minute. How long until the tank is 3/4 full?",
+    opts:["5 minutes","6 minutes","8 minutes","10 minutes"], correct:1 }
+];
+let pIndex=0, pSelected=null, pSubmitted=false;
+
+function renderPractice(){
+  const item = practiceItems[pIndex];
+  document.getElementById('pzLabel').textContent = `§ 01 · Practise — item ${pIndex+1} of ${practiceItems.length}`;
+  document.getElementById('pzQ').textContent = item.q;
+  pSelected=null; pSubmitted=false;
+  const opts = document.getElementById('pzOpts');
+  opts.innerHTML='';
+  item.opts.forEach((text,i)=>{
+    const b=document.createElement('button');
+    b.className='pz-opt'; b.type='button'; b.role='radio'; b.setAttribute('aria-checked','false');
+    b.tabIndex = i===0 ? 0 : -1;
+    b.innerHTML = `<span class="l">${String.fromCharCode(65+i)}</span> ${text}`;
+    b.addEventListener('click', ()=>selectOpt(i));
+    b.addEventListener('keydown', e=>{
+      if(e.key==='ArrowDown'||e.key==='ArrowRight'){ e.preventDefault(); moveFocus(i,1); }
+      if(e.key==='ArrowUp'||e.key==='ArrowLeft'){ e.preventDefault(); moveFocus(i,-1); }
+    });
+    opts.appendChild(b);
+  });
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('submitBtn').textContent = 'Submit answer';
+  const stamp=document.getElementById('pStamp');
+  stamp.className='pz-stamp'; stamp.textContent='';
+}
+function moveFocus(i,dir){
+  const opts=[...document.querySelectorAll('.pz-opt')];
+  const next = opts[(i+dir+opts.length)%opts.length];
+  opts.forEach(o=>o.tabIndex=-1);
+  next.tabIndex=0; next.focus();
+}
+function selectOpt(i){
+  if(pSubmitted) return;
+  pSelected=i;
+  document.querySelectorAll('.pz-opt').forEach((o,idx)=>o.setAttribute('aria-checked', idx===i ? 'true':'false'));
+  document.getElementById('submitBtn').disabled=false;
+}
+document.getElementById('submitBtn').addEventListener('click', ()=>{
+  if(pSubmitted){
+    if(pIndex < practiceItems.length-1){ pIndex++; renderPractice(); announce('Next item loaded.'); }
+    return;
+  }
+  if(pSelected===null) return;
+  pSubmitted=true;
+  const item = practiceItems[pIndex];
+  const correct = pSelected === item.correct;
+  document.querySelectorAll('.pz-opt').forEach((o,idx)=>{
+    o.disabled=true;
+    if(idx===item.correct) o.classList.add('correct');
+    else if(idx===pSelected) o.classList.add('incorrect');
+  });
+  const stamp = document.getElementById('pStamp');
+  stamp.className = 'pz-stamp show ' + (correct?'ok':'bad');
+  stamp.textContent = correct
+    ? '✓ recorded · correct · ratio estimate moved +0.03'
+    : '✗ recorded · not quite · see worked example next time · estimate adjusted −0.01';
+  const btn = document.getElementById('submitBtn');
+  if(pIndex < practiceItems.length-1){ btn.textContent='Next item →'; btn.disabled=false; }
+  else { btn.textContent='Done'; btn.disabled=true; }
+  announce(correct ? 'Answer recorded as correct.' : 'Answer recorded as incorrect.');
+});
+renderPractice();
+
+/* ============ CHANGES — real decision state + log ============ */
+const cases = [
+  { id:'44', title:'Slow down new-topic pacing', time:'2 hrs ago',
+    html:`Across the last <span class="case-cite">12 attempts</span>, first-try accuracy on new topics dropped from 71% to 44%. This proposes +40% worked-example exposure before timed items.`,
+    decision:null },
+  { id:'51', title:'Shorter practice batches (4 → 3)', time:'Yesterday',
+    html:`Response latency rose <span class="case-cite">38%, n=28</span> after the 3rd item in a batch, suggesting fatigue rather than difficulty.`,
+    decision:null }
+];
+const decisionLabel = {yes:'Approved', no:'Declined', change:'Marked “yes, but change it”', later:'Deferred — not now'};
+const logEntries = [];
+
+function renderCases(){
+  const root = document.getElementById('casesRoot');
+  root.innerHTML='';
+  cases.forEach(c=>{
+    const div = document.createElement('div');
+    div.className='case';
+    div.innerHTML = `
+      <div class="case-time">${c.time}</div>
+      <h3 class="case-title">${c.title}</h3>
+      <div class="case-ev">${c.html}</div>
+      <div class="case-stamps" role="group" aria-label="Decision for: ${c.title}">
+        <button class="stamp-btn yes" data-case="${c.id}" data-dec="yes" aria-pressed="${c.decision==='yes'}">Approve</button>
+        <button class="stamp-btn change" data-case="${c.id}" data-dec="change" aria-pressed="${c.decision==='change'}">Yes, but change it</button>
+        <button class="stamp-btn no" data-case="${c.id}" data-dec="no" aria-pressed="${c.decision==='no'}">Decline</button>
+        <button class="stamp-btn later" data-case="${c.id}" data-dec="later" aria-pressed="${c.decision==='later'}">Not now</button>
+      </div>
+      <div class="case-status">${c.decision ? 'Status: '+decisionLabel[c.decision] : 'Status: pending — nothing applied'}</div>
+      ${c.decision ? `<button class="case-revoke" data-revoke="${c.id}">Revoke this decision</button>` : ''}
+    `;
+    root.appendChild(div);
+  });
+  root.querySelectorAll('.stamp-btn').forEach(b=>b.addEventListener('click', ()=>{
+    const c = cases.find(x=>x.id===b.dataset.case);
+    c.decision = b.dataset.dec;
+    logEntries.unshift(`${new Date().toLocaleTimeString()} — "${c.title}" → ${decisionLabel[c.decision]}`);
+    renderCases(); renderLog();
+    announce(`Decision recorded: ${decisionLabel[c.decision]} for ${c.title}`);
+  }));
+  root.querySelectorAll('[data-revoke]').forEach(b=>b.addEventListener('click', ()=>{
+    const c = cases.find(x=>x.id===b.dataset.revoke);
+    logEntries.unshift(`${new Date().toLocaleTimeString()} — "${c.title}" decision revoked`);
+    c.decision = null;
+    renderCases(); renderLog();
+    announce(`Decision revoked for ${c.title}`);
+  }));
+}
+function renderLog(){
+  const ul = document.getElementById('caseLog');
+  ul.innerHTML = logEntries.length ? logEntries.map(e=>`<li>${e}</li>`).join('') : '<li class="empty">Nothing decided yet.</li>';
+}
+renderCases(); renderLog();
+
+/* ============ REVIEW — real differing outcomes per rating ============ */
+const reviewItems = [
+  {id:'geo', name:'Geometry', left:92, due:false},
+  {id:'lin', name:'Linear eqns', left:76, due:false},
+  {id:'pct', name:'Percentages', left:62, due:false},
+  {id:'rat', name:'Ratios', left:40, due:true},
+  {id:'frc', name:'Fractions', left:12, due:true}
+];
+const reviewLog = [];
+function renderHorizon(){
+  const h = document.getElementById('horizon');
+  h.querySelectorAll('.rv-item').forEach(n=>n.remove());
+  reviewItems.forEach(it=>{
+    const el = document.createElement('div');
+    el.className = 'rv-item'+(it.due?' due':'');
+    el.id = 'rv-'+it.id;
+    el.style.left = it.left+'%';
+    el.innerHTML = `<div class="rv-dot"></div><div class="rv-label"><b>${it.name}</b>${it.due?'due now':'scheduled'}</div>`;
+    h.appendChild(el);
+  });
+}
+function renderRateControls(){
+  const dueItem = reviewItems.find(i=>i.due);
+  const wrap = document.getElementById('rvRate');
+  if(!dueItem){ wrap.innerHTML = '<span>Nothing due right now.</span>'; return; }
+  wrap.innerHTML = `
+    <span>${dueItem.name}, due now:</span>
+    <button class="rate-btn" data-rate="again">Again</button>
+    <button class="rate-btn" data-rate="good">Good</button>
+    <button class="rate-btn" data-rate="easy">Easy</button>
+  `;
+  wrap.querySelectorAll('.rate-btn').forEach(b=>b.addEventListener('click', ()=>{
+    const offsets = {again:6, good:22, easy:38};
+    const nextText = {again:'again in ~10 min', good:'next in ~4 days', easy:'next in ~9 days'};
+    dueItem.left = Math.min(55 + offsets[b.dataset.rate], 97);
+    dueItem.due = false;
+    renderHorizon();
+    document.querySelector(`#rv-${dueItem.id} .rv-label`).innerHTML = `<b>${dueItem.name}</b>${nextText[b.dataset.rate]}`;
+    reviewLog.unshift(`${new Date().toLocaleTimeString()} — ${dueItem.name} rated "${b.dataset.rate}" → ${nextText[b.dataset.rate]}`);
+    renderReviewLog();
+    announce(`${dueItem.name} rated ${b.dataset.rate}. ${nextText[b.dataset.rate]}.`);
+    renderRateControls();
+  }));
+}
+function renderReviewLog(){
+  const ul = document.getElementById('reviewLog');
+  ul.innerHTML = reviewLog.length ? reviewLog.map(e=>`<li>${e}</li>`).join('') : '<li class="empty">Nothing reviewed yet.</li>';
+}
+renderHorizon(); renderRateControls(); renderReviewLog();
+
+/* ============ PROGRESS — honest scale: position=estimate, width=uncertainty, size=evidence ============ */
+const topics = [
+  {name:'Fractions', est:0.78, band:'high', unc:0.07, n:52},
+  {name:'Percentages', est:0.61, band:'mid', unc:0.09, n:28},
+  {name:'Ratios', est:0.52, band:'mid', unc:0.11, n:34},
+  {name:'Linear eqns', est:0.29, band:'low', unc:0.14, n:16},
+  {name:'Geometry', est:0.22, band:'low', unc:0.18, n:9}
+];
+const unmeasured = {name:'Probability', note:'only 2 attempts — not enough to estimate'};
+
+function xOf(v){ return 60 + v*640; }
+function renderTopo(){
+  const g = document.getElementById('topoLanes');
+  const tbody = document.getElementById('topoTableBody');
+  g.innerHTML=''; tbody.innerHTML='';
+  const laneH = 200/(topics.length);
+  topics.forEach((t,i)=>{
+    const y = 36 + i*laneH;
+    const cx = xOf(t.est);
+    const halfW = t.unc*320;
+    const r = 6 + Math.sqrt(t.n)*1.4;
+    g.innerHTML += `
+      <line x1="${cx-halfW}" y1="${y}" x2="${cx+halfW}" y2="${y}" stroke="var(--line)" stroke-width="2"/>
+      <line x1="${cx}" y1="${y-7}" x2="${cx}" y2="${y+7}" stroke="var(--ink)" stroke-width="2"/>
+      <circle cx="${cx}" cy="${y}" r="${r}" fill="var(--accent)" opacity="0.35" stroke="var(--accent)" stroke-width="1.5"/>
+      <text x="8" y="${y-10}" font-family="JetBrains Mono" font-size="11" fill="var(--ink)">${t.name}</text>
+      <text x="8" y="${y+16}" font-family="JetBrains Mono" font-size="9.5" fill="var(--muted)">${t.band} · ${(t.est*100).toFixed(0)}% ±${(t.unc*100).toFixed(0)} · n=${t.n}</text>
+    `;
+    tbody.innerHTML += `<tr><td>${t.name}</td><td>${t.band}</td><td>${(t.est*100).toFixed(0)}%</td><td>± ${(t.unc*100).toFixed(0)} pts</td><td>${t.n} attempts</td></tr>`;
+  });
+  tbody.innerHTML += `<tr><td>${unmeasured.name}</td><td colspan="4">${unmeasured.note}</td></tr>`;
+}
+renderTopo();
+
+/* ============ LESSONS — real distinct content per frame, tablist pattern ============ */
+const frames = [
+  {label:'01 open', title:'Setting the scene', body:'A tank fills at a constant rate. Before pressing play: what do you expect the water level to look like after 10 seconds?', actions:['Predict','Change variables','Ask why']},
+  {label:'02 predict', title:'Your prediction', body:'You predicted a straight line. Press play to see the actual fill curve and compare.', actions:['Play','Compare to prediction']},
+  {label:'03 vary', title:'Change a variable', body:'Try doubling the inflow rate. What happens to the time to fill?', actions:['Double inflow','Halve inflow','Reset']},
+  {label:'04 explain', title:'Ask why', body:'The curve is a straight line because the rate is constant — equal time steps add equal volume. Ask the tutor for a different explanation.', actions:['Ask differently','Resume']}
+];
+let activeFrame=0;
+function renderFilm(){
+  const film = document.getElementById('film');
+  film.innerHTML='';
+  frames.forEach((f,i)=>{
+    const b=document.createElement('button');
+    b.className='frame'; b.setAttribute('role','tab');
+    b.setAttribute('aria-selected', i===activeFrame ? 'true':'false');
+    b.tabIndex = i===activeFrame ? 0 : -1;
+    b.textContent=f.label;
+    b.addEventListener('click', ()=>{ activeFrame=i; renderFilm(); renderFrameMain(); });
+    b.addEventListener('keydown', e=>{
+      if(e.key==='ArrowRight'){ e.preventDefault(); activeFrame=(i+1)%frames.length; renderFilm(); renderFrameMain(); film.children[activeFrame].focus(); }
+      if(e.key==='ArrowLeft'){ e.preventDefault(); activeFrame=(i-1+frames.length)%frames.length; renderFilm(); renderFrameMain(); film.children[activeFrame].focus(); }
+    });
+    film.appendChild(b);
+  });
+}
+function renderFrameMain(){
+  const f = frames[activeFrame];
+  document.getElementById('frameMain').innerHTML = `
+    <h4>Frame ${activeFrame+1} — ${f.title}</h4>
+    <p>${f.body}</p>
+    <div class="frame-actions">${f.actions.map(a=>`<button class="fa-btn">${a}</button>`).join('')}</div>
+  `;
+}
+renderFilm(); renderFrameMain();
+</script>
+</body>
+</html>
