@@ -208,6 +208,17 @@ class VoiceConversation:
         await self._answer(turn)
         return turn
 
+    def start_text(self, text: str) -> None:
+        """Typed input as a turn in the background.
+
+        ``push_text`` is awaited by the socket's control loop, and that same loop is the
+        one reading microphone frames -- so awaiting it here froze the socket for the
+        whole spoken answer, and a learner talking over a *typed* question could not be
+        heard until the assistant had finished the sentence. Audio turns have always
+        been started on their own task; this gives typed turns the same treatment.
+        """
+        self._spawn(self.push_text(text))
+
     async def stop(self) -> None:
         """Stop speaking, and abandon an answer that has not been spoken yet."""
         task = self._turn_task

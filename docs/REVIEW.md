@@ -211,6 +211,69 @@ existing `create_all` database then upgrade; downgrade and re-upgrade) with whol
 encryption and reads the result through `create_db_engine`. Reinstating the old construction
 fails all three.
 
+### 1.11 Resource search answered every request with a 500 (`api/routes/tutor.py`)
+
+```python
+resp = await svcs.resources.search(body.query, limit=body.limit, providers=body.providers)
+```
+
+`ResourceService.search` takes `limit_per_provider`, so the call raised `TypeError` before any
+provider was consulted: `POST /api/v1/resources/search` was a 500 for every query, and had been
+for the whole build. It survived because the endpoint had **no caller and no test** — the only
+resources assertion in the suite checked the static provider-gate configuration.
+
+Fixed by passing the parameter the service has, and by truncating to the declared `limit`
+afterwards (`search` slices at `max(6, limit_per_provider * 2)` internally, so the route's own
+1–12 cap was not being honoured). Two regression tests now drive the route: an empty answer
+must carry its reason and its per-provider status, and an unknown provider name must be dropped
+rather than 500.
+
+The four adapters behind it had no tests at all; `tests/test_resource_providers.py` now runs the
+whole matrix the brief asks for — valid, empty, unreachable, rejected key, timeout, upstream
+429 and local rate limit — with the real provider code and only the HTTP transport substituted.
+What that cannot show is whether the live hosts answer, because this sandbox has no route to
+`api.openalex.org`, `export.arxiv.org`, `openlibrary.org` or `www.googleapis.com` (all four fail
+DNS in ~30 ms). The live path is therefore *unverified*, not *verified working*.
+
+### 1.12 A Numbas package from anywhere but ADAPT was a 500, or a trap (`assessment/numbas.py`, `api/routes/tutor.py`)
+
+Two defects with one root cause: the importer trusted what the package said about *where* a
+question belongs and *how* it is marked.
+
+* **Placement.** The export writes the topic **id** into `adapt-topic:<id>`, and the importer read
+  the tag back as if it were an id. A teacher tagging a question with the human-readable *code*
+  (the natural thing to write by hand), or not tagging it at all, had the string inserted as a
+  foreign key: `IntegrityError: FOREIGN KEY constraint failed` → **HTTP 500**, with the SQL
+  statement in the local-mode response. Items are now resolved against the id set and the code
+  map, and an item that names no topic we have is skipped with its name and the valid codes.
+  Attaching it to whichever topic happened to be first — the old fallback — would have corrupted
+  an unrelated topic's evidence.
+* **Gradeability.** A Numbas part type with no local grader (`m`, `custom`, anything not in
+  `NUMBAS_PART_TYPE_TO_KIND`) was imported as free text, marked `active`, and reported as
+  `runnable_in_app`. Its `answer_spec` then held only a `formula`, which the text grader never
+  compares against, so **every answer scored 0** — including the exact answer the teacher wrote —
+  and the feedback read `expected one of: ` (empty). A learner served that item would have their
+  mastery, spacing and the item's own calibration moved by a question nothing could mark.
+
+  Such items are now imported **inactive**, tagged for the export report as needing the hosted
+  Numbas runtime, and the grader refuses with `method="none"` and a sentence that says so
+  instead of an empty list of expectations. `tests/test_numbas_import_fidelity.py` covers both,
+  and answers an imported question end to end (submit → score → return) to show the fix does not
+  break the loop for the questions that *are* gradeable.
+
+### 1.13 A typed voice turn blocked barge-in (`voice/pipeline.py`, `api/ws.py`)
+
+The socket's control loop is also the loop that reads microphone frames, and it `await`ed
+`VoiceConversation.push_text(...)`, which does not return until the answer has been *spoken*.
+Audio turns have always been started on a background task (that is what makes interruption
+possible at all), so barge-in worked for spoken questions and silently could not happen for
+typed ones: the learner's speech sat in the socket buffer until the assistant finished the
+sentence it was meant to interrupt. `start_text()` starts a typed turn the same way an audio
+turn is started. `tests/test_voice_pipeline.py` pins the ordering the socket depends on, plus
+the VAD's endpointing on synthetic audio, barge-in on sustained speech, a cough *not* cutting
+the assistant off, `stop()` cancelling audio that is already obsolete, and a turn surviving a
+missing transcription model (an empty transcript with a note, never an invented one).
+
 ## 2. Found, measured, deliberately **not** changed
 
 These change behaviour or thresholds, which is the user's call, not a review's.
@@ -711,6 +774,7 @@ export/import, which is a good start and a narrow one.
 | Priority | Item | Effort | Why now |
 |---|---|---|---|
 | P0 | Accept/review this pass's fixes (§1) | — | Defects in the numbers every other feature trusts |
+| ✅ | ~~Resources search, foreign Numbas import, typed-turn barge-in~~ — done, the full-scan pass (§1.11–§1.13) | — | A reachable 500, a foreign key that turned a bad tag into a 500, a question no grader could mark, and an interruption that could not happen |
 | ✅ | ~~**Generated-content contract** before AI 3 wires generated items into the lesson surface~~ — done, `a157e7d` (§3.3, §3.4) | — | The tail of a generated practice session could not be answered at all (422), and nothing verified a generated answer key. AI 3's remaining half is reuse-before-writing, not the contract |
 | ✅ | ~~Migrations run through the app's own engine~~ — done, `438b379` (§1.10) | — | Every installation using whole-file encryption had an unusable migration path, in both directions |
 | P0 | Response-time effort + gate the trace on it (§4.1) | ~1 day | One careless click currently moves mastery and can trigger a proposal |
@@ -736,7 +800,7 @@ rest of the document is worth reading as a list of gaps rather than a list of ho
 
 ```bash
 cd /home/user/Adapt
-.venv/bin/python -m pytest backend/tests -q                     # 195 passed
+.venv/bin/python -m pytest backend/tests -q                     # 254 passed
 node scripts/check-contract.mjs                                 # contract ok
 .venv/bin/python -m ruff check backend/src --select F,E7,E9,B017  # clean
 ```

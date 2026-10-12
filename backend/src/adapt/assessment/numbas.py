@@ -353,9 +353,15 @@ def question_import(q: dict[str, Any], *, topic_map: dict[str, str] | None = Non
     part = parts[0] if parts else {}
     ptype = str(part.get("type", "j"))
     kind = NUMBAS_PART_TYPE_TO_KIND.get(ptype)
+    needs_runtime = False
     if kind is None:
+        needs_runtime = True
+        # Keep the stem, but do not pretend this is a question ADAPT can mark. It is
+        # stored inactive (see the import route) with the same tag the export report
+        # reads, so the operator sees "3 items need the Numbas runtime" instead of a
+        # learner quietly answering something nothing can grade.
         kind = "text"
-        warns.append(f"unknown Numbas part type {ptype!r}; imported as free-text (graded by rubric/AI 2)")
+        warns.append(f"unknown Numbas part type {ptype!r}: imported for reference only, needs the hosted Numbas runtime")
     if len(parts) > 1:
         warns.append(f"{len(parts)} parts; only part 1 is graded in-app, full item renders in hosted Numbas")
 
@@ -412,6 +418,9 @@ def question_import(q: dict[str, Any], *, topic_map: dict[str, str] | None = Non
         "est_seconds": 90,
         "source": "numbas",
         "numbas_ref": q.get("uuid") or _uuid(),
+        # Only the import route reads this: it decides ``active``. Nothing else about
+        # the item changes, so an operator can still read or fix the question later.
+        "needs_numbas_runtime": needs_runtime,
         # Not a column: the import route looks the originating row up by it. See
         # ``_sidecar`` for why identity, not content, is what makes a round trip safe.
         "exported_from_item_id": None,
@@ -515,10 +524,16 @@ def checksum(data: Any) -> str:
 
 
 def supported_subset(items: Iterable[dict[str, Any]]) -> dict[str, list[str]]:
-    """Which items ADAPT can run in-app vs which need the hosted Numbas runtime."""
+    """Which items ADAPT can run in-app vs which need the hosted Numbas runtime.
+
+    A part type the importer had to fall back on (``needs_numbas_runtime``) and any
+    item left inactive count as needing the runtime: reporting them as runnable is how
+    an ungradeable question ends up in front of a learner.
+    """
     simple = {"mcq", "numeric", "text", "worked_example", "teachback"}
     ok, need = [], []
     for it in items:
-        kinds = {it.get("kind")}
-        (ok if kinds <= simple else need).append(str(it.get("numbas_ref") or it.get("stem", "")[:40]))
+        name = str(it.get("numbas_ref") or it.get("stem", "")[:40])
+        ungradeable = bool(it.get("needs_numbas_runtime")) or it.get("active") is False
+        (need if ungradeable or not {it.get("kind")} <= simple else ok).append(name)
     return {"runnable_in_app": ok, "needs_numbas_runtime": need}
