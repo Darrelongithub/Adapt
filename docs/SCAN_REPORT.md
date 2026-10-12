@@ -15,7 +15,8 @@ were found and fixed (four in the application, one in this scan's own runner); n
 still broken. Every route the API exposes is now exercised by something in this repository —
 that check is what surfaced the last four, plus the runner bug.
 
-The core journey was walked twice, by two different paths, and both pass:
+The core journey is walked by four independent paths — a UI probe, a data-layer journey, a
+failure matrix and the backend suite — plus two end-to-end demos. All pass:
 
 | Path | What it drives | Result |
 |---|---|---|
