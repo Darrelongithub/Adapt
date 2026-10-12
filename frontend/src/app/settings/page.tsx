@@ -124,7 +124,8 @@ export default function Settings() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Settings, and what is kept</h1>
+      <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 06 · Settings</div>
+      <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>Settings, and what is kept</h1>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Your preferences" right={<span>{allowed.length} keys the server accepts</span>}>

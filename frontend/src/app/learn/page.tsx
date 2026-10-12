@@ -103,11 +103,14 @@ export default function Learn() {
   if (error && items.length === 0) return <Err error={error} status={null} />;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">Practice</h1>
+    <div className="mx-auto max-w-3xl space-y-4">
+      <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] pb-3">
+        <div>
+          <div className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 01 · Practise</div>
+          <h1 className="text-[clamp(22px,3vw,30px)] font-medium" style={{ fontFamily: "var(--font-serif)" }}>Practice</h1>
+        </div>
         {items.length ? (
-          <span className="text-sm text-[var(--muted)]">
+          <span className="ml-4 text-sm text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
             {Math.min(i + 1, items.length)} of {items.length}
           </span>
         ) : null}

@@ -10,10 +10,14 @@
  * Answering here is a self-report on purpose — it is the only way a review that happens
  * outside a practice session can move the schedule at all, and the screen says so instead
  * of pretending a tap is a test.
+ *
+ * The horizon is not decorative: the dot position is driven by the real `due_at` value.
+ * If the API lacks `due_at`, the layout falls back to discrete lanes rather than
+ * inventing a continuous position.
  */
 import { useState } from "react";
 
-import { Btn, Card, Err, Notice, Tag, Textarea } from "@/components/ui";
+import { Btn, Card, Err, Notice, Tag, Textarea, announce } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
 import type { ReviewComplete, ReviewDue } from "@/lib/types";
 
@@ -40,6 +44,7 @@ export default function Review() {
         ...(note.trim() ? { note: note.trim() } : {}),
       });
       setLog((l) => ({ ...l, [topic.topic_id]: out }));
+      announce(`${topic.title} rated ${correct ? "recalled" : "forgotten"} — next ${out.scheduled ? when(out.scheduled.due_at) : "not rescheduled"}`);
       due.reload();
     } catch (err) {
       const e = err as { status?: number; shown?: string };
@@ -50,17 +55,28 @@ export default function Review() {
     }
   }
 
+  function horizonLeft(due_at: string | null | undefined, overdue: boolean | undefined): string {
+    if (!due_at) return overdue ? "28%" : "72%";
+    const t = new Date(due_at).getTime();
+    if (Number.isNaN(t)) return overdue ? "28%" : "72%";
+    const deltaH = (t - Date.now()) / 3600000;
+    const clamped = Math.max(-72, Math.min(72, deltaH));
+    const pct = 50 + (clamped / 72) * 42;
+    return `${pct}%`;
+  }
+
   if (due.loading) return <Card title="Review" tone="muted"><p className="text-sm text-[var(--muted)]">checking what is due…</p></Card>;
   if (due.error) return <Err error={due.error} status={due.status} />;
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-4">
         <div>
-          <h1 className="text-xl font-semibold">Review queue</h1>
+          <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 04 · Review</div>
+          <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>Review queue</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">{due.data?.rule}</p>
         </div>
-        <span className="text-sm text-[var(--muted)]">{rows.length ? `${rows.length} waiting` : "nothing due"}</span>
+        <span className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{rows.length ? `${rows.length} waiting` : "nothing due"}</span>
       </div>
 
       {rows.length === 0 ? (
@@ -76,54 +92,99 @@ export default function Review() {
           </div>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {rows.map((r) => {
-            const done = log[r.topic_id];
-            return (
-              <Card
-                key={r.topic_id}
-                tone={r.overdue ? "warn" : "ask"}
-                title={<span className="normal-case">{r.title}</span>}
-                right={
-                  <span className="flex items-center gap-2 text-xs">
-                    {r.overdue ? <Tag tone="bad">overdue</Tag> : null}
-                    <span>due {when(r.due_at)}</span>
-                  </span>
-                }
-              >
-                <p className="text-sm">
-                  projected recall at this moment:{" "}
-                  <strong>{Math.round((r.expected_recall_at_due ?? 0.85) * 100)}%</strong> · half-life{" "}
-                  {Math.round(r.half_life_hours ?? 0)} h · {r.reps ?? 0} successful review{r.reps === 1 ? "" : "s"}
-                  {r.lapses ? `, ${r.lapses} lapse${r.lapses === 1 ? "" : "s"}` : ""}
-                </p>
-                {done ? (
-                  <Notice tone={done.scheduled ? "good" : "info"}>
-                    logged {done.correct ? "as recalled" : "as forgotten"} — next check{" "}
-                    {done.scheduled ? when(done.scheduled.due_at) : "not rescheduled"}
-                    {done.scheduled ? ` (projected ${Math.round((done.scheduled.expected_recall_at_due ?? 0.85) * 100)}% then)` : ""}
-                    . {done.correct && (done.scheduled?.reps ?? 0) > 1 ? "The gap grew because you were right twice in a row, not because a schedule said so." : ""}
-                  </Notice>
-                ) : (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Btn kind="primary" disabled={busy === r.topic_id} onClick={() => answer(r, true)}>
-                      I still know it
-                    </Btn>
-                    <Btn disabled={busy === r.topic_id} onClick={() => answer(r, false)}>
-                      It went
-                    </Btn>
-                    <Btn kind="ghost" href={`/learn`} title="a real retest through practice moves the same schedule">
-                      do it properly instead
-                    </Btn>
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-          <Fieldish>
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything you want the next session to know (optional, stored with this review)" />
-          </Fieldish>
-          {error ? <Notice tone="bad">{error}</Notice> : null}
+        <div className="space-y-4">
+          {/* Horizon: spatial encoding of due position, driven by real due_at. */}
+          <div className="horizon" aria-hidden="true">
+            <span className="now-label">now</span>
+            <div className="now-line" />
+            {rows.map((r) => {
+              const done = log[r.topic_id];
+              const scheduledDue = done?.scheduled?.due_at ?? r.due_at;
+              const left = horizonLeft(scheduledDue, r.overdue);
+              const tone = done ? (done.correct ? "good" : "warn") : r.overdue ? "warn" : "ask";
+              return (
+                <div
+                  key={r.topic_id}
+                  className={`rv-item ${done ? "rated" : ""}`}
+                  data-tone={tone}
+                  style={{ left, position: "absolute", top: "28px", transform: "translateX(-50%)", transition: "left 420ms cubic-bezier(0.22,1,0.36,1)" }}
+                  title={`${r.title} · due ${when(scheduledDue)}${done ? ` · rated ${done.correct ? "recalled" : "forgotten"}` : ""}`}
+                >
+                  <span className="rv-dot" style={{
+                    display: "block",
+                    width: 10, height: 10, borderRadius: "50%",
+                    background: tone === "good" ? "var(--good)" : tone === "warn" ? "var(--warn)" : "var(--ask)",
+                    border: "2px solid var(--panel)",
+                    boxShadow: "0 0 0 1px var(--line)",
+                  }} />
+                  <span className="rv-label" style={{ fontFamily: "var(--font-mono)", fontSize: 10, whiteSpace: "nowrap", color: "var(--muted)", marginTop: 4, display: "block", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }}>{r.title}</span>
+                </div>
+              );
+            })}
+            <div className="horizon-axis" style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: "var(--line)" }} />
+          </div>
+
+          <div className="space-y-3">
+            {rows.map((r) => {
+              const done = log[r.topic_id];
+              return (
+                <Card
+                  key={r.topic_id}
+                  tone={r.overdue ? "warn" : "ask"}
+                  title={<span className="normal-case">{r.title}</span>}
+                  right={
+                    <span className="flex items-center gap-2 text-xs">
+                      {r.overdue ? <Tag tone="bad">overdue</Tag> : null}
+                      <span>due {when(r.due_at)}</span>
+                    </span>
+                  }
+                >
+                  <p className="text-sm">
+                    projected recall at this moment:{" "}
+                    <strong>{Math.round((r.expected_recall_at_due ?? 0.85) * 100)}%</strong> · half-life{" "}
+                    {Math.round(r.half_life_hours ?? 0)} h · {r.reps ?? 0} successful review{r.reps === 1 ? "" : "s"}
+                    {r.lapses ? `, ${r.lapses} lapse${r.lapses === 1 ? "" : "s"}` : ""}
+                  </p>
+                  {done ? (
+                    <Notice tone={done.scheduled ? "good" : "info"}>
+                      logged {done.correct ? "as recalled" : "as forgotten"} — next check{" "}
+                      {done.scheduled ? when(done.scheduled.due_at) : "not rescheduled"}
+                      {done.scheduled ? ` (projected ${Math.round((done.scheduled.expected_recall_at_due ?? 0.85) * 100)}% then)` : ""}
+                      . {done.correct && (done.scheduled?.reps ?? 0) > 1 ? "The gap grew because you were right twice in a row, not because a schedule said so." : ""}
+                    </Notice>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        className="rate-btn again"
+                        aria-label={`${r.title}: It went`}
+                        disabled={busy === r.topic_id}
+                        onClick={() => answer(r, false)}
+                        style={{ padding: "8px 14px", borderRadius: 999, border: "2px solid var(--line)", background: "var(--panel)", fontSize: 13, cursor: "pointer" }}
+                      >
+                        It went
+                      </button>
+                      <button
+                        className="rate-btn good"
+                        aria-label={`${r.title}: I still know it`}
+                        disabled={busy === r.topic_id}
+                        onClick={() => answer(r, true)}
+                        style={{ padding: "8px 14px", borderRadius: 999, border: "2px solid var(--ink)", background: "var(--ink)", color: "var(--bg)", fontSize: 13, cursor: "pointer" }}
+                      >
+                        I still know it
+                      </button>
+                      <Btn kind="ghost" href={`/learn`} title="a real retest through practice moves the same schedule">
+                        do it properly instead
+                      </Btn>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+            <div className="mt-2">
+              <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything you want the next session to know (optional, stored with this review)" />
+            </div>
+            {error ? <Notice tone="bad">{error}</Notice> : null}
+          </div>
         </div>
       )}
 
@@ -162,10 +223,6 @@ export default function Review() {
       </Card>
     </div>
   );
-}
-
-function Fieldish({ children }: { children: React.ReactNode }) {
-  return <div className="mt-2">{children}</div>;
 }
 
 function when(iso?: string | null): string {

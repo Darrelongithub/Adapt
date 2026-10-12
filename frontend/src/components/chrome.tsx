@@ -6,8 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Err, Notice, SessionProvider, useSession } from "./ui";
 import { csrfToken, get, isMock, logout, post, type Me } from "@/lib/api";
 import type { Health, Status } from "@/lib/types";
+import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 
-const NAV = [
+export const NAV = [
   { href: "/learn", label: "Practise" },
   { href: "/lesson", label: "Lessons" },
   { href: "/proposals", label: "Changes" },
@@ -23,7 +24,7 @@ export function MockBanner() {
   useEffect(() => setMock(isMock()), []);
   if (!mock) return null;
   return (
-    <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 px-4 py-2 text-center text-xs text-[var(--bad)]">
+    <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 px-4 py-2 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
       <strong>DEMO DATA</strong> — this screen is running on fixtures (<code>?mock=1</code>). Nothing here was measured from a
       learner, and nothing was saved.{" "}
       <Link className="underline" href="/?mock=off">
@@ -54,11 +55,6 @@ export function StatusChip() {
       alive = false;
     };
   }, []);
-  // The chip has three states, not two. `GET /status` is the one status call that needs a
-  // session (it reports the database path, so it is not public), so on the signed-out landing
-  // page it answers 401 and `status` stays null. Reading that as "no at-rest encryption" told
-  // every visitor that learner data is unprotected -- about a database that is, in fact,
-  // encrypted. Absent evidence is reported as absent evidence.
   const llm = status ? (status.llm?.configured ? `model ${status.llm.provider ?? ""}`.trim() : "local tutor") : "tutor: not reported";
   const enc = !status
     ? "encryption: not reported"
@@ -68,15 +64,12 @@ export function StatusChip() {
         ? "columns encrypted"
         : "no at-rest encryption";
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
       {error ? (
         <span className="text-[var(--bad)]">api unreachable</span>
       ) : (
         <>
           <span title={`mode=${health?.mode ?? "not read yet"}`}>
-            {/* four states, not two. Before the first response arrives the chip used to print
-                "api down", which is a claim about a server nobody has asked yet -- and on a
-                slow connection that is the only thing a learner sees. */}
             {health == null ? "checking the api…" : health.ok ? "api up" : "api down"} · {llm} · {enc}
           </span>
           {status?.version ? <span>v{status.version}</span> : null}
@@ -88,29 +81,97 @@ export function StatusChip() {
 }
 
 export function Chrome({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const overlayRef = useFocusTrap(open);
+  const tabRef = useRef<HTMLButtonElement>(null);
+
+  // Close on Escape at Chrome level as well (focus trap handles inward, this handles state)
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        tabRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
     <>
       <MockBanner />
-      <header className="border-b border-[var(--line)]/70 px-4 py-3">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2">
-          <Link href="/" className="text-sm font-semibold tracking-[0.18em] uppercase">
-            Adapt
+      {/* corner index tab - always visible, triggers full-screen overlay */}
+      <button
+        ref={tabRef}
+        className="index-tab"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls="indexOverlay"
+        onClick={() => setOpen((v) => !v)}
+      >
+        § ADAPT
+      </button>
+
+      {/* status corner - fixed bottom left per prototype */}
+      <div className="status-corner" aria-hidden="false">
+        <span>
+          <span className="d good" />
+          api
+        </span>
+        <span>
+          <span className="d good" />
+          llm
+        </span>
+        <StatusChip />
+      </div>
+
+      {/* full-screen index overlay */}
+      {open ? (
+        <div
+          ref={overlayRef}
+          id="indexOverlay"
+          className="index-overlay open"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Section index"
+        >
+          <button className="index-close" onClick={() => { setOpen(false); tabRef.current?.focus(); }}>
+            close ✕
+          </button>
+          <Link href="/" className="index-brand" onClick={() => setOpen(false)}>
+            ad<b>apt</b> — index
           </Link>
-          <nav className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
-            {NAV.map((n) => (
-              <Link key={n.href} href={n.href} className="text-[var(--muted)] hover:text-[var(--ink)] hover:underline">
-                {n.label}
+          <nav className="index-list" aria-label="Sections">
+            {NAV.map((n, i) => (
+              <Link
+                key={n.href}
+                href={n.href}
+                className="index-row"
+                onClick={() => setOpen(false)}
+              >
+                <span className="n">{String(i + 1).padStart(2, "0")}</span>
+                <span className="t">{n.label}</span>
               </Link>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-3">
-            <StatusChip />
+          <div className="mt-10 flex items-center gap-3 text-xs">
             <Who />
           </div>
         </div>
-      </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
-      <footer className="mx-auto max-w-5xl px-4 pb-10 text-[0.7rem] text-[var(--muted)]">
+      ) : null}
+
+      {/* Fallback header for who/status when overlay not open - keep accessible */}
+      <div className="flex justify-end px-4 py-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
+        <div className="flex items-center gap-3">
+          <Who />
+        </div>
+      </div>
+
+      <main id="main-content" className="mx-auto max-w-5xl px-4 py-6 pt-2">
+        {children}
+      </main>
+      <footer className="mx-auto max-w-5xl px-4 pb-10 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         Estimates, not labels: nothing here is a fixed trait, and no lasting change is applied without you answering a
         question about it. <Link href="/settings" className="underline">
           what is recorded about you
@@ -131,12 +192,12 @@ function Who() {
     );
   if (!me)
     return (
-      <Link href="/" className="rounded-md border border-[var(--line)] px-2 py-1 text-xs hover:border-[var(--accent)]">
+      <Link href="/" className="rounded-[2px] border border-[var(--line)] px-2 py-1 text-xs hover:border-[var(--accent)]" style={{ fontFamily: "var(--font-mono)" }}>
         sign in
       </Link>
     );
   return (
-    <span className="flex items-center gap-2 text-xs">
+    <span className="flex items-center gap-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
       <Link href="/settings" className="text-[var(--muted)] hover:text-[var(--ink)] hover:underline">
         {(me as Me).display_name || (me as Me).student_id}
       </Link>

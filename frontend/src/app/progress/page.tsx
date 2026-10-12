@@ -62,7 +62,8 @@ export default function Progress() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">What the data says</h1>
+          <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 05 · Progress</div>
+          <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>What the data says</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
             {journey.data?.window_days ?? 30}-day window · {journey.data?.stats?.attempts ?? 0} answers ·{" "}
             {journey.data?.stats?.events ?? 0} logged interactions ·{" "}

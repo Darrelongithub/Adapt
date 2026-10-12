@@ -25,7 +25,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { get, post } from "@/lib/api";
 import { SceneStage } from "@/components/scenes";
-import { Btn, Card, Err, Field, Notice, Tag, Textarea, Trace } from "@/components/ui";
+import { Btn, Card, Err, Field, Notice, Tag, Textarea, Trace, announce } from "@/components/ui";
+import { useRovingTabIndex } from "@/lib/a11y/useRovingTabIndex";
 import {
   autoplayAllowed,
   canAdvance,
@@ -81,6 +82,15 @@ export default function LessonPlayer() {
   );
   const frame: Frame | undefined = player.frames[player.index];
   const asked: Prompt | null = frame?.prompt ?? null;
+  const filmRoving = useRovingTabIndex(Math.max(player.frames.length, 1), "horizontal");
+
+  useEffect(() => {
+    filmRoving.setActiveIndex(player.index);
+  }, [player.index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (opened && frame) announce(`Frame ${player.index + 1} of ${player.frames.length}: ${frame.title ?? frame.kind ?? ""}`);
+  }, [player.index, opened, frame, player.frames.length]);
 
   /* ---------------------------------------------------------------- catalogue ---- */
 
@@ -431,7 +441,30 @@ export default function LessonPlayer() {
                 className="w-full"
               />
 
-              <SceneStage frame={frame} kind={opened.kind} hasRenderer={opened.renderer?.available !== false} />
+              {player.frames.length ? (
+                <div className="film" role="tablist" aria-label="Lesson frames">
+                  {player.frames.map((f, idx) => (
+                    <button
+                      key={f.i}
+                      role="tab"
+                      aria-selected={player.index === idx}
+                      tabIndex={filmRoving.getTabIndex(idx)}
+                      ref={filmRoving.registerRef(idx)}
+                      onKeyDown={(e) => filmRoving.onKeyDown(e, idx)}
+                      onFocus={() => filmRoving.setActiveIndex(idx)}
+                      onClick={() => dispatch({ type: "jump", index: idx })}
+                      className="frame"
+                      title={f.title ?? `frame ${idx + 1}`}
+                    >
+                      {String(idx + 1).padStart(2, "0")} {(f.title ?? f.kind ?? "frame").slice(0, 14)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="frame-main" role="tabpanel">
+                <SceneStage frame={frame} kind={opened.kind} hasRenderer={opened.renderer?.available !== false} />
+              </div>
 
               {asked ? (
                 <PredictionPanel
