@@ -14,7 +14,6 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -80,16 +79,17 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    # No cipher setup here on purpose: ``create_db_engine`` above already built the
-    # keyring the encrypted column types need, and a second, differently-ordered version
-    # of that call is how a migration ends up writing plaintext into an encrypted column.
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-        url=str(_engine.url),
-    )
-    with connectable.connect() as connection:
+    # Connect with the engine ``create_db_engine`` just built -- the one holding the
+    # SQLCipher driver, the key pragmas and the keyring the encrypted column types need.
+    #
+    # This used to build a *second* engine from ``str(_engine.url)``, which looked like
+    # the same connection and was not: a URL carries no driver or pragmas, so SQLAlchemy
+    # fell back to the stock ``sqlite3`` module and ``alembic upgrade`` wrote a plaintext
+    # file where the app opens an encrypted one. The app then could not read the database
+    # it had just been given ("file is not a database"), and running it against a database
+    # the app had already created failed the same way, so the migration path could not be
+    # used in either direction while the comment beside it promised the opposite.
+    with _engine.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
