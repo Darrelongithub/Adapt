@@ -12,6 +12,7 @@ Everything in blueprint section 6 is represented here:
 * resources                 -> ``ResourceReference``, ``HttpCacheEntry``
 * session behaviour         -> ``LearningSession`` counters + ``LearnerEvent``
 * stated preferences        -> ``StudentPreference`` (vs measured: see ai1.profile)
+* interactive lessons       -> ``LessonScene``, ``LessonRun``, ``NarrationCache``
 * privacy plumbing          -> ``AuditLog``, ``LlmCall``, ``AuthSession``
 
 Timestamps are naive UTC (SQLite has no tz type); convert at the API edge.
@@ -696,6 +697,114 @@ class RetentionCheck(Base):
 
 
 # --------------------------------------------------------------------------- #
+# interactive learning engine (scenes, runs, narration)
+# --------------------------------------------------------------------------- #
+
+
+class LessonScene(Base):
+    """A validated scene specification the player can run.
+
+    ``spec`` is exactly what :func:`adapt.learning.scenespec.validate` returned: a plain data
+    document with no executable content in it, which is what makes it safe to keep a learner- or
+    AI-authored scene beside a built-in one. The derived numbers (the generated list, the frame
+    narration, the frame count) are stored rather than recomputed so that a lesson resumed after a
+    restart replays the *same* trace the learner left, and AI 3 explains frames that still exist.
+
+    Anything a learner typed *about* the scene goes in ``learner_note``: like every other learner
+    utterance in this database, that is encrypted, while the engine's own content stays readable
+    so a list of lessons costs no crypto at all.
+    """
+
+    __tablename__ = "lesson_scenes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("scene"))
+    spec_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)  # content-addressed scn_...
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    origin: Mapped[str] = mapped_column(String(16), default="builtin")  # builtin|ai2|learner
+    author_student_id: Mapped[str | None] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    derived_from: Mapped[str | None] = mapped_column(String(32))  # spec_id this edit started from
+    spec: Mapped[dict[str, Any]] = mapped_column(JSON)
+    frame_count: Mapped[int] = mapped_column(Integer, default=0)
+    prediction_count: Mapped[int] = mapped_column(Integer, default=0)
+    learner_note: Mapped[dict[str, Any] | None] = mapped_column(EncryptedJSON(context="lesson.scene_note"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_scene_kind_origin", "kind", "origin", "created_at"),)
+
+
+class LessonRun(Base):
+    """One learner's pass through one scene -- including where they stopped.
+
+    The position lives here rather than being reconstructed from the event log because a restart
+    has to put the player back on the same frame in one read. What they *predicted* is mirrored
+    into ``LearnerEvent`` (that is the sequence AI 1 reasons over) and summarised per frame in
+    ``payload``, which is what the review screen shows them afterwards. The counters are the
+    dashboard's cheap answer; ``params`` is the learner's own variables, kept so "re-run it my
+    way" survives a reload instead of being a client-side fluke.
+    """
+
+    __tablename__ = "lesson_runs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("lesson"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    scene_id: Mapped[str] = mapped_column(ForeignKey("lesson_scenes.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[str | None] = mapped_column(String, index=True)
+    topic_id: Mapped[str | None] = mapped_column(String, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # active|finished|stopped
+    frame_index: Mapped[int] = mapped_column(Integer, default=0)
+    furthest_frame: Mapped[int] = mapped_column(Integer, default=0)
+    frames_viewed: Mapped[int] = mapped_column(Integer, default=0)
+    replays: Mapped[int] = mapped_column(Integer, default=0)
+    pauses: Mapped[int] = mapped_column(Integer, default=0)
+    seeks: Mapped[int] = mapped_column(Integer, default=0)
+    predictions_total: Mapped[int] = mapped_column(Integer, default=0)
+    predictions_correct: Mapped[int] = mapped_column(Integer, default=0)
+    param_changes: Mapped[int] = mapped_column(Integer, default=0)
+    seconds_watched: Mapped[int] = mapped_column(Integer, default=0)
+    params: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(EncryptedJSON(context="lesson.run"))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    __table_args__ = (
+        Index("ix_lesson_run_student_status", "student_id", "status", "last_seen_at"),
+        Index("ix_lesson_run_scene_student", "scene_id", "student_id"),
+    )
+
+
+class NarrationCache(Base):
+    """AI 3's answer about one frame, kept once so no frame ever costs a model call per play.
+
+    Keyed by the scene fingerprint, the frame and a hash of the question -- so a spec that
+    changes (new params, new frame count) simply cannot hit an old answer, and the learner's words
+    are not stored here at all: only their digest.
+    """
+
+    __tablename__ = "narration_cache"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    spec_id: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    frame_index: Mapped[int] = mapped_column(Integer, default=0)
+    question_hash: Mapped[str] = mapped_column(String(16), default="")
+    text: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="deterministic")  # deterministic|llm|template
+    model: Mapped[str | None] = mapped_column(String(48))
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    hits: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("spec_id", "frame_index", "question_hash", name="uq_narration_frame_question"),
+    )
+
+
+# --------------------------------------------------------------------------- #
 # AI 2 interactions + resources + speech
 # --------------------------------------------------------------------------- #
 
@@ -829,6 +938,9 @@ __all__ = [
     "ResourceReference",
     "HttpCacheEntry",
     "LlmCall",
+    "LessonScene",
+    "LessonRun",
+    "NarrationCache",
     "EventType",
     "HypothesisStatus",
     "ProposalStatus",

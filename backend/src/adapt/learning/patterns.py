@@ -79,6 +79,42 @@ class RetentionRow:
 
 
 @dataclass
+class LessonRow:
+    """One learner pass through one interactive scene, as the detectors see it.
+
+    Deliberately *not* an ``AttemptRow``: a scene has no score, and inventing one would push
+    prediction data into BKT, which counts it as a right/wrong observation and quietly corrupts
+    a mastery estimate. What a scene does measure is whether the learner can say what happens
+    next before the simulation says it, so that is what is carried here.
+    """
+
+    run_id: str
+    scene_id: str
+    spec_id: str
+    kind: str
+    topic_id: str | None
+    frame_count: int
+    frames_viewed: int
+    furthest_frame: int
+    predictions_total: int
+    predictions_correct: int
+    param_changes: int
+    replays: int
+    pauses: int
+    seconds_watched: int
+    finished: bool
+    at: datetime | None = None
+
+    @property
+    def coverage(self) -> float:
+        return min(1.0, self.frames_viewed / max(1, self.frame_count))
+
+    @property
+    def prediction_accuracy(self) -> float | None:
+        return None if self.predictions_total <= 0 else self.predictions_correct / self.predictions_total
+
+
+@dataclass
 class EvidenceContext:
     student_id: str
     attempts: Sequence[AttemptRow]
@@ -87,6 +123,7 @@ class EvidenceContext:
     half_lives: dict[str, float] = field(default_factory=dict)  # topic -> hours
     retention: Sequence[RetentionRow] = field(default_factory=dict)
     teachback_later: list[tuple[float, float]] = field(default_factory=list)  # (score, later acc)
+    lessons: Sequence[LessonRow] = field(default_factory=list)
     min_n: int = 4
     now: datetime = field(default_factory=datetime.utcnow)
 
@@ -561,6 +598,61 @@ def detect_teachback_gain(ctx: EvidenceContext) -> list[Observation]:
     return [obs] if obs else []
 
 
+def detect_scene_prediction_gap(ctx: EvidenceContext) -> list[Observation]:
+    """Predictions inside an interactive scene, compared with chance for that scene.
+
+    A learner who watches a simulation can look like they understand it. The only honest signal
+    the player produces is *before* the frame that shows the answer: can they say what happens
+    next? Consistently wrong predictions with the mechanism in front of them is a different
+    problem from a missing worked example, so this reports it separately rather than dressing it
+    up as an accuracy number. ``chance`` is per option count (2 options is not as impressive as
+    4), and the strategy suggested is the one that actually matches: say why, out loud.
+    """
+    # a scene must have been *watched* to count: a learner who made three predictions and left is
+    # not reporting a gap in understanding, they are reporting a dropped tab
+    rows = [r for r in ctx.lessons if r.predictions_total > 0 and (r.finished or r.coverage >= 0.5)]
+    if not rows:
+        return []
+    made = sum(r.predictions_total for r in rows)
+    right = sum(r.predictions_correct for r in rows)
+    if made < max(ctx.min_n * 2, 8):
+        return []
+    chance = 1.0 / 3.0  # the engine's prompts are two or three options; 1/3 is the fair floor
+    accuracy = right / made
+    topics = sorted({r.topic_id for r in rows if r.topic_id})
+    if accuracy >= chance + 0.12:
+        return []
+    n_scenes = len(rows)
+    return [
+        Observation(
+            detector="scene_prediction_gap",
+            metric="prediction_accuracy",
+            value=accuracy,
+            baseline=chance,
+            n=made,
+            n_baseline=n_scenes,
+            strength=min(1.0, (chance + 0.12 - accuracy) / 0.35 * min(1.0, made / 16)),
+            topic_ids=topics,
+            attempt_ids=[],
+            candidate_strategy="self_explanation",
+            direction="up",
+            facts={
+                "predictions": made,
+                "correct": right,
+                "scenes": n_scenes,
+                "kinds": sorted({r.kind for r in rows}),
+                "chance": round(chance, 3),
+                "watched_but_not_predicting": [
+                    {"kind": r.kind, "frames_viewed": r.frames_viewed, "predictions": r.predictions_total}
+                    for r in rows
+                    if r.coverage > 0.6 and r.predictions_total <= 1
+                ][:6],
+                "note": "measured on the frames *before* the simulation shows the answer",
+            },
+        )
+    ]
+
+
 DETECTORS: dict[str, Callable[[EvidenceContext], list[Observation]]] = {
     "worked_example_need": detect_worked_example_need,
     "hint_dependency": detect_hint_dependency,
@@ -574,6 +666,7 @@ DETECTORS: dict[str, Callable[[EvidenceContext], list[Observation]]] = {
     "type_confusion": detect_confusion_between_types,
     "difficulty_misalignment": detect_difficulty_misalignment,
     "teachback_gain": detect_teachback_gain,
+    "scene_prediction_gap": detect_scene_prediction_gap,
 }
 
 

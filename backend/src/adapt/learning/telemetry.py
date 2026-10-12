@@ -119,6 +119,44 @@ ALLOWED_EVENTS: dict[str, dict[str, tuple[str, tuple[float, float] | None]]] = {
     "proposal_shown": {"proposal_id": ("str", None), "strategy": ("str", None)},
     "proposal_decided": {"proposal_id": ("str", None), "decision": ("str", None)},
     "adaptation_effect": {"strategy": ("str", None), "metric": ("str", None)},
+    # -- the interactive player: positions, counts and choices, never screen contents --
+    "scene_opened": {
+        "scene_id": ("str", None),
+        "kind": ("str", None),
+        "frame_count": ("int", (1, 4000)),
+        "resumed": ("bool", None),
+    },
+    "scene_frame": {
+        "scene_id": ("str", None),
+        "frame": ("int", (0, 4000)),
+        "action": ("str", None),  # play|pause|step|back|seek|replay
+        "speed": ("num", (0.1, 4)),
+    },
+    "scene_prediction": {
+        "scene_id": ("str", None),
+        "frame": ("int", (0, 4000)),
+        "prompt": ("str", None),
+        "correct": ("bool", None),
+        "ms_taken": ("int", (0, 3600 * 1000)),
+    },
+    "scene_variables": {
+        "scene_id": ("str", None),
+        "changed": ("int", (0, 40)),
+        "replayed": ("bool", None),
+    },
+    "scene_explained": {
+        "scene_id": ("str", None),
+        "frame": ("int", (0, 4000)),
+        "source": ("str", None),  # deterministic|llm|cache
+        "cached": ("bool", None),
+    },
+    "scene_finished": {
+        "scene_id": ("str", None),
+        "frames_viewed": ("int", (0, 4000)),
+        "seconds": ("num", (0, 4 * 3600)),
+        "predictions": ("int", (0, 4000)),
+        "correct": ("int", (0, 4000)),
+    },
 }
 
 TRUSTED_META_KEYS = frozenset(

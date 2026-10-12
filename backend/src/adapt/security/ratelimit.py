@@ -113,6 +113,16 @@ DEFAULT_LIMITS: dict[str, tuple[float, float]] = {
     "youtube": (6.0, 10.0),  # 10k units/day quota; search costs 100 units
     "voice_frame": (6000.0, 12000.0),  # WS audio frames: sanity ceiling, not UX limit
     "numbas_export": (6.0, 10.0),
+    # -- interactive engine -----------------------------------------------------------
+    # Position writes are the chatty ones (a seek, a pause), so the bucket is generous but not
+    # open: 60/min is more than a person can click, and it is what stops a bug in the player
+    # from appending telemetry forever.
+    "lesson_play": (60.0, 120.0),
+    "lesson_predict": (40.0, 80.0),
+    # each of these can reach the model once per (scene, frame, question); the cache in front of
+    # it means a replay is free, so the bucket is about first passes, not about steady state
+    "lesson_explain": (12.0, 20.0),
+    "lesson_author": (4.0, 6.0),
 }
 
 
