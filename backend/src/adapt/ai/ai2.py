@@ -26,13 +26,13 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from sqlalchemy import select
 
+from ..assessment import generated as GEN
 from ..assessment import selector as SEL
 from ..assessment.grading import grade as grade_item
-from ..assessment.numbas import checksum
 from ..config import Settings, get_settings
 from ..db.models import (
     ChatMessage,
@@ -444,10 +444,129 @@ class EducationalIntelligence:
             # after a restart.
             rendered = render_item_for(pick.item, seed=bank_seed(student_id, pick.item.get("id")))
             out.append({**pick.as_dict(), "item": public_item(rendered)})
+        if len(out) < count:
+            # Reuse first, write second. A stored generated item that this learner has
+            # not answered is a better answer to "the bank ran out" than a fresh call:
+            # it already has attempts behind it, so its difficulty is measured rather
+            # than declared, and the same request twice does not produce new rows.
+            short = count - len(out)
+            out.extend(self._reusable_generated(student_id, topic_id=topic_id, want=short))
         if len(out) < count and self.llm is not None and getattr(self.llm, "configured", False):
-            extra = await self._llm_practice(student_id=student_id, topics=topics, want=count - len(out), topic_id=topic_id, note=note)
+            extra = await self._llm_practice(
+                student_id=student_id,
+                topics=topics,
+                want=count - len(out),
+                topic_id=topic_id,
+                note=note,
+            )
             out.extend(extra)
-        return out
+        # One question, one slot in the session. Reuse and generation can both reach the
+        # same stored row -- the model is asked only for the remainder, and it may well
+        # rewrite a question that is already stored -- and showing it twice in one session
+        # would take two answers that are not independent observations and count them as
+        # if they were.
+        seen: set[str] = set()
+        unique: list[dict[str, Any]] = []
+        for entry in out:
+            item_id = str((entry.get("item") or {}).get("id") or "")
+            if item_id and item_id in seen:
+                continue
+            seen.add(item_id)
+            unique.append(entry)
+        return unique
+
+    # ------------------------------------------------------------------ #
+    # generated items: reuse, validate, store
+    # ------------------------------------------------------------------ #
+
+    def _generated_pick(self, item: Mapping[str, Any], *, reason: str, meta: dict[str, Any]) -> dict[str, Any]:
+        """The learner-facing shape of a generated item, answer key stripped.
+
+        The payload that goes to the browser is built by ``public_item`` like every other
+        pick. Handing back the internal dict -- which is what this replaced -- shipped
+        ``answer_spec`` (the expected value, the correct choice) to the client, so the
+        one question set the app could not vouch for was also the only one that came with
+        its own answer key attached.
+        """
+        return {
+            "item": public_item(item),
+            "topic_id": item.get("topic_id"),
+            "reason": reason,
+            "utility": 0.4,
+            "presentation": {"experience_mode": item.get("experience_mode", "practice")},
+            "decision_trace": {**meta, "source": "ai2"},
+        }
+
+    def _reusable_generated(self, student_id: str, *, topic_id: str | None, want: int) -> list[dict[str, Any]]:
+        """Stored, validated, not-yet-answered-by-this-learner generated items.
+
+        "Not answered by this learner" is the memorisation guard and it is per learner on
+        purpose: a question this learner has already seen measures their memory of it, so
+        it is not a second observation of the skill. Item-level counters would say the item
+        is fresh while this learner is answering it for the third time.
+        """
+        if want <= 0:
+            return []
+        from ..db.models import Attempt
+
+        with self.sf() as s:
+            answered = select(Attempt.item_id).where(Attempt.student_id == student_id)
+            stmt = (
+                select(Item)
+                .where(
+                    Item.source == "ai2",
+                    Item.active.is_(True),
+                    Item.id.not_in(answered),
+                )
+                # Least-answered first: retirement is `active`'s job, and spreading the
+                # learner's session across the freshest questions keeps its items
+                # independent of each other.
+                .order_by(Item.n_attempts, Item.created_at)
+                .limit(want)
+            )
+            if topic_id:
+                stmt = stmt.where(Item.topic_id == topic_id)
+            rows = list(s.execute(stmt).scalars().all())
+            return [
+                self._generated_pick(
+                    GEN.row_dict(row),
+                    reason="a question written for this topic earlier, still unseen by you",
+                    meta={"stored": True, "generated_by": row.generated_by, "n_attempts": row.n_attempts},
+                )
+                for row in rows
+            ]
+
+    def _persist_generated(
+        self, rows: Sequence[GEN.Validated], *, model: str | None
+    ) -> list[dict[str, Any]]:
+        """Store validated items under their content-derived id.
+
+        Persisting before display is what makes the answer recordable at all: grading
+        resolves an item with ``s.get(Item, item_id)``, so an id with no row is answered
+        and then refused with "unknown or retired item".
+        """
+        stored: list[dict[str, Any]] = []
+        with self.sf() as s:
+            for validated in rows:
+                payload = dict(validated.payload)
+                item_id = str(payload["id"])
+                existing = s.get(Item, item_id)
+                if existing is None:
+                    s.add(Item(**payload, source="ai2", generated_by=model, active=True))
+                else:
+                    # Same content, same id: the row keeps its measured difficulty and its
+                    # attempt counters rather than being reset by a re-generation.
+                    payload = GEN.row_dict(existing)
+                s.flush()
+                stored.append(
+                    {
+                        **payload,
+                        "checks": validated.checks,
+                        "generated_by": model,
+                    }
+                )
+            s.commit()
+        return stored
 
     async def review_teachback(self, student_id: str, item: dict[str, Any], text: str) -> dict[str, Any]:
         """Score a teach-back: rubric coverage locally, plus an LLM comment if available."""
@@ -466,7 +585,7 @@ class EducationalIntelligence:
                 },
                 separators=(",", ":"),
             )
-            safe, dropped = redact_payload({"q": user}, max_chars=7000)
+            safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
             res = await self.llm.complete(
                 system=system,
                 user=safe["q"],
@@ -477,7 +596,9 @@ class EducationalIntelligence:
                 max_output_tokens=420,
                 response_spec={"verdict": "str", "right_first": "str", "missing": "str", "question": "str"},
             )
-            await self._log_llm("ai2_teachback", "ai2", res, student_id, len(user), dropped)
+            await self._log_llm(
+                "ai2_teachback", "ai2", res, student_id, len(user), dropped, kinds=redacted_kinds
+            )
             if res.ok and res.data:
                 out["llm_comment"] = res.data
                 out["llm_status"] = res.status
@@ -666,7 +787,7 @@ class EducationalIntelligence:
             },
             separators=(",", ":"),
         )
-        safe, dropped = redact_payload({"q": user}, max_chars=4000)
+        safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=4000)
         res = await self.llm.complete(
             system=AI2_SYSTEM,
             user=safe["q"],
@@ -676,7 +797,9 @@ class EducationalIntelligence:
             temperature=0.3,
             max_output_tokens=320,
         )
-        await self._log_llm("ai2_feedback", "ai2", res, student_id, len(user), dropped)
+        await self._log_llm(
+            "ai2_feedback", "ai2", res, student_id, len(user), dropped, kinds=redacted_kinds
+        )
         if res.ok and res.text.strip():
             return res.text.strip()[:1200]
         return base
@@ -719,7 +842,7 @@ class EducationalIntelligence:
             ),
         }
         user = json.dumps(payload, separators=(",", ":"))[:9000]
-        safe, dropped = redact_payload({"q": user}, max_chars=9000)
+        safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=9000)
         res = await self.llm.complete(
             system=AI2_SYSTEM,
             user=safe["q"],
@@ -732,7 +855,7 @@ class EducationalIntelligence:
             history=[(r, t) for r, t in history][-6:],
         )
         meta = {**res.as_dict(), "redacted_fields": (res.redacted_fields or 0) + dropped}
-        await self._log_llm(purpose, "ai2", res, student_id, len(user), dropped)
+        await self._log_llm(purpose, "ai2", res, student_id, len(user), dropped, kinds=redacted_kinds)
         if not res.ok:
             meta["fell_back_to"] = "local tutor (extractive, grounded in course material)"
             return None, meta
@@ -766,7 +889,22 @@ class EducationalIntelligence:
             log.info("resource hint skipped: %s", exc.__class__.__name__)
             return None
 
-    async def _llm_practice(self, *, student_id: str, topics: dict[str, Any], want: int, topic_id: str | None, note: str) -> list[dict[str, Any]]:
+    async def _llm_practice(
+        self, *, student_id: str, topics: dict[str, Any], want: int, topic_id: str | None, note: str
+    ) -> list[dict[str, Any]]:
+        """Write practice items with the model, then hold them to the item contract.
+
+        The order is the point: the model proposes, every proposal is validated by
+        ``assessment.generated``, the survivors are **stored** under a content-derived id,
+        and only then is anything handed back to be shown. An item that fails a check is
+        neither displayed nor stored, and the rejection is logged with its code -- a run
+        where the model produced six questions and four were refused is a different
+        operational fact from a model that produced nothing, and the log has to tell them
+        apart.
+
+        Rules 1-4 of the contract live here; rule 5 (retirement) lives in
+        ``services.attempts``, where the responses actually arrive.
+        """
         titles = [t.title for t in topics.values()][:12]
         user = json.dumps(
             {
@@ -774,13 +912,22 @@ class EducationalIntelligence:
                 "topic_id": topic_id,
                 "count": want,
                 "note": note[:200],
-                "task": "Write new practice questions in the style of this bank. Numeric answers must be "
-                "exactly computable from the stem. JSON with key items: [{topic_id, kind(numeric|mcq|text), "
-                "stem, answer_value, choices?, correct_index?, solution_steps:[str], hints:[str]}].",
+                "task": (
+                    "Write new practice questions in the style of this bank. Each item is stored "
+                    "against this learner's record, so it must be exactly checkable: "
+                    "answer_value is the final answer; check_expr is the pure arithmetic you used "
+                    "to get there, built from the numbers that appear in the stem, with no '=' and "
+                    "no units, and it must equal answer_value; every wrong choice needs why_wrong "
+                    "(the mistake that leads a learner to pick it); difficulty is your honest "
+                    "estimate from 0.1 (easy) to 0.9 (hard) for this topic. "
+                    "JSON with key items: [{topic_id, kind(numeric|mcq|text), stem, answer_value, "
+                    "check_expr, difficulty, est_seconds, solution_steps:[str], hints:[str], "
+                    "choices:[{text, why_wrong}], correct_index}]."
+                ),
             },
             separators=(",", ":"),
         )[:4000]
-        safe, dropped = redact_payload({"q": user}, max_chars=4000)
+        safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=4000)
         res = await self.llm.complete(
             system=AI2_SYSTEM,
             user=safe["q"],
@@ -791,43 +938,91 @@ class EducationalIntelligence:
             max_output_tokens=1200,
             response_spec={"items": ("array", {"type": "OBJECT"})},
         )
-        await self._log_llm("ai2_generate_practice", "ai2", res, student_id, len(user), dropped)
-        out: list[dict[str, Any]] = []
+        await self._log_llm(
+            "ai2_generate_practice", "ai2", res, student_id, len(user), dropped, kinds=redacted_kinds
+        )
         if not (res.ok and res.data and isinstance(res.data.get("items"), list)):
+            return []
+
+        allowed = set(topics)
+        existing = self._authored_stems(topic_id if topic_id in allowed else None, allowed)
+        accepted: list[GEN.Validated] = []
+        rejected: list[GEN.Rejection] = []
+        seen: set[str] = set()
+        for raw in res.data["items"][: want * 3]:
+            if not isinstance(raw, dict):
+                continue
+            tid = raw.get("topic_id") if raw.get("topic_id") in allowed else (topic_id or next(iter(topics), None))
+            if tid not in allowed:
+                rejected.append(GEN.Rejection("topic_unknown", "the model answered for an unknown topic"))
+                continue
+            validated, bad = GEN.validate_generated(
+                raw, topic_id=str(tid), topic_ids=allowed, existing_stems=existing.get(str(tid), ())
+            )
+            if validated is None:
+                rejected.extend(bad)
+                continue
+            if validated.payload["id"] in seen:
+                continue
+            seen.add(str(validated.payload["id"]))
+            accepted.append(validated)
+            if len(accepted) >= want:
+                break
+        if rejected:
+            log.info(
+                "ai2 practice: kept %d of %d candidate items from %s; refused: %s",
+                len(accepted),
+                len(res.data["items"]),
+                res.model or "?",
+                GEN.summarise(rejected),
+            )
+        rows = self._persist_generated(accepted, model=res.model or "gemini")
+        return [
+            self._generated_pick(
+                row,
+                reason="written for this topic because the bank had nothing left to ask",
+                meta={"llm": True, "stored": True, "checks": list(row.get("checks") or [])},
+            )
+            for row in rows
+        ]
+
+    def _authored_stems(self, topic_id: str | None, allowed: set[str]) -> dict[str, list[str]]:
+        """Authored stems per topic, so a generated question cannot duplicate one.
+
+        Two rows with one question is one question counted twice: the learner answers it
+        believing it is new material, and the second answer measures memory rather than
+        the skill.
+        """
+        wanted = [topic_id] if topic_id else sorted(allowed)[:20]
+        if not wanted:
+            return {}
+        with self.sf() as s:
+            out: dict[str, list[str]] = {}
+            for tid in wanted:
+                rows = s.execute(
+                    select(Item.stem).where(Item.topic_id == tid, Item.source != "ai2").limit(200)
+                ).scalars().all()
+                out[str(tid)] = [str(stem) for stem in rows if stem]
             return out
-        import uuid
 
-        for raw in res.data["items"][:want]:
-            if not isinstance(raw, dict) or not raw.get("stem"):
-                continue
-            tid = raw.get("topic_id") if raw.get("topic_id") in topics else (topic_id or next(iter(topics), None))
-            if tid is None:
-                continue
-            kind = str(raw.get("kind", "numeric"))
-            item = {
-                "id": f"gen_{uuid.uuid4().hex[:12]}",
-                "topic_id": tid,
-                "kind": kind if kind in ("numeric", "mcq", "text") else "text",
-                "stem": str(raw["stem"])[:900],
-                "experience_mode": "practice",
-                "difficulty": 0.5,
-                "source": "ai2",
-                "active": True,
-                "solution_steps": [{"text": str(x)[:400]} for x in (raw.get("solution_steps") or [])[:5]],
-                "hints": [str(x)[:300] for x in (raw.get("hints") or [])[:3]],
-                "answer_spec": {},
-                "generated_by": res.model or "gemini",
-                "checksum": checksum(raw),
-            }
-            if item["kind"] == "mcq" and isinstance(raw.get("choices"), list):
-                item["choices"] = [{"text": str(c)[:200], "correct": i == int(raw.get("correct_index", 0))} for i, c in enumerate(raw["choices"][:6])]
-                item["answer_spec"] = {"correct_index": int(raw.get("correct_index", 0))}
-            else:
-                item["answer_spec"] = {"value": raw.get("answer_value")}
-            out.append({"item": item, "reason": "generated by AI 2 to fill the practice quota", "utility": 0.4, "presentation": {}, "decision_trace": {"llm": True, "store": True}})
-        return out
+    async def _log_llm(
+        self,
+        purpose: str,
+        role: str,
+        res: Any,
+        student_id: str,
+        prompt_chars: int,
+        dropped: int,
+        kinds: Sequence[str] = (),
+    ) -> None:
+        """One row per LLM call. ``kinds`` is what was redacted, not just how much.
 
-    async def _log_llm(self, purpose: str, role: str, res: Any, student_id: str, prompt_chars: int, dropped: int) -> None:
+        ``LlmCall.redacted_fields`` is a count, and a count with no shape to it is what
+        let this call path stay dead without anyone noticing: the row said "0 fields
+        dropped" whether the payload was clean or the redactor never ran.
+        """
+        if kinds:
+            log.debug("%s: redacted %s", purpose, ", ".join(sorted(set(kinds))[:8]))
         try:
             with self.sf() as s:
                 s.add(

@@ -328,6 +328,17 @@ class Item(Base):
     source: Mapped[str] = mapped_column(String(24), default="bank")  # bank|ai2|numbas
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # --- provenance and calibration for model-written items (see assessment/generated.py) --
+    # Which model wrote this one. Without it, "was the batch that broke the fractions
+    # items the 1.5 or the 2.0 key?" has no answer, and that is the question an incident
+    # review actually starts from.
+    generated_by: Mapped[str | None] = mapped_column(String(64))
+    # What the writer claimed, kept because ``difficulty`` stops being that value as soon
+    # as the first learner answers: an observed estimate has to shrink toward something.
+    prior_difficulty: Mapped[float | None] = mapped_column(Float)
+    n_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    n_correct: Mapped[int] = mapped_column(Integer, default=0)
+    calibrated_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     topic: Mapped[Topic] = relationship(back_populates="items")
 

@@ -259,7 +259,17 @@ def next_items(
             expected_success = expected_success_rate(p_know, difficulty, params)
             fit = 1.0 - abs(expected_success - pres["target_success_rate"])
             utility = 2.2 * gain + 0.9 * fit
-            meta = {"information_gain": round(gain, 4), "expected_success": round(expected_success, 3), "fit": round(fit, 3)}
+            meta = {
+                "information_gain": round(gain, 4),
+                "expected_success": round(expected_success, 3),
+                "fit": round(fit, 3),
+                # Where the question came from ("bank", "ai2", "numbas"). A generated item
+                # joins the same pool as an authored one once it is stored, so without
+                # this the only way to tell them apart downstream is the id prefix -- and
+                # anything that wants to check its own calibration or audit a model
+                # version needs to be able to ask.
+                "source": item.get("source", "bank"),
+            }
             reason_bits = [f"p_know={p_know:.2f}"]
             if due:
                 utility += 1.3

@@ -1321,7 +1321,7 @@ class LearningIntelligence:
     async def _phrase_with_llm(self, student_id: str, drafts: Sequence[H.Draft], evidence: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         profile = self.profile_dict(student_id)
         system, user = self._llm_prompt(drafts, evidence, profile)
-        safe_user, dropped = redact_payload({"q": user}, max_chars=7000)
+        safe_user, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
         res = await self.llm.complete(
             system=system,
             user=safe_user["q"],
@@ -1332,6 +1332,8 @@ class LearningIntelligence:
             max_output_tokens=700,
             response_spec=PROPOSAL_SPEC,
         )
+        if redacted_kinds:
+            log.debug("ai1_propose: redacted %s", ", ".join(sorted(set(redacted_kinds))[:8]))
         meta = {**res.as_dict(), "redacted_fields": (res.redacted_fields or 0) + dropped}
         with self.sf() as s:
             s.add(
