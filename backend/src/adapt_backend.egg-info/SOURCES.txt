@@ -38,6 +38,8 @@ src/adapt/learning/profile.py
 src/adapt/learning/spacing.py
 src/adapt/learning/strategies.py
 src/adapt/learning/telemetry.py
+src/adapt/learning/sims/__init__.py
+src/adapt/learning/sims/binary_search.py
 src/adapt/resources/base.py
 src/adapt/resources/providers.py
 src/adapt/resources/service.py
