@@ -77,3 +77,32 @@ Three things a reviewer of this directory should keep in mind:
   drawn kinds equal to the set the engine computes.
 * `stages.tsx` renders frame text as text nodes only — no `dangerouslySetInnerHTML`, ever — because
   scene narration is authored content. `test:engine` reads the file and fails if that changes.
+
+## What the summary line tells you
+
+The last line prints the number of API calls the harness itself made (a full walk: about 110, plus
+whatever each page fetches on its own) and, if the app's limiter paced any of them, says so with the
+bucket sizes: `ip` sustains 120/min and learner creation 6/min, and the suite mints a dozen
+accounts, so two walks started back to back can cross a window. That is the app working as
+designed; the knob the API itself names is `ADAPT_RATE_LIMIT_MULTIPLIER`. A run that fails at a
+*different* check each time, with the limiter line absent, is not pacing -- it is a finding.
+
+## Open: the diagnostic walk can lose a selection
+
+`diagnose` sometimes fails its submit checks -- at a different question each time -- while every
+API call in the run answers 200 (measured: 40 requests, zero non-200s, so this is not the limiter
+and not backend latency). The submit control goes back to `disabled` after a click, so the press
+does nothing and the walk stops there.
+
+One cause is fixed: the load effect set `loading` again, and `if (loading) return <Spinner/>`
+unmounts the question card, which is where the ticked answer lives. Both `/diagnose` and `/learn`
+now blank only a screen that is still empty (`painted` ref), because React's dev-mode StrictMode
+runs the effect twice and the second pass was wiping a card the learner was mid-answer on.
+
+That reduced the failures in a four-run sample from two runs to one; **it did not remove them**,
+and the remaining path is unidentified. Anyone picking this up should start from the answer draft
+in `src/components/question.tsx` and what re-creates it, not from the network layer. A four-run
+sample is also too thin to hang a number on: run `npm run probe -- --only diagnose` five or ten
+times before believing any percentage.
+
+Not an option: making the probe click twice. That would hide the exact state worth seeing.
