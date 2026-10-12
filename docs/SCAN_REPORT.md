@@ -85,6 +85,7 @@ verify** = implemented, but the environment cannot exercise it.
 | **Approval gate** at API + DB level | tested-working | journey §4–5: reject applies nothing and is recorded; modify stores the learner's number (`target 0.8`, source `modified`) and refuses undeclared keys; accept turns it on; a second decision is 409 |
 | "Explain more simply" (temporary, immediate) | tested-working | 4 simplify requests changed 0 active adaptations; `level` is per-request |
 | AI 2 tutor answer (local, grounded) | tested-working | journey `explain`; probe `learn`; sources listed honestly |
+| AI 2 adaptation to the learner profile | tested-working | `scripts/adaptation_check.py`: two synthetic learners in opposite states, same question — `level: mastered` with "You know this — here is the harder question instead" vs `level: new` with a prerequisite first, 66 vs 83 words, different section set |
 | AI 2 answer from a real model | **unable to verify** | no key + no route; with a key present the app degrades to local and says so (`llm.error`, `fell_back_to`) |
 | Generated questions (validate → store → reuse) | tested-working (contract) | `pytest tests/test_generated_items.py` 15 passed; arithmetic checked by AST, ids content-derived, ungradeable items refused |
 | Voice: capabilities honesty, socket handshake/refusal | tested-working | probe `voice` 8/8; `pytest tests/test_voice_pipeline.py` 11 passed |
@@ -177,6 +178,10 @@ that fails if the defect returns.
 * `ResourceService.search` slicing at `max(6, limit*2)` is by design; the route now truncates.
 * Local-mode 500 responses include the exception text on purpose (`app.py`); on a tunnel they
   carry a request id instead.
+* A choice answer in a shape the grader does not recognise (`{"correct_index": 1}` instead of a
+  bare index or the choice text, which is what `question.tsx` sends) is scored **wrong** with the
+  detail `no recognisable choice selected` rather than 422. Seen while writing the adaptation
+  check; the client cannot produce it, and the detail names the problem, so it is left alone.
 * A stray `POST /api/v1/analyze?session_id=undefined` in an old log is **not reachable from the
   current code**: both pages interpolate `encodeURIComponent(sessionId ?? "")`, the probe uses an
   id it just fetched, and `scripts/demo.mjs` throws on a failed `POST /sessions` before it can
@@ -210,6 +215,9 @@ bash scripts/probe-fresh.sh learn               # one scenario: 19/19
 # the failure matrix (against a FRESHLY started API)
 .venv/bin/python scripts/failure_matrix_check.py http://127.0.0.1:8000   # 25/25 checks passed
 
+# the tutor answers two opposite learner states differently (against a FRESH API)
+.venv/bin/python scripts/adaptation_check.py http://127.0.0.1:8050      # adapts to the profile
+
 # migrations, fresh installation: empty data directory -> schema -> the app on it
 cd backend && ADAPT_DATA_DIR=/tmp/mig-fresh ../.venv/bin/python -m alembic upgrade head
 ../.venv/bin/python -m alembic check               # No new upgrade operations detected
@@ -231,6 +239,9 @@ process is what makes a re-run comparable to the first one. Raw output for this 
 
 **Blocking nothing, but unverified — no claim is made about any of these:**
 
+0. **The adaptation measured above is the app's, not a model's.** It was measured with the local
+   provider (no key): the *mechanism* — level, prerequisite branch, next step chosen from the
+   learner's own trace — is verified; whether a model's prose adapts as well is part of item 1.
 1. **A real model answer (AI 1 analysis text, AI 2 explanations and generated questions).** No
    `ADAPT_GEMINI_API_KEY` and no route to Google's API. With a syntactically valid but
    unauthorised key, `/explain` answers 200 from the local tutor and reports
