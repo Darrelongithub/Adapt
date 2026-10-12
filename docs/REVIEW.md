@@ -3,7 +3,7 @@
 Scope: a first-pass review of `backend/` and `docs/`, read against the project's own
 promises (README, `docs/UNVERIFIED.md`, `docs/AUDIT.md`, module docstrings). It is an
 *advisory* pass, not a rewrite: section 1 lists defects I fixed because they were
-unambiguous bugs, section 2 lists defects I only measured, sections 3–6 are suggestions
+unambiguous bugs, section 2 lists defects I only measured, sections 3–7 are suggestions
 ranked by value per unit of work. Every number below was produced in this checkout and
 is reproducible with the command shown.
 
@@ -242,7 +242,141 @@ session rather than merely active.
 
 ---
 
-## 3. User analysis: what I would add (the part you asked about most)
+## 3. The content contract: four sources, one measurement boundary
+
+An earlier draft of this review treated the 55-item bank as the content ceiling and
+recommended authoring ~25 items per topic. That was the wrong model of the system: it read
+the *measurement* layer as if it were the *teaching* layer. Withdrawn, and replaced with the
+derivation it should have had.
+
+ADAPT does not need a big static bank. It needs a trustworthy measurement spine and a rule
+for which content may touch it. Content arrives from three sources — stored, retrieved,
+generated — and exactly one question decides how each must be handled: **will the learner's
+response to it become an observation in the learner model?**
+
+### 3.1 Why anything has to be stored at all
+
+A stored item is not needed for coverage. It is needed when a *claim about a person* depends
+on comparability. The claims ADAPT already makes:
+
+1. **"This topic is at band X."** (`band()`, the dashboard, `services/journey.py`.) Two
+   observations only compare if the material behind them is comparable. BKT has no
+   item-difficulty parameter — difficulty variance is absorbed by slip/guess — so a pool
+   whose difficulty drifts between measurement points turns material change into apparent
+   learning.
+2. **"You have a gap in T."** (`learning/gaps.py` → proposals.) The claim rests on the answer
+   key being right. A mis-keyed item turns a correct learner into a gap.
+3. **"Retention of T is due; you recalled it."** (`learning/spacing.py`.) The schedule attaches
+   a lag and an outcome to *the same material*; that requires identity.
+4. **"The adaptation helped."** (`evaluate_change`.) Pre/post windows must be comparable; if
+   the item pool changed between them, the difference is confounded by the material, not
+   caused by the adaptation.
+5. **"Placement."** (the diagnostic.) An instrument that changes between runs is not an
+   instrument.
+
+Generated content can serve all five — but only by *acquiring the properties of a stored
+item* first: identity, persistence, a checked key, a difficulty that accumulates. Generation
+is therefore not an alternative to storage; it is a supply mechanism for items that then have
+to be stored.
+
+**The size floor is derivable, not a round number.** What sets it:
+
+* **Band separation.** Five bands means a claim about any one of them needs items whose
+  expected success differs between adjacent bands. With the current `p_correct` and guess/slip,
+  that is roughly 3–4 anchors spanning the difficulty range per topic. The bank has 2–3 per
+  topic and nothing above difficulty 0.72 — so it cannot separate "proficient" from "mastered"
+  *as a matter of arithmetic*, not of volume. That is the real bank problem: too few anchors
+  and no ceiling, not too few questions.
+* **The memorisation boundary.** Re-asking an item after a week is a legitimate retention probe
+  (same identity, long lag). Re-asking it within days measures memory of the item, not the
+  skill. The number of distinct items a topic needs is therefore set by session cadence — and
+  that is precisely the demand generation is supposed to meet. It is measurable: first-attempt
+  correctness on previously seen items versus unseen items at matched declared difficulty. If
+  the gap is large, the repeat-derived observations should be down-weighted.
+
+### 3.2 The four sources, and which may become evidence
+
+| Source | What it is in ADAPT | May it become evidence? |
+|---|---|---|
+| **Stored / authored** | curriculum graph (`TOPICS`, `TopicPrerequisite`); answer-keyed anchor items and their grading truth (numeric specs, MCQ keys, teachback rubrics); `LearningMaterial` prose that AI 2 is allowed to teach from; the telemetry allowlist | Yes — this is the reference against which everything else is judged |
+| **Retrieved** | OpenAlex / arXiv / Open Library / YouTube results (cached with `resource_cache_ttl_hours`); Numbas packages | Only through the **importer** (`routes/tutor.py:518`), which assigns identity and a `source` tag. Raw provider links: never |
+| **Generated** | explanations, hints, worked examples, rephrasings, feedback, resource curation, teachback commentary — and practice items (`ai2.generate_practice` → `_llm_practice`) | Teaching: freely. Items: only after the contract below |
+| **Validated & cached** | anything that was *answered*: identity, provenance, checked key, observed difficulty, retire flag | This is the boundary itself |
+
+The providers give exposition and reference — titles, abstracts, DOIs, URLs, videos. They do
+not give curriculum-bound, difficulty-graded, answer-keyed exercises, so they cannot carry
+the measurement layer at any price. The one existing route to *retrieved content that is
+allowed to be evidence* is the Numbas importer, which is why it is worth treating as the
+template for any future content source: validate on the way in, assign identity, tag the
+source.
+
+### 3.3 What has to be validated and cached, and why
+
+Generated content is allowed to reach a learner. It is only allowed to reach the *trace* after
+five things are true:
+
+1. **Identity and persistence before display.** The item must exist as a row (its own table, or
+   `Item` with `source="ai2"`) before it is shown. Otherwise it cannot be answered, graded the
+   same way twice, calibrated, or retired.
+2. **An answer check independent of the generator.** Numeric: recompute from the stem (SymPy
+   locally, which also fits `ADAPT_MODE=local`) and reject on disagreement. MCQ: a key plus
+   plausible distractors plus no duplicate keys. Text/teachback: rubric **and** official answer
+   attached, graded by rules first and an LLM second — never the generator grading itself. The
+   repo already does the right thing for teachback (`review_teachback` scores locally, then asks
+   the LLM only for commentary); that pattern should be the norm.
+3. **Difficulty: declared, then observed.** A generated item starts at whatever band it was
+   written for; its value is replaced — shrunk from observed responses, keyed by item id — once
+   it has data. Today generated items are hardcoded to `0.5`, permanently.
+4. **Caching and idempotency.** The same request (topic, band, count, prompt version, model
+   version, seed) should return the same items, so a reload shows what the learner saw and so
+   difficulty accumulates on stable ids. Cache key = the provenance tuple.
+5. **Retirement.** Retire an item when its answer fails a re-check, when its observed difficulty
+   drifts outside its declared band, or when memorisation is detected. The provenance ledger is
+   also the only way to answer "which items did model version X write?" after that model turns
+   out to be wrong.
+
+The failure mode these five rules exist to prevent is a **closed loop**: a model writes the
+stem, writes the key, writes the feedback, and the trace records its grade as a fact about the
+child. Nothing in that loop can detect its own error.
+
+### 3.4 The measured gap in the generated-content path
+
+`POST /api/v1/tutor/practice` → `ai2.generate_practice` fills the quota from the bank, then
+`_llm_practice` writes the remainder as `gen_<uuid>` items carrying
+`decision_trace: {"llm": True, "store": True}`. That flag has **exactly one occurrence in the
+tree — the line that writes it.** The only `Item` inserts anywhere are the seeder
+(`db/init_db.py`), the Numbas importer (`routes/tutor.py:518`) and the demo path
+(`services/sessions.py:351`).
+
+`POST /api/v1/attempts` resolves the item with `item_payload` → `s.get(Item, item_id)`, which
+raises `ValueError("unknown or retired item")` for an id with no row — the 422 an existing test
+asserts with `itm_nope`.
+
+Composed, those two verified facts mean: **the tail of any practice session that needed
+generation is displayed and cannot be answered.** The same function also hardcodes
+`difficulty: 0.5` for every generated item, takes `answer_spec` from the model's `answer_value`
+with no independent check (the prompt *asks* for computability; nothing verifies it), mints a
+fresh uuid per call with a `checksum` computed and never used, and has no retirement path.
+
+It is latent rather than live: `_llm_practice` only runs when an LLM is configured, the test
+suite and the demo run in local mode with the key popped, and the frontend currently calls the
+bank-only `GET /api/v1/practice`. So it is API-reachable today, and it is the first thing AI 3
+will trip over — wiring generated content into the lesson surface is exactly AI 3's job.
+
+### 3.5 The boundary AI 3 has to respect
+
+One line, and it generalises beyond content:
+
+> If the learner's response becomes evidence, the material must be as fixed as the learner
+> model's assumptions.
+
+Everything else can be free: regenerate explanations, rephrase hints, invent worked examples,
+fetch a video, change the tone. That is teaching, and a learner who sees nonsense in an
+explanation can say so — which is itself data. Measurement items, retention probes and
+placement anchors are not free, because a learner cannot tell that a wrong key is wrong. They
+will simply believe the app.
+
+## 4. User analysis: what I would add (the part you asked about most)
 
 ADAPT's learner model is BKT + spacing + 12 rule-based detectors. That is a defensible
 choice — the 2025 DLKT survey literature is blunt that deep knowledge tracing is
@@ -251,7 +385,7 @@ calibration and trajectories rather than AUC alone. The gaps are not the model c
 are (a) what the log already contains but nothing reads, (b) the absence of any *validity*
 check on the model's own outputs, and (c) no way for the learner to argue with the model.
 
-### 3.1 Use the log you already collect — response-time effort
+### 4.1 Use the log you already collect — response-time effort
 
 The allowlist already records `first_interaction.ms_since_shown`, `question_shown`,
 `hint_opened.ms_since_shown`, `response_change`, `explanation_opened.seconds_read`,
@@ -287,7 +421,7 @@ Concretely, for ADAPT:
 This is the single highest-value user-analysis change available: it protects every other
 number in the app from one careless click, and it costs a feature you already store.
 
-### 3.2 Add wheel-spinning detection before it becomes a UX failure
+### 4.2 Add wheel-spinning detection before it becomes a UX failure
 
 `detect_answer_oscillation` is the closest thing ADAPT has; there is no notion of
 *unproductive persistence*, which is the best-documented disengagement pattern in ITS
@@ -306,7 +440,7 @@ and it fits the existing `Observation → Hypothesis → Proposal` machinery exa
 `make()` call, a new `candidate_strategy`, and a falsification sentence ("if p_know rises
 by X over the next 8 items, this was wrong").
 
-### 3.3 Validate the model, don't just report it
+### 4.3 Validate the model, don't just report it
 
 Nothing currently asks whether the trace predicts the next answer better than a constant.
 Three cheap checks, all of which fit `learning/effect.py`'s existing honesty (bootstrap,
@@ -330,7 +464,7 @@ Wilson, Brier/ECE):
    `docs/UNVERIFIED.md` already refuses to let bands be reported to anyone; an SE turns
    that refusal into something the UI can display.
 
-### 3.4 Fairness is a user-analysis question, not a compliance footnote
+### 4.4 Fairness is a user-analysis question, not a compliance footnote
 
 The audit surface is missing entirely, and the literature says the naive version of it
 misleads. EDM 2025 work on BKT and reading ability found *aggregate* fairness metrics can
@@ -354,7 +488,7 @@ already:
   family; nothing corrects for it. Benjamini–Hochberg across a `analyze()` run is a
   two-line change and turns "13 detectors fired" into a defensible statement.
 
-### 3.5 Let the learner be a source of evidence
+### 4.5 Let the learner be a source of evidence
 
 The approve/revise/revoke flow plus `student_note` already make this a *negotiable* open
 learner model, which is ahead of most systems — the OLM literature's continuum runs
@@ -373,7 +507,7 @@ scrutability debt. Two additions from that literature are cheap and research-sup
   from someone who was sure. Both are high-information events for the trace and for the
   proposal copy.
 
-### 3.6 Distractor analysis — the misconceptions are already authored and unread
+### 4.6 Distractor analysis — the misconceptions are already authored and unread
 
 `bank.mcq()` stores `why_wrong` for every distractor. Exactly one reader exists —
 `grading.py:97` — and it uses the text to explain the single wrong choice a learner just
@@ -395,7 +529,7 @@ Then map the highest-frequency wrong choice to its `why_wrong` and you have a mi
 report per topic with no LLM and no new authoring. `detect_confusion_between_types` is
 doing something adjacent by hand; this is the general version.
 
-### 3.7 Honesty guardrails for the LLM parts
+### 4.7 Honesty guardrails for the LLM parts
 
 Grading is the place where an LLM can quietly do harm, and the literature gives specific,
 cheap guardrails: rubric + official answer materially carry reliability (removing the
@@ -409,7 +543,7 @@ refusing to overrule the rule-grader for score bands that decide a proposal.
 
 ---
 
-## 4. Tests worth adding, in the order I would add them
+## 5. Tests worth adding, in the order I would add them
 
 | # | Test | Why it pays |
 |---|---|---|
@@ -430,7 +564,7 @@ learner's name out of an LLM prompt, and it is the least tested thing in the tre
 
 ---
 
-## 5. APIs and integrations worth considering
+## 6. APIs and integrations worth considering
 
 Grouped by what they buy, not by novelty. ADAPT's only interchange path today is the Numbas
 export/import, which is a good start and a narrow one.
@@ -473,29 +607,30 @@ export/import, which is a good start and a narrow one.
 - **pyBKT** as a cross-check rather than a dependency: same inputs, same parameters within
   tolerance. It also supports the variants (per-skill, forgetting, individualisation) that
   `fit_em` will eventually need.
-- **Individually-adaptive testing / Elo with uncertainty** for item calibration (see 3.3).
+- **Individually-adaptive testing / Elo with uncertainty** for item calibration (see §4.3).
   Pelánek's survey and the "Tracking with (Un)Certainty" work are the right starting
   points; ~100 learners for solid difficulty estimates is the honest scale bar, so this
   should ship as "provisional, n=<count>" until a pilot exists.
 
 ---
 
-## 6. Suggested order of work
+## 7. Suggested order of work
 
 | Priority | Item | Effort | Why now |
 |---|---|---|---|
 | P0 | Accept/review this pass's fixes (§1) | — | Defects in the numbers every other feature trusts |
-| P0 | Response-time effort + gate the trace on it (§3.1) | ~1 day | One careless click currently moves mastery and can trigger a proposal |
+| P0 | **Generated-content contract** before AI 3 wires generated items into the lesson surface: persist + key-check + difficulty-track them (§3.3, §3.4) | ~1–2 days | Today the tail of a generated practice session cannot be answered at all (422), and nothing verifies a generated answer key |
+| P0 | Response-time effort + gate the trace on it (§4.1) | ~1 day | One careless click currently moves mastery and can trigger a proposal |
 | P1 | Detector gate: state one rule, or raise `min_n` to match (§2.1) | half day | The catalogue currently misdescribes its own evidence bar |
-| P1 | Wheel-spinning detector (§3.2) | ~1 day | Fits the existing detector/proposal machinery; prevents the 12th same-question loop |
-| P1 | `p_correct` calibration report per topic (§3.3.1) | ~1 day | Turns "the trace is the product" into a measurable claim |
+| P1 | Wheel-spinning detector (§4.2) | ~1 day | Fits the existing detector/proposal machinery; prevents the 12th same-question loop |
+| P1 | `p_correct` calibration report per topic (§4.3.1) | ~1 day | Turns "the trace is the product" into a measurable claim |
 | P1 | Strategy-credit unit fix (§2.4) | half day | Garbage in the strategy posterior silently reorders strategies |
-| P2 | Distractor selection-rate + discrimination report (§3.6) | ~1 day | Unlocks authored `why_wrong` data; no new content needed |
-| P2 | Judgement-of-learning + confidence capture (§3.5) | ~2 days | The only feature here that improves the learner's own calibration |
-| P2 | LTI 1.3 tool launch + AGS (§5) | ~3–5 days | Institutional distribution |
-| P2 | DIF screen + ABROCA with coverage floors (§3.4) | ~2 days | Fairness claims need to be checkable, not asserted |
-| P3 | Schemathesis + mutation testing in CI (§4) | ~1 day | Cheap, ongoing evidence about the test suite itself |
-| P3 | SymPy answer equivalence (§5) | ~1 day | Removes a class of grading false negatives |
+| P2 | Distractor selection-rate + discrimination report (§4.6) | ~1 day | Unlocks authored `why_wrong` data; no new content needed |
+| P2 | Judgement-of-learning + confidence capture (§4.5) | ~2 days | The only feature here that improves the learner's own calibration |
+| P2 | LTI 1.3 tool launch + AGS (§6) | ~3–5 days | Institutional distribution |
+| P2 | DIF screen + ABROCA with coverage floors (§4.4) | ~2 days | Fairness claims need to be checkable, not asserted |
+| P3 | Schemathesis + mutation testing in CI (§5) | ~1 day | Cheap, ongoing evidence about the test suite itself |
+| P3 | SymPy answer equivalence (§6) | ~1 day | Removes a class of grading false negatives |
 
 Two things I would *not* change: the "AI 1 cannot change education by itself" property (it
 is enforced by the schema, and it is the strongest part of the design), and the refusal in
