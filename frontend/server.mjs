@@ -115,15 +115,24 @@ server.on("upgrade", (req, socket, head) => {
     path: url,
     headers: { ...headers, connection: "Upgrade", upgrade: req.headers.upgrade ?? "websocket" },
   });
-  proxyReq.on("upgrade", (upReq, upSocket) => {
-    socket.write(
-      "HTTP/1.1 101 Switching Protocols\r\n" +
-        `Upgrade: ${upReq.headers.upgrade ?? "websocket"}\r\n` +
-        `Sec-WebSocket-Accept: ${upReq.headers["sec-websocket-accept"] ?? ""}\r\n\r\n`,
-    );
+  proxyReq.on("upgrade", (upReq, upSocket, upHead) => {
+    // The 101 is forwarded header for header, not rebuilt from three hand-picked ones.
+    // Writing only Upgrade / Connection / Sec-WebSocket-Accept *dropped*
+    // `Sec-WebSocket-Extensions`: the browser (which always offers permessage-deflate) was
+    // told nothing was negotiated while uvicorn compressed the frames anyway, so it rejected
+    // the first frame with "reserved bits must be zero" and the voice screen stayed silent --
+    // through this proxy only, which is why the direct-API tests never saw it. `head` and
+    // `upHead` carry whatever arrived in the same segment as a handshake and have to be
+    // written before the pipes start, or the first frame is read from the wrong offset.
+    const lines = ["HTTP/1.1 101 Switching Protocols"];
+    for (const [name, value] of Object.entries(upReq.headers)) {
+      lines.push(`${name}: ${Array.isArray(value) ? value.join(", ") : value}`);
+    }
+    socket.write(lines.join("\r\n") + "\r\n\r\n");
     socket.setTimeout(0);
     upSocket.setTimeout(0);
     if (head?.length) upSocket.write(head);
+    if (upHead?.length) socket.write(upHead);
     upSocket.pipe(socket);
     socket.pipe(upSocket);
   });

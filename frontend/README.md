@@ -12,7 +12,11 @@ npm run build && npm run start   # the same server, production build
 
 `server.mjs` is not `next dev`. It is a small Node server that serves Next and proxies `/api/*`,
 `/healthz` and the `Upgrade /ws/voice` handshake to the backend, so the browser only ever talks to
-one origin. `PORT` / `HOST` move the listener; **`ADAPT_API`** moves the backend (default
+one origin. It rewrites `Host` to the API's own address while forwarding — which is why the API's
+untrusted-host refusal never meets a learner's LAN address, and why `adapt host` can serve a room
+without trusting a subnet — and it forwards a WebSocket `101` **header for header**, so an
+extension the backend negotiated (permessage-deflate) is not silently dropped on the way back.
+`PORT` / `HOST` move the listener; **`ADAPT_API`** moves the backend (default
 `http://127.0.0.1:8000`; `ADAPT_API=offline` starts the interface with nothing behind it, and every
 screen has to say so rather than spinning). Nothing in `src/` reads `process.env` — browser code
 that did would ship `undefined` — and `player.test.mjs` fails the build if engine code starts naming
@@ -25,7 +29,7 @@ a host.
 | `npm run lint` | `node ../scripts/check-contract.mjs && tsc --noEmit`. The contract check reads both sides as *source* — no server, no key, no network: every path the frontend calls exists in the API; `?mock=1` has a fixture for each; route modules export only what Next allows; no hard-coded origin, no `process.env` in browser code, no key material; `/ws/voice` really is proxied; `allowedDevOrigins` covers `localhost`, `127.0.0.1` and the preview domain; and the sim modules, the stage registry and the mock's kinds agree on which scene kinds exist. |
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm run test:engine` | `node --test src/lib/engine/*.test.mjs` — the player's rules (gate, clamping, timing, reduce-motion) plus two source assertions over `player.ts`, `types.ts` and `components/scenes/*`. |
-| `npm run test:server` | `node --test server.test.mjs`: the launcher itself — `ADAPT_API=offline` must refuse with a 503 and keep serving the UI, on its own port and its own output directory. |
+| `npm run test:server` | `node --test server.test.mjs`: the launcher itself — `ADAPT_API=offline` must refuse with a 503 and keep serving the UI (on its own port and its own output directory), a request carrying a LAN `Host` must reach the API as `127.0.0.1`, and an upgrade must come back with the `101`'s own headers intact. |
 | `npm run probe` | jsdom driving the real pages against a running dev server + API: click, type, answer, reload, then compare what the screen says with what the API says. `--only diagnose,lesson` and `--base http://host:port` are the two knobs. |
 | `npm run probe:mock -- --only lesson` | the same lesson screen on `?mock=1`, asserting the things the mock *can* honestly show — and that it touches no `/api/v1` endpoint at all. |
 

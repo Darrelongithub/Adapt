@@ -9,7 +9,9 @@ Typer-based so ``--help`` is self-documenting. The commands a judge needs:
   adapt proposals / decide  read and answer adaptation proposals
   adapt export-numbas / import-numbas
   adapt train-bkt         refit cohort BKT parameters by EM
-  adapt serve             run uvicorn
+  adapt serve             run uvicorn (API only)
+  adapt host              one address for a room on the same wifi: API + web app,
+                          the LAN host allowlisted, the microphone caveat printed
 """
 
 from __future__ import annotations
@@ -17,7 +19,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
+import subprocess
 import sys
+import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -653,15 +659,200 @@ def serve(
     import uvicorn
 
     st = _settings()
+    # No ``ws="wsproto"``: ``uvicorn[standard]`` does not install wsproto, so that pinned the
+    # API to a websocket implementation a clean install does not have, and the process died at
+    # startup with ModuleNotFoundError. ``websockets`` is a declared dependency and is what
+    # scripts/probe-fresh.sh and scripts/journey_check.py have been starting all along, so the
+    # autoselect resolves to the implementation the voice socket is actually tested against.
     uvicorn.run(
         "adapt.api.app:app",
         host=host or st.host,
         port=int(port or st.port),
         reload=reload,
         log_level=str(st.log_level).lower(),
-        ws="wsproto",
     )
 
+
+
+
+@app.command("host")
+def host_cmd(
+    port: int = typer.Option(None, "--port", help="the address people open: the web app's port (default 3000)"),
+    data_dir: Path = typer.Option(None, "--data-dir", help="data directory for the API (default: ADAPT_DATA_DIR from your environment, else var/)"),
+    tunnel: bool = typer.Option(False, "--tunnel", help="also open an https tunnel (cloudflared, else npx localtunnel): the microphone needs https, and it works off-wifi"),
+    ip: str = typer.Option(None, "--ip", help="the wifi address to advertise and allow (default: detected; override it on a machine with a VPN or Docker)"),
+    rate_limit_multiplier: float = typer.Option(None, "--rate-limit-multiplier", help="scale the room's shared buckets (default x10); this only ever raises the number"),
+) -> None:
+    """Host for a room: start the API and the web app, print the address.
+
+    For a showcase on one wifi. Both servers bind 0.0.0.0. The machine's own
+    LAN address is detected and added to the API's host allowlist as that
+    exact address -- never a wildcard, never a subnet.
+
+    The two things a room will run into are printed before anyone joins:
+
+    * the microphone is unavailable on a plain-http address (browsers expose
+      it only in a secure context; --tunnel opens the https link for it), and
+    * everyone on the wifi is one connection to the API, so the per-connection
+      buckets are the room's shared budget -- reported, and raised for the
+      servers this command starts, never for a deployment.
+
+    Nothing is written to .env and no value of a key is read or printed. The
+    children inherit your environment with the allowlist, the origin and the
+    rate-limit multiplier merged in.
+    """
+    import shutil
+
+    from . import hosting as H
+
+    st = _settings()
+    frontend = H.Frontend(H.repo_root() / "frontend")
+    if not frontend.script.exists():
+        typer.secho(f"cannot find the web app at {frontend.script}", fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+    if not shutil.which("node"):
+        typer.secho("node is not on PATH: the web app cannot start (and `npm ci` in frontend/ needs it too)", fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+
+    web_port = int(port or 3000)
+    if not H.port_is_free(web_port):
+        typer.secho(
+            f"port {web_port} is already in use -- stop whatever is on it (a `npm run dev` from an earlier"
+            " session is the usual one), or open a different address: adapt host --port 3001",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+
+    api_host = str(st.host or "0.0.0.0")
+    api_port = int(st.port or 8000)
+    api_note = ""
+    if not H.port_is_free(api_port, api_host):
+        api_port = H.free_port(api_host)
+        api_note = f"port {st.port} was busy, so the API is on {api_port} for this session (your other server is untouched)"
+
+    lan_ip, considered = H.detect_lan_ip(ip)
+    multiplier = H.raised_multiplier(st.rate_limit_multiplier, rate_limit_multiplier or H.ROOM_RATE_LIMIT_MULTIPLIER)
+
+    # Merged, never replaced: whatever .env already allows stays allowed, and this is the only
+    # place the LAN address enters the API's trust set -- as an exact host.
+    api_env = H.build_api_env(
+        os.environ,
+        lan_ip=lan_ip,
+        web_port=web_port,
+        api_port=api_port,
+        extra_hosts=st.extra_allowed_hosts,
+        origins=st.allowed_origins,
+        data_dir=str(data_dir) if data_dir else None,
+        configured_multiplier=st.rate_limit_multiplier,
+        room_multiplier=multiplier,
+    )
+    web_env = H.build_web_env(os.environ, api_port=api_port, web_port=web_port, production=True)
+
+    if not frontend.built:
+        if not frontend.installed:
+            typer.secho(f"{frontend.directory}/node_modules is missing: run `cd frontend && npm ci` first", fg=typer.colors.RED)
+            raise typer.Exit(code=2)
+        typer.echo("[host] no production build in frontend/.next -- building once (npm run build) ...")
+        if subprocess.run(["npm", "run", "build"], cwd=str(frontend.directory)).returncode != 0:
+            typer.secho("the web app did not build; the output above says what broke", fg=typer.colors.RED)
+            raise typer.Exit(code=2)
+
+    plan = H.HostPlan(
+        web_port=web_port,
+        api_port=api_port,
+        api_host=api_host,
+        lan_ip=lan_ip,
+        ips_considered=tuple(considered),
+        allowed_hosts=tuple(h for h in api_env["ADAPT_EXTRA_ALLOWED_HOSTS"].split(",") if h),
+        multiplier=multiplier,
+        configured_multiplier=float(st.rate_limit_multiplier or 1.0),
+        mode=str(st.mode),
+        tunnel_requested=bool(tunnel),
+        extra_notes=(api_note,) if api_note else (),
+    )
+
+    session = H.HostSession(echo=typer.echo)
+    if lan_ip:
+        typer.echo(f"[host] trusting exactly this host at the API: {lan_ip} (no wildcard, no subnet)")
+    # A terminal Ctrl-C raises KeyboardInterrupt on its own; SIGTERM does not, and a process
+    # manager (or `kill`) that stops the presenter would otherwise leave the API and the web
+    # server running -- on ports the next run then refuses. Same shutdown path for both.
+    try:
+        signal.signal(signal.SIGTERM, _stop_on_signal)
+    except ValueError:  # pragma: no cover - not the main thread
+        pass
+    dead: tuple[str, int] | None = None
+    try:
+        session.start("api", H.uvicorn_command(st, host=api_host, port=api_port), env=api_env)
+        session.start("web", ["node", "server.mjs"], env=web_env, cwd=frontend.directory)
+        typer.echo(f"[host] starting the API on {api_host}:{api_port} and the web app on 0.0.0.0:{web_port} ...")
+        api_ready = session.wait_http(f"http://127.0.0.1:{api_port}/healthz", timeout=120)
+        web_ready = api_ready and session.wait_http(f"http://127.0.0.1:{web_port}/", timeout=120)
+        dead = session.exited()
+        if dead is not None or not (api_ready and web_ready):
+            if dead is None:
+                dead = ("api" if not api_ready else "web", 1)
+        else:
+            if tunnel:
+                plan = _start_tunnel(session, plan, web_port)
+            typer.echo("")
+            for line in H.host_report(plan):
+                typer.echo(line)
+            while dead is None:
+                time.sleep(0.3)
+                dead = session.exited()
+    except KeyboardInterrupt:
+        typer.echo("\n[host] stopping ...")
+    finally:
+        session.stop()
+
+    if dead is not None:
+        name, code = dead
+        typer.secho(f"\n[host] the {name} server exited (code {code}); last lines it printed:", fg=typer.colors.RED)
+        for line in session.tail(name, 15):
+            typer.echo(f"    {line}")
+        raise typer.Exit(code=1)
+    typer.echo("[host] stopped.")
+
+
+def _stop_on_signal(signum: int, frame: Any) -> None:  # pragma: no cover - raised by a signal
+    raise KeyboardInterrupt
+
+
+def _start_tunnel(session: Any, plan: Any, web_port: int) -> Any:
+    """Open the opt-in https tunnel, or say why not and keep the LAN address as the answer."""
+    from . import hosting as H
+
+    hint = f"        install: {H.TUNNEL_INSTALL_HINT}"
+    chosen = H.tunnel_command(web_port)
+    if chosen is None:
+        note = "neither cloudflared nor npx is installed"
+        typer.secho(f"\n[host] --tunnel needs a tunnel runner, and {note}.", fg=typer.colors.YELLOW)
+        typer.secho(hint, fg=typer.colors.YELLOW)
+        return replace(plan, tunnel_note=note)
+    argv, provider, caveat = chosen
+    typer.echo(f"[host] opening an https tunnel with {provider} ({caveat}) ...")
+    session.start("tunnel", argv, env=os.environ)
+    url = session.await_url("tunnel", timeout=H.TUNNEL_START_TIMEOUT_S)
+    if url:
+        return replace(plan, tunnel_url=url, tunnel_note=caveat)
+    # No URL: the phones still get the LAN address, and the reason is printed rather than
+    # hidden behind a hanging command. A tunnel that half-works is worse than no tunnel.
+    note = f"{provider} printed no https address in {H.TUNNEL_START_TIMEOUT_S:.0f}s"
+    typer.secho(f"\n[host] {note}.", fg=typer.colors.YELLOW)
+    tail = session.tail("tunnel", 6)
+    if tail:
+        typer.echo("        the tunnel said:")
+        for line in tail:
+            typer.echo(f"          {line}")
+    else:
+        typer.secho(
+            f"        it printed nothing at all -- check that `{argv[0]}` can reach the internet.",
+            fg=typer.colors.YELLOW,
+        )
+    typer.secho(hint, fg=typer.colors.YELLOW)
+    session.stop_child("tunnel")
+    return replace(plan, tunnel_note=note)
 
 @voice_app.command("capabilities")
 def voice_caps() -> None:
@@ -701,7 +892,6 @@ def token_cmd(student_id: str = typer.Option(..., "--for"), hours: int = typer.O
         typer.echo(f"csrf:  {issued.csrf}")
         typer.echo(f"expires: {issued.session.expires_at.isoformat()}")
         typer.echo('use:  curl -H "Cookie: adapt_session=<token>" -H "X-CSRF-Token: <csrf>" ...')
-
 
 if __name__ == "__main__":  # pragma: no cover
     app()

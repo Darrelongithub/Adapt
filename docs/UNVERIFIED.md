@@ -236,3 +236,29 @@ session is the expected result, not a bug.
   latter and then fails on 0004 with a duplicate column. These were both unmerged branches, so no
   deployment is in that state, but a scratch data directory from before the merge needs to be
   recreated rather than upgraded. Nothing in the repository can distinguish the two.
+
+## Added by the `adapt host` work (2026-10-12)
+
+* **Verified in the sandbox:** both servers started by one command and answering on the
+  detected address; a request carrying `Host: 192.168.1.50:3000` reaching the web server, the
+  `/api/*` proxy and `/healthz` with 200s; a guest `POST` through the proxy carrying
+  `Origin: http://192.168.1.50:3000` answering 200; the API accepting that exact host while
+  refusing `192.168.1.51`, `192.168.1.50.attacker.net` and a foreign domain with 400
+  `untrusted host`; the raised multiplier visible in `GET /api/v1/quotas` (120 → 1200/min,
+  6 → 60 new learners/min); `.env` values merged and never printed; and the voice socket
+  upgraded through the proxy with a LAN `Host`, `hello` received, and a tutor reply over it
+  (a strict client, so this also covers the `101` header bug fixed alongside).
+* **Not verified:** a **real second device** on a real wifi (no second device, and this
+  sandbox's only non-loopback address is link-local `169.254.0.21` — the LAN path was driven
+  with `--ip 192.168.1.50` and LAN-style `Host` headers over loopback); a **real phone
+  microphone** (no browser here, so "the voice screen cannot listen on plain http and can on
+  https" is a secure-context rule from the platform, not something this build watched happen);
+  and a **real tunnel** (`cloudflared` is not installed and `localtunnel.me` is unreachable, so
+  what is tested is the failure path: no runner on PATH, and a runner that prints no URL both
+  leave the LAN address serving and say so).
+* **To check at rehearsal (~5 minutes):** `adapt host`, open the printed address on a phone,
+  create a learner, answer one question; then `adapt host --tunnel` from a machine with
+  cloudflared installed, confirm the https link appears on screen, open `/voice` on the phone
+  and say one sentence — the microphone should prompt rather than refuse, and the tutor's reply
+  should come back. If the mic is still refused on https, the problem is the browser's
+  permission for that origin, not this command.
