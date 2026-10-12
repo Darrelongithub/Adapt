@@ -1976,3 +1976,26 @@ def test_a_resource_search_refuses_an_unknown_provider_without_crashing(client, 
     body = response.json()
     assert body["results"] == []
     assert body["providers"] == [], "no known provider was asked, so none is reported"
+
+
+def test_analyze_refuses_a_session_that_is_not_this_learners(client, learner, session):
+    """An unknown session id is a 404, not an empty analysis.
+
+    ``POST /analyze`` returns the whole picture (traces, hypotheses, proposals, plan), so
+    answering 200 for a session id that does not exist made "that session was never
+    recorded" indistinguishable from "we looked and found no pattern" -- and the caller
+    then renders the analysis as if it belonged to that session. The sibling route
+    ``GET /sessions/{id}/events`` refuses the same id with 404.
+    """
+    missing = client.post("/api/v1/analyze?session_id=lrs_never_happened", headers=learner["headers"])
+    assert missing.status_code == 404, missing.text
+    assert "unknown session" in json.dumps(missing.json()["detail"])
+
+    # An empty id is the loop screens' "session is over" case and still analyses the record.
+    empty = client.post("/api/v1/analyze?session_id=", headers=learner["headers"])
+    assert empty.status_code == 200, empty.text
+    assert "traces" in empty.json()
+
+    real = client.post(f"/api/v1/analyze?session_id={session}", headers=learner["headers"])
+    assert real.status_code == 200, real.text
+    assert real.json()["session_id"] == session

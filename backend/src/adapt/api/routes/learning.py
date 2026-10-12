@@ -220,6 +220,16 @@ async def analyze(
     student: Student = Depends(rate("llm")),
 ) -> dict[str, Any]:
     svcs = current()
+    # A session id that is not this learner's is not "a session with no evidence yet":
+    # answering 200 labelled an analysis of the whole record with a session that does not
+    # exist, and a caller cannot tell that from a real analysis that found nothing. The
+    # events route next door already answers 404 for the same id. An *empty* id is a
+    # different case and stays accepted: the loop screens send ``session_id=`` when the
+    # session is already gone, and analysing the record is what they want there.
+    if session_id:
+        sess = s.get(LearningSession, session_id)
+        if sess is None or sess.student_id != student.id:
+            raise HTTPException(status_code=404, detail="unknown session")
     res = await svcs.ai1.analyze(student.id, session_id=session_id, use_llm=use_llm and bool(get_settings().gemini_api_key))
     d = res.as_dict()
     d["loop"] = _loop_shape(d)

@@ -151,3 +151,29 @@ session is the expected result, not a bug.
 * **Model quality:** unchanged from above — no key, no egress, so no real Gemini answer has ever
   been produced by this build. Everything asserting about AI 1 and AI 2 in this repository is
   about the local path and the gate, not about model cleverness.
+
+## Added by the 2026-10-12 full-scan pass
+
+* **The UI probe drives jsdom, not a browser.** `npm run probe` (139 checks) exercises the
+  real Next.js server over HTTP with a real DOM: routing, forms, controlled inputs,
+  fetch/CSRF/error paths, refresh, the voice socket's handshake and the screens' data paths.
+  It cannot observe layout, paint, focus order, scroll, `getUserMedia` permission prompts or
+  `speechSynthesis` voices. "The screen works" therefore means every interaction and every
+  request it makes works -- not that it looks right.
+* **A real Gemini answer, still.** With a syntactically valid but unauthorised key,
+  `POST /api/v1/explain` answers 200 from the local tutor and reports the failure in `llm`
+  (`error: ConnectError …`, `fell_back_to: "local tutor (extractive, grounded in course
+  material)"`). That is the honesty property proven; whether a real answer is *good* still
+  needs a key and a network.
+* **The four resource hosts from here.** All four fail DNS in ~30 ms. The matrix
+  (valid/empty/unreachable/bad key/timeout/429/local rate limit) is now covered in
+  `backend/tests/test_resource_providers.py` with the real adapter code and a substituted
+  transport; the live call remains the unverified half.
+* **Audio, still.** `faster-whisper` and `kokoro` remain uninstallable here. What is newly
+  verified is everything around them, on synthetic audio: endpointing, barge-in on sustained
+  speech, a cough *not* interrupting, `stop()` cancelling obsolete audio, a failed
+  transcription surfacing as a recoverable error, and an empty-but-honest transcript when no
+  local model exists (`backend/tests/test_voice_pipeline.py`).
+* **A real Numbas editor/server.** Still unverified: packages here are round-tripped against
+  this build's own importer. Newly verified is that a *foreign* package (a tag naming a topic
+  by code, or a part type with no local grader) is now handled instead of answering 500.
