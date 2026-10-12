@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -53,11 +53,11 @@ async function startOffline() {
   let logs = "";
   child.stdout.on("data", (b) => { logs += b; });
   child.stderr.on("data", (b) => { logs += b; });
-  return { port, child, logs: () => logs };
+  return { port, child, out, logs: () => logs };
 }
 
 test("ADAPT_API=offline answers 503 and stays up, and the UI still serves", async () => {
-  const { port, child, logs } = await startOffline();
+  const { port, child, out, logs } = await startOffline();
   try {
     const api = await until(async () => {
       const res = await fetch(`http://127.0.0.1:${port}/api/v1/health`);
@@ -80,5 +80,19 @@ test("ADAPT_API=offline answers 503 and stays up, and the UI still serves", asyn
     child.kill("SIGTERM");
     await until(async () => (child.exitCode !== null ? true : null), { timeoutMs: 8_000 });
     if (child.exitCode === null) child.kill("SIGKILL");
+    // and take the build output with us. A test that leaves a distDir behind is only safe while
+    // os.tmpdir() happens to live outside the repository: with TMPDIR pointed inside a checkout,
+    // the leftover was 1391 files of webpack cache that got committed with the next `git add`.
+    // Best-effort tidying, deliberately not an assertion: Next writes its manifests on the way out,
+    // so a sweep can remove the tree and still have a file land afterwards. What actually protects
+    // the repository is `tmp/` in frontend/.gitignore -- this loop only keeps repeated runs from
+    // stacking distDirs up. Never let the tidying itself decide the test's verdict.
+    for (let n = 0; n < 10 && existsSync(out); n += 1) {
+      rmSync(out, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      if (existsSync(out)) await sleep(200);
+    }
+    await new Promise((r) => setTimeout(r, 400)); // Next flushes its manifests on the way out; removing before that lands is
+    rmSync(out, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); // how this test
+    // learned to sweep in the first place.
   }
 });

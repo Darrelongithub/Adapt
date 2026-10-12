@@ -2,3 +2,6 @@
 node_modules/
 next-env.d.ts
 *.tsbuildinfo
+
+# scratch distDir for scripts that start Next (ADAPT_NEXT_DIST)
+tmp/
