@@ -1,6 +1,6 @@
 # Full functionality scan — report
 
-**Date:** 2026-10-12 · **Commit:** `c57c7d5` (on top of `2a72aff`, `438b379`, `a157e7d`)
+**Date:** 2026-10-12 · **Commit:** `bce50ec` (on top of `9f488a8`, `2a72aff`, `438b379`, `a157e7d`)
 **Method:** inspect → run → interact → reproduce → fix → retest → verify. Every claim below
 names the command or test that produced it.
 
