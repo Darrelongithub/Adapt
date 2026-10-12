@@ -805,6 +805,200 @@ class EducationalIntelligence:
         return base
 
     # ------------------------------------------------------------------ #
+    # interactive scenes (the engine's authoring path)
+    # ------------------------------------------------------------------ #
+
+    async def author_scene(
+        self,
+        *,
+        request: str,
+        kind: str | None = None,
+        student_id: str | None = None,
+        corrections: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        """Draft a scene *specification* for a topic -- data, never code.
+
+        The contract with the rest of the engine is that this method does not decide whether the
+        scene is usable: :func:`adapt.learning.scenespec.validate` does, by refusing anything
+        executable, checking the parameters against what the simulation needs (a binary-search
+        list that is not sorted is refused *because binary search would be wrong*), and dry-running
+        the animation. So a draft can come back invalid and be honest about it, and one retry is
+        spent feeding the reasons straight back to the model.
+
+        With no model configured, the answer is the closest built-in scene for the request, said
+        to be exactly that. A lesson that plays is worth more than a 503, and an invented spec
+        that cannot be checked would be worth less than either.
+        """
+        from ..learning import scenespec, sims
+
+        text = " ".join(str(request or "").split())[:400]
+        catalogue = sims.catalogue()
+        wanted = str(kind or "").strip()
+        if wanted and wanted not in catalogue:
+            return {
+                "ok": False,
+                "errors": [f"the engine cannot draw '{wanted}'. It can draw: {', '.join(sorted(catalogue))}"],
+                "source": "none",
+            }
+        if self.llm is None:
+            return self._builtin_scene(text, wanted or None, why="no model is configured on this instance")
+        hints = list(corrections or [])
+        spec_kind = {
+            "kind": "str",
+            "title": "str",
+            "intent": "str",
+            "intro": "str",
+            "outro": "str",
+            "concepts": ("array", {"type": "STRING"}),
+            "params_json": "str",
+        }
+        system = {
+            "role": "ai2",
+            "task": (
+                "Write ONE interactive scene specification for the request. You are describing data "
+                "for a simulation the server already implements; you are not writing code, markup, "
+                "HTML, JavaScript, templates, or a renderer. Choose kind from the list, keep every "
+                "text field plain prose, and give params as a JSON object of the names that kind "
+                "declares. Reply JSON with keys: kind, title, intent, intro, outro, concepts, params_json."
+            ),
+            "kinds": {k: {"summary": v["summary"], "params": sorted(v["params"]), "max_frames": v["max_frames"]} for k, v in catalogue.items()},
+            "rules": [
+                "binary_search.params.values must be strictly increasing with no repeats; or omit values and give n and seed",
+                "sorting.params.values may be any order, 2 to 20 numbers",
+                "cpu_cycle.params.program is an array of lines like 'LOAD 3'; data cells sit after the program",
+                "logic_gates.params.gate is one of AND, OR, XOR, NAND, NOR, XNOR, NOT, BUFFER",
+                "titles under 120 characters, intent under 400, framing under 600 each, at most 6 concepts",
+            ],
+        }
+        user = json.dumps({"request": text[:600], "prefer_kind": wanted or None, "previous_rejections": hints[:6]}, separators=(",", ":"))
+        safe, dropped = redact_payload({"q": user}, max_chars=4000)
+        res = await self.llm.complete(
+            system=json.dumps(system, separators=(",", ":")) + "\n\n" + AI2_SYSTEM,
+            user=safe["q"],
+            purpose="ai2_scene_spec",
+            role="ai2",
+            student_id=student_id or "anon",
+            temperature=0.2,
+            max_output_tokens=700,
+            response_spec=spec_kind,
+        )
+        await self._log_llm("ai2_scene_spec", "ai2", res, student_id or "anon", len(user), dropped)
+        data = res.data if (res.ok and isinstance(res.data, dict)) else None
+        if not data:
+            fallback = self._builtin_scene(text, wanted or None, why=f"the model returned {res.status or 'nothing'}")
+            fallback["llm_status"] = res.status
+            return fallback
+        params: Any = {}
+        raw_params = data.get("params_json")
+        if isinstance(raw_params, str) and raw_params.strip():
+            try:
+                params = json.loads(raw_params)
+            except json.JSONDecodeError as exc:
+                params = {}
+                data["_params_error"] = f"params_json was not JSON: {exc}"
+        draft = {
+            "kind": str(data.get("kind") or wanted or "").strip(),
+            "title": str(data.get("title") or "")[:160],
+            "intent": str(data.get("intent") or "")[:400],
+            "framing": {"intro": str(data.get("intro") or "")[:600], "outro": str(data.get("outro") or "")[:600]},
+            "concepts": [str(c) for c in (data.get("concepts") or []) if str(c).strip()][:6],
+            "citations": [{"ref": "the engine's own simulation", "claim": "the frames shown are computed by the same code that answers about them."}],
+            "params": params if isinstance(params, dict) else {},
+        }
+        if data.get("_params_error"):
+            draft["intent"] = (draft["intent"] + f" ({data['_params_error']})")[:400]
+        result = scenespec.validate(draft)
+        if result.ok:
+            return {"ok": True, "draft": result.spec, "source": "llm", "warnings": result.warnings, "errors": []}
+        # one retry, with the validator's reasons in the prompt -- the loop the brief asks for
+        retry_user = json.dumps(
+            {"request": text[:600], "your_previous_attempt": draft, "rejected_because": result.errors[:6]}, separators=(",", ":")
+        )
+        safe2, dropped2 = redact_payload({"q": retry_user}, max_chars=5000)
+        res2 = await self.llm.complete(
+            system=json.dumps(system, separators=(",", ":")) + "\n\n" + AI2_SYSTEM,
+            user=safe2["q"],
+            purpose="ai2_scene_fix",
+            role="ai2",
+            student_id=student_id or "anon",
+            temperature=0.0,
+            max_output_tokens=700,
+            response_spec=spec_kind,
+        )
+        await self._log_llm("ai2_scene_fix", "ai2", res2, student_id or "anon", len(retry_user), dropped2)
+        d2 = res2.data if (res2.ok and isinstance(res2.data, dict)) else None
+        if d2:
+            p2: Any = {}
+            if isinstance(d2.get("params_json"), str) and d2["params_json"].strip():
+                try:
+                    p2 = json.loads(d2["params_json"])
+                except json.JSONDecodeError:
+                    p2 = {}
+            draft2 = {
+                "kind": str(d2.get("kind") or draft["kind"]),
+                "title": str(d2.get("title") or draft["title"])[:160],
+                "intent": str(d2.get("intent") or draft["intent"])[:400],
+                "framing": {"intro": str(d2.get("intro") or "")[:600], "outro": str(d2.get("outro") or "")[:600]},
+                "concepts": [str(c) for c in (d2.get("concepts") or []) if str(c).strip()][:6],
+                "citations": list(draft["citations"]),
+                "params": p2 if isinstance(p2, dict) else {},
+            }
+            result2 = scenespec.validate(draft2)
+            if result2.ok:
+                return {
+                    "ok": True,
+                    "draft": result2.spec,
+                    "source": "llm",
+                    "warnings": result2.warnings,
+                    "errors": [],
+                    "retried_after": result.errors[:6],
+                }
+            return {
+                "ok": False,
+                "draft": None,
+                "source": "llm",
+                "errors": result2.errors,
+                "first_attempt_errors": result.errors,
+                "note": "the model was given these reasons once and could not fix them; the scene was not stored",
+            }
+        return {"ok": False, "draft": None, "source": "llm", "errors": result.errors, "note": "the first draft was rejected and the retry did not answer"}
+
+    def _builtin_scene(self, request: str, kind: str | None, *, why: str) -> dict[str, Any]:
+        """The closest validated scene for a request, chosen by what the words mention.
+
+        This is a real scene the engine can play, not a placeholder: it comes from the same
+        ``builtin_specs`` the database is seeded with, and the reply says in plain words that no
+        model took part in choosing it.
+        """
+        from ..learning import scenespec
+
+        words = request.lower()
+        clues = [
+            ("binary_search", ("search", "sorted", "log", "halv", "middle", "index")),
+            ("sorting", ("sort", "insertion", "order", "compare", "swap", "quadratic")),
+            ("logic_gates", ("gate", "truth table", "boolean", "logic", "nand", "xor", "circuit")),
+            ("cpu_cycle", ("fetch", "decode", "execute", "register", "program", "cpu", "memory", "pc", "opcode")),
+        ]
+        chosen = kind
+        if chosen is None:
+            scored = sorted(
+                ((sum(1 for c in cs if c in words), k) for k, cs in clues),
+                key=lambda t: (-t[0], t[1]),
+            )
+            chosen = scored[0][1] if scored and scored[0][0] > 0 else "binary_search"
+        for spec in scenespec.builtin_specs():
+            if spec["kind"] == chosen:
+                return {
+                    "ok": True,
+                    "draft": spec,
+                    "source": "builtin",
+                    "warnings": [],
+                    "errors": [],
+                    "note": f"{why}, so this is the built-in scene for '{chosen}' rather than one written for your words",
+                }
+        return {"ok": False, "draft": None, "source": "builtin", "errors": [f"no built-in scene for '{chosen}'"]}
+
+    # ------------------------------------------------------------------ #
     # internals
     # ------------------------------------------------------------------ #
 

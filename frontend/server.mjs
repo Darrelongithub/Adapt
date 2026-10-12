@@ -7,7 +7,7 @@
  * cookie rules to get wrong) and the API never has to expose itself publicly.
  *
  * `ADAPT_API` points at the backend (default http://127.0.0.1:8000). Set
- * `ADAPT_API=+offline` to start the UI with the API closed: every call fails, and the
+ * `ADAPT_API=offline` to start the UI with the API closed: every call fails, and the
  * app shows what it could not reach instead of pretending.
  */
 import { createServer } from "node:http";
@@ -21,6 +21,12 @@ const port = Number(process.env.PORT ?? 3000);
 const backend = process.env.ADAPT_API ?? "http://127.0.0.1:8000";
 const offline = backend === "offline";
 
+/* Next reports anonymous usage by default. This app's own stance is that nothing leaves the
+ * machine unless the operator opts in -- `local_only` is a health field, not a slogan -- so the
+ * dev/serve entry point opts out on the user's behalf and says so. Set
+ * NEXT_TELEMETRY_DISABLED=0 to put the choice back. */
+process.env.NEXT_TELEMETRY_DISABLED ??= "1";
+
 const app = next({ dev, hostname });
 const handle = app.getRequestHandler();
 await app.prepare();
@@ -28,8 +34,11 @@ await app.prepare();
 const API_PREFIXES = ["/api/", "/healthz"];
 const WS_PREFIXES = ["/ws/"];
 
-const target = new URL(backend);
-const transport = target.protocol === "https:" ? httpsRequest : httpRequest;
+// `offline` means "there is no backend URL at all", so construction has to wait for that check:
+// `new URL("offline")` throws at import time, which turned the documented flag into a crash instead
+// of the honest 503 the proxy below is written to return.
+const target = offline ? null : new URL(backend);
+const transport = target?.protocol === "https:" ? httpsRequest : httpRequest;
 
 function proxy(req, res) {
   if (offline) {

@@ -32,7 +32,7 @@ from ..security.middleware import (
     TrustedHostMiddleware,
 )
 from ..services import attach, build
-from .routes import adaptations, auth, learning, system, tutor
+from .routes import adaptations, auth, learning, lessons, system, tutor
 from .ws import router as ws_router
 
 log = logging.getLogger("adapt.api")
@@ -56,6 +56,12 @@ async def lifespan(app: FastAPI):
 
     with svcs.db.session() as s:
         seeded = sessions_service.ensure_curriculum(s)
+    # The interactive engine's built-in scenes, seeded by content id so a restart neither
+    # duplicates them nor churns the ids that LessonRun rows point at.
+    from ..services import lessons as lessons_service
+
+    with svcs.db.session() as s:
+        seeded_scenes = lessons_service.ensure_scenes(s)
     # Key check before anything can serve a learner: see crypto/fields.verify_stored_data.
     from ..crypto.fields import verify_stored_data
 
@@ -78,11 +84,13 @@ async def lifespan(app: FastAPI):
     if check["checked"]:
         log.info("startup: key check ok (%s encrypted value(s) across %s column(s) read)", check["checked"], check["columns"])
     log.info(
-        "startup: db=%s encrypted=%s llm=%s curriculum=%s items",
+        "startup: db=%s encrypted=%s llm=%s curriculum=%s items, scenes=%s (%s new)",
         st.db_file,
         svcs.db.file_encrypted(),
         "gemini" if st.gemini_api_key else "local-only",
         seeded["items_total"],
+        seeded_scenes["total"],
+        seeded_scenes["created"],
     )
     if st.mode == "tunnel" and not st.youtube_api_key:
         log.info("YouTube search disabled (no key); the other three providers still run")
@@ -128,7 +136,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware, settings=st)
     app.state.limiter = limiter
 
-    for r in (auth.router, learning.router, adaptations.router, tutor.router, system.router, ws_router):
+    for r in (auth.router, learning.router, lessons.router, adaptations.router, tutor.router, system.router, ws_router):
         app.include_router(r)
 
     @app.exception_handler(RequestValidationError)

@@ -4,7 +4,7 @@
  *  estimates. `aidless` is not cosmetic — a hint during placement would measure the
  *  wrong thing and every later decision would inherit that error.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Question, ReceiptView } from "@/components/question";
 import { Btn, Card, Err, Notice, Tag } from "@/components/ui";
@@ -25,10 +25,16 @@ export default function Diagnose() {
   const [started, setStarted] = useState<number | null>(null);
   const [shortfall, setShortfall] = useState<string | null>(null);
 
+  // `if (loading)` returns a spinner, which unmounts the question card -- and the card holds the
+  // answer the learner has just picked. React's dev-mode StrictMode runs this effect a second time,
+  // so the blank used to happen after the first paint: a selection made in that window vanished and
+  // Submit went back to disabled. The probe symptom was "one press of the submit control sends the
+  // attempt" failing while every API call answered 200. Blank only a screen that is still empty.
+  const painted = useRef(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      if (!painted.current) setLoading(true);
       setError(null);
       try {
         await flow.ready();
@@ -39,6 +45,7 @@ export default function Diagnose() {
         if (data.error || !data.data) setError(data.error ?? "no response from the assessment endpoint");
         else {
           setItems(data.data.items);
+          if (data.data.items.length) painted.current = true;
           setFraming({ purpose: data.data.purpose, how: data.data.how_it_is_used, time: data.data.note_on_time });
         }
       } catch (err) {

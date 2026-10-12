@@ -10,7 +10,10 @@
     "lint": "node ../scripts/check-contract.mjs && tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "demo": "node ../scripts/demo.mjs",
-    "probe": "node scripts-ui-probe.mjs"
+    "probe": "node scripts-ui-probe.mjs",
+    "probe:mock": "node scripts-ui-probe.mjs --mock",
+    "test:engine": "node --test src/lib/engine/*.test.mjs",
+    "test:server": "node --test server.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",

@@ -652,6 +652,18 @@ class LearningIntelligence:
                         distractor_topic=distractor_topic,
                     )
                 )
+            from ..db.models import LessonRun, LessonScene
+
+            lesson_rows_raw = [
+                (r, sc.kind, sc.spec_id, int(sc.frame_count or 0))
+                for r, sc in s.execute(
+                    select(LessonRun, LessonScene)
+                    .join(LessonScene, LessonScene.id == LessonRun.scene_id)
+                    .where(LessonRun.student_id == student_id)
+                    .order_by(LessonRun.last_seen_at.desc())
+                    .limit(200)
+                ).all()
+            ]
             mastery = {t: float(st.p_know) for t, st in states.items()}
             prereqs: dict[str, list[str]] = {}
             for r in prereq_rows:
@@ -666,6 +678,27 @@ class LearningIntelligence:
                 )
                 for c in checks
             ]
+            lesson_rows = [
+                P.LessonRow(
+                    run_id=r.id,
+                    scene_id=r.scene_id,
+                    spec_id=spec_id,
+                    kind=kind,
+                    topic_id=r.topic_id,
+                    frame_count=frames,
+                    frames_viewed=int(r.frames_viewed or 0),
+                    furthest_frame=int(r.furthest_frame or 0),
+                    predictions_total=int(r.predictions_total or 0),
+                    predictions_correct=int(r.predictions_correct or 0),
+                    param_changes=int(r.param_changes or 0),
+                    replays=int(r.replays or 0),
+                    pauses=int(r.pauses or 0),
+                    seconds_watched=int(r.seconds_watched or 0),
+                    finished=r.status == "finished",
+                    at=r.last_seen_at,
+                )
+                for r, kind, spec_id, frames in lesson_rows_raw
+            ]
             return P.EvidenceContext(
                 student_id=student_id,
                 attempts=rows,
@@ -674,6 +707,7 @@ class LearningIntelligence:
                 half_lives=sched,
                 retention=ret_rows,
                 teachback_later=tb_pairs,
+                lessons=lesson_rows,
                 min_n=max(3, self.settings.min_evidence_for_proposal // 2),
                 now=utcnow(),
             )

@@ -94,6 +94,30 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
             alternatives=("items after examples may have been easier", "reading time, not reading, was the real difference"),
         ),
         HypothesisTemplate(
+            detector="scene_prediction_gap",
+            strategy="self_explanation",
+            statement=(
+                "In the interactive scenes you said what would happen next correctly {value} of the time, where "
+                "picking at random from the options on offer would reach about {baseline} ({n} predictions). "
+                "Watching a mechanism run and being able to say what it does next are two different things, and "
+                "the second one is what carries into a question."
+            ),
+            mechanism=(
+                "Stating an expectation before the frame confirms it is retrieval with feedback; it turns "
+                "observation into a model you have to check, instead of a story you were told."
+            ),
+            citations=("Chi et al. 1989 (self-explanation effect)", "Bisra et al. 2018 (simulation-based learning)"),
+            falsification=(
+                "If predicting rises once you narrate each step out loud, the gap was watching without committing, "
+                "not the idea itself; if it stays flat, the frames are too coarse and need stepping."
+            ),
+            alternatives=(
+                "the prompts may have been worded confusingly rather than the idea missing",
+                "you may have answered fast rather than guessed",
+                "the option sets differ in how guessable they are, so the floor is only an estimate",
+            ),
+        ),
+        HypothesisTemplate(
             detector="hint_dependency",
             strategy="hint_fading",
             statement=(

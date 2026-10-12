@@ -36,18 +36,26 @@ def health() -> dict[str, Any]:
     st = get_settings()
     svcs = current()
     db_ok = True
+    db_error: str | None = None
     learners = 0
     try:
         with svcs.db.session() as s:
             s.execute(text("select 1"))
             learners = svcs.db.student_count()
-    except Exception:  # pragma: no cover - the one case worth swallowing
+    except Exception as exc:  # never let a probe take the app down with it -- but name the cause
+        # A health endpoint that answers {"ok": false} and nothing else cannot be acted on: a
+        # missing column, a locked file and a wrong key all look identical, and this is the one
+        # request an operator reads when something is already wrong. The sentence is truncated
+        # and never contains a key, a path query or a row value -- driver errors carry those.
         db_ok = False
+        first = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+        db_error = f"{type(exc).__name__}: {first[:180]}"
     return {
         "ok": bool(db_ok),
         "version": __version__,
         "mode": st.mode,
         "database_reachable": bool(db_ok),
+        **({"database_error": db_error} if db_error else {}),
         "learners": learners,
         "local_only": not bool(st.gemini_api_key),
     }

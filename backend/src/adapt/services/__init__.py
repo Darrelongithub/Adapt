@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from ..ai.ai1 import LearningIntelligence
 from ..ai.ai2 import EducationalIntelligence
+from ..ai.ai3 import Narrator
 from ..ai.llm import GeminiLLM
 from ..config import Settings, get_settings
 from ..db.engine import Database, get_db, set_db
@@ -40,6 +41,7 @@ class AppServices:
     db: Database
     ai1: LearningIntelligence
     ai2: EducationalIntelligence
+    ai3: Narrator | None
     resources: ResourceService | None
     limiter: Any
     _reply_fn: Callable[..., Any] | None = field(default=None, repr=False)
@@ -123,6 +125,7 @@ class AppServices:
                 }
             ),
             "resources": ({"providers": self.resources.status()} if self.resources else {"providers": []}),
+            "narration": (self.ai3.status() if self.ai3 is not None else {"model_configured": False, "note": "AI 3 not built"}),
             "voice": {
                 "stt": STT.capabilities(self.settings),
                 "tts": TTS.capabilities(self.settings),
@@ -210,7 +213,9 @@ def build(
     if with_resources:
         resources = ResourceService(settings=settings, session_factory=database.session, limiter=limiter)
     ai2 = EducationalIntelligence(database.session, ai1=ai1, settings=settings, llm=model, resources=resources)
-    return AppServices(settings=settings, db=database, ai1=ai1, ai2=ai2, resources=resources, limiter=limiter)
+    # AI 3 shares AI 2's client on purpose: one quota guard, one audit trail, one outage.
+    ai3 = Narrator(llm=model, sf=database.session, settings=settings)
+    return AppServices(settings=settings, db=database, ai1=ai1, ai2=ai2, ai3=ai3, resources=resources, limiter=limiter)
 
 
 def attach(services: AppServices) -> None:

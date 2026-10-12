@@ -428,7 +428,7 @@ def ensure_curriculum(s: Session, *, settings: Settings | None = None, force: bo
 
 
 def start_session(s: Session, student_id: str, *, mode: str = "practice", course_id: str | None = None, device_hint: str | None = None) -> LearningSession:
-    if mode not in ("diagnostic", "quiz", "practice", "chat", "voice"):
+    if mode not in ("diagnostic", "quiz", "practice", "chat", "voice", "lesson"):
         mode = "practice"
     sess = LearningSession(
         student_id=student_id,

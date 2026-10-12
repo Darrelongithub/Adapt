@@ -9,6 +9,7 @@ import type { Health, Status } from "@/lib/types";
 
 const NAV = [
   { href: "/learn", label: "Practise" },
+  { href: "/lesson", label: "Lessons" },
   { href: "/proposals", label: "Changes" },
   { href: "/review", label: "Review" },
   { href: "/progress", label: "Progress" },

@@ -45,10 +45,39 @@ def _leaks_answers(payload: object) -> bool:
 # --------------------------------------------------------------------------- #
 
 
+def test_health_says_why_when_its_database_probe_fails(client, monkeypatch):
+    """"The database is unreachable" is not an action; "no such column: X" is.
+
+    The probe used to swallow its exception behind a `pragma: no cover`, so a healthy file with a
+    stale connection read exactly like a missing table or a wrong key. Dev work hits this path for
+    real: the CLI and the API share one file, and a schema written by one while the other holds a
+    pool open produces a failure nobody can name.
+    """
+    from adapt.api.routes import system
+
+    class Broken:
+        class db:  # noqa: N801 - the two attributes the route reaches for
+            @staticmethod
+            def session():
+                raise RuntimeError("no such column: lesson_scenes.author_student_id")
+
+            @staticmethod
+            def student_count():
+                raise AssertionError("must not be reached")
+
+    monkeypatch.setattr(system, "current", lambda: Broken())
+    body = client.get("/api/v1/health").json()
+    assert body["ok"] is False and body["database_reachable"] is False
+    reason = body["database_error"]
+    assert "RuntimeError" in reason and "author_student_id" in reason, reason
+
+
 def test_health_and_index_are_public(client):
     assert client.get("/healthz").status_code == 200
     body = client.get("/api/v1/health").json()
     assert body["ok"] is True and "learners" in body and body["mode"] == "local"
+    # a working probe stays quiet: no error field to make a healthy payload look sick
+    assert "database_error" not in body, body
     index = client.get("/api").json()
     assert index["websocket"] == "/ws/voice"
     # The index is the front door for a human judge: the loop, and the call for each beat.

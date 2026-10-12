@@ -8,7 +8,7 @@
  * `reason` + the decision trace next to every question so the ranking is inspectable
  * rather than magic. `GET /practice` never carries an answer key, so nothing here can peek.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Question } from "@/components/question";
 import { Btn, Card, Err, humanize, Notice, Tag } from "@/components/ui";
@@ -31,10 +31,13 @@ export default function Learn() {
   const items = plan?.items ?? [];
   const entry = items[i];
 
+  // same hazard as /diagnose: `loading` blanks the practice card, and the card is where a typed or
+  // ticked answer lives. Only an empty screen may be blanked.
+  const painted = useRef(false);
   useEffect(() => {
     let alive = true;
     (async () => {
-      setLoading(true);
+      if (!painted.current) setLoading(true);
       try {
         const [planRes, act, dd] = await Promise.all([
           get<PlanResponse>("/api/v1/practice?count=4"),
@@ -43,7 +46,10 @@ export default function Learn() {
         ]);
         if (!alive) return;
         if (planRes.error) setError(planRes.error);
-        else setPlan(planRes.data);
+        else {
+          setPlan(planRes.data);
+          if ((planRes.data?.items ?? []).length) painted.current = true;
+        }
         setActive(act.data?.active ?? []);
         setDue(dd.data?.count ?? 0);
       } catch (err) {

@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 node_modules/
+*.egg-info/
+build/
 .next/
 out/
 dist/

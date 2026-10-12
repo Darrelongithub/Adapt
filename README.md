@@ -22,12 +22,19 @@ also audited.
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e "./backend[dev]"          # fastapi, sqlalchemy, numpy, cryptography, argon2…
-cd backend && pytest -q                  # 150 tests, no network needed
+cd backend && pytest -q                  # 483 tests, no network, no model call needed
 adapt demo --turns 3                     # the whole loop, in a terminal, on a temp database
 
 uvicorn adapt.api.app:app --port 8000    # the API (docs at /api, health at /healthz)
 cd ../frontend && npm ci && npm run dev  # the app at :3000, proxying /api and /ws to :8000
 node ../scripts/demo.mjs                 # the same loop driven through the HTTP surface
+
+cd ../frontend
+npm run lint        # the API/origin contract (scripts/check-contract.mjs) + tsc, no server
+npm run test:engine # the engine's invariants, against the source that has to keep them
+npm run test:server # the launcher: ADAPT_API=offline refuses with a 503 and still serves the UI
+npm run probe       # the real UI in jsdom: click, answer, reload, and read what the DB says
+npm run probe:mock  # the same screen on ?mock=1, with nothing but its own refusals asserted
 ```
 
 `npm run dev` and `npm run start` both run `frontend/server.mjs`, a small Node server that
@@ -61,6 +68,16 @@ into a real session.
   `grounded: true|false` and `sources[]` on every answer. Nothing is sent to a model when no
   key exists, when consent is off, or when the daily budget is spent — and the response says
   which of those it was.
+* **Interactive lessons are computed, not generated.** A scene is a spec the backend validates
+  against a per-kind model (`learning/scenespec.py`) and plays as a trace of frames
+  (`learning/sims/`, one module per kind) — and the prediction question is *inside* the frame,
+  written where the next state is decidable, so a prompt cannot drift out of step with what it
+  asks about. The front-end head (`frontend/src/lib/engine/player.ts`) refuses to `step` past an
+  unanswered prompt while letting the slider, `back` and "end & review" go anywhere. A lesson run
+  earns no mastery, a learner's copy of a scene is *theirs* (`0003`'s two partial unique indexes),
+  and a kind this build cannot draw still plays as narration and state values rather than a blank
+  box. `docs/ENGINE.md` is the contract; `npm run test:engine`, `npm run lint` and the `lesson`
+  probe scenario are what keep it from being prose.
 * **Parametric items are rendered per learner, consistently.** One seed function
   (`bank.variant_seed`) drives the stem you are shown, the hint you ask for, the worked
   example, the reveal, and the grading of your answer. Two of those disagreed until the tests
@@ -80,19 +97,27 @@ backend/src/adapt/
              local_tutor.py (fallback teacher, item rendering) · providers (gemini, resources)
   learning/  bkt · spacing · selector · patterns · hypotheses · strategies (the proposal catalog)
              telemetry (allowlist + derived metrics) · gaps · effect (did it help?) · profile
+             sims/ (one module per scene kind: run() -> frames, each carrying its own prompt or
+             none; grade_prediction, expected, truth, explain) · scenespec.py (validate() + the
+             content-addressed spec_id, plain-text limits, builtin_specs() seeded at startup)
   assessment/ bank (the item bank) · grading · numbas (import/export)
   services/  sessions · attempts · journey (the readable history) · adaptations (the gate)
   api/       app + routes/ (auth, learning, adaptations, tutor, system) · ws.py · deps (rate, csrf)
   crypto/    keys (one master key, HKDF subkeys) · fields (the encrypted column types)
   cli.py     demo · status · keys · export · import
 frontend/src/
+  lib/engine/     player.ts (the gate, the reducer, the timing floor) · types.ts · its own tests
   lib/api.ts      one fetch wrapper: /api/v1 prefix, CSRF from the cookie, {data,error} returns
   lib/flow.ts     the loop in one hook: session, event queue, attempts, finish + analyse
   lib/mock.ts     the ?mock=1 fixtures (recorded shapes, never a substitute for the API)
   components/     ui.tsx (primitives + EventQueue) · question.tsx (the item) · chrome.tsx
-  app/            onboarding · diagnose · learn · proposals · review · progress · settings · voice
+                  scenes/ (stages.tsx: one stage per kind; index.tsx: the dispatcher that says so
+                  when a kind has no stage)
+  app/            onboarding · diagnose · learn · lesson (the interactive engine) · proposals ·
+                  review · progress · settings · voice
 scripts/demo.mjs  the loop driven over HTTP, with the contract checks the UI relies on
-docs/             UNVERIFIED.md · VOICE.md · PILOT.md
+docs/             ENGINE.md (the interaction engine, end to end) · UNVERIFIED.md · VOICE.md · PILOT.md
+frontend/README.md  the web app: ports, dev origins, probes, and what the player guarantees
 ```
 
 ## Environment
@@ -114,15 +139,38 @@ copy of the path to drift: `env.py` asks the app for its engine, so `ADAPT_DATA_
 ```bash
 cd backend
 ../.venv/bin/alembic -c alembic.ini upgrade head                                # empty or versioned
-../.venv/bin/alembic -c alembic.ini stamp head                                  # once: a create_all database
+../.venv/bin/alembic -c alembic.ini stamp 0002 && \
+  ../.venv/bin/alembic -c alembic.ini upgrade head          # a create_all database: stamp what it matches
 ../.venv/bin/alembic -c alembic.ini revision --autogenerate -m "add a column"    # after editing models
 ../.venv/bin/alembic -c alembic.ini check                                       # fails if a model awaits a revision
 ../.venv/bin/alembic -c alembic.ini downgrade base                              # reversible, and tested to be
 ```
 
+A database built by `create_all` has no `alembic_version` row, so a bare `upgrade head` replays
+`0001` and dies on `table audit_log already exists`. Stamp first — at the revision the file actually
+matches. A database created by *this* build already has every column and index, so it is at head and
+`stamp head` is the truth. A database created by an earlier build matches `0002`, and stamping *that*
+file to head is the mistake that matters: it looks migrated while `lesson_scenes.spec_id` is still
+unique per database, which is the collision `0003` exists to remove. Replaying a revision onto a file
+that already matches it is now harmless rather than an `index already exists` failure — `0003` reads
+`get_indexes()` and changes only what is absent or wrongly shaped, in both directions — because those
+two situations are hard to tell apart from the outside. Confirm through the app's own engine, and
+`test_migrations.py` holds the line by comparing an upgraded database with a `create_all` one on
+every index name and uniqueness flag:
+```bash
+../.venv/bin/python -c "from sqlalchemy import inspect; from adapt.db.engine import create_db_engine, get_settings; e,_=create_db_engine(get_settings()); print(inspect(e).get_indexes('lesson_scenes'))"
+```
+
 Read every autogenerated revision before you ship it: autogenerate cannot see a data migration,
 and the encrypted column types are rendered through a `render_item` hook so a revision does not
-turn `EncryptedJSON(context="audit.detail")` into a bare `Text`. The gate is
+turn `EncryptedJSON(context="audit.detail")` into a bare `Text`. The connection Alembic uses is
+the application's engine (`connectable = _engine` in `migrations/env.py`), not one rebuilt from
+`alembic.ini`: a URL carries neither `module=sqlcipher3` nor the `PRAGMA key` listener, so
+rebuilding it means an existing encrypted database cannot be opened and a fresh directory quietly
+gets a *plaintext* file the app can never read. `test_migrations.py` pins both directions, with
+`ADAPT_DB_ENCRYPTION=auto` set explicitly in every subprocess (the test session runs field-only, and
+a guard that inherits that policy inspects a plaintext scratch file and passes no matter what). The
+gate is
 `backend/tests/test_migrations.py`, which upgrades a scratch database and compares the result
 with the models, stamps a `create_all` file, and downgrades to empty.
 
