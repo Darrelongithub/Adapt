@@ -14,13 +14,14 @@ must not kill the demo" rule.
 
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, computed_field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Mode = Literal["local", "tunnel", "test"]
 
@@ -51,9 +52,15 @@ class Settings(BaseSettings):
     # /ws to us. That keeps the demo working when the sandbox/browser and the
     # backend are different machines (tunnel, e2b preview, ...).
     frontend_origin: str = "http://localhost:3000"
-    allowed_origins: list[str] = Field(default_factory=list)
+    # ``NoDecode`` keeps pydantic-settings from json.loads()-ing these two before the
+    # validator below can see them. Without it, the plain comma separated value the API's own
+    # 400 hint ("set ADAPT_EXTRA_ALLOWED_HOSTS") tells an operator to type raised
+    # ``SettingsError`` at import time and killed the process -- while ``["a","b"]`` worked.
+    # Both forms are accepted now: see ``_split_list``. (NoDecode is in pydantic-settings
+    # since 2.4; the floor here is 2.7.)
+    allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Extra hosts accepted for WebSocket / redirect safety (tunnel hostnames).
-    extra_allowed_hosts: list[str] = Field(default_factory=list)
+    extra_allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
     require_https: bool = False  # set true when serving the judge tunnel with TLS
     tls_certfile: Path | None = None
     tls_keyfile: Path | None = None
@@ -183,8 +190,22 @@ class Settings(BaseSettings):
     @field_validator("allowed_origins", "extra_allowed_hosts", mode="before")
     @classmethod
     def _split_list(cls, v: object) -> object:
+        """Accept both spellings of a host/origin list: ``a,b`` and ``["a","b"]``.
+
+        The comma separated form is what the docs and the API's own untrusted-host hint tell
+        an operator to write; the JSON array is what pydantic-settings decodes and what any
+        existing ``.env`` may already hold, so both keep working.
+        """
         if isinstance(v, str):
-            return [x.strip() for x in v.split(",") if x.strip()]
+            text = v.strip()
+            if text.startswith("["):
+                try:
+                    decoded = json.loads(text)
+                except ValueError:
+                    decoded = None
+                if isinstance(decoded, list):
+                    return [str(x).strip() for x in decoded if str(x).strip()]
+            return [chunk.strip() for chunk in text.split(",") if chunk.strip()]
         return v
 
     @computed_field  # type: ignore[prop-decorator]

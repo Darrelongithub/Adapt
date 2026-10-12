@@ -32,7 +32,7 @@ node ../scripts/demo.mjs                 # the same loop driven through the HTTP
 cd ../frontend
 npm run lint        # the API/origin contract (scripts/check-contract.mjs) + tsc, no server
 npm run test:engine # the engine's invariants, against the source that has to keep them
-npm run test:server # the launcher: ADAPT_API=offline refuses with a 503 and still serves the UI
+npm run test:server # the launcher: offline refuses with a 503, and a LAN Host reaches the API
 npm run probe       # the real UI in jsdom: click, answer, reload, and read what the DB says
 npm run probe:mock  # the same screen on ?mock=1, with nothing but its own refusals asserted
 ```
@@ -45,6 +45,38 @@ against nothing.
 Open any page with `?mock=1` to see every screen from fixtures with no backend at all. A red
 banner is shown whenever that mode is on, and mock mode is stored per tab so it cannot leak
 into a real session.
+
+## Show someone on your wifi
+
+```bash
+adapt host              # API + web app, one address, printed (a room on the same wifi)
+adapt host --tunnel     # the same, plus an https link — what the microphone needs
+```
+
+`adapt host` starts both servers, detects this machine's LAN address, adds **that one host** to
+the API's allowlist (an exact string: never a wildcard, never a subnet — the laptop next door is
+still refused, and `backend/tests/test_hosting.py` proves both halves), and prints the address to
+read out. Your `.env` is only read — never rewritten, never echoed — and `--port`, `--ip`,
+`--data-dir` and `--rate-limit-multiplier` change nothing else.
+
+Two things to say before people open the link:
+
+* **The microphone needs https.** Browsers hand a page the microphone only in a secure context,
+  so on `http://<lan-ip>:3000` the `/voice` screen cannot listen; typing works exactly the same.
+  `--tunnel` opens an https link through cloudflared (else `npx localtunnel`) — both are hosts
+  the API already trusts — and the voice socket follows `location.protocol`, so `wss` needs no
+  configuration. Off-wifi people can use that link too.
+* **The room is one connection.** Everyone behind the same router reaches the API from one
+  address, so the per-IP ceiling and learner creation are a *shared* budget. `adapt host` raises
+  `ADAPT_RATE_LIMIT_MULTIPLIER` to ×10 for the servers it starts (120 → 1200 requests/min,
+  6 → 60 learners/min) and prints the numbers; the repository default stays 1.0, so no
+  deployment's protection is lowered by a command someone ran at a showcase.
+  `--rate-limit-multiplier` raises it further, and `GET /api/v1/quotas` reports what is in force.
+
+A real second device, a real phone microphone and a real tunnel were **not** available in the
+sandbox this was built in (see `docs/UNVERIFIED.md`). Rehearse once: open the printed address on
+a phone, create a learner, answer one question. If `--tunnel` cannot produce an https address,
+say so and share the LAN address — the command keeps serving and tells you which one it is.
 
 ## What is implemented, and what it refuses to do
 
