@@ -1,0 +1,231 @@
+# Full functionality scan — report
+
+**Date:** 2026-10-12 · **Commit:** `c57c7d5` (on top of `2a72aff`, `438b379`, `a157e7d`)
+**Method:** inspect → run → interact → reproduce → fix → retest → verify. Every claim below
+names the command or test that produced it.
+
+---
+
+## A. Overall status
+
+**The application runs and a student can complete the core journey end to end.** Four defects
+were found and fixed; nothing found is still broken.
+
+The core journey was walked twice, by two different paths, and both pass:
+
+| Path | What it drives | Result |
+|---|---|---|
+| UI probe (`npm run probe`, jsdom against the real Next.js server) | every screen, form, button, refresh and error path | **139/139 checks** |
+| Data-layer journey (`scripts/journey_check.py`) | records, approvals, restart | **47/47 checks** |
+| Failure matrix (`scripts/failure_matrix_check.py`) | bad input, auth, floods, dead providers | **25/25 checks** |
+| Backend suite (`pytest -q`) | routes, learner model, grading, adapters, voice, migrations | **256 passed** |
+| Terminal loop (`adapt.cli demo --turns 3`) | whole loop on a temp database | exit 0 |
+| HTTP demo (`node scripts/demo.mjs --json`) | a synthetic learner over the public API | `warnings: []` |
+| Migrations (`alembic upgrade head`, fresh data dir) | schema, then the app boots on it | 2 revisions, no drift |
+
+**Not "unable to run", not "partially functional"** — with one honest qualifier: several
+capabilities cannot be exercised in this sandbox and are listed in **E**, not silently counted
+as working. The largest of those is any real model answer: no Gemini key and no route to
+Google's API, so AI 1 and AI 2 were verified with their local providers (and their failure
+paths), never with a real generation.
+
+---
+
+## B. Checklist per feature
+
+**tested-working** = exercised and observed passing · **tested-fixed** = was broken, now
+verified fixed · **not implemented** = no such surface exists (by design) · **unable to
+verify** = implemented, but the environment cannot exercise it.
+
+### Loop and learning
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Guest registration, session cookie, CSRF | tested-working | probe `onboarding` 12/12; matrix: 401 anonymous, 403 wrong CSRF |
+| Sign-in / return visit (demo credentials) | tested-working | `scripts/demo.mjs`; journey restart re-signs-in |
+| Onboarding (goals, minutes, confidence) + persistence | tested-working | probe `onboarding` (server-side values re-read after reload) |
+| Placement diagnostic (per-topic items, bands) | tested-working | probe `diagnose` 21/21; journey "placement" 5 checks |
+| Practice queue (hint, worked example, reveal, change answer) | tested-working | probe `learn` 19/19; journey "practice" 6 checks |
+| Grading: numeric, mcq, text, teachback rubric, worked example | tested-working | `pytest tests/test_assessment.py`; journey scoring |
+| Mastery trace + retention schedule + due list | tested-working | journey; probe `review` |
+| Progress screen (bands, measured outcomes) | tested-working | probe `progress` 5/5; `dashboard`/`profile` in journey |
+| AI 1 detections → hypotheses → proposals | tested-working (local) | journey `analyze` reports 2 hypotheses / 2 proposals and detector citations; model path **unable to verify** |
+| **Approval gate** at API + DB level | tested-working | journey §4–5: reject applies nothing and is recorded; modify stores the learner's number (`target 0.8`, source `modified`) and refuses undeclared keys; accept turns it on; a second decision is 409 |
+| "Explain more simply" (temporary, immediate) | tested-working | 4 simplify requests changed 0 active adaptations; `level` is per-request |
+| AI 2 tutor answer (local, grounded) | tested-working | journey `explain`; probe `learn`; sources listed honestly |
+| AI 2 answer from a real model | **unable to verify** | no key + no route; with a key present the app degrades to local and says so (`llm.error`, `fell_back_to`) |
+| Generated questions (validate → store → reuse) | tested-working (contract) | `pytest tests/test_generated_items.py` 15 passed; arithmetic checked by AST, ids content-derived, ungradeable items refused |
+| Voice: capabilities honesty, socket handshake/refusal | tested-working | probe `voice` 8/8; `pytest tests/test_voice_pipeline.py` 11 passed |
+| Voice: VAD endpointing, barge-in, obsolete-audio stop, reconnect | tested-working | same file, on synthetic audio |
+| Voice: microphone permission, real capture, real transcript/audio | **unable to verify** | no `faster-whisper`/`kokoro`, no audio device, no browser |
+| Numbas export → import round trip | tested-working | `test_api_learner_loop.py::test_numbas_export_then_import_is_rerun_safe` |
+| Numbas import of a foreign package | tested-fixed | `pytest tests/test_numbas_import_fidelity.py` (tag by code, untagged, ungradeable part type) |
+| Numbas submit → score → return | tested-working | same file: import, answer right/wrong, score, feedback, events |
+| Numbas in a real editor/server | **unable to verify** | no Numbas instance here |
+| Resources search API | tested-fixed | 500 → 200 with per-provider status and a reason when empty |
+| Resource providers (valid/empty/unreachable/bad key/timeout/429/local limit) | tested-working (transport substituted) | `pytest tests/test_resource_providers.py` 19 passed |
+| Live OpenAlex / arXiv / Open Library / YouTube calls | **unable to verify** | all four fail DNS here (~30 ms) |
+| Privacy surface, event allowlist, telemetry | tested-working | journey "privacy"; `pytest tests/test_telemetry.py` |
+| Settings screen (voice on/off, preferences) | tested-working | probe `settings` 12/12 |
+| Persistence: refresh | tested-working | probe reload checks in `learn`, `proposals`, `onboarding` |
+| Persistence: server restart on the same data dir | tested-working | journey §10 (events, adaptations, dashboard, journey intact) |
+| Migrations: fresh DB and existing DB | tested-working | `alembic upgrade head` + `alembic check`; `pytest tests/test_migrations.py test_migration_encryption.py` |
+| Failure handling (auth, bad input, size caps, floods, dead providers) | tested-working | `scripts/failure_matrix_check.py` 25/25 |
+| Teacher surface (assign, roster, mark) | **not implemented** | no route or screen exists |
+| Resources screen (search UI) | **not implemented** | the endpoint has no caller; resource hints appear inside explanations |
+| i18n / RTL | **not implemented** | — |
+
+---
+
+## C. Repairs
+
+Four defects, each with the smallest change that removes it. Every fix has a regression test
+that fails if the defect returns.
+
+### C1. `POST /api/v1/resources/search` answered 500 for every request
+* **File:** `backend/src/adapt/api/routes/tutor.py:293`
+* **Root cause:** the route called `ResourceService.search(..., limit=body.limit, ...)`; the
+  service takes `limit_per_provider`. The `TypeError` escaped before any provider ran, so the
+  endpoint had never returned a result. It survived because it had **no caller and no test** —
+  the only resources assertion checked static provider-gate configuration.
+* **Restored:** searches answer 200 with a ranked, de-duplicated list, per-provider state
+  (`provider/ok/source/note`) and `retrieval_note`; an empty answer says why it is empty. The
+  route now also truncates to its declared `limit` (1–12) since the service slices at
+  `max(6, limit_per_provider * 2)`.
+* **Tests:** `test_a_resource_search_answers_without_a_network`,
+  `test_a_resource_search_refuses_an_unknown_provider_without_crashing`, plus the 19-case
+  provider matrix.
+
+### C2. A Numbas package from anywhere but ADAPT was a 500 — or a trap
+* **Files:** `backend/src/adapt/assessment/numbas.py`, `backend/src/adapt/api/routes/tutor.py`
+* **Root causes (one import path, two failures):**
+  1. the export writes the topic **id** into `adapt-topic:<id>`; the importer read any tag back
+     as an id. A teacher tagging with the human-readable *code*, or not tagging at all, had the
+     string inserted as a foreign key → `IntegrityError` → **500**, with the SQL in the
+     local-mode response;
+  2. a Numbas part type with no local grader was imported as free text, `active`, and reported
+     `runnable_in_app`. Its `answer_spec` held only a `formula`, which the text grader never
+     compares, so **every answer scored 0 — including the teacher's own** — and feedback read
+     `expected one of: ` (empty). A learner served that item would have mastery, spacing and the
+     item's own calibration moved by a question nothing could mark.
+* **Restored:** topic references resolve against ids *and* codes; an unplaceable item is skipped
+  by name with the valid codes (never attached to whichever topic came first, which would have
+  corrupted an unrelated topic's evidence). A part type with no grader is imported **inactive**
+  and reported as needing the hosted Numbas runtime; the grader answers `method="none"` with a
+  sentence instead of an empty list.
+* **Tests:** `backend/tests/test_numbas_import_fidelity.py` (7 tests, including submit → score →
+  return for a gradeable import). `test_api_learner_loop.py`'s round-trip test still passes.
+
+### C3. A typed voice turn blocked barge-in
+* **Files:** `backend/src/adapt/voice/pipeline.py`, `backend/src/adapt/api/ws.py`
+* **Root cause:** the socket's control loop is also the loop that reads microphone frames, and
+  it `await`ed `push_text(...)`, which returns only after the answer has been *spoken*. Audio
+  turns are started on a task (which is what makes interruption possible); typed turns were not,
+  so interrupting a typed question was impossible regardless of the `barge_in` setting.
+* **Restored:** `VoiceConversation.start_text()` starts a typed turn on its own task; the socket
+  uses it. Verified by `test_a_typed_turn_does_not_hold_the_receive_loop`, plus barge-in,
+  cough-tolerance and `stop()` cancellation tests.
+
+### C4. `POST /api/v1/analyze` said 200 for a session that does not exist
+* **File:** `backend/src/adapt/api/routes/learning.py`
+* **Root cause:** the whole-record analysis was returned labelled with any `session_id` given,
+  so "that session was never recorded" was indistinguishable from "we looked and found nothing"
+  — while the sibling `GET /sessions/{id}/events` already answers 404 for the same id.
+* **Restored:** a non-empty unknown/id-other-learner session is 404 `unknown session`. An empty
+  id is still accepted, because the loop screens send `session_id=` once a session is over and
+  analysing the record is what they want there.
+* **Test:** `test_analyze_refuses_a_session_that_is_not_this_learners`.
+
+### Not a defect (recorded so nobody re-investigates)
+
+* **Probe failures under repeated runs** (onboarding reload, proposals reload, diagnose
+  numeric input) were **rate-limit buckets and warm state from earlier runs in the same
+  process**, not app behaviour: with one fresh API per scenario, all ten scenarios and the full
+  probe pass (139/139), repeatedly.
+* `ResourceService.search` slicing at `max(6, limit*2)` is by design; the route now truncates.
+* Local-mode 500 responses include the exception text on purpose (`app.py`); on a tunnel they
+  carry a request id instead.
+
+---
+
+## D. Exact commands with pass/fail
+
+```bash
+cd /home/user/Adapt/backend
+../.venv/bin/python -m pytest -q                                   # 256 passed
+../.venv/bin/python -m ruff check src --select F,E7,E9,B017         # All checks passed
+../.venv/bin/python -m adapt.cli demo --turns 3                     # exit 0 (whole loop, temp DB)
+
+cd /home/user/Adapt/frontend
+npm run lint        # contract ok: 58 routes / 16 calls, tsc clean
+npm run build       # built (static pages)
+cd .. && node scripts/demo.mjs --json          # warnings: []
+
+# the UI probe: one fresh API + fresh data dir per scenario (warm buckets fail spuriously)
+bash /tmp/scans/all.sh full                     # 139/139 checks passed
+#   scenarios individually: learn 19/19, proposals 36/36, onboarding 12/12, diagnose 21/21,
+#   home 10/10, progress 5/5, voice 8/8, settings 12/12, review 1/1, failures 14/14
+
+# the data layer, including a server restart on the same data directory
+.venv/bin/python scripts/journey_check.py                        # 47/47 checks passed
+
+# the failure matrix (against a FRESHLY started API)
+.venv/bin/python scripts/failure_matrix_check.py http://127.0.0.1:8000   # 25/25 checks passed
+
+# migrations: fresh data directory, then the app on the migrated file
+cd backend && ADAPT_DATA_DIR=/tmp/mig-fresh ../.venv/bin/python -m alembic upgrade head
+../.venv/bin/python -m alembic check               # No new upgrade operations detected
+# (+ the app booted against it: "curriculum=55 items", /healthz {"ok":"true"})
+```
+
+Evidence kept: `/tmp/scans/probe-*.txt` (raw probe output per scenario), `/tmp/scans/cli-demo.txt`.
+The per-scenario runner (`/tmp/scans/one.sh`) is scratch and not part of the repo: it exists to
+give each scenario a fresh API and data directory, which is the only way the rate limiter does
+not turn one scenario's spending into the next one's failure.
+
+---
+
+## E. Remaining problems
+
+**Blocking nothing, but unverified — no claim is made about any of these:**
+
+1. **A real model answer (AI 1 analysis text, AI 2 explanations and generated questions).** No
+   `ADAPT_GEMINI_API_KEY` and no route to Google's API. With a syntactically valid but
+   unauthorised key, `/explain` answers 200 from the local tutor and reports
+   `llm.error: ConnectError`, `fell_back_to: local tutor` — the honesty path is proven, the
+   answer quality is not. *To check:* set a real key and watch `llm.ok`.
+2. **Real speech.** `faster-whisper` and `kokoro` are not installed (weights come from Hugging
+   Face; `kokoro` also wants `espeak-ng` and pins Python <3.13). Capabilities report both as
+   unavailable and the app degrades to browser dictation and `speechSynthesis`. Microphone
+   permission prompts and audio quality are outside this sandbox entirely.
+3. **Live third-party hosts.** OpenAlex, arXiv, Open Library and YouTube all fail DNS from
+   here (~30 ms). The adapter matrix is tested with a substituted transport; the live call is
+   not.
+4. **A real Numbas editor/server.** Packages are round-tripped against this build's own
+   importer only.
+5. **Rendered pixels and real focus/screen-reader behaviour.** The UI probe is jsdom: it proves
+   every interaction and request, not how the page looks.
+6. **Carried over from earlier passes, still open (not defects, known gaps):** response-time
+   effort isn't gated before mastery moves (`docs/REVIEW.md` §4.1); one detector's evidence bar
+   is misdescribed (§2.1); strategy-credit unit issue (§2.4); no DIF/ABROCA fairness screen
+   (§4.4). All are documented with measurements in `docs/REVIEW.md` §2 and §7.
+7. **By design, not implemented:** teacher/roster surface, i18n, a resources *screen* (the
+   search API exists and now works, but no page calls it).
+
+---
+
+## F. Can a student complete the core journey without a known blocking defect?
+
+**Yes.** The journey was run end to end against a real server and a real (SQLCipher-encrypted)
+database, and again through the UI, with no blocking defect on any step:
+
+register → onboard → placement diagnostic → dashboard → practice with hints and reveals →
+analysis → proposals → **student decides** (accept / reject / modify / later) → practice adapts →
+review-due → explain → progress → restart with all state intact.
+
+Four defects were fixed along the way; three of them were on paths no test had ever driven
+(resource search, foreign Numbas import, `/analyze` with a bad session id), and one was a voice
+interaction that silently could not happen. None of the four sits on the main path, and all four
+now have regression tests. The limits that remain are the five environmental ones in **E** —
+principally that no answer from a real model, no audio, and no live third-party call has ever
+been observed here.
