@@ -1328,13 +1328,21 @@ async function main() {
     const missing = await api("/api/v1/does-not-exist", { headers: { cookie } });
     check("failures", "an unknown API path 404s rather than 500ing", missing.status === 404, String(missing.status));
     // the rate limiter, surfaced the way a learner would see it. `llm` is the tightest bucket
-    // a learner can spend by ordinary use (8/min, burst 12), and /tutor/explain sits in it, so
-    // asking the same question repeatedly must eventually answer 429 with a wait time.
+    // a learner can spend by ordinary use, and /tutor/explain sits in it, so asking the same
+    // question repeatedly must eventually answer 429 with a wait time.
+    //
+    // How many calls that takes is the server's business, not this file's. A suite walked back
+    // to back is started with ADAPT_RATE_LIMIT_MULTIPLIER (the probe's own advice in the summary
+    // below), which widens every bucket; a hardcoded 16 then reports the limiter as broken for
+    // doing exactly what it was configured to do. So ask the server how wide the bucket is.
+    const quotas = await api("/api/v1/quotas", { headers: { cookie, "x-csrf-token": csrf } });
+    const burst = Number(quotas.body?.buckets?.llm?.[1] ?? 12) || 12;
+    const ceiling = Math.min(400, Math.ceil(burst) + 6);
     let limited = 0;
     let limitedBody = null;
     let limitedHeader = null;
     const seen = new Set();
-    for (let i = 0; i < 16; i += 1) {
+    for (let i = 0; i < ceiling; i += 1) {
       const r = await api("/api/v1/explain", { method: "POST", body: { question: "why does this work this way", item_id: "itm_integer_ops_00" }, headers: { cookie, "x-csrf-token": csrf } });
       if (r.status !== 200 && !seen.has(r.status)) {
         seen.add(r.status);
@@ -1342,7 +1350,7 @@ async function main() {
       }
       if (r.status === 429) { limited = i; limitedBody = r.body; limitedHeader = r.headers.get("retry-after"); break; }
     }
-    check("failures", "a flooded learner is told to wait, with a number", limited > 0 && limitedBody?.detail?.error === "rate_limited" && Number(limitedBody?.detail?.retry_after_s) > 0, limited ? `429 after ${limited} calls: ${JSON.stringify(limitedBody.detail)} (retry-after header: ${limitedHeader})` : "no 429 in 16 calls -- the bucket for this scope is wider than the probe or the multiplier is raised");
+    check("failures", "a flooded learner is told to wait, with a number", limited > 0 && limitedBody?.detail?.error === "rate_limited" && Number(limitedBody?.detail?.retry_after_s) > 0, limited ? `429 after ${limited} calls (bucket ${burst}/run, flooded up to ${ceiling}): ${JSON.stringify(limitedBody.detail)} (retry-after header: ${limitedHeader})` : `no 429 in ${ceiling} calls -- the server reported an llm burst of ${burst} and refused none of them`);
     // the throttle above is the app refusing; this is the app *misreading* the refusal. A 429
     // on the one read that answers "who am I" used to render the sign-in wall and tell the
     // learner to start again - which is how a half-finished placement gets thrown away.
