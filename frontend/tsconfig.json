@@ -32,7 +32,9 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "next-env.d.ts"
+    "/tmp/adapt-next-offline-SxRmd0/types/**/*.ts",
+    "next-env.d.ts",
+    "/tmp/adapt-next-proxy-5RdSUZ/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

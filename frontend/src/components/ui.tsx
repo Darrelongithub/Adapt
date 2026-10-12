@@ -10,20 +10,20 @@ type Loader = (path: string, init: { method: string; json: unknown }) => Promise
 export function Card({ title, right, children, tone }: { title?: ReactNode; right?: ReactNode; children: ReactNode; tone?: "ask" | "good" | "warn" | "muted" }) {
   const edge =
     tone === "ask"
-      ? "border-l-2 border-l-[var(--think)]"
+      ? "border-l-[3px] border-l-[var(--think)]"
       : tone === "good"
-        ? "border-l-2 border-l-[var(--good)]"
+        ? "border-l-[3px] border-l-[var(--good)]"
         : tone === "warn"
-          ? "border-l-2 border-l-[var(--warn)]"
+          ? "border-l-[3px] border-l-[var(--warn)]"
           : tone === "muted"
-            ? "border-l-2 border-l-[var(--line)]"
+            ? "border-l-[3px] border-l-[var(--line)]"
             : "";
   return (
-    <section className={`rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 ${edge}`}>
+    <section className={`rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-4 ${edge}`}>
       {(title || right) && (
         <header className="mb-3 flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-semibold tracking-wide text-[var(--muted)] uppercase">{title}</h2>
-          <div className="text-xs text-[var(--muted)]">{right}</div>
+          <h2 className="text-[11px] font-semibold tracking-[0.08em] text-[var(--muted)] uppercase" style={{ fontFamily: "var(--font-mono)" }}>{title}</h2>
+          <div className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{right}</div>
         </header>
       )}
       {children}
@@ -49,18 +49,20 @@ export function Btn({
   title?: string;
 }) {
   const base =
-    "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm border transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
+    "inline-flex items-center gap-2 rounded-[2px] px-3 py-1.5 text-[12px] border transition-all disabled:opacity-35 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none";
+  const mono = "font-mono uppercase tracking-[0.06em]";
+  const hover = "hover:translate-y-[-1px] hover:shadow-[0_3px_0_var(--line)]";
   const look =
     kind === "primary"
-      ? `${base} border-transparent bg-[var(--accent)] text-[#05202a] font-semibold hover:brightness-110`
+      ? `${base} ${mono} ${hover} border-[var(--ink)] bg-[var(--ink)] text-[var(--bg)] font-semibold`
       : kind === "danger"
-        ? `${base} border-[var(--bad)]/40 text-[var(--bad)] hover:bg-[var(--bad)]/10`
+        ? `${base} ${mono} ${hover} border-[var(--bad)]/40 text-[var(--bad)] hover:bg-[var(--bad)]/10`
         : kind === "ghost"
-          ? `${base} border-transparent text-[var(--muted)] hover:text-[var(--ink)]`
-          : `${base} border-[var(--line)] hover:border-[var(--accent)]/60`;
+          ? `${base} ${mono} border-transparent text-[var(--muted)] hover:text-[var(--ink)]`
+          : `${base} ${mono} ${hover} border-[var(--line)] bg-[var(--panel)] text-[var(--ink)] hover:border-[var(--accent)]/60`;
   if (href)
     return (
-      <Link href={href} className={look} title={title}>
+      <Link href={href} className={look} title={title} aria-disabled={disabled ? "true" : undefined}>
         {children}
       </Link>
     );
@@ -80,28 +82,79 @@ export function Tag({ children, tone = "line" }: { children: ReactNode; tone?: "
     think: "border-[var(--think)]/50 text-[var(--think)]",
     accent: "border-[var(--accent)]/50 text-[var(--accent)]",
   };
-  return <span className={`rounded-full border px-2 py-0.5 text-[0.7rem] ${map[tone]}`}>{children}</span>;
+  return <span className={`rounded-[2px] border px-2 py-0.5 text-[10px] uppercase tracking-[0.06em] ${map[tone]}`} style={{ fontFamily: "var(--font-mono)" }}>{children}</span>;
 }
 
 /** The band word the backend chose, with a bar. No percentage is shown as a fact: the
  *  number is a model's estimate, and the CI is next to it whenever there is one. */
-export function Band({ band, pKnow, ci }: { band: string; pKnow?: number; ci?: [number, number] }) {
+export function Band({
+  label,
+  band,
+  interval,
+  value,
+  n,
+  pKnow,
+  ci,
+}: {
+  label?: string;
+  band: string;
+  interval?: [number, number];
+  value?: number;
+  n?: number;
+  pKnow?: number;
+  ci?: [number, number];
+}) {
+  // Backwards compat: pKnow -> value, ci -> interval
+  const resolvedValue = value ?? pKnow;
+  const resolvedInterval = interval ?? ci;
+  const resolvedN = n;
+  const hasRange = Array.isArray(resolvedInterval) && resolvedInterval.length === 2;
+  const hasPoint = typeof resolvedValue === "number";
+  const hasN = typeof resolvedN === "number";
   const tone = band === "mastered" || band === "secure" ? "good" : band === "new" || band === "gapped" ? "bad" : band === "developing" ? "accent" : "warn";
-  const width = Math.max(2, Math.min(100, Math.round((pKnow ?? 0) * 100)));
+  // If we have range/point we render the new track visualization, otherwise fallback to old compact Tag+bar for call sites that only provide band.
+  if (hasRange || hasPoint) {
+    const displayLabel = label ?? band;
+    return (
+      <div className="band-row" role="group" aria-label={`${displayLabel}: ${band} band${hasPoint ? `, estimate ${(resolvedValue! * 100).toFixed(0)} percent` : ""}`}>
+        {label ? <span className="band-label">{label}</span> : null}
+        <span className="band-track" aria-hidden="true">
+          {hasRange && (
+            <span
+              className="band-fill"
+              style={{ left: `${resolvedInterval![0] * 100}%`, width: `${(resolvedInterval![1] - resolvedInterval![0]) * 100}%` }}
+            />
+          )}
+          {hasPoint && <span className="band-point" style={{ left: `${resolvedValue! * 100}%` }} />}
+        </span>
+        <span className="band-val">
+          band <b>{band}</b>
+          {hasN && <span className="band-n"> · n={resolvedN}</span>}
+          {hasPoint && !hasRange ? <span className="ml-1 text-[var(--muted)]">{resolvedValue!.toFixed(2)}</span> : null}
+          {hasRange ? <span className="ml-1 text-[var(--muted)]">[{resolvedInterval![0].toFixed(2)}, {resolvedInterval![1].toFixed(2)}]</span> : null}
+        </span>
+      </div>
+    );
+  }
+  // Fallback compact rendering for call sites that only pass band (or band+pKnow without interval)
+  const width = Math.max(2, Math.min(100, Math.round((resolvedValue ?? 0) * 100)));
+  const fallbackHasPoint = typeof resolvedValue === "number";
+  const fallbackHasRange = Array.isArray(resolvedInterval) && resolvedInterval.length === 2;
   return (
     <span className="inline-flex items-center gap-2">
       <Tag tone={tone as "good"}>{band}</Tag>
-      {pKnow !== undefined && (
-        <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]">
-          <span className="h-1.5 w-16 overflow-hidden rounded bg-[var(--line)]">
+      {fallbackHasPoint && (
+        <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+          <span className="h-1.5 w-16 overflow-hidden rounded bg-[var(--panel-2)] border border-[var(--line)]">
             <span className="block h-full bg-[var(--accent)]" style={{ width: `${width}%` }} />
           </span>
-          {pKnow.toFixed(2)}
-          {ci ? (
+          {(resolvedValue as number).toFixed(2)}
+          {fallbackHasRange ? (
             <span title="95% interval - it stays wide until there are more observations">
-              [{ci[0].toFixed(2)}, {ci[1].toFixed(2)}]
+              [{(resolvedInterval as [number, number])[0].toFixed(2)}, {(resolvedInterval as [number, number])[1].toFixed(2)}]
             </span>
           ) : null}
+          {hasN ? <span>· n={resolvedN}</span> : null}
         </span>
       )}
     </span>
@@ -113,15 +166,15 @@ export function Notice({ children, tone = "warn" }: { children: ReactNode; tone?
     warn: "border-[var(--warn)]/40 bg-[var(--warn)]/5",
     bad: "border-[var(--bad)]/40 bg-[var(--bad)]/5",
     good: "border-[var(--good)]/40 bg-[var(--good)]/5",
-    info: "border-[var(--line)] bg-black/20",
+    info: "border-[var(--line)] bg-[var(--panel-2)]",
   };
-  return <p className={`rounded-md border px-3 py-2 text-sm ${map[tone]}`}>{children}</p>;
+  return <p className={`rounded-[2px] border px-3 py-2 text-sm ${map[tone]}`}>{children}</p>;
 }
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm text-[var(--ink)]">{label}</span>
+      <span className="mb-1 block text-[13px] font-medium text-[var(--ink)]" style={{ fontFamily: "var(--font-sans)" }}>{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-[var(--muted)]">{hint}</span>}
     </label>
@@ -129,7 +182,7 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
 }
 
 const inputLook =
-  "w-full rounded-md border border-[var(--line)] bg-black/25 px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted)]/60 focus:border-[var(--accent)]";
+  "w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted)]/60 focus:border-[var(--accent)] focus:outline-none";
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputLook} ${props.className ?? ""}`} />;
@@ -161,7 +214,7 @@ export function Trace({ title = "why", children }: { title?: string; children: R
   return (
     <details className="group text-xs text-[var(--muted)]">
       <summary className="cursor-pointer list-none underline decoration-dotted underline-offset-4 group-open:hidden">{title}</summary>
-      <div className="mt-2 space-y-1 rounded-md border border-[var(--line)] bg-black/20 p-3">{children}</div>
+      <div className="mt-2 space-y-1 rounded-[2px] border border-[var(--line)] bg-[var(--panel-2)] p-3">{children}</div>
       <button
         type="button"
         className="mt-1 underline decoration-dotted underline-offset-4 group-open:hidden"
@@ -179,9 +232,9 @@ export function Trace({ title = "why", children }: { title?: string; children: R
 export function When({ ts }: { ts?: string | null }) {
   if (!ts) return null;
   const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return <span className="text-xs text-[var(--muted)]">{ts}</span>;
+  if (Number.isNaN(d.getTime())) return <span className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{ts}</span>;
   return (
-    <span className="text-xs text-[var(--muted)]" title={d.toLocaleString()}>
+    <span className="text-xs text-[var(--muted)]" title={d.toLocaleString()} style={{ fontFamily: "var(--font-mono)" }}>
       {d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
       {d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
     </span>
@@ -218,6 +271,41 @@ export function Err({ error, status }: { error: string | null; status?: number |
         </>
       )}
     </Notice>
+  );
+}
+
+export function Receipt({ tone = "good", children }: { tone?: "good" | "bad" | "neutral"; children: ReactNode }) {
+  return (
+    <div className={`receipt receipt-${tone}`} role="status">
+      {children}
+    </div>
+  );
+}
+
+export function Ledger({ children }: { children: ReactNode }) {
+  return <div className="ledger">{children}</div>;
+}
+
+export function LedgerEntry({
+  time,
+  title,
+  children,
+  actions,
+}: {
+  time: ReactNode;
+  title: string;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <article className="ledger-entry">
+      <div className="ledger-time">{time}</div>
+      <div className="ledger-main">
+        <h3 className="ledger-title">{title}</h3>
+        <div className="ledger-evidence">{children}</div>
+        {actions && <div className="ledger-actions">{actions}</div>}
+      </div>
+    </article>
   );
 }
 
@@ -266,6 +354,12 @@ export function humanize(value: unknown, depth = 0): string {
     return parts.join(" \u00b7 ");
   }
   return String(value);
+}
+
+export function announce(msg: string) {
+  if (typeof document === "undefined") return;
+  const el = document.getElementById("adapt-live-region");
+  if (el) el.textContent = msg;
 }
 
 /* ------------------------------------------------------------------ */

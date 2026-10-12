@@ -147,10 +147,10 @@ export default function Diagnose() {
 
   const entry = items[i];
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">Placement</h1>
-        <span className="text-sm text-[var(--muted)]">
+    <div className="mx-auto max-w-3xl space-y-4">
+      <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] pb-3">
+        <h1 className="text-xl font-medium" style={{ fontFamily: "var(--font-serif)" }}>Placement</h1>
+        <span className="text-sm text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
           question {Math.min(i + 1, items.length)} of {items.length}
         </span>
         {started ? <Tag tone="line">{Math.round((Date.now() - started) / 60000)} min in</Tag> : null}

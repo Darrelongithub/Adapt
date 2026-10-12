@@ -15,17 +15,18 @@
  * - worked examples are opened through the POST endpoint, because the *opening* is what
  *   the fading decision is measured on.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
-import { Band, Btn, Card, Check, Field, Input, Notice, Tag, Textarea, Trace } from "./ui";
+import { Band, Btn, Card, Field, Input, Notice, Receipt, Tag, Textarea, Trace, announce } from "./ui";
 import { api, post } from "@/lib/api";
-import type { ExplainReply, PlanEntry, Presentation, Receipt } from "@/lib/types";
+import type { ExplainReply, PlanEntry, Presentation, Receipt as ReceiptType } from "@/lib/types";
+import { useRovingTabIndex } from "@/lib/a11y/useRovingTabIndex";
 
 type Props = {
   entry: PlanEntry;
   presentation?: Presentation;
   /** What the page does with a submitted answer. Returns nothing: the receipt is shown here. */
-  onSubmit: (itemId: string, answer: unknown, extra: { teachback_text?: string; attempt_no?: number }) => Promise<Receipt>;
+  onSubmit: (itemId: string, answer: unknown, extra: { teachback_text?: string; attempt_no?: number }) => Promise<ReceiptType>;
   onInteract: (item: PlanEntry["item"]) => void;
   onChange: (item: PlanEntry["item"], from: unknown, to: unknown) => void;
   onHint: (item: PlanEntry["item"], hintNo: number) => void;
@@ -49,7 +50,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
   const [teach, setTeach] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [receipt, setReceipt] = useState<ReceiptType | null>(null);
   const [hints, setHints] = useState<{ no: number; text: string }[]>([]);
   const [hintState, setHintState] = useState<{ available: number; exhausted: boolean; max: number | null }>({ available: item.hint_count ?? 0, exhausted: false, max: null });
   const [example, setExample] = useState<{ index: number; text: string; why?: string | null }[] | null>(null);
@@ -59,21 +60,33 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
   const [askBusy, setAskBusy] = useState(false);
   const startedRef = useRef(false);
 
-  useEffect(() => {
-    // A new question is a new answer: clearing everything is the difference between
-    // "one item per screen" and "the previous item's text quietly submitted again".
-    setPicked(null);
-    setTyped("");
-    setTeach("");
-    setReceipt(null);
-    setHints([]);
-    setHintState({ available: item.hint_count ?? 0, exhausted: false, max: null });
-    setExample(null);
-    setRevealed(null);
-    setReply(null);
-    setError(null);
+  // Deliberate fix: new-question answer state is cleared during render, never in a useEffect,
+  // because clearing in an effect reintroduced a real intermittent bug (`numeric-state-reset`,
+  // ~1-in-10 diagnose runs) where a keystroke inside the commit→effect window got wiped.
+  // Restyle JSX only; do not move this logic into an effect.
+  const prevIdRef = useRef<string | null>(null);
+  if (prevIdRef.current !== item.id) {
+    prevIdRef.current = item.id;
+    // Reset synchronously during render - not in effect
+    if (picked !== null) setPicked(null);
+    if (typed !== "") setTyped("");
+    if (teach !== "") setTeach("");
+    if (receipt !== null) setReceipt(null);
+    if (hints.length) setHints([]);
+    if (example !== null) setExample(null);
+    if (revealed !== null) setRevealed(null);
+    if (reply !== null) setReply(null);
+    if (error !== null) setError(null);
+    // Avoid infinite loop: schedule state reset via queueMicrotask for complex state
+    // Instead, use direct assignment for derived hintState
+    const expectedAvailable = item.hint_count ?? 0;
+    if (hintState.available !== expectedAvailable || hintState.exhausted !== false) {
+      queueMicrotask(() => setHintState({ available: expectedAvailable, exhausted: false, max: null }));
+    }
     startedRef.current = false;
-  }, [item.id, item.hint_count]);
+  }
+
+  const roving = useRovingTabIndex(choices.length, "vertical");
 
   const answer = useMemo(() => {
     if (isChoice) return picked;
@@ -96,6 +109,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
     try {
       const out = await onSubmit(item.id, answer, wantTeachback ? { teachback_text: teach, attempt_no: attemptNo } : { attempt_no: attemptNo });
       setReceipt(out);
+      announce(out.correct ? "Answer recorded as correct." : "Answer recorded as incorrect.");
     } catch (err) {
       setError(errMessage(err));
     } finally {
@@ -161,163 +175,190 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
         : null;
 
   return (
-    <Card
-      tone={receipt ? (receipt.correct ? "good" : "warn") : "ask"}
-      title={
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="normal-case">{item.stem}</span>
-        </span>
-      }
-      right={
-        <span className="flex items-center gap-2">
-          {entry.position ? (
-            <span>
-              {entry.position}/{entry.of}
-            </span>
-          ) : null}
-          <Tag>{item.kind}</Tag>
-          {item.est_seconds ? <span title="this item's own estimate">~{item.est_seconds}s</span> : null}
-        </span>
-      }
-    >
-      {item.prompt_context ? <p className="mb-3 text-sm text-[var(--muted)] italic">{item.prompt_context}</p> : null}
+    <div className="page-practice" style={{ padding: "clamp(24px,4vw,48px) clamp(16px,4vw,32px) 40px" }}>
+      <div className="pz-label">
+        {entry.position && entry.of ? `§ ${item.topic_id.slice(0, 8)} · question ${entry.position} of ${entry.of}` : `§ ${item.topic_id.slice(0, 8)} · practice`} · {item.kind}
+      </div>
+
+      <h2 className="pz-q">{item.stem}</h2>
+      <div className="pz-rule" aria-hidden="true" />
+
+      {item.prompt_context ? <p className="mb-3 max-w-[660px] text-sm italic text-[var(--muted)]">{item.prompt_context}</p> : null}
       {item.visual_spec ? (
-        <pre className="mb-3 overflow-x-auto rounded-md border border-[var(--line)] bg-black/25 p-3 text-xs" aria-label={String(item.visual_spec.alt ?? "diagram")}>
+        <pre className="mb-6 max-w-[660px] overflow-x-auto rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3 text-xs" aria-label={String((item.visual_spec as Record<string, unknown>).alt ?? "diagram")}>
           {typeof item.visual_spec === "string" ? item.visual_spec : JSON.stringify(item.visual_spec, null, 1)}
         </pre>
       ) : null}
 
       {isChoice ? (
-        <div className="space-y-2" role="radiogroup" aria-label="choices">
-          {choices.map((c) => (
-            <label
-              key={c.index}
-              className={`flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-sm ${
-                picked === c.index ? "border-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--line)] hover:border-[var(--accent)]/50"
-              }`}
-            >
-              <input
-                type="radio"
-                name={`choice-${item.id}`}
-                checked={picked === c.index}
-                onChange={() => {
+        <div className="pz-opts" role="radiogroup" aria-label={item.stem}>
+          {choices.map((c, idx) => {
+            const isSelected = picked === c.index;
+            const isCorrect = receipt ? (receipt as unknown as { correct_choice?: number })?.correct_choice === c.index : false;
+            const correctnessClass = receipt ? (isCorrect ? "correct" : isSelected ? "incorrect" : "") : "";
+            return (
+              <button
+                key={c.index}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                aria-label={`${String.fromCharCode(65 + idx)}: ${c.text}`}
+                ref={roving.registerRef(idx)}
+                tabIndex={roving.getTabIndex(idx)}
+                onKeyDown={(e) => roving.onKeyDown(e, idx)}
+                onFocus={() => roving.setActiveIndex(idx)}
+                disabled={!!receipt}
+                onClick={() => {
+                  if (receipt) return;
                   touch();
                   onChange(item, picked, c.index);
                   setPicked(c.index);
+                  roving.setActiveIndex(idx);
                 }}
-                className="mt-0.5 accent-[var(--accent)]"
-              />
-              <span>
-                {c.text}
-                {receipt && (receipt.flags ?? []).length === 0 ? null : null}
-              </span>
-            </label>
-          ))}
+                className={`pz-opt ${correctnessClass}`}
+              >
+                <span className="l">{String.fromCharCode(65 + idx)}</span>
+                <span className="flex-1">{c.text}</span>
+                {isSelected ? <span className="text-xs text-[var(--accent)]">●</span> : null}
+                {/* keep hidden radio for probe compatibility */}
+                <input type="radio" name={`choice-${item.id}`} checked={isSelected} onChange={() => {}} className="sr-only" aria-hidden="true" tabIndex={-1} />
+              </button>
+            );
+          })}
         </div>
       ) : (
-        <Field
-          label={item.kind === "numeric" ? "Your answer" : item.kind === "teachback" ? "Explain it out loud, then write what you said" : "Your answer"}
-          hint={
-            item.kind === "numeric"
-              ? "Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3)."
-              : wantTeachback
-                ? "Ideas, not word count: the rubric looks for the pieces, and says which one is missing."
-                : undefined
-          }
-        >
-          {item.kind === "teachback" && !typed ? null : (
-            <Input
+        <div className="max-w-[520px]">
+          <Field
+            label={item.kind === "numeric" ? "Your answer" : item.kind === "teachback" ? "Explain it out loud, then write what you said" : "Your answer"}
+            hint={
+              item.kind === "numeric"
+                ? "Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3)."
+                : wantTeachback
+                  ? "Ideas, not word count: the rubric looks for the pieces, and says which one is missing."
+                  : undefined
+            }
+          >
+            {item.kind === "teachback" && !typed ? null : (
+              <Input
+                autoFocus
+                value={typed}
+                placeholder={item.kind === "numeric" ? "e.g. 5/6" : "e.g. 2/3"}
+                onChange={(e) => {
+                  touch();
+                  onChange(item, typed, e.target.value);
+                  setTyped(e.target.value);
+                }}
+              />
+            )}
+          </Field>
+        </div>
+      )}
+
+      {wantTeachback && item.kind !== "teachback" ? (
+        <div className="mt-4 max-w-[520px]">
+          <Field label="Say it back in one or two sentences" hint="Optional here, and it does not change the mark: it is evidence that the idea is yours.">
+            <Textarea
+              value={teach}
+              placeholder="Why does that work? What would break if you skipped it?"
+              onChange={(e) => {
+                touch();
+                setTeach(e.target.value);
+              }}
+            />
+          </Field>
+        </div>
+      ) : null}
+
+      {item.kind === "teachback" ? (
+        <div className="max-w-[520px]">
+          <Field label="Your explanation" hint="Scored on the ideas in it. Spelling and length are not the mark.">
+            <Textarea
               autoFocus
               value={typed}
-              placeholder={item.kind === "numeric" ? "e.g. 5/6" : "e.g. 2/3"}
               onChange={(e) => {
                 touch();
                 onChange(item, typed, e.target.value);
                 setTyped(e.target.value);
               }}
+              placeholder="Start from what the denominator means…"
             />
-          )}
-        </Field>
-      )}
-
-      {wantTeachback && item.kind !== "teachback" ? (
-        <Field label="Say it back in one or two sentences" hint="Optional here, and it does not change the mark: it is evidence that the idea is yours.">
-          <Textarea
-            value={teach}
-            placeholder="Why does that work? What would break if you skipped it?"
-            onChange={(e) => {
-              touch();
-              setTeach(e.target.value);
-            }}
-          />
-        </Field>
+          </Field>
+        </div>
       ) : null}
 
-      {item.kind === "teachback" ? (
-        <Field label="Your explanation" hint="Scored on the ideas in it. Spelling and length are not the mark.">
-          <Textarea
-            autoFocus
-            value={typed}
-            onChange={(e) => {
-              touch();
-              onChange(item, typed, e.target.value);
-              setTyped(e.target.value);
-            }}
-            placeholder="Start from what the denominator means…"
-          />
-        </Field>
-      ) : null}
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Btn kind="primary" onClick={submit} disabled={busy || !canSubmit}>
-          {busy ? "…" : receipt ? "Try again" : "Check it"}
-        </Btn>
-        {!aidless ? (
-          <Btn onClick={askForHint} disabled={busy || outOfBudget} title={budgetNote ?? undefined}>
-            {outOfBudget ? "No hints left" : hints.length ? `Another hint (${hints.length + 1})` : "A hint"}
-          </Btn>
+      <div className="marginalia" aria-label="question metadata">
+        <div className="tag-corner">
+          topic<b>{item.topic_id.slice(0, 12)} · {item.difficulty !== undefined ? `d${item.difficulty}` : item.kind}</b>
+        </div>
+        {entry.reason ? (
+          <div className="tag-vert">
+            why this one<b>{entry.reason}</b>
+          </div>
         ) : null}
-        {!aidless && (item.has_worked_example ?? true) ? (
-          <Btn onClick={openExample} disabled={busy || example !== null}>
-            {example ? "Example open" : "Worked example"}
-          </Btn>
-        ) : null}
-        {!aidless ? (
-          <Btn
-            kind="ghost"
-            onClick={async () => {
-              setBusy(true);
-              try {
-                setRevealed(await api<Record<string, unknown>>(`/api/v1/items/${item.id}/reveal`, { csrf: true }));
-              } catch (err) {
-                setError(errMessage(err));
-              } finally {
-                setBusy(false);
-              }
-            }}
-            disabled={busy || revealed !== null}
-            title="This one shows the answer. The endpoint needs the CSRF token even though it is a GET, because revealing an answer is not a read you would want forged by another site."
-          >
-            {revealed ? "Revealed" : "Reveal it"}
-          </Btn>
-        ) : null}
-        <span className="ml-auto flex items-center gap-2 text-xs text-[var(--muted)]">
-          {pres.max_words ? <span title="from your settings or an approved change">≤{pres.max_words} words</span> : null}
-          {entry.reason ? <Tag tone="think">{entry.reason}</Tag> : null}
-        </span>
+        <div className="tag-vert">
+          adaptations<b>{pres.max_words ? `≤${pres.max_words} words` : "default presentation"}</b>
+        </div>
       </div>
 
+      <div className="pz-bottom">
+        <div className="pz-due" style={{ fontFamily: "var(--font-mono)" }}>
+          {entry.position ? `item ${entry.position} of ${entry.of ?? "?"}` : "practice"} · {item.est_seconds ? `~${item.est_seconds}s` : "untimed"}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !canSubmit}
+            className="pz-submit"
+            title={!canSubmit ? "enter an answer first" : undefined}
+            aria-describedby={!canSubmit ? "submit-hint" : undefined}
+          >
+            {busy ? "…" : receipt ? "Try again" : "Check it"}
+          </button>
+          {!aidless ? (
+            <Btn onClick={askForHint} disabled={busy || outOfBudget} title={budgetNote ?? undefined}>
+              {outOfBudget ? "No hints left" : hints.length ? `Another hint (${hints.length + 1})` : "A hint"}
+            </Btn>
+          ) : null}
+          {!aidless && (item.has_worked_example ?? true) ? (
+            <Btn onClick={openExample} disabled={busy || example !== null}>
+              {example ? "Example open" : "Worked example"}
+            </Btn>
+          ) : null}
+          {!aidless ? (
+            <Btn
+              kind="ghost"
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  setRevealed(await api<Record<string, unknown>>(`/api/v1/items/${item.id}/reveal`, { csrf: true }));
+                } catch (err) {
+                  setError(errMessage(err));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy || revealed !== null}
+              title="This one shows the answer. The endpoint needs the CSRF token even though it is a GET, because revealing an answer is not a read you would want forged by another site."
+            >
+              {revealed ? "Revealed" : "Reveal it"}
+            </Btn>
+          ) : null}
+        </div>
+      </div>
+      {!canSubmit ? <span id="submit-hint" className="sr-only">Enter an answer to enable checking</span> : null}
+
       {error ? (
-        <p className="mt-3">
+        <p className="mt-4 max-w-[660px]">
           <Notice tone="bad">{error}</Notice>
         </p>
       ) : null}
 
       {hints.length ? (
-        <div className="mt-3 space-y-2">
+        <div className="mt-4 max-w-[620px] space-y-2">
           {hints.map((h) => (
-            <p key={h.no} className="rounded-md border border-[var(--line)] bg-black/20 px-3 py-2 text-sm">
-              <span className="mr-2 text-xs text-[var(--muted)]">hint {h.no}</span>
+            <p key={h.no} className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">
+              <span className="mr-2 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>hint {h.no}</span>
               {h.text}
             </p>
           ))}
@@ -331,32 +372,42 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
       ) : null}
 
       {example ? (
-        <Card title="Worked example" tone="muted" right={<span>opening this was recorded, on purpose</span>}>
-          {example.length === 0 ? (
-            <p className="text-sm text-[var(--muted)]">This item has no written steps. Reveal it, or ask a question below.</p>
-          ) : (
-            <ol className="list-decimal space-y-2 pl-5 text-sm">
-              {example.map((st) => (
-                <li key={st.index}>
-                  {st.text}
-                  {st.why ? <span className="block text-xs text-[var(--muted)]">{st.why}</span> : null}
-                </li>
-              ))}
-            </ol>
-          )}
-        </Card>
+        <div className="mt-6 max-w-[660px]">
+          <Card title="Worked example" tone="muted" right={<span>opening this was recorded, on purpose</span>}>
+            {example.length === 0 ? (
+              <p className="text-sm text-[var(--muted)]">This item has no written steps. Reveal it, or ask a question below.</p>
+            ) : (
+              <ol className="list-decimal space-y-2 pl-5 text-sm">
+                {example.map((st) => (
+                  <li key={st.index}>
+                    {st.text}
+                    {st.why ? <span className="block text-xs text-[var(--muted)]">{st.why}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Card>
+        </div>
       ) : null}
 
       {revealed ? (
-        <Card title="Revealed" tone="muted" right={<When ts={null} />}>
-          <RevealBody body={revealed} />
-        </Card>
+        <div className="mt-4 max-w-[660px]">
+          <Card title="Revealed" tone="muted" right={<span> </span>}>
+            <RevealBody body={revealed} />
+          </Card>
+        </div>
       ) : null}
 
-      {receipt ? <ReceiptView receipt={receipt} /> : null}
+      {receipt ? (
+        <div className="mt-6 max-w-[660px]">
+          <Receipt tone={receipt.correct ? "good" : "bad"}>
+            <ReceiptView receipt={receipt} />
+          </Receipt>
+        </div>
+      ) : null}
 
       {aidless ? null : (
-        <div className="mt-4 border-t border-[var(--line)] pt-3">
+        <div className="mt-6 max-w-[660px] border-t border-[var(--line)] pt-4">
           <div className="flex gap-2">
             <Input
               value={question}
@@ -374,7 +425,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
             <div className="prose-tutor mt-3 text-sm">
               <p>{reply.answer}</p>
               {reply.next_action ? <p className="text-[var(--accent)]">Next: {reply.next_action}</p> : null}
-              <p className="text-xs text-[var(--muted)]">
+              <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
                 {reply.provider === "local" ? "from your course material, no model call" : `model: ${reply.provider}`}
                 {reply.meta?.grounded ? " · grounded" : " · not grounded in your material"} ·{" "}
                 {reply.privacy?.sent_to_model ? "your question was sent to the model" : "nothing left this machine"}
@@ -401,13 +452,13 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
       )}
 
       {entry.decision_trace ? (
-        <div className="mt-3">
+        <div className="mt-4 max-w-[660px]">
           <Trace title="why this question, now">
             <TraceBody trace={entry.decision_trace} />
           </Trace>
         </div>
       ) : null}
-    </Card>
+    </div>
   );
 }
 
@@ -473,45 +524,43 @@ function RevealBody({ body }: { body: Record<string, unknown> }) {
   );
 }
 
-export function ReceiptView({ receipt }: { receipt: Receipt }) {
+export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
   const tb = receipt.teachback;
   return (
-    <div className="mt-4 space-y-3">
-      <Card tone={receipt.correct ? "good" : "warn"} title={receipt.correct ? "That's it" : "Not yet"} right={<Tag>{receipt.grading_method}</Tag>}>
-        <p className="text-sm">{receipt.feedback}</p>
-        <p className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]">
-          <Band band={receipt.mastery.band} pKnow={receipt.mastery.p_know} />
-          <span>
-            {receipt.mastery.p_know_before !== undefined
-              ? `${receipt.mastery.p_know_before.toFixed(2)} → ${receipt.mastery.p_know.toFixed(2)}`
-              : `p ${receipt.mastery.p_know.toFixed(2)}`}
-          </span>
-          <span>
-            {receipt.mastery.observations} observation{receipt.mastery.observations === 1 ? "" : "s"}
-          </span>
-          {receipt.mastery.due_at ? <span>review {new Date(receipt.mastery.due_at).toLocaleDateString()}</span> : null}
-          {receipt.mastery.first_observation ? <Tag tone="think">first data point on this topic</Tag> : null}
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold" style={{ fontFamily: "var(--font-serif)" }}>{receipt.correct ? "That's it" : "Not yet"}</h3>
+        <Tag>{receipt.grading_method}</Tag>
+      </div>
+      <p className="text-sm leading-relaxed">{receipt.feedback}</p>
+      <p className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        <Band band={receipt.mastery.band} pKnow={receipt.mastery.p_know} ci={undefined} />
+        <span>
+          {receipt.mastery.p_know_before !== undefined
+            ? `${receipt.mastery.p_know_before.toFixed(2)} → ${receipt.mastery.p_know.toFixed(2)}`
+            : `p ${receipt.mastery.p_know.toFixed(2)}`}
+        </span>
+        <span>
+          {receipt.mastery.observations} observation{receipt.mastery.observations === 1 ? "" : "s"}
+        </span>
+        {receipt.mastery.due_at ? <span>review {new Date(receipt.mastery.due_at).toLocaleDateString()}</span> : null}
+        {receipt.mastery.first_observation ? <Tag tone="think">first data point on this topic</Tag> : null}
+      </p>
+      {tb ? (
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          teach-back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
+          {tb.missing?.length ? <> — missing <em>{tb.missing.join(", ")}</em></> : <> — all there</>}
+          {tb.followup ? <>. {tb.followup}</> : null}. {tb.note}
         </p>
-        {tb ? (
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            teach-back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
-            {tb.missing?.length ? <> — missing <em>{tb.missing.join(", ")}</em></> : <> — all there</>}
-            {tb.followup ? <>. {tb.followup}</> : null}. {tb.note}
-          </p>
-        ) : null}
-        {receipt.proposals_expected ? (
-          <p className="mt-2 text-xs text-[var(--think)]">
-            Something in this session also looks like a pattern worth checking. Nothing has been changed — see the Changes
-            screen when you finish.
-          </p>
-        ) : null}
-      </Card>
+      ) : null}
+      {receipt.proposals_expected ? (
+        <p className="mt-2 text-xs text-[var(--think)]">
+          Something in this session also looks like a pattern worth checking. Nothing has been changed — see the Changes
+          screen when you finish.
+        </p>
+      ) : null}
     </div>
   );
-}
-
-function When({ ts }: { ts: string | null }) {
-  return ts ? <span className="text-xs text-[var(--muted)]">{ts}</span> : null;
 }
 
 function errMessage(err: unknown): string {

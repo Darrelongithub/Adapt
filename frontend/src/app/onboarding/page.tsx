@@ -85,13 +85,17 @@ export default function Onboarding() {
   const reasons = (result?.rejected_reasons as Record<string, string> | undefined) ?? {};
 
   return (
-    <div className="grid gap-5 md:grid-cols-[1.1fr_1fr]">
-      <div className="space-y-4">
-        <h1 className="text-xl font-semibold">Set up how this should run</h1>
-        <p className="text-sm text-[var(--muted)]">
-          Everything here is a request you are making, so it applies straight away and needs no approval — the approval gate is
-          for changes the system proposes from measurement. Change any of it later on the settings screen.
-        </p>
+    <div className="mx-auto max-w-5xl px-3 py-4" style={{ padding: "clamp(24px,4vw,48px) clamp(16px,4vw,32px)" }}>
+      <div className="grid gap-6 md:grid-cols-[1.15fr_0.85fr]">
+        <div className="space-y-6">
+          <div>
+            <div className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ Onboarding</div>
+            <h1 className="mt-2 text-[clamp(24px,3.4vw,36px)] font-medium leading-tight" style={{ fontFamily: "var(--font-serif)" }}>Set up how this should run</h1>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
+              Everything here is a request you are making, so it applies straight away and needs no approval — the approval gate is
+              for changes the system proposes from measurement. Change any of it later on the settings screen.
+            </p>
+          </div>
         <Card title="Time and words">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="What are you working towards?" hint="Shown back to you in the plan, and used to pick wording.">
@@ -150,7 +154,7 @@ export default function Onboarding() {
             {form.want_voice ? (
               <Field label="Which voice replies">
                 <select
-                  className="w-full rounded-md border border-[var(--line)] bg-black/25 px-3 py-2 text-sm"
+                  className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
                   value={voiceGender}
                   onChange={(e) => setVoiceGender(e.target.value)}
                 >
@@ -228,6 +232,7 @@ export default function Onboarding() {
           </p>
         </Card>
       </div>
+    </div>
     </div>
   );
 }
