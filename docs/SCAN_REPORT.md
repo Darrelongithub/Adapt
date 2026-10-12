@@ -29,6 +29,38 @@ as working. The largest of those is any real model answer: no Gemini key and no 
 Google's API, so AI 1 and AI 2 were verified with their local providers (and their failure
 paths), never with a real generation.
 
+### A.1 The 17-step journey, step by step
+
+The brief asks for a 17-step journey without listing the steps, so the list below is this app's
+own loop, in the order a student meets it. Every step names what was run.
+
+| # | Step | Evidence | Result |
+|---|---|---|---|
+| 1 | Open the app and see where you are | probe `home` | 10/10 |
+| 2 | Register (guest) or sign back in | probe `onboarding`; `scripts/demo.mjs` return visit; matrix anonymous/CSRF checks | pass |
+| 3 | Onboard: goals, minutes, confidence — and it persists | probe `onboarding` (values re-read from the server after a reload) | 12/12 |
+| 4 | Start placement, one question at a time | probe `diagnose` | 21/21 |
+| 5 | Answer the 12-item diagnostic (numeric, choice, teach-back) | probe `diagnose`; `journey_check.py` §2 | pass |
+| 6 | Finish placement and see band estimates | probe `diagnose`; journey §2 | pass |
+| 7 | Practise: hint, worked example, reveal | probe `learn`; journey §6 | 19/19 |
+| 8 | Change an answer; it counts as a second attempt | journey §6 | pass |
+| 9 | Ask the tutor a question (AI 2) | journey §7; probe `learn`; failure matrix | pass |
+| 10 | Use voice — or be told honestly why you cannot | probe `voice`; `test_voice_pipeline.py` | 8/8 + 11 tests |
+| 11 | See the analysis (AI 1 hypotheses, with citations) | journey §3 | pass |
+| 12 | Read the proposals and decide | `journey_check.py` §4–5; probe `proposals` | 36/36 + gate checks |
+| 13 | See what you approved actually active (and withdrawable) | journey §4 (row + payload read back) | pass |
+| 14 | Keep practising against the adapted plan | journey §6; `/plan` read in §4 | pass |
+| 15 | Come back to what is due for review | probe `review`; journey §6 | pass |
+| 16 | Check progress (bands, measured outcomes) | probe `progress` | 5/5 |
+| 17 | Refresh, restart the server, return: nothing lost | probe reload checks; journey §10 (same data directory, new process) | pass |
+
+Steps 3, 12, 13 and 17 are the ones the brief singles out, and they are checked at the level it
+asks for: onboarding is re-read from the server rather than from the form, the gate is asserted
+on stored rows (reject applies nothing, modify stores the learner's number, a second answer is
+409), and the restart check re-reads events, adaptations, dashboard and journey from a second
+process against the same data directory. Privacy and settings are supporting surfaces
+(probe `settings` 12/12, journey §9).
+
 ---
 
 ## B. Checklist per feature
@@ -178,10 +210,14 @@ bash scripts/probe-fresh.sh learn               # one scenario: 19/19
 # the failure matrix (against a FRESHLY started API)
 .venv/bin/python scripts/failure_matrix_check.py http://127.0.0.1:8000   # 25/25 checks passed
 
-# migrations: fresh data directory, then the app on the migrated file
+# migrations, fresh installation: empty data directory -> schema -> the app on it
 cd backend && ADAPT_DATA_DIR=/tmp/mig-fresh ../.venv/bin/python -m alembic upgrade head
 ../.venv/bin/python -m alembic check               # No new upgrade operations detected
-# (+ the app booted against it: "curriculum=55 items", /healthz {"ok":"true"})
+
+# migrations, existing installation: a database still on the previous revision upgrades in place
+ADAPT_DATA_DIR=/tmp/mig-old ../.venv/bin/python -m alembic upgrade 0001   # 20 item columns
+ADAPT_DATA_DIR=/tmp/mig-old ../.venv/bin/python -m alembic upgrade head   # 25 item columns
+# (+ the app booted against the upgraded file: "curriculum=55 items", /api/v1/health ok)
 ```
 
 `scripts/probe-fresh.sh` starts a throwaway API and web pair on ports 8010/3001 (leaving a dev
