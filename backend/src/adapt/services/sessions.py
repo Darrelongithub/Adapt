@@ -20,13 +20,14 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..assessment import bank
 from ..config import Settings, get_settings
 from ..db.models import (
     ActiveAdaptation,
+    Attempt,
     Course,
     Item,
     LearningMaterial,
@@ -131,7 +132,20 @@ def set_preferences(s: Session, student_id: str, prefs: dict[str, Any], *, sourc
             elif typ is bool:
                 coerced = bool(value) if not isinstance(value, str) else value.lower() in ("1", "true", "yes", "on")
             elif typ is list:
-                coerced = [str(x)[:80] for x in (value if isinstance(value, list) else [value])][:8]
+                # These lists are phrases the tutor reads back ("does not want X"), so a
+                # meaningless entry is worse than no entry. A checkbox answering ``true`` used
+                # to be stored as the phrase "True" and then quoted to the learner as their own
+                # preference; an empty box stored [""]. Both are refused instead of coerced.
+                if isinstance(value, bool):
+                    rejected.append(key)
+                    reasons[key] = "expected a phrase or a list of phrases"
+                    continue
+                items = value if isinstance(value, (list, tuple)) else [value]
+                coerced = [str(x).strip()[:80] for x in items if str(x).strip()][:8]
+                if not coerced:
+                    rejected.append(key)
+                    reasons[key] = "expected a phrase or a list of phrases"
+                    continue
             else:
                 coerced = str(value)[:200]
         except (TypeError, ValueError):
@@ -445,9 +459,33 @@ def finish_session(s: Session, session_id: str, *, student_id: str | None = None
     sess.status = "finished"
     telemetry.append_event(s, session_id=session_id, student_id=sess.student_id, type="session_end", payload={})
     telemetry.refresh_session_stats(s, session_id=session_id)
+
+    # Placement is the only thing that closes a loop in the learner record: until
+    # `diagnostic_complete` is set the app still believes this person has never been
+    # placed, and it sends them back to /diagnose forever. Nothing used to set it on the
+    # API path -- only the CLI, for its seeded demo learner -- so finishing placement in
+    # the browser recorded the answers and then forgot that it had been placed.
+    # The bar is the app's own evidence threshold (ADAPT_MIN_EVIDENCE): banding someone on
+    # one answer would be inventing a placement, so a short session says so instead.
+    placed: bool | None = None
+    note: str | None = None
+    if sess.mode == "diagnostic":
+        need = max(1, int(get_settings().min_evidence_for_proposal))
+        answered = int(s.execute(select(func.count()).select_from(Attempt).where(Attempt.session_id == session_id)).scalar() or 0)
+        if answered >= need:
+            stu = s.get(Student, sess.student_id)
+            if stu is not None and not stu.diagnostic_complete:
+                stu.diagnostic_complete = True
+            placed = True
+        else:
+            placed = False
+            note = (
+                f"placement needs {need} marked answers and this session has {answered} - the ones you did are "
+                "kept, but nothing has banded you yet, so it can be finished later from where you left off"
+            )
     s.commit()
     duration = int((sess.ended_at - sess.started_at).total_seconds())
-    return {
+    out: dict[str, Any] = {
         "ok": True,
         "session_id": session_id,
         "duration_seconds": duration,
@@ -455,6 +493,11 @@ def finish_session(s: Session, session_id: str, *, student_id: str | None = None
         "mode": sess.mode,
         "next": "run AI 1 analysis to update mastery, hypotheses and any proposed adaptation",
     }
+    if placed is not None:
+        out["placed"] = placed
+        if note:
+            out["note"] = note
+    return out
 
 
 def due_reviews(s: Session, student_id: str, *, within_hours: float = 24.0) -> list[dict[str, Any]]:

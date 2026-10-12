@@ -214,6 +214,68 @@ def test_a_long_session_can_be_closed_and_is_then_readonly(client, learner, sess
     assert unknown.status_code == 404, "200-with-ok:false is how a client believes a save worked"
 
 
+def _answer_plan(client, learner, session, items, make_answer, *, how_many, correct=False):
+    """Answers the first `how_many` placement questions, the way the page does it."""
+    for entry in items[:how_many]:
+        item_id = entry["item"]["id"]
+        r = client.post(
+            "/api/v1/attempts",
+            json={"session_id": session, "item_id": item_id, "answer": make_answer(item_id, correct=correct)},
+            headers=learner["headers"],
+        )
+        assert r.status_code == 200, r.text
+    return how_many
+
+
+def test_finishing_placement_is_what_marks_a_learner_placed(client, learner, items, make_answer):
+    """Placement used to end without ever touching `diagnostic_complete`.
+
+    Only the CLI set that flag, and only for its own seeded demo learner. So a person who
+    answered the whole sequence in the browser had their answers recorded and their
+    placement *forgotten*: the landing page went back to "not placed yet" and offered the
+    diagnostic again, forever.
+    """
+    from adapt.config import get_settings
+
+    headers = learner["headers"]
+    assert client.get("/api/v1/me", headers=headers).json()["diagnostic_complete"] is False
+    session = client.post("/api/v1/sessions", json={"mode": "diagnostic"}, headers=headers).json()["session_id"]
+    _answer_plan(client, learner, session, items, make_answer, how_many=int(get_settings().min_evidence_for_proposal))
+
+    done = client.post(f"/api/v1/sessions/{session}/finish", headers=headers)
+    assert done.status_code == 200, done.text
+    assert done.json()["placed"] is True, done.text
+
+    me = client.get("/api/v1/me", headers=headers).json()
+    assert me["diagnostic_complete"] is True, "finishing placement has to be visible on the learner record"
+    assert client.get("/api/v1/me", headers=headers).json()["diagnostic_complete"] is True, (
+        "the flag is stored, not derived fresh per request"
+    )
+
+
+def test_a_placement_stopped_early_says_it_did_not_place_the_learner(client, learner, items, make_answer):
+    """Two answers is not a placement. Saying so is better than banding someone on them."""
+    headers = learner["headers"]
+    session = client.post("/api/v1/sessions", json={"mode": "diagnostic"}, headers=headers).json()["session_id"]
+    _answer_plan(client, learner, session, items, make_answer, how_many=2)
+
+    body = client.post(f"/api/v1/sessions/{session}/finish", headers=headers).json()
+    assert body["ok"] is True and body["placed"] is False
+    assert "placement needs" in body["note"], body
+    assert client.get("/api/v1/me", headers=headers).json()["diagnostic_complete"] is False
+    assert client.get("/api/v1/dashboard", headers=headers).json() is not None, (
+        "the two answers still count as evidence; stopping early must not discard them"
+    )
+
+
+def test_practice_never_marks_a_learner_placed(client, learner, items, make_answer, session):
+    """`session` is practice mode: no number of practice answers can stand in for placement."""
+    _answer_plan(client, learner, session, items, make_answer, how_many=min(len(items), 10), correct=True)
+    body = client.post(f"/api/v1/sessions/{session}/finish", headers=learner["headers"]).json()
+    assert "placed" not in body, "only a diagnostic session decides placement"
+    assert client.get("/api/v1/me", headers=learner["headers"]).json()["diagnostic_complete"] is False
+
+
 # --------------------------------------------------------------------------- #
 # onboarding: no learning-style question, and stated preferences applied
 # --------------------------------------------------------------------------- #
@@ -272,6 +334,81 @@ def test_a_stated_preference_applies_immediately_and_is_labelled_as_such(client,
 # --------------------------------------------------------------------------- #
 # the loop
 # --------------------------------------------------------------------------- #
+
+
+def test_a_preference_is_stored_as_the_thing_it_describes(client, learner):
+    """A tick box used to become the phrase "True" in the learner's profile.
+
+    ``avoid`` and ``encourage`` are lists of phrases the tutor reads back to the learner, and the
+    settings screen rendered them as checkboxes. ``True`` is a value for a checkbox and not a
+    value for a phrase, so the store had to refuse it -- silently coercing it put a fiction in
+    the prompt and then presented it as the learner's own request.
+    """
+    headers = learner["headers"]
+    refused = client.post(
+        "/api/v1/me/preferences", json={"preferences": {"avoid": True}, "source": "settings"}, headers=headers
+    )
+    assert refused.status_code == 200
+    body = refused.json()
+    assert "avoid" not in (body.get("accepted") or {}), body
+    assert body["rejected_keys"] == ["avoid"] and "phrase" in body["rejected_reasons"]["avoid"], body
+
+    blank = client.post("/api/v1/me/preferences", json={"preferences": {"avoid": "   "}}, headers=headers)
+    assert "avoid" not in (blank.json().get("accepted") or {}), blank.json()
+
+    typed = client.post(
+        "/api/v1/me/preferences", json={"preferences": {"avoid": ["word problems", "being rushed"]}}, headers=headers
+    )
+    assert typed.json()["accepted"] == {"avoid": ["word problems", "being rushed"]}, typed.json()
+    stored = client.get("/api/v1/me/preferences").json()["preferences"]
+    assert stored["avoid"] == ["word problems", "being rushed"], stored
+
+    # a genuine boolean preference still round-trips, so the guard did not narrow the type map
+    flag = client.post("/api/v1/me/preferences", json={"preferences": {"push_me": True}}, headers=headers)
+    assert flag.json()["accepted"] == {"push_me": True}, flag.json()
+    assert client.get("/api/v1/me/preferences").json()["preferences"]["push_me"] is True
+def test_a_proposal_must_propose_something(client, learner, items, make_answer):
+    """AI 1 used to propose the number already in force, so "yes" changed nothing.
+
+    ``difficulty_recalibration`` carried ``{"target": 0.78}`` -- and 0.78 is the selector's own
+    default. A learner who read "meet the current level", said yes, and approved the status quo
+    would have concluded the loop was decoration. The tuned value has to come from the evidence.
+    """
+    headers = learner["headers"]
+    sid = client.post("/api/v1/sessions", json={"mode": "practice"}, headers=headers).json()["session_id"]
+    # everything wrong, twice over: accuracy far below band is the pattern this detector needs
+    for _ in range(2):
+        for entry in items[:8]:
+            item_id = entry["item"]["id"]
+            r = client.post(
+                "/api/v1/attempts",
+                json={"session_id": sid, "item_id": item_id, "answer": make_answer(item_id, correct=False)},
+                headers=headers,
+            )
+            assert r.status_code == 200, r.text
+
+    analyzed = client.post(f"/api/v1/analyze?session_id={sid}", headers=headers)
+    assert analyzed.status_code == 200, analyzed.text
+    pending = client.get("/api/v1/adaptations/pending").json().get("proposals") or []
+    rec = next((p for p in pending if p.get("strategy") == "difficulty_recalibration"), None)
+    assert rec, f"no recalibration among the {len(pending)} proposals on offer: {[p.get('strategy') for p in pending]}"
+    target = float((rec.get("action_payload") or {}).get("target", 0.78))
+    assert target != 0.78, "the proposal asks the learner to approve the number already in use"
+    assert target > 0.78, f"every answer was wrong, so the items were too hard: the target must rise, got {target}"
+
+    decided = client.post(
+        f"/api/v1/adaptations/{rec['id']}/decision",
+        json={"decision": "accept", "answered_by": "student"},
+        headers=headers,
+    )
+    assert decided.status_code == 200, decided.text
+    active = client.get("/api/v1/adaptations/active", headers=headers).json()["active"]
+    row = next((a for a in active if a["strategy"] == "difficulty_recalibration"), None)
+    assert row, f"accepting did not turn anything on: {[a.get('strategy') for a in active]}"
+    assert abs(float((row["payload"] or {}).get("target", -1)) - target) < 1e-9, (
+        f"the applied change must be the number the learner was shown: row says {row['payload']}"
+    )
+
 
 
 def test_diagnostic_returns_a_broad_plan_with_no_answers_attached(client, learner, items):
@@ -907,7 +1044,14 @@ def test_voice_capabilities_are_an_honest_account_of_the_machine(client, learner
         assert heard["note"]
 
 
-def test_websocket_requires_a_signed_in_socket():
+def test_websocket_refuses_anonymous_sockets_in_a_way_a_browser_can_read():
+    """The reason has to arrive as a frame, not only as a close code.
+
+    A close sent before `accept()` answers the handshake with HTTP 403, so a browser sees code
+    1006 with no explanation -- and `voice/page.tsx`, which switches on 4401 to print "sign in
+    again", could never reach that branch. A protocol-level client saw 4401 fine, which is
+    exactly why the gap survived its own test.
+    """
     from fastapi.testclient import TestClient
     from starlette.websockets import WebSocketDisconnect
 
@@ -915,10 +1059,13 @@ def test_websocket_requires_a_signed_in_socket():
 
     # A fresh client: the shared jar would authenticate the socket for us.
     with TestClient(app) as anon:
-        with pytest.raises(WebSocketDisconnect) as excinfo:
-            with anon.websocket_connect("/ws/voice") as ws:
+        with anon.websocket_connect("/ws/voice") as ws:
+            said = json.loads(ws.receive_text())
+            assert said["t"] == "error" and said["where"] == "auth", said
+            assert "authentication" in said["detail"], said
+            with pytest.raises(WebSocketDisconnect) as excinfo:
                 ws.receive_text()
-        assert excinfo.value.code == 4401, "the client needs to be able to show 'sign in again'"
+            assert excinfo.value.code == 4401, "the code the page switches on"
 
 
 def test_websocket_text_turn_answers_counts_the_turn_and_keeps_the_transcript(client, learner):
@@ -949,6 +1096,15 @@ def test_websocket_text_turn_answers_counts_the_turn_and_keeps_the_transcript(cl
         assert "fraction" in reply["text"].lower(), "the answer has to be about the topic that was asked about"
         assert reply["meta"].get("provider") in {"local", "gemini"}
         assert reply["ms"] >= 0
+        # The voice path renders items through the same substitution the cards use, so the two
+        # ways a template can leak (a `{token}` left in, or an answer key riding along) have to
+        # be checked here as well as on the screen.
+        import re as _re
+
+        assert not _re.search(r"\{[a-z_]+\}", reply["text"]), f"unrendered template in the spoken answer: {reply['text'][:140]}"
+        assert "{" not in reply["text"] and "}" not in reply["text"], reply["text"][:140]
+        blob = json.dumps(reply)
+        assert "answer_spec" not in blob and "correct_index" not in blob, "the voice reply carried an answer key"
         # Speech comes after the words: with no local TTS the socket names the
         # fallback rather than leaving the client waiting for audio that never comes.
         follow_up = json.loads(ws.receive_text())
@@ -1086,6 +1242,28 @@ def test_rate_limiting_answers_with_retry_after(client, learner, services, items
     assert body["retry_after_s"] == 3.0
     assert body["scope"] == "mutation"
     assert response.headers.get("retry-after") == "4", "a client needs the header, not only the body"
+
+
+def test_the_per_ip_refusal_answers_with_the_same_shape_as_every_other_429(client, monkeypatch, services):
+    """One contract for "slow down", whichever bucket said it.
+
+    The per-scope refusal nests the wait under ``detail``; the middleware's per-IP refusal
+    used to answer with a bare sentence and the number beside it. A client written to back
+    off politely from one therefore hammered through the other -- including the shipped demo,
+    which computed ``detail.retry_after_s`` and got NaN, i.e. no wait at all.
+    """
+    monkeypatch.setattr(services.limiter, "allow", lambda scope, key, *, n=1.0: (False, 2.5) if scope == "ip" else (True, 0.0))
+    response = client.get("/api/v1/health")
+    assert response.status_code == 429, response.text
+    body = response.json()
+    detail = body["detail"]
+    assert isinstance(detail, dict), f"detail is a bare sentence again: {detail!r}"
+    assert detail["error"] == "rate_limited"
+    assert detail["scope"] == "ip"
+    assert float(detail["retry_after_s"]) == 2.5
+    assert float(body["retry_after_s"]) == 2.5, "the old top-level key was dropped"
+    assert isinstance(detail.get("message"), str) and len(detail["message"]) > 10, "a person still gets a sentence"
+    assert response.headers.get("retry-after") == "3", response.headers.get("retry-after")
 
 
 # --------------------------------------------------------------------------- #
@@ -1584,3 +1762,89 @@ def test_on_a_public_tunnel_shared_mutations_need_the_phrase(client, learner, se
     )
     assert right.status_code == 200, right.text
     assert right.json()["imported"] == 0 and right.json()["updated"] == 0
+
+
+def test_a_pending_proposal_arrives_with_its_source(client, learner, items, make_answer):
+    """The list the learner decides from has to carry what the catalog knows about the change.
+
+    ``proposal_dict`` can be called without the strategy, and when it is, the label, the
+    "what it does" line and the citations are all silently empty -- so the pending card showed a
+    proposal with no source while other views of the same proposal had one, and a learner was
+    left to judge an experiment without being told it was one.
+    """
+    from adapt.learning import strategies as ST
+
+    headers = learner["headers"]
+    sid = client.post("/api/v1/sessions", json={"mode": "practice"}, headers=headers).json()["session_id"]
+    for _ in range(2):
+        for entry in items[:8]:
+            client.post(
+                "/api/v1/attempts",
+                json={"session_id": sid, "item_id": entry["item"]["id"], "answer": make_answer(entry["item"]["id"], correct=False)},
+                headers=headers,
+            )
+    assert client.post(f"/api/v1/analyze?session_id={sid}", headers=headers).status_code == 200
+
+    pending = client.get("/api/v1/adaptations/pending").json()["proposals"]
+    assert pending, "the manufactured struggle produced nothing to look at"
+    for prop in pending:
+        assert prop["strategy_label"], f"{prop['strategy']} reached the learner without a label"
+        assert prop["what_it_does"], f"{prop['strategy']} reached the learner with no description"
+        if ST.CATALOG[prop["strategy"]].citations:
+            assert [c["ref"] for c in prop["citations"]], f"{prop['strategy']} has citations in the catalog but none reached the pending list"
+
+    decided = client.get("/api/v1/adaptations/history").json()["decisions"]
+    for prop in decided:
+        assert prop["strategy_label"], "the history list lost the label too"
+
+    dash = client.get("/api/v1/dashboard").json()
+    for prop in dash.get("pending_proposals") or []:
+        assert prop["strategy_label"] and prop["what_it_does"], prop["strategy"]
+
+
+def test_a_modified_approval_returns_what_the_learner_changed(client, learner, items, make_answer):
+    """``decision: modified`` used to be the whole receipt.
+
+    Editing a proposal is the one answer where the learner's numbers replace the model's, so the
+    response has to say which of them were applied and which were refused -- and the note they
+    typed with it has to come back, not only sit in the history endpoint.
+    """
+    headers = learner["headers"]
+    sid = client.post("/api/v1/sessions", json={"mode": "practice"}, headers=headers).json()["session_id"]
+    for _ in range(2):
+        for entry in items[:8]:
+            client.post(
+                "/api/v1/attempts",
+                json={"session_id": sid, "item_id": entry["item"]["id"], "answer": make_answer(entry["item"]["id"], correct=False)},
+                headers=headers,
+            )
+    assert client.post(f"/api/v1/analyze?session_id={sid}", headers=headers).status_code == 200
+    pending = client.get("/api/v1/adaptations/pending").json()["proposals"]
+    target = next((p for p in pending if p.get("strategy") == "difficulty_recalibration"), None)
+    assert target, [p.get("strategy") for p in pending]
+
+    out = client.post(
+        f"/api/v1/adaptations/{target['id']}/decision",
+        json={
+            "decision": "modify",
+            "answered_by": "student",
+            "note": "two at a time, not four",
+            "modifications": {"target": 0.9, "questions_per_session": 3},
+        },
+        headers=headers,
+    )
+    assert out.status_code == 200, out.text
+    body = out.json()
+    assert body["decision"] == "modify" and body["status"] == "modified", body
+    assert body["modifications"]["applied"] == {"target": 0.9}, body
+    assert body["modifications"]["refused_keys"] == ["questions_per_session"], "a key the strategy does not expose must be refused, and say so"
+    assert body["refused_keys"] == ["questions_per_session"], body
+    assert body["student_note"] == "two at a time, not four", body
+
+    # and what took effect is the learner's number, not the one AI 1 proposed
+    active = client.get("/api/v1/adaptations/active").json()["active"]
+    assert len(active) == 1 and active[0]["payload"]["target"] == 0.9, active
+    assert active[0]["source"] == "modified", active[0]
+    hist = client.get("/api/v1/adaptations/history").json()["decisions"]
+    row = next((r for r in hist if r["id"] == target["id"]), None)
+    assert row is not None and "two at a time" in json.dumps(row), hist

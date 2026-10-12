@@ -95,7 +95,23 @@ async def voice(
     st = get_settings()
     student_id, sid = _authenticate(websocket.cookies.get(st.cookie_name), session_id)
     if student_id is None:
-        # 4401 rather than a fake-OK handshake: the client can show "sign in again".
+        # Refused, not silently accepted -- and refused in a way a browser can read. Closing
+        # *before* `accept()` answers the handshake with HTTP 403, which surfaces to a page as
+        # code 1006 with no reason: `voice/page.tsx` switches on 4401 to say "sign in again",
+        # and that branch was unreachable. Accepting for the length of one frame hands over no
+        # data and creates no session; it only makes the refusal legible, then closes with 4401.
+        await websocket.accept()
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "t": "error",
+                    "where": "auth",
+                    "detail": "authentication required - sign in again; the voice socket is refused, not ignored",
+                    "recoverable": False,
+                },
+                separators=(",", ":"),
+            )
+        )
         await websocket.close(code=4401, reason="authentication required")
         return
     await websocket.accept()

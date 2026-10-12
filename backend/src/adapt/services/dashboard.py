@@ -16,6 +16,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..learning import strategies as ST
+
 from ..db.models import (
     ActiveAdaptation,
     AdaptationProposal,
@@ -117,7 +119,9 @@ def overview(services: Any, student_id: str) -> dict[str, Any]:
                 }
                 for h in hyps
             ],
-            "pending_proposals": [proposal_dict(p) for p in pending],
+            # the catalog entry is what carries the label and the citation, so a dashboard that
+            # leaves it out reports a proposal with no source next to one that has one
+            "pending_proposals": [proposal_dict(p, strategy=ST.CATALOG.get(p.strategy)) for p in pending],
             "active_adaptations": [
                 {
                     "id": a.id,
@@ -132,7 +136,7 @@ def overview(services: Any, student_id: str) -> dict[str, Any]:
                 for a in acts
             ],
             "decided_adaptations": [
-                proposal_dict(p)
+                proposal_dict(p, strategy=ST.CATALOG.get(p.strategy))
                 for p in s.execute(
                     select(AdaptationProposal)
                     .where(

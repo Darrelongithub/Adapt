@@ -299,3 +299,42 @@ declared, unused); per-learner *rate* budgets beyond the shared buckets; a Numba
 whisper/Kokoro install, no microphone, no browser); provider quotas and 429 behaviour against live
 APIs; `sqlcipher3-binary` availability off Linux; latency numbers for anything voice; visual
 mobile/desktop rendering.
+
+---
+
+## Second pass — the approval gate, the settings screen, the socket (2026-10-12)
+
+The first pass asked "does each element run?". This pass asked the harder question of each fix:
+*does it change anything a learner can observe?* Seven defects came back, and six of them sit in
+the same gap: between "the endpoint answered" and "the app did something with it". The seventh is
+the app answering for a server that refused to answer at all.
+
+| # | Defect | Root cause | Fix | Guard |
+|---|---|---|---|---|
+| F5 | AI 1 proposed `difficulty_recalibration` with `{"target": 0.78}` — the selector's own default, so approving it changed nothing. The loop asked the learner to ratify the status quo. | the payload came from `strategy.payload_defaults` with no reference to the evidence that raised the pattern | `recalibrated_target()` derives the number from the detector's `facts` (`too_hard` → 0.85, `too_easy` → 0.70, otherwise compared against the observed rate, clamped 0.60–0.92) and **returns the current target unchanged when the evidence says nothing**; read from `EvidenceRecord.facts` via `draft.evidence_ids` | `test_learning_math.py::test_recalibrating_the_difficulty_target_moves_it_the_right_way`, `test_api_learner_loop.py::test_a_proposal_must_propose_something` |
+| F6 | The settings screen rendered `avoid` and `encourage` as tick boxes. Ticking one stored the phrase `"True"` in the learner's profile, which AI 1 then quotes back as their own request. | the page's `BOOL` set contained two keys the server types as `list` | those two keys became text boxes that split into phrases on save and join on load; the server now **refuses** a bool or an empty value for a list preference instead of coercing it | `test_api_learner_loop.py::test_a_preference_is_stored_as_the_thing_it_describes` (fails without the guard), plus a UI check that types two phrases and reads them back after a reload |
+| F7 | A pending proposal reached the learner with no label, no "what it does", and no citations — while the same proposal seen through `analyze` or the dashboard had them. The learner judged an experiment without being told it was one. | `services/adaptations.py` called `proposal_dict(row)` without `strategy=`, and those three fields are only filled from the catalog entry | the pending list, the history list and both dashboard views resolve the strategy | `test_api_learner_loop.py::test_a_pending_proposal_arrives_with_its_source` (fails without the fix) |
+| F8 | Nothing. Recorded to close it: the `channel` field in the *audit* entry is the transport, not the caller's word — the route stamps `web`; the `channel` in the *decision record* keeps what the caller said. Both are true statements about different things. | — | — | checked at both layers, unchanged |
+| F9 | `voice/page.tsx` has a branch for close code 4401 that says "sign in again". Browsers never see it: a close sent before `accept()` answers the handshake with HTTP 403, and the page reports a generic transport error. The existing test passed because a protocol-level client does see the code. | refusing a WebSocket and *telling the client why* are two different operations | accept, send one `{"t":"error","where":"auth",…}` frame, then close with 4401 — no data is exchanged and no session is created in between | `test_api_learner_loop.py::test_websocket_refuses_anonymous_sockets_in_a_way_a_browser_can_read` (fails on the old code), and re-checked with a raw `websockets` client, which now receives the frame |
+| F10 | `decision: modify` returned a receipt that said only "modified": which of the learner's numbers were applied, which were refused, and what they typed as a reason were all missing from the reply (they were stored correctly). | the reply builder wrote `note` as *its own* explanatory sentence and never echoed `modifications`/`student_note` | the modify branch adds both, matching the key names `proposal_dict` already uses | `test_api_learner_loop.py::test_a_modified_approval_returns_what_the_learner_changed` (fails without it) |
+
+| F11 | (harness, not the app) numeric-answer checks flickered in a *full* probe run and passed in isolation. | jsdom + React: `Event("input")` is not what React listens for, so the value reached the DOM but not React's state; a later render wrote the old state back and the box looked as if the app had erased the learner's typing | the shim dispatches `InputEvent`; and `fillAnswer` now distinguishes `state-reset` (the element is still mounted, so the app really did clear it) from `remounted` (the question was torn down mid-typing), so the next time it flickers the report names the mechanism | the whole suite runs clean at 124/124 with the detector left armed |
+| F12 | **A throttled read was reported as a sign-out.** With the per-IP bucket spent (which a busy local run does in seconds), `GET /api/v1/me` answers 429 and the app concluded `me = null`: the changes screen said "nobody is signed in, so there is nothing to approve", the header offered "sign in", and a learner half-way through a placement would have believed their session was gone. | `whoAmI()` and `SessionGate` both collapse "the server refused to answer" into "the server said nobody" — a missing `data` and a refusal are the same value, `null` | the gate now tracks the third state (`unknown`), keeps the last known learner on screen, backs off and retries on its own (bounded, four tries), and only calls a visitor signed out when the answer was 401/403; `NeedSetup` says "still checking who you are — nothing here has been lost" with a retry the learner can press; `Err` explains a 429 as throttling rather than as a sign-in problem; `/proposals` no longer claims a sign-out it was not told about | three checks in the `failures` scenario: the header offers a retry instead of "sign in", the changes screen refuses to announce a sign-out, and the back-off finds the session again without being asked. All three **fail on the pre-fix build** (proven by stashing the files and rebuilding) |
+| F13 | Two different 429 bodies. The per-scope refusal nests `{error, retry_after_s, scope}` under `detail`; the middleware's per-IP refusal answered `{"detail": "rate limit exceeded", "retry_after_s": …}` — so a client written to back off politely from one missed the number in the other and retried immediately, which is what a flood looks like to a limiter. | two raise sites, one contract, never compared | the per-IP refusal now carries the structured detail too (keeping the top-level key and a human sentence, so nothing that read the old shape breaks) | `test_api_learner_loop.py::test_the_per_ip_refusal_answers_with_the_same_shape_as_every_other_429` — fails on the old body, passes on the new |
+
+**Two things that looked like defects and were not.** `GET /api/v1/status` requires a session, so
+the header chip used to read "no at-rest encryption" on the signed-out landing page — an
+assertion about a database it had not been allowed to describe; the chip now has four states
+(`checking the api…` / up / down / unreachable, and "not reported" for the parts a visitor cannot
+read). And an accepted adaptation appeared to be missing its start time and its
+`waiting_for_effect` sibling: both exist, the keys are `started_at` and a top-level list — my
+probe had guessed the shape, which is the same mistake the first pass warned about.
+
+**Harness, in the open.** `frontend/scripts-ui-probe.mjs` drives the *built* pages in jsdom
+because no browser can be installed here. Three of its FAILs this pass were its own bugs, each
+fixed rather than worked around: a wait anchored on text that is on the page before the data
+arrives; a shared cookie jar that left the last manufactured learner signed in for the scenarios
+after it; and a text-input shim that produced `Event("input")` where React needs `InputEvent` —
+that last one is why the numeric-answer checks flickered only under load. Its `fillAnswer` now
+reports *wiped* (React overwrote what was typed, an app fault) separately from *still locked*
+(the event never landed, a harness fault); the wiped case never fired.

@@ -126,3 +126,28 @@ session is the expected result, not a bug.
   sites the frontend makes. Paths assembled at runtime (none today) would slip through, and the
   mock-parity rule is "some fixture regex accepts a concrete sample of the path", which cannot
   prove the fixture's *body* is the right shape — `?mock=1` still needs a human eye.
+
+## What the second pass added, and what it did not (2026-10-12)
+
+* **Voice, at the protocol boundary:** 12 checks driven by a raw `websockets` client against the
+  running app — `hello` naming both sample rates, `config_ack` echoing what the server actually
+  took, `ping`/`status`/unknown-frame behaviour, a typed turn answered by `reply` with
+  `speak_unavailable` naming the fallback, 130 binary microphone frames reaching the VAD
+  (130 frames, 83,200 bytes, `turns=2`), `stop` returning the turn to listening, a reconnect
+  getting a fresh `hello`, and an anonymous socket refused *in a frame the page can read* (F9).
+* **Voice, below that boundary — still unverified here:** no microphone, no `faster-whisper`, no
+  `kokoro`, no `espeak-ng`, no browser. With no local STT the transcript that comes back is
+  `{"text": "", "backend": "browser", "note": "browser STT supplies text, not audio"}` — an empty
+  result labelled as such, never invented words; that is the *degradation path* being verified,
+  not transcription. Real accuracy, real latency, real barge-in timing and the audible difference
+  between `af_heart` and `am_fenrir` have to be judged on a machine that can install them
+  (`pip install 'adapt-backend[voice]'`, Python ≥3.11 <3.13).
+* **Interaction, without a browser:** `npm run probe` drives the built pages in jsdom (124 checks
+  across ten screens). It catches hydration-order bugs, real click→request→DB round trips and
+  what the screen says afterwards, and it can break one endpoint on purpose (the `failures`
+  scenario answers 429 to the session read and asserts the app does not turn that into a sign-out).
+  It cannot catch: CSS/layout at any viewport, focus rings,
+  `getUserMedia` prompts, autoplay policies, or anything a screenshot would show.
+* **Model quality:** unchanged from above — no key, no egress, so no real Gemini answer has ever
+  been produced by this build. Everything asserting about AI 1 and AI 2 in this repository is
+  about the local path and the gate, not about model cleverness.

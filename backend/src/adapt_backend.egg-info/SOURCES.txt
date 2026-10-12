@@ -69,4 +69,5 @@ tests/test_assessment.py
 tests/test_crypto_and_encryption.py
 tests/test_item_variant_rendering.py
 tests/test_learning_math.py
+tests/test_migrations.py
 tests/test_telemetry.py

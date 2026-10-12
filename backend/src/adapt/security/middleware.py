@@ -132,8 +132,22 @@ class LimitsMiddleware(BaseHTTPMiddleware):
         ip = client_ip(request)
         ok, retry = self.limiter.allow("ip", ip)
         if not ok:
+            wait = round(retry, 2)
+            # The per-scope refusals in `deps.py` answer 429 with a structured detail, and
+            # clients (the demo, the probe, any page that wants to back off) read the wait
+            # time out of it. This one used to answer with a bare sentence and the number
+            # beside it, so the same client parsed one and missed the other. Both shapes now
+            # agree; the top-level key and the sentence stay, for anything already reading them.
             return JSONResponse(
-                {"detail": "rate limit exceeded", "retry_after_s": round(retry, 2)},
+                {
+                    "detail": {
+                        "error": "rate_limited",
+                        "retry_after_s": wait,
+                        "scope": "ip",
+                        "message": "rate limit exceeded - this connection is asking too often",
+                    },
+                    "retry_after_s": wait,
+                },
                 status_code=429,
                 headers={"Retry-After": str(max(1, int(retry) + 1))},
             )

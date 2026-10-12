@@ -237,3 +237,144 @@ def test_the_item_handed_to_the_tutor_is_the_rendered_variant(client, learner, s
     assert payload and payload.get("stem_template"), "the item's stored stem is already fixed: nothing to prove"
     expected = bank.render_item_for(payload, seed=bank.variant_seed(learner["student_id"], target))
     assert stem == str(expected.get("stem")), (stem[:60], str(expected.get("stem"))[:60])
+
+
+# --------------------------------------------------------------------------- #
+# the tutor's own render -- /explain quoted the stored template at a learner
+# --------------------------------------------------------------------------- #
+
+def _templated_target(services):
+    """An item whose stored solution is still a template, plus a sibling in the same topic."""
+    from sqlalchemy import select
+
+    from adapt.db.models import Item
+
+    def templated(row) -> bool:
+        steps = " ".join((st.get("text") if isinstance(st, dict) else str(st)) for st in (row.solution_steps or []))
+        return bool(row.stem_template) and bool(PLACEHOLDER.search(steps))
+
+    with services.scope() as s:
+        rows = s.execute(select(Item).where(Item.active.is_(True))).scalars().all()
+        for r in rows:
+            if not templated(r):
+                continue
+            # a sibling in the same topic that is *also* templated, so a test can tell the
+            # two apart rather than relying on one of them being empty
+            same = [x.id for x in rows if x.topic_id == r.topic_id and templated(x)]
+            if len(same) >= 2:
+                return {"topic_id": r.topic_id, "item_id": same[0], "other_id": same[1]}
+    raise AssertionError("no parametric item with a templated solution in the bank: this test would prove nothing")
+
+
+def _rendered_steps(services, student_id: str, item_id: str) -> list[str]:
+    """The solution steps as this learner should be shown them."""
+    from adapt.assessment.bank import render_item_for
+    from adapt.db.models import Item
+
+    with services.scope() as s:
+        row = s.get(Item, item_id)
+        raw = {
+            "id": row.id,
+            "stem": row.stem,
+            "stem_template": row.stem_template,
+            "answer_spec": row.answer_spec,
+            "solution_steps": row.solution_steps,
+            "hints": row.hints,
+            "choices": row.choices,
+            "kind": row.kind,
+        }
+        import adapt.ai.ai2 as AI2
+
+        rendered = render_item_for(raw, seed=AI2.bank_seed(student_id, item_id))
+    return [st.get("text", "") if isinstance(st, dict) else str(st) for st in (rendered.get("solution_steps") or [])]
+
+
+def test_the_tutor_never_quotes_the_unrendered_template(client, learner, services):
+    import json
+    """The reply used to carry ``{a} - {b} = {ab}`` to the learner in prose.
+
+    ``AI 2`` built its context from the stored row, and the local tutor quotes that row's
+    solution steps as its worked example -- so on 27 of the 55 bank items the explanation
+    ended with a line of braces. In llm mode the same template went into the model's prompt.
+    """
+    target = _templated_target(services)
+    reply = client.post(
+        "/api/v1/explain",
+        json={"question": "how do I work this out", "topic_id": target["topic_id"], "item_id": target["item_id"]},
+        headers=learner["headers"],
+    )
+    assert reply.status_code == 200, reply.text
+    body = reply.json()
+    assert body["answer"], "an empty answer would pass every check below it"
+    assert not PLACEHOLDER.search(body["answer"]), body["answer"][:400]
+    for sec in body.get("sections") or []:
+        assert not PLACEHOLDER.search(sec["text"]), f"the {sec['label']!r} section still held the template: {sec['text'][:200]}"
+    assert not PLACEHOLDER.search(json.dumps(body.get("resource_hint") or "")), "a placeholder leaked into the resource hint"
+    # and it has to be a real answer, not an answer with the useful part quietly removed:
+    # the tutor's guard drops a section it cannot render, so "no braces" alone would also be
+    # satisfied by never explaining anything.
+    example = next((sec["text"] for sec in body.get("sections") or [] if sec.get("label") == "worked example"), "")
+    assert example, f"no worked example in the reply at all: {[sec.get('label') for sec in body.get('sections') or []]}"
+    assert any(c.isdigit() for c in example), f"the worked example carries no numbers, so it was not rendered: {example[:200]}"
+
+
+def test_the_tutor_worked_examples_are_the_learners_own_numbers(client, learner, services):
+    """The numbers in the explanation must be the ones on the card, from the same seed."""
+    target = _templated_target(services)
+    steps = _rendered_steps(services, learner["student_id"], target["item_id"])
+    assert steps and not any(PLACEHOLDER.search(t) for t in steps), "the bank row's render itself is broken"
+
+    reply = client.post(
+        "/api/v1/explain",
+        json={"question": "walk me through it", "topic_id": target["topic_id"], "item_id": target["item_id"]},
+        headers=learner["headers"],
+    ).json()
+    example = " ".join(sec["text"] for sec in reply.get("sections") or [] if sec.get("label") == "worked example")
+    assert example, f"no worked example in the reply: {list(reply)}"
+    assert steps[0] in example, f"expected {steps[0]!r} in {example[:300]!r}"
+
+
+def test_the_tutor_answers_the_item_the_learner_is_on(client, learner, services):
+    """``item_id`` was accepted and then ignored: the reply used whichever row came first."""
+    target = _templated_target(services)
+    asked = _rendered_steps(services, learner["student_id"], target["item_id"])
+    other = _rendered_steps(services, learner["student_id"], target["other_id"])
+    assert asked and other, "one of the two items has no solution steps to compare"
+    assert asked[0] != other[0], "the two items share their first step, so this test would prove nothing"
+
+    reply = client.post(
+        "/api/v1/explain",
+        json={"question": "walk me through this one", "topic_id": target["topic_id"], "item_id": target["item_id"]},
+        headers=learner["headers"],
+    ).json()
+    example = " ".join(sec["text"] for sec in reply.get("sections") or [] if sec.get("label") == "worked example")
+    assert asked[0] in example, example[:300]
+    assert other[0] not in example, "the worked example is for a different question than the one asked about"
+
+
+def test_a_section_that_cannot_be_rendered_is_left_out_rather_than_shown(client, learner, services):
+    """The guard in the tutor: braces never reach a learner, even from a bad caller."""
+    import adapt.ai.local_tutor as LT
+    from adapt.db.models import Topic
+
+    with services.scope() as s:
+        topic = s.get(Topic, _templated_target(services)["topic_id"])
+    index = LT.BM25(
+        [
+            LT.Doc(
+                doc_id="mat:test:1",
+                text="A sentence about the topic, written to be retrievable by BM25.",
+                meta={"kind": "material", "title": "test note"},
+            )
+        ]
+    )
+    bogus = {
+        "id": "itm_bogus",
+        "stem": "Work out {a} + {b}.",
+        "answer_spec": {"variables": {}},
+        "solution_steps": [{"text": "{a} + {b} = {q}{unresolvable_token_here}"}],
+        "hints": [],
+    }
+    out = LT.explain("tell me about the topic", index=index, topic_title=topic.title if topic else None, item=bogus, max_words=120)
+    assert not PLACEHOLDER.search(out.text), out.text[:300]
+    assert all(not PLACEHOLDER.search(sec["text"]) for sec in out.sections), [sec["text"] for sec in out.sections]

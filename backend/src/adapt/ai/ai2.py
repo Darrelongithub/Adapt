@@ -69,6 +69,40 @@ def bank_seed(student_id: str | None, item_id: str | None) -> int:
     return variant_seed(student_id, item_id)
 
 
+def _tutor_item_view(row: Any, student_id: str | None) -> dict[str, Any]:
+    """The item as the tutor should talk about it: rendered for this learner, not as stored.
+
+    A bank row is a template -- its stem, hints and solution steps say ``{a} - {b} = {ab}``.
+    The plan, the hint and the reveal all substitute the learner's own variant before showing
+    anything; the tutor's context used to carry the row itself, so its "worked example"
+    section quoted the template at the learner (and the raw template went into the model's
+    prompt in llm mode). Same seed as everywhere else, so the numbers in the explanation are
+    the numbers on the learner's screen.
+    """
+    from ..assessment.bank import render_item_for
+
+    raw = {
+        "id": row.id,
+        "topic_id": row.topic_id,
+        "kind": row.kind,
+        "stem": row.stem,
+        "stem_template": row.stem_template if hasattr(row, "stem_template") else None,
+        "experience_mode": row.experience_mode,
+        "prompt_context": row.prompt_context,
+        "visual_spec": row.visual_spec,
+        "choices": row.choices,
+        "answer_spec": row.answer_spec,
+        "solution_steps": row.solution_steps,
+        "hints": row.hints,
+        "rubric": row.rubric,
+        "difficulty": row.difficulty,
+        "numbas_ref": row.numbas_ref if hasattr(row, "numbas_ref") else None,
+        "tags": row.tags if hasattr(row, "tags") else None,
+        "explanation": row.prompt_context or "",
+    }
+    return render_item_for(raw, seed=bank_seed(student_id, row.id))
+
+
 def _remediation_row(p, student_id: str, *, render_item_for, public_item) -> dict[str, Any]:
     """One render per item: the stem, the hints and the attached worked example all have to
     come from the *same* sampled variant, or the example walks through different numbers
@@ -153,24 +187,7 @@ class EducationalIntelligence:
             items = []
             if topic:
                 for it in s.execute(select(Item).where(Item.topic_id == topic.id).limit(30)).scalars().all():
-                    items.append(
-                        {
-                            "id": it.id,
-                            "topic_id": it.topic_id,
-                            "kind": it.kind,
-                            "stem": it.stem,
-                            "experience_mode": it.experience_mode,
-                            "prompt_context": it.prompt_context,
-                            "visual_spec": it.visual_spec,
-                            "choices": it.choices,
-                            "answer_spec": it.answer_spec,
-                            "solution_steps": it.solution_steps,
-                            "hints": it.hints,
-                            "rubric": it.rubric,
-                            "difficulty": it.difficulty,
-                            "explanation": it.prompt_context or "",
-                        }
-                    )
+                    items.append(_tutor_item_view(it, student_id))
             resources = s.execute(
                 select(ResourceReference).where(ResourceReference.topic_id == (topic.id if topic else "%")).limit(24)
             ).scalars().all() if topic else []
@@ -237,18 +254,24 @@ class EducationalIntelligence:
         session_id: str | None = None,
         history: Sequence[tuple[str, str]] = (),
         want_spoken: bool = False,
+        item_id: str | None = None,
     ) -> Reply:
         """Answer an educational question, adapted to the learner."""
         ctx = self.context(student_id, topic_id=topic_id)
         idx = self.index_for(ctx)
         intent = LT.unexpected_request(question)
+        # The learner asked about the question in front of them. Taking items[0] meant the
+        # worked example in the reply was for some other item of the topic -- chosen by
+        # whichever row the database happened to return first.
+        pool = ctx["items"] or []
+        item = next((i for i in pool if item_id and i.get("id") == item_id), pool[0] if pool else None)
         local = LT.explain(
             question,
             index=idx,
             topic_title=ctx["topic"].title if ctx.get("topic") else None,
             p_know=ctx.get("p_know"),
             directives=ctx["directives"],
-            item=(ctx["items"] or [None])[0],
+            item=item,
             prereq_note=ctx.get("prereq_note"),
             max_words=600 if intent in ("simpler", "shorter") else 320,
         )
@@ -414,7 +437,12 @@ class EducationalIntelligence:
 
         out = []
         for pick in picks:
-            rendered = render_item_for(pick.item, seed=abs(hash((student_id, pick.item.get("id")))) & 0xFFFF)
+            # bank_seed, not hash(): the grader, the hints and the reveal all re-derive the
+            # variant from (student, item) with this seed, and hash() of a string is salted
+            # per process -- so an item generated here would be shown with numbers that the
+            # submission then marked against a different variant, and would change again
+            # after a restart.
+            rendered = render_item_for(pick.item, seed=bank_seed(student_id, pick.item.get("id")))
             out.append({**pick.as_dict(), "item": public_item(rendered)})
         if len(out) < count and self.llm is not None and getattr(self.llm, "configured", False):
             extra = await self._llm_practice(student_id=student_id, topics=topics, want=count - len(out), topic_id=topic_id, note=note)

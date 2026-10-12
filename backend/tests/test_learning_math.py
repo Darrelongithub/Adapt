@@ -550,3 +550,22 @@ def test_strategy_stats_and_effect_are_replayable():
     out = evaluate_change([0.2, 0.2, 0.2, 0.2, 0.3], [0.8, 0.9, 0.7, 0.85, 0.95], metric="accuracy", seed=11)
     assert out.after_mean > out.baseline_mean
     assert out.verdict != "insufficient_evidence"
+
+
+def test_recalibrating_the_difficulty_target_moves_it_the_right_way():
+    """The payload a proposal carries has to be derived, not the strategy's default.
+
+    A number the learner approves must be a change: see ``recalibrated_target``.
+    """
+    from adapt.ai.ai1 import recalibrated_target
+
+    assert recalibrated_target({"direction": "too_hard"}) == 0.85
+    assert recalibrated_target({"direction": "too_easy"}) == 0.70
+    # no direction recorded, but the measurement is below the band it was measured against
+    assert recalibrated_target({"observed": 0.41, "target_success_rate": 0.78}) == 0.85
+    assert recalibrated_target({"observed": 0.95, "target_success_rate": 0.78}) == 0.70
+    # nothing usable: the current value is left alone rather than guessed at
+    assert recalibrated_target({}, current=0.78) == 0.78
+    # and the tuned value always stays inside the band the strategy claims to aim at
+    for facts in ({"observed": 0.0}, {"observed": 1.0}, {"observed": 0.5, "target_success_rate": 0.5}):
+        assert 0.60 <= recalibrated_target(facts) <= 0.92, facts

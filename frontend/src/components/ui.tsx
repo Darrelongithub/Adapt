@@ -200,6 +200,11 @@ export function Err({ error, status }: { error: string | null; status?: number |
         <>
           Not signed in. <Link className="underline" href="/">Sign in or start as a guest</Link> and reload.
         </>
+      ) : status === 429 ? (
+        <>
+          The server is asking for a moment between requests, so this screen could not load. Nothing is wrong with
+          your session - wait a few seconds and try again.
+        </>
       ) : status === 0 ? (
         <>
           {error} — start the backend with{" "}
@@ -220,8 +225,8 @@ export function Err({ error, status }: { error: string | null; status?: number |
 /* session + status, kept in one place so every page agrees            */
 /* ------------------------------------------------------------------ */
 
-type SessionState = { me: Record<string, unknown> | null; loading: boolean; refresh: () => void; signOut: () => Promise<void> };
-const SessionCtx = createContext<SessionState>({ me: null, loading: true, refresh: () => {}, signOut: async () => {} });
+type SessionState = { me: Record<string, unknown> | null; loading: boolean; unknown?: string | null; refresh: () => void; signOut: () => Promise<void> };
+const SessionCtx = createContext<SessionState>({ me: null, loading: true, unknown: null, refresh: () => {}, signOut: async () => {} });
 export const useSession = () => useContext(SessionCtx);
 export const SessionProvider = SessionCtx.Provider;
 

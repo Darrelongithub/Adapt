@@ -81,7 +81,10 @@ def pending(s: Session, student_id: str) -> list[dict[str, Any]]:
     ).scalars().all()
     from ..ai.ai1 import proposal_dict
 
-    return [proposal_dict(r) for r in rows]
+    # `strategy=` is not decoration: the label, "what it does" and the citations all come from
+    # the catalog entry. Omitting it left the pending list -- the one the learner decides from --
+    # showing a proposal with no source attached, while other views had one.
+    return [proposal_dict(r, strategy=ST.CATALOG.get(r.strategy)) for r in rows]
 
 
 def history(s: Session, student_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
@@ -93,7 +96,7 @@ def history(s: Session, student_id: str, *, limit: int = 50) -> list[dict[str, A
     ).scalars().all()
     from ..ai.ai1 import proposal_dict
 
-    return [proposal_dict(r) for r in rows]
+    return [proposal_dict(r, strategy=ST.CATALOG.get(r.strategy)) for r in rows]
 
 
 def active(s: Session, student_id: str, *, include_inactive: bool = False) -> list[dict[str, Any]]:
@@ -177,6 +180,11 @@ def decide(
             proposal.modifications = {"applied": clean, "refused_keys": refused}
             if refused:
                 outcome["refused_keys"] = refused
+            # The reply is the receipt for an edited approval: without these two the caller is
+            # told "modified" but not what the modification was, and has to go and ask the
+            # history endpoint to find out what the app just did with their numbers.
+            outcome["modifications"] = proposal.modifications
+            outcome["student_note"] = proposal.student_note
         proposal.status = ProposalStatus.APPROVED.value if decision == "accept" else ProposalStatus.MODIFIED.value
         proposal.applied_at = now
         # baseline snapshot for the effect measurement, taken *before* the change

@@ -101,6 +101,8 @@ async def explain(
         session_id=body.session_id,
         history=history,
         want_spoken=body.spoken,
+        # which question the learner is looking at, so the reply talks about that one
+        item_id=body.item_id,
     )
     if body.session_id:
         # The metric is only real if the server records what the server showed: four

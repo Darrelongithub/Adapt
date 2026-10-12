@@ -85,6 +85,35 @@ PROPOSAL_SPEC: dict[str, Any] = {
 }
 
 
+def recalibrated_target(facts: dict[str, Any], *, current: float = 0.78) -> float:
+    """Which way the item-difficulty target has to move, from the measurement that raised the idea.
+
+    ``difficulty_recalibration`` shipped ``{"target": 0.78}`` as its payload -- and 0.78 is what
+    the selector already aims at. So the learner was asked to approve a change that, approved,
+    changed nothing: the loop proposing its own status quo. The detector that fires knows which
+    way the learner is off band, and that direction is the only thing worth turning into a
+    number: accuracy *below* the band means the items are too hard, so the target rises toward
+    the top of the 70-85% band (easier items); *above* it, the target comes down.
+
+    With no usable direction and no measurement, the current value is returned untouched -- it
+    is better to propose nothing new than to invent a number the evidence does not support.
+    """
+    direction = str(facts.get("direction") or "")
+    if direction == "too_hard":
+        target = 0.85
+    elif direction == "too_easy":
+        target = 0.70
+    else:
+        observed, baseline = facts.get("observed"), facts.get("target_success_rate")
+        if isinstance(observed, (int, float)) and isinstance(baseline, (int, float)):
+            target = 0.85 if float(observed) < float(baseline) else 0.70
+        elif isinstance(observed, (int, float)):
+            target = float(observed) + 0.08
+        else:
+            return float(current)
+    return round(min(0.92, max(0.60, target)), 2)
+
+
 @dataclass
 class Analysis:
     student_id: str
@@ -724,6 +753,10 @@ class LearningIntelligence:
                     continue  # in-the-moment help does not need approval, so must not be proposed
                 body = self._proposal_text(draft, strategy, llm_text)
                 payload = dict(strategy.payload_defaults)
+                if "target" in payload:
+                    # The number has to come from the evidence, or the "change" the learner is
+                    # asked to approve is the number already in use. See `recalibrated_target`.
+                    payload["target"] = recalibrated_target(self._evidence_facts(s, draft), current=float(payload["target"]))
                 if isinstance(llm_text, dict) and isinstance(llm_text.get("action_payload"), dict):
                     payload.update(
                         {k: v for k, v in llm_text["action_payload"].items() if k in payload}
@@ -764,6 +797,23 @@ class LearningIntelligence:
                 made.append(proposal_dict(row, hypothesis=hyp, strategy=strategy))
             s.commit()
             return made
+
+    def _evidence_facts(self, s, draft: H.Draft) -> dict[str, Any]:
+        """The facts the detector recorded for this draft, if any are still on file.
+
+        Read here rather than passed down because the proposal is built from the draft, which
+        keeps the sentence and not the numbers; the numbers live on the evidence row.
+        """
+        ids = list(draft.evidence_ids or [])
+        if not ids:
+            return {}
+        from ..db.models import EvidenceRecord
+
+        for row in s.execute(select(EvidenceRecord).where(EvidenceRecord.id.in_(ids))).scalars().all():
+            if isinstance(row.facts, dict) and row.facts:
+                return dict(row.facts)
+        return {}
+
 
     def _proposal_text(self, draft: H.Draft, strategy: ST.Strategy, llm_text: dict[str, Any] | None) -> dict[str, str]:
         """Local rendering by default; the LLM version is used only if it is valid."""

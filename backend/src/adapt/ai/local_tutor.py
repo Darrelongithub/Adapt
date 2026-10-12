@@ -21,12 +21,15 @@ answer, flagged ``provider="local"`` in the UI so nobody mistakes it for LLM tex
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
+
+log = logging.getLogger("adapt.tutor")
 
 STOPWORDS = frozenset(
     """a an the and or but if while of to in on for with without at by from as is are was were be been being
@@ -219,10 +222,24 @@ def explain(
     sections: list[dict[str, str]] = []
     sources: list[dict[str, str]] = []
     parts: list[str] = []
+    # What the item's own variables say, for the last-ditch substitution below.
+    item_vars: dict[str, Any] = dict(((item or {}).get("answer_spec") or {}).get("variables") or {})
 
     def add(text: str, label: str, src: Doc | None = None) -> None:
         if not text:
             return
+        # Nothing a learner reads may contain the item's template. Handing ``explain`` a
+        # stored row instead of the rendered variant used to put "{a} - {b} = {ab}" in the
+        # middle of an answer -- and in the model's prompt in llm mode. AI 2 now renders
+        # before it gets here; this is the guard that keeps the same mistake from coming
+        # back through another door: substitute what the item declares, and if any
+        # placeholder is still unresolved, leave the section out rather than show braces.
+        if TEMPLATE_KEY.search(text):
+            filled = _substitute(text, item_vars)
+            if TEMPLATE_KEY.search(filled):
+                log.warning("tutor: dropped the %r section - it still held unrendered placeholders", label)
+                return
+            text = filled
         parts.append(text)
         sections.append({"label": label, "text": text})
         if src is not None:
@@ -278,14 +295,16 @@ def explain(
         )
         return Grounded(" ".join(parts), sections, sources, list(dmap), level, confident=False)
 
-    # Worked example: prefer the item's own solution steps.
+    # Worked example: prefer the item's own solution steps -- the ones for *this* item, not
+    # the first row of whatever topic the caller happened to pass.
     if want_example and item:
         steps = item.get("solution_steps") or []
-        if steps:
-            lines = []
-            for i, st in enumerate(steps[:5]):
-                txt = st.get("text") if isinstance(st, dict) else str(st)
+        lines = []
+        for i, st in enumerate(steps[:5]):
+            txt = st.get("text") if isinstance(st, dict) else str(st)
+            if txt:
                 lines.append(f"{i + 1}. {txt}")
+        if lines:
             add("\n".join(lines), "worked example")
     elif by_kind.get("solution") and want_example:
         top = by_kind["solution"][0][1]

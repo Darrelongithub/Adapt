@@ -45,7 +45,25 @@ function record(step, detail) {
 const csrf = { token: null };
 const cookies = new Map();
 
-async function call(path, { method = "GET", json, headers = {}, form } = {}) {
+async function call(path, opts = {}) {
+  // The app throttles a connection that moves faster than a person does, and a walk of the whole
+  // loop *is* faster than a person. A throttle is a wait, not a failure, so obey the number the
+  // server printed; anything else still throws and stops the run.
+  for (let tries = 0; ; tries += 1) {
+    let err = null;
+    try {
+      return await callOnce(path, opts);
+    } catch (e) {
+      if (e.status !== 429 || tries >= 5) throw e;
+      err = e;
+    }
+    const waitMs = Math.min(20_000, (Number(err?.detail?.retry_after_s ?? 1) + 0.25) * 1000);
+    console.log(`  \x1b[2m(rate limited: ${opts.method ?? "GET"} ${path} -> waiting ${(waitMs / 1000).toFixed(1)}s, try ${tries + 2})\x1b[0m`);
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+}
+
+async function callOnce(path, { method = "GET", json, headers = {}, form } = {}) {
   const url = path.startsWith("/api") || path.startsWith("/healthz") ? `${API}${path}` : `${API}/api/v1/${path.replace(/^\//, "")}`;
   const h = { accept: "application/json", ...headers };
   const body = form ? form : json !== undefined ? JSON.stringify(json) : undefined;
@@ -83,10 +101,23 @@ async function main() {
   say("ADAPT demo driver", `API: ${API}`);
   let health;
   try {
-    health = await call("/api/v1/health");
+    // A 429 here means the API is up and this connection is over its per-IP ceiling -- usually
+    // because a probe or an earlier run just went through. Saying "cannot reach" would send the
+    // reader off to restart a server that is fine, so wait the number it asked for, twice.
+    for (let tries = 0; ; tries += 1) {
+      try {
+        health = await call("/api/v1/health");
+        break;
+      } catch (err) {
+        if (err.status !== 429 || tries >= 2) throw err;
+        const waitS = Math.min(30, Number(err.detail?.retry_after_s ?? 8) + 2);
+        console.log(`  rate limited on this connection: the API is up, so waiting ${waitS}s and asking again`);
+        await new Promise((r) => setTimeout(r, waitS * 1000));
+      }
+    }
   } catch (err) {
     console.error(
-      `\nCannot reach the API at ${API} (${err.message}).\n\nStart it first:\n  cd backend && ../.venv/bin/python -m uvicorn adapt.api.app:app --port 8000\n\nor point this script at one that is already running:\n  ADAPT_API=https://your-host node scripts/demo.mjs\n`,
+      `\nCannot reach the API at ${API} (${err.message}).${err.status === 429 ? "\n(429: this connection is over the per-IP ceiling -- wait a minute and run again.)" : ""}\n\nStart it first:\n  cd backend && ../.venv/bin/python -m uvicorn adapt.api.app:app --port 8000\n\nor point this script at one that is already running:\n  ADAPT_API=https://your-host node scripts/demo.mjs\n`,
     );
     process.exit(2);
   }
@@ -179,6 +210,23 @@ async function main() {
   record("analyze", { provider: analysis.provider, traces: analysis.traces.length, hypotheses: analysis.hypotheses.length, proposals: analysis.proposals.length });
 
   // 4. the approval gate, from the learner's side
+  // A proposal has to be *earned*: a pattern repeats before anything is worth asking a learner
+  // about, and one pass of placement is one observation per topic. When the caller asked to see a
+  // decision made, give the detectors a second look at the same struggle -- real attempts, all of
+  // them wrong on purpose, through the same endpoints the app uses. Nothing is invented here.
+  if (has("--decide") && (await call("adaptations/pending")).proposals.length === 0) {
+    const more = await call("/api/v1/practice?count=10");
+    const grind = await call("sessions", { method: "POST", json: { mode: "practice" } });
+    let ground = 0;
+    for (const entry of more.items ?? []) {
+      const ans = await answerFor(entry.item, true);
+      const out = await call("attempts", { method: "POST", json: { session_id: grind.session_id, item_id: entry.item.id, answer: ans, attempt_no: 1 } });
+      if (out.correct === false) ground += 1;
+    }
+    await call(`sessions/${grind.session_id}/finish`, { method: "POST", json: {} });
+    await call(`/api/v1/analyze?session_id=${grind.session_id}`, { method: "POST", json: {} });
+    say("Second pass", `  ${ground}/${(more.items ?? []).length} practice answers wrong on purpose, so a pattern can repeat\n  analysis re-run on that session before anything is asked of the learner`);
+  }
   const pending = await call("adaptations/pending");
   if (pending.proposals.length === 0) {
     say("Approval gate", "no proposal yet — and that is a valid outcome. A pattern has to repeat before anything is worth asking you about.");
@@ -196,7 +244,7 @@ async function main() {
       const decision = ["accept", "reject", "modify", "later"].includes(args[args.indexOf("--decide") + 1]) ? args[args.indexOf("--decide") + 1] : "accept";
       const body = { decision, note: decision === "modify" ? "two at a time, not four" : null, modifications: decision === "modify" ? { questions_per_session: 2 } : {} };
       const out = await call(`adaptations/${p.id}/decision`, { method: "POST", json: body });
-      say(`Decision: ${out.decision}`, `  status ${out.status} · active adaptation ${out.active_adaptation_id ?? "none"}\n  review: ${out.review?.note ?? "(none)"}\n  ${short(out.note, 160)}`);
+      say(`Decision: ${out.decision}`, `  status ${out.status} · active adaptation ${out.active_adaptation_id ?? "none"}\n  review: ${out.review?.note ?? "(none)"}\n  note: ${out.student_note ? `the learner wrote: ${short(out.student_note, 120)}` : out.note ? short(out.note, 160) : "(no note)"}`);
       record("decision", { decision: out.decision, status: out.status, active_adaptation_id: out.active_adaptation_id ?? null });
       // and the 409 the UI has to handle: a decision is one-shot
       try {

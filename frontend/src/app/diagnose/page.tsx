@@ -23,6 +23,7 @@ export default function Diagnose() {
   const [report, setReport] = useState<AnalyzeSummary | null>(null);
   const [framing, setFraming] = useState<{ purpose?: string; how?: string; time?: string }>({});
   const [started, setStarted] = useState<number | null>(null);
+  const [shortfall, setShortfall] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +65,13 @@ export default function Diagnose() {
   async function finish() {
     setLoading(true);
     setError(null);
+    setShortfall(null);
+    // Close the session first, exactly as practice does: finishing is what tells the backend
+    // the placement sequence ended, and it is the point at which "placed" is decided. The
+    // answer used to be dropped on the floor, so a learner who stopped early was never told
+    // that the band they expected had not been written.
+    const done = (await flow.finish().catch(() => null)) as Record<string, unknown> | null;
+    if (done && done.placed === false) setShortfall(typeof done.note === "string" ? done.note : "not enough of placement was answered to band you yet");
     try {
       const out = await post<AnalyzeRaw>(`/api/v1/analyze?session_id=${encodeURIComponent(flow.sessionId ?? "")}`, {});
       setReport(summarise(out));
@@ -74,7 +82,6 @@ export default function Diagnose() {
         setReport({ loop: [], hypotheses: 0, proposals: 0, note: errMessage(err), next: ["practise a few more sessions"] , evidence: 0, provider: null });
       } else setError(errMessage(err));
     }
-    await flow.finish();
     setLoading(false);
   }
 
@@ -98,6 +105,11 @@ export default function Diagnose() {
       <div className="space-y-4">
         <Card title="Placement done" tone={report.proposals ? "good" : "muted"}>
           <p className="text-sm">{report.note ?? `${report.hypotheses} hypotheses on file from ${report.evidence} evidence rows.`}</p>
+          {shortfall ? (
+            <p className="mt-2">
+              <Notice tone="warn">{shortfall}</Notice>
+            </p>
+          ) : null}
           <ol className="mt-2 space-y-1 text-xs text-[var(--muted)]">
             {report.loop.map((l, i) => (
               <li key={i}>
@@ -147,9 +159,15 @@ export default function Diagnose() {
           >
             Back
           </Btn>
-          {i + 1 >= items.length || last ? (
+          {/* The branch used to be `i + 1 >= items.length || last`, which meant that as soon
+              as a question was marked the button still labelled "Next" ran `finish` instead:
+              answering question 1 of 12 ended placement and analysed a single attempt. A
+              learner who did nothing wrong got a placement band built on one answer, and
+              there was no way to reach question 2. "Next" now always advances; finishing
+              early stays available on the button below it. */}
+          {i + 1 >= items.length ? (
             <Btn kind="primary" onClick={finish}>
-              {i + 1 >= items.length ? "Finish and analyse" : "Next"}
+              Finish and analyse
             </Btn>
           ) : (
             <Btn
@@ -159,6 +177,7 @@ export default function Diagnose() {
                 setLast(null);
               }}
               disabled={!last}
+              title={last ? undefined : "answer this one first — the band needs a mark on every question it counts"}
             >
               Next
             </Btn>

@@ -24,7 +24,16 @@ type Privacy = {
 };
 
 const NUMERIC = new Set(["weekly_minutes", "session_minutes", "max_explanation_words", "items_per_session"]);
-const BOOL = new Set(["push_me", "want_voice", "want_review_reminders", "encourage", "avoid"]);
+const BOOL = new Set(["push_me", "want_voice", "want_review_reminders"]);
+/** Keys the server stores as a list of short phrases. They have to be typed, not ticked: a
+ *  checkbox here used to post `true`, which the server wrapped into the phrase "True" and put
+ *  into the learner's profile. */
+const PHRASES = new Set(["avoid", "encourage"]);
+
+/** One text box in, a list out -- commas, semicolons and new lines all separate phrases. */
+function toPhrases(value: string): string[] {
+  return value.split(/[,;\n]/).map((part) => part.trim()).filter(Boolean).slice(0, 8);
+}
 
 export default function Settings() {
   const { refresh } = useSession();
@@ -45,7 +54,12 @@ export default function Settings() {
 
   useEffect(() => {
     const p = prefs.data?.preferences;
-    if (p) setForm(Object.fromEntries(Object.entries(p).map(([k, v]) => [k, typeof v === "boolean" ? v : String(v ?? "")])));
+    if (p)
+      setForm(
+        Object.fromEntries(
+          Object.entries(p).map(([k, v]) => [k, typeof v === "boolean" ? v : Array.isArray(v) ? v.join(", ") : String(v ?? "")]),
+        ),
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(prefs.data?.allowed_keys ?? [])]);
 
@@ -72,6 +86,7 @@ export default function Settings() {
         if (typeof v === "string" && v.trim() === "") continue;
         if (typeof v === "boolean") payload[k] = v;
         else if (NUMERIC.has(k)) payload[k] = Number(v);
+        else if (PHRASES.has(k)) payload[k] = toPhrases(String(v));
         else payload[k] = v;
       }
       setReply(await post<PrefReply>("me/preferences", { preferences: payload, source: "settings" }));
@@ -117,7 +132,13 @@ export default function Settings() {
           <div className="space-y-2">
             {allowed.map((k) => (
               <Field key={k} label={k.replace(/_/g, " ")} hint={hintFor(k)}>
-                {BOOL.has(k) || typeof form[k] === "boolean" ? (
+                {PHRASES.has(k) ? (
+                  <Input
+                    value={String(form[k] ?? "")}
+                    onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
+                    placeholder={k === "avoid" ? "sticker charts, being rushed" : "diagrams before symbols"}
+                  />
+                ) : BOOL.has(k) || typeof form[k] === "boolean" ? (
                   <Check
                     label={form[k] === true ? "on" : "off"}
                     checked={form[k] === true || form[k] === "true"}

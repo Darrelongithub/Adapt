@@ -26,7 +26,7 @@ const VERBS = [
 ];
 
 export default function Proposals() {
-  const { me, loading: meLoading } = useSession();
+  const { me, loading: meLoading, unknown: meUnknown } = useSession();
   const pending = useApi<{ proposals: Proposal[]; explain?: string }>("adaptations/pending");
   const active = useApi<{ active: ActiveAdaptation[]; waiting_for_effect?: ActiveAdaptation[] }>("adaptations/active");
   const history = useApi<{ decisions: Proposal[] }>("adaptations/history");
@@ -91,7 +91,7 @@ export default function Proposals() {
     }
   }
 
-  if (!meLoading && !me)
+  if (!meLoading && !me && !meUnknown)
     return <Err error="nobody is signed in, so there is nothing to approve" status={401} />;
 
   return (
