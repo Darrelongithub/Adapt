@@ -85,7 +85,14 @@ def test_em_needs_data_and_says_so():
 
 
 def test_em_recovers_a_learning_rate_from_synthetic_knows():
-    """Fit on data generated *by* the model: recovery within tolerance is the claim."""
+    """Fit on data generated *by* the model: recovery within tolerance is the claim.
+
+    The generator below moves a hidden ``know`` state (learning after every
+    opportunity) -- the **classic** rule -- so the fit must be asked for that rule
+    explicitly. ``fit_em`` defaults to ``model="online"`` because that is what
+    ``update()`` does at runtime; see ``test_learner_model_consistency.py``, which
+    pins the estimator to the live filter and measures what mixing the two costs.
+    """
     import random
 
     from adapt.learning.bkt import BKTParams, fit_em
@@ -105,7 +112,7 @@ def test_em_recovers_a_learning_rate_from_synthetic_knows():
                 know = False
         sequences.append(row)
 
-    fitted, diag = fit_em(sequences, init=BKTParams(), iters=120)
+    fitted, diag = fit_em(sequences, init=BKTParams(), iters=120, model="classic")
     assert abs(fitted.p_learn - truth.p_learn) < 0.15, fitted
     assert abs(fitted.p_guess - truth.p_guess) < 0.15, fitted
     assert abs(fitted.p_slip - truth.p_slip) < 0.15, fitted

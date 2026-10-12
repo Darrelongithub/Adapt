@@ -1959,3 +1959,72 @@ def test_a_modified_approval_returns_what_the_learner_changed(client, learner, i
     hist = client.get("/api/v1/adaptations/history").json()["decisions"]
     row = next((r for r in hist if r["id"] == target["id"]), None)
     assert row is not None and "two at a time" in json.dumps(row), hist
+
+
+# --------------------------------------------------------------------------- #
+# resource search: the endpoint a caller reaches for when teaching needs sources
+# --------------------------------------------------------------------------- #
+
+
+def test_a_resource_search_answers_without_a_network(client, learner):
+    """The search endpoint must return its own honest empty state, not a 500.
+
+    ``ResourceService.search`` takes ``limit_per_provider``; the route passed ``limit``,
+    so the call raised ``TypeError`` and the endpoint answered 500 for every request --
+    reachable, tested by nothing, and invisible while no frontend screen called it. The
+    service traps each provider's failures itself and reports them in ``providers``, so
+    the correct behaviour here is a 200 with an empty ``results`` list and a note saying
+    teaching continues without them (this sandbox has no route to the four hosts, which
+    is exactly the "provider unavailable" case).
+    """
+    response = client.post(
+        "/api/v1/resources/search",
+        json={"query": "adding fractions", "limit": 4},
+        headers=learner["headers"],
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["query"] == "adding fractions"
+    assert isinstance(body["results"], list)
+    assert isinstance(body["providers"], list) and body["providers"], "the answer must name the providers it tried"
+    for provider in body["providers"]:
+        assert {"provider", "ok", "source", "note"} <= set(provider)
+    if not body["results"]:
+        assert body.get("note"), "an empty answer must say why it is empty"
+    assert "retrieval_note" in body, "results must arrive with the caveat that search is not endorsement"
+
+
+def test_a_resource_search_refuses_an_unknown_provider_without_crashing(client, learner):
+    """A caller naming a provider that does not exist gets the providers that do."""
+    response = client.post(
+        "/api/v1/resources/search",
+        json={"query": "quadratic equations", "providers": ["nope"], "limit": 2},
+        headers=learner["headers"],
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["results"] == []
+    assert body["providers"] == [], "no known provider was asked, so none is reported"
+
+
+def test_analyze_refuses_a_session_that_is_not_this_learners(client, learner, session):
+    """An unknown session id is a 404, not an empty analysis.
+
+    ``POST /analyze`` returns the whole picture (traces, hypotheses, proposals, plan), so
+    answering 200 for a session id that does not exist made "that session was never
+    recorded" indistinguishable from "we looked and found no pattern" -- and the caller
+    then renders the analysis as if it belonged to that session. The sibling route
+    ``GET /sessions/{id}/events`` refuses the same id with 404.
+    """
+    missing = client.post("/api/v1/analyze?session_id=lrs_never_happened", headers=learner["headers"])
+    assert missing.status_code == 404, missing.text
+    assert "unknown session" in json.dumps(missing.json()["detail"])
+
+    # An empty id is the loop screens' "session is over" case and still analyses the record.
+    empty = client.post("/api/v1/analyze?session_id=", headers=learner["headers"])
+    assert empty.status_code == 200, empty.text
+    assert "traces" in empty.json()
+
+    real = client.post(f"/api/v1/analyze?session_id={session}", headers=learner["headers"])
+    assert real.status_code == 200, real.text
+    assert real.json()["session_id"] == session

@@ -202,7 +202,9 @@ async def _control(payload: dict[str, Any], conv: Any, send: Any) -> None:
     if kind in ("text", "say", "typed"):
         text_in = str(payload.get("text") or "")[:2000]
         if text_in.strip():
-            await conv.push_text(text_in)
+            # Started, not awaited: this loop also reads the microphone, and a turn must
+            # not block the learner's ability to interrupt it.
+            conv.start_text(text_in)
         return
     if kind == "listen":
         conv.start_listening()

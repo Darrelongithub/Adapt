@@ -120,7 +120,6 @@ class Narrator:
         ``deterministic`` is what the simulation already knew (the caller checks the cache and the
         sim's own ``explain`` first, because those are not this class's business to repeat).
         """
-        kind = str(spec.get("kind") or "")
         citations = [dict(c) for c in (spec.get("citations") or []) if isinstance(c, dict)]
         if deterministic:
             return Answer(text=deterministic, source="simulation", frame=int(frame_index), citations=citations)
@@ -134,7 +133,7 @@ class Narrator:
                 note="no model is configured, so this is the simulation's own wording rather than an explanation of it",
             )
         prompt = self._prompt(spec, frame_index, question)
-        safe, dropped = redact_payload({"q": prompt}, max_chars=7000)
+        safe, dropped, _kinds = redact_payload({"q": prompt}, max_chars=7000)  # _audit records the count, not the kinds
         try:
             res = await self.llm.complete(
                 system=AI3_SYSTEM,

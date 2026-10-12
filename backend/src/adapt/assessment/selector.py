@@ -24,6 +24,8 @@ which is exactly the visible loop the demo has to show.
 
 from __future__ import annotations
 
+import hashlib
+import math
 import random
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -32,6 +34,27 @@ from typing import Any, Iterable, Sequence
 from ..learning.bkt import BKTParams, information_gain
 
 MODE_CYCLE = ("read", "visual", "example", "practice", "teachback")
+
+
+def stable_seed(*parts: str) -> int:
+    """An int derived from strings, identical in every process.
+
+    ``hash()`` on a ``str`` is salted per interpreter (PYTHONHASHSEED), so
+    ``random.Random(hash(seed))`` produced a *different* plan on every restart
+    even for the same learner: the diagnostic claimed to be "randomised per
+    learner, reproducible for the same learner" and was not reproducible at all.
+    BLAKE2b is stable across processes, platforms and versions, which is the
+    property this needs; it is not used for anything secret.
+    """
+    digest = hashlib.blake2b("\x1f".join(parts).encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "big")
+
+#: How far one point of item difficulty moves the log-odds of a correct answer.
+#: 1.0 means an item authored at difficulty 1.0 is ``e`` times harder (in odds)
+#: than the same learner's prediction at difficulty 0.0. Kept gentle on purpose:
+#: ``difficulty`` is an author's prior, not a calibrated parameter (see
+#: docs/UNVERIFIED.md), so it may nudge the target -- it must not dominate it.
+DIFFICULTY_LOG_ODDS = 1.0
 
 #: Never sent to a client that has not answered yet.
 PRIVATE_ITEM_KEYS = frozenset({"answer_spec", "solution_steps", "hints", "rubric", "stem_template"})
@@ -88,11 +111,12 @@ def diagnostic_plan(
     seed: str | None = None,
 ) -> list[Pick]:
     """Cover breadth first, then vary the delivery mode deterministically per learner."""
-    rng = random.Random(hash(seed or "diagnostic") & 0xFFFFFFFF)
+    rng = random.Random(stable_seed(seed or "diagnostic"))
     # Callers key items by topic id (the database identity). Codes are accepted as a
     # fallback because the bank is written in codes and a caller that has not seeded
     # yet should still get a plan rather than an empty list.
     pool: list[tuple[str, dict[str, Any]]] = []
+    difficulty_by_key: dict[str, float] = {}
     for topic in topics:
         key = next(
             (k for k in (topic.get("id"), topic.get("code")) if k and items_by_topic.get(k)),
@@ -100,6 +124,12 @@ def diagnostic_plan(
         )
         if key is None:
             continue
+        # Remember the difficulty under the *same* key the pool uses. The old
+        # ordering looked this up as (code or id) while the pool is keyed by id,
+        # so unless the two strings happened to be equal the lookup matched
+        # nothing, every topic scored 0.5, and "easiest topic first" silently
+        # became "whatever order the query returned".
+        difficulty_by_key[key] = float(topic.get("difficulty", 0.5) or 0.5)
         for item in items_by_topic[key]:
             pool.append((key, item))
     if not pool:
@@ -113,7 +143,7 @@ def diagnostic_plan(
     picks: list[Pick] = []
     round_no = 0
     used: set[str] = set()
-    order = sorted(by_topic, key=lambda c: float(next((t.get("difficulty", 0.5) for t in topics if (t.get("code") or t.get("id")) == c), 0.5)))
+    order = sorted(by_topic, key=lambda key: difficulty_by_key.get(key, 0.5))
     while len(picks) < count and round_no < 6:
         progressed = False
         for code in order:
@@ -209,7 +239,7 @@ def next_items(
     now: datetime | None = None,
 ) -> list[Pick]:
     """Score every candidate item and return the best ``count`` in a sensible order."""
-    rng = random.Random(hash(seed or "select") & 0xFFFFFFFF)
+    rng = random.Random(stable_seed(seed or "select"))
     pres = presentation_from_directives(directives)
     params = params or BKTParams()
     counts = counts or {}
@@ -226,10 +256,20 @@ def next_items(
                 continue
             topic_id = item.get("topic_id") or code  # the id is the identity; the dict key may be a code
             difficulty = float(item.get("difficulty", 0.5))
-            expected_success = max(0.02, min(0.98, p_know * (1 - 0.45 * difficulty) + 0.05))
+            expected_success = expected_success_rate(p_know, difficulty, params)
             fit = 1.0 - abs(expected_success - pres["target_success_rate"])
             utility = 2.2 * gain + 0.9 * fit
-            meta = {"information_gain": round(gain, 4), "expected_success": round(expected_success, 3), "fit": round(fit, 3)}
+            meta = {
+                "information_gain": round(gain, 4),
+                "expected_success": round(expected_success, 3),
+                "fit": round(fit, 3),
+                # Where the question came from ("bank", "ai2", "numbas"). A generated item
+                # joins the same pool as an authored one once it is stored, so without
+                # this the only way to tell them apart downstream is the id prefix -- and
+                # anything that wants to check its own calibration or audit a model
+                # version needs to be able to ask.
+                "source": item.get("source", "bank"),
+            }
             reason_bits = [f"p_know={p_know:.2f}"]
             if due:
                 utility += 1.3
@@ -268,12 +308,39 @@ def next_items(
     return scored[:count]
 
 
+def expected_success_rate(p_know: float, difficulty: float, params: BKTParams) -> float:
+    """P(correct on this item | current belief), using the traced model.
+
+    The BKT prediction ``p_correct`` is what the trace actually believes; item
+    difficulty makes the *same* prediction harder or easier by shifting it in
+    log-odds (a Rasch-style adjustment, so difficulty 0.5 leaves it alone and the
+    shift can never produce a probability outside (0, 1)).
+
+    The previous version was `p_know * (1 - 0.45*difficulty) + 0.05`, which
+    ignores ``p_guess`` and ``p_slip`` entirely -- it claimed 5% success on an
+    item the model knows a non-knower has a 20% chance of guessing -- and it
+    disagreed with the number the trace would report for the same learner.
+    """
+    base = params.p_correct(max(0.001, min(0.999, float(p_know))))
+    odds = base / max(1e-9, 1.0 - base)
+    shifted = odds * math.exp(-DIFFICULTY_LOG_ODDS * (float(difficulty) - 0.5))
+    return max(0.02, min(0.98, shifted / (1.0 + shifted)))
+
+
 def _interleave(picks: Sequence[Pick], *, ratio: float) -> list[Pick]:
-    """Spread topics across the sequence without reordering by utility too much."""
+    """Spread topics across the sequence, without ever dropping a pick.
+
+    The repetition budget is a *preference* about ordering, not a filter: when it
+    runs out (one topic is the only one with items left, or the pool is small)
+    the remaining picks are appended in utility order. The old version ``break``-ed
+    out of the loop instead, so approving "interleaving" silently cut a
+    session short -- asking for 11 questions and getting 6.
+    """
     out: list[Pick] = []
     remaining = list(picks)
     last: str | None = None
     twice = 0
+    budget = 2 + int(ratio * 5)
     while remaining:
         pick_idx = 0
         for i, p in enumerate(remaining):
@@ -283,10 +350,13 @@ def _interleave(picks: Sequence[Pick], *, ratio: float) -> list[Pick]:
         p = remaining.pop(pick_idx)
         if p.topic_id == last:
             twice += 1
+            if twice > budget:
+                # Stop choosing; do not stop returning.
+                out.append(p)
+                out.extend(remaining)
+                return out
         out.append(p)
         last = p.topic_id
-        if twice > 2 + int(ratio * 5):
-            break
     return out
 
 

@@ -22,6 +22,10 @@ from typing import Sequence
 
 EPS = 1e-9
 BANDS = ("new", "developing", "proficient", "mastered")
+#: How much evidence on *this learner and this topic* it takes before a low
+#: ``p_know`` may be called a gap rather than an absence of evidence. One wrong
+#: answer on a topic nobody has taught yet is not a gap; see ``band``.
+MIN_OBSERVATIONS_FOR_GAP = 2
 
 
 def clamp(x: float, lo: float = 0.001, hi: float = 0.999) -> float:
@@ -59,14 +63,35 @@ class BKTParams:
     def p_correct(self, p_know: float) -> float:
         return p_know * (1 - self.p_slip) + (1 - p_know) * self.p_guess
 
-    def band(self, p_know: float, *, proficient: float = 0.8, developing: float = 0.55) -> str:
+    def band(
+        self,
+        p_know: float,
+        *,
+        proficient: float = 0.8,
+        developing: float = 0.55,
+        observations: int | None = None,
+    ) -> str:
+        """Name the band, using *the learner's own* evidence on this topic.
+
+        ``observations`` is the number of scored attempts **this learner** has on
+        **this topic**. It defaults to ``self.n_observations`` only for callers
+        that have nothing better to hand, because that attribute means two
+        different things: on the prior params object it is 0, and on a params
+        object returned by ``fit_em`` it is the *cohort's* sequence count. Reading
+        the cohort's count as if it were the learner's is how a topic nobody has
+        asked about yet gets labelled ``gapped`` -- the opposite of the documented
+        cold-start promise. Pass the learner's count explicitly (``ai1`` does).
+        """
+        n = self.n_observations if observations is None else int(observations)
         if p_know >= 0.95:
             return "mastered"
         if p_know >= proficient:
             return "proficient"
         if p_know >= developing:
             return "developing"
-        if self.n_observations == 0:
+        if n < MIN_OBSERVATIONS_FOR_GAP:
+            # Absence of evidence, or a single observation: say "new" rather than
+            # diagnose a gap. Failure has to be repeated before it is a finding.
             return "new"
         return "gapped"
 
@@ -149,17 +174,41 @@ def sequence_logprob(observations: Sequence[int], params: BKTParams) -> float:
 # --------------------------------------------------------------------------- #
 
 
-def _transition(params: BKTParams) -> list[list[float]]:
-    """A[k][k\'] with state convention 0 = not knowing, 1 = knowing."""
-    return [
-        [1 - params.p_learn, params.p_learn],  # from not knowing
-        [params.p_forget, 1 - params.p_forget],  # from knowing
-    ]
+def _transition(params: BKTParams, *, observed: bool | None = None) -> list[list[float]]:
+    """A[k][k'] with state convention 0 = not knowing, 1 = knowing.
+
+    ``observed`` selects *which* model the transition belongs to, and the two are
+    not interchangeable:
+
+    * ``None`` -- the classic formulation: learning is credited after every
+      practice opportunity, whatever the answer.
+    * ``True`` / ``False`` -- the rule :func:`update` applies at runtime: a
+      *success* credits learning (``post + (1-post)*p_learn``, mastery sitting at
+      1.0 in between) while a *miss* only decays it (``post * (1-p_forget)``).
+
+    Fitting the classic model and then filtering with the online one is a silent
+    inconsistency: the parameters that come out of ``fit_em`` are fed back into
+    ``information_gain`` (item selection) and ``p_correct`` (expected recall), so
+    an estimator describing a different process biases every downstream decision.
+    ``model="online"`` in :func:`fit_em` is the fix; the split is kept here so
+    both can be fitted and compared in one test.
+    """
+    if observed is None:
+        return [
+            [1 - params.p_learn, params.p_learn],  # from not knowing
+            [params.p_forget, 1 - params.p_forget],  # from knowing
+        ]
+    if observed:
+        # After a correct answer: not-knowing may become knowing; knowing stays.
+        return [[1 - params.p_learn, params.p_learn], [0.0, 1.0]]
+    # After an incorrect answer: knowing may decay; not-knowing stays put.
+    return [[1.0, 0.0], [params.p_forget, 1 - params.p_forget]]
 
 
-def _forward(obs: Sequence[int], params: BKTParams) -> tuple[list[list[float]], list[float]]:
+def _forward(
+    obs: Sequence[int], params: BKTParams, *, model: str = "online"
+) -> tuple[list[list[float]], list[float]]:
     """Scaled forward table: alpha[t][k] = P(K_t=k | o_1..t), plus normalizers."""
-    A = _transition(params)
     T = len(obs)
     alpha = [[0.0, 0.0] for _ in range(T)]
     norms: list[float] = []
@@ -174,6 +223,7 @@ def _forward(obs: Sequence[int], params: BKTParams) -> tuple[list[list[float]], 
     alpha[0][1] /= s
     for t in range(1, T):
         o = bool(obs[t])
+        A = _transition(params, observed=bool(obs[t - 1]) if model == "online" else None)
         for k in (0, 1):
             alpha[t][k] = (
                 alpha[t - 1][0] * A[0][k] + alpha[t - 1][1] * A[1][k]
@@ -185,13 +235,15 @@ def _forward(obs: Sequence[int], params: BKTParams) -> tuple[list[list[float]], 
     return alpha, norms
 
 
-def _backward(obs: Sequence[int], params: BKTParams) -> list[list[float]]:
+def _backward(
+    obs: Sequence[int], params: BKTParams, *, model: str = "online"
+) -> list[list[float]]:
     """Scaled backward table: beta[t][k] = P(o_{t+1}..o_T | K_t=k)."""
-    A = _transition(params)
     T = len(obs)
     beta = [[1.0, 1.0] for _ in range(T)]
     for t in range(T - 2, -1, -1):
         o = bool(obs[t + 1])
+        A = _transition(params, observed=bool(obs[t]) if model == "online" else None)
         for k in (0, 1):
             beta[t][k] = sum(
                 A[k][j] * params.emission(j == 1, o) * beta[t + 1][j] for j in (0, 1)
@@ -227,13 +279,26 @@ def fit_em(
     init: BKTParams | None = None,
     iters: int = 60,
     tol: float = 1e-5,
+    model: str = "online",
 ) -> tuple[BKTParams, dict[str, float | int | str]]:
     """Exact forward-backward EM for the BKT parameters.
 
-    Hidden state per time step: 1 = knowing, 0 = not knowing.
-    Transitions: not-knowing -> knowing with ``p_learn``; knowing -> not-knowing
-    with ``p_forget``. Emissions: ``p_slip`` (know but wrong) / ``p_guess``
-    (not know but right).
+    Hidden state per time step: 1 = knowing, 0 = not knowing. Emissions:
+    ``p_slip`` (know but wrong) / ``p_guess`` (not know but right).
+
+    ``model`` chooses the transition rule, and it has to be the same rule the
+    consumer uses or the fit is not an estimate of anything the app runs:
+
+    * ``"online"`` (default) -- what :func:`update` applies: learning is credited
+      by a *success*, a *miss* only decays. ``train_params`` fits this one, and
+      ``diagnostics["log_likelihood"]`` then equals :func:`sequence_logprob` for
+      the same parameters, which is what makes the two implementations
+      checkable against each other.
+    * ``"classic"`` -- the textbook form, learning after every opportunity.
+      Kept because it is the version in the literature (and the version the
+      estimator test was written against); fitting it and then filtering with
+      ``update`` understates ``p_learn`` by roughly 6x, measured in
+      ``test_learner_model_consistency.py``.
 
     Parameters are shrunk toward a Beta prior so small classes (n = 1 demo
     learner) cannot collapse the model onto 0/1 -- the failure mode that makes
@@ -243,9 +308,15 @@ def fit_em(
     input priors are returned untouched and ``diagnostics["skipped"]`` explains
     why, so a fresh deployment still has defensible traces.
     """
+    if model not in ("online", "classic"):
+        raise ValueError("model must be 'online' or 'classic'")
     usable = [list(s) for s in sequences if len(s) >= 2]
     params = init or BKTParams()
-    diag: dict[str, float | int | str] = {"sequences_used": len(usable), "iterations": 0}
+    diag: dict[str, float | int | str] = {
+        "sequences_used": len(usable),
+        "iterations": 0,
+        "model": model,
+    }
     if len(usable) < 3:
         diag["skipped"] = "insufficient sequences (need >= 3 of length >= 2)"
         return params, diag
@@ -263,10 +334,9 @@ def fit_em(
         ll = 0.0
         for obs in usable:
             T = len(obs)
-            alpha, norms = _forward(obs, params)
-            beta = _backward(obs, params)
+            alpha, norms = _forward(obs, params, model=model)
+            beta = _backward(obs, params, model=model)
             ll += sum(math.log(n) for n in norms)
-            A = _transition(params)
 
             for t in range(T):
                 g_unknown = alpha[t][0] * beta[t][0]
@@ -286,6 +356,11 @@ def fit_em(
 
             for t in range(T - 1):
                 o = bool(obs[t + 1])
+                # The transition at t is the one that follows observation t, so in
+                # the online model it is conditioned on that observation.
+                A = _transition(
+                    params, observed=bool(obs[t]) if model == "online" else None
+                )
                 den = 0.0
                 xis = {}
                 for k in (0, 1):
@@ -294,10 +369,21 @@ def fit_em(
                         xis[(k, j)] = v
                         den += v
                 den += EPS
-                st.learn_num += xis[(0, 1)] / den
-                st.learn_den += xis[(0, 1)] / den + xis[(0, 0)] / den
-                st.forget_num += xis[(1, 0)] / den
-                st.forget_den += xis[(1, 1)] / den + xis[(1, 0)] / den
+                if model == "online" and not obs[t]:
+                    # A miss carries no information about p_learn (the model says
+                    # learning cannot happen there), and a success carries none
+                    # about p_forget. Counting both anyway inflates the
+                    # denominator and drags the estimate down.
+                    st.forget_num += xis[(1, 0)] / den
+                    st.forget_den += xis[(1, 1)] / den + xis[(1, 0)] / den
+                elif model == "online":
+                    st.learn_num += xis[(0, 1)] / den
+                    st.learn_den += xis[(0, 1)] / den + xis[(0, 0)] / den
+                else:
+                    st.learn_num += xis[(0, 1)] / den
+                    st.learn_den += xis[(0, 1)] / den + xis[(0, 0)] / den
+                    st.forget_num += xis[(1, 0)] / den
+                    st.forget_den += xis[(1, 1)] / den + xis[(1, 0)] / den
 
         new = BKTParams(
             p_init=_est(st.init_sum, st.init_n, a=2.0, b=8.0, lo=0.02, hi=0.9),

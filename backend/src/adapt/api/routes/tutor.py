@@ -290,7 +290,11 @@ async def search_resources(
     svcs = current()
     if svcs.resources is None:
         raise HTTPException(status_code=503, detail="resource search is not configured")
-    resp = await svcs.resources.search(body.query, limit=body.limit, providers=body.providers)
+    # ``limit_per_provider``, not ``limit``: the service's parameter is the per-provider cap
+    # (it ranks and de-duplicates across providers afterwards). Passing ``limit`` raised
+    # TypeError straight through the route, so every resource search was a 500 -- and since
+    # nothing in the app called this endpoint yet, nothing noticed.
+    resp = await svcs.resources.search(body.query, limit_per_provider=body.limit, providers=body.providers)
     data = resp.as_dict() if hasattr(resp, "as_dict") else dict(resp)
     data["retrieval_note"] = (
         "These were found by a search; that is not a claim that they are correct for you. "
@@ -390,6 +394,10 @@ async def numbas_export(
                 "difficulty": it.difficulty,
                 "est_seconds": it.est_seconds,
                 "tags": it.tags,
+                # The report below tells the operator what the learner can actually be
+                # asked; an inactive row (an ungradeable part type, an unrendered
+                # template) belongs on the "needs the runtime" side of that line.
+                "active": it.active,
             }
         )
     exam, report = NB.exam_export(items, title="ADAPT adaptive assessment", topic_titles=titles)
@@ -466,13 +474,30 @@ async def numbas_import(
                 os.unlink(tmp)
             except OSError:  # pragma: no cover - already gone
                 pass
-    topic_by_code = {t.code: t.id for t in s.execute(select(_T)).scalars().all()}
+    topics = list(s.execute(select(_T)).scalars().all())
+    topic_ids = {t.id for t in topics}
+    topic_by_code = {t.code: t.id for t in topics}
+    known_codes = ", ".join(sorted(topic_by_code)[:20])
     stored, updated = 0, 0
     for payload in items:
-        code = (payload.get("tags") or [None])[0]
-        topic_id = payload.get("topic_id") or topic_by_code.get(str(code)) or next(iter(topic_by_code.values()), None)
+        # A question has to land on a topic that exists. Our own export writes the topic
+        # *id* in ``topic_id`` and in ``adapt-topic:<id>``; a hand-edited or foreign
+        # package more often names the human-readable *code*, which used to be inserted
+        # as if it were an id and blew up on the foreign key -- a 500 for bad input.
+        # An item we cannot place is skipped with its name, never attached to whichever
+        # topic happened to be first (that would corrupt an unrelated topic's evidence).
+        ref_hint = str(payload.get("topic_id") or "").strip()
+        tag = str((payload.get("tags") or [""])[0] or "")
+        tag_ref = tag.split(":", 1)[1].strip() if tag.startswith("adapt-topic:") else ""
+        topic_id = (
+            ref_hint if ref_hint in topic_ids else topic_by_code.get(ref_hint) or topic_by_code.get(tag_ref)
+        )
         if topic_id is None:
-            report.warnings.append("no matching topic; item skipped")
+            named = ref_hint or tag_ref or "no topic given"
+            report.warnings.append(
+                f"{payload.get('stem', '')[:40] or 'item'}: skipped -- {named!r} is not a topic here. "
+                f"Tag the question ``adapt-topic:<topic code>``, one of: {known_codes}"
+            )
             continue
         # Identity first. Our own export says which row the question came from
         # (``exported_from_item_id``) -- content is exactly what an editor changes, so
@@ -503,7 +528,10 @@ async def numbas_import(
             "difficulty": float(payload.get("difficulty", 0.5)),
             "est_seconds": int(payload.get("est_seconds", 90)),
             "tags": payload.get("tags") or [],
-            "active": True,
+            # A part type this build cannot grade is imported for the operator to look
+            # at, not handed to a learner: every answer to it would be marked wrong,
+            # which would corrupt mastery, spacing and the item's own calibration.
+            "active": not payload.get("needs_numbas_runtime"),
         }
         clean, dirty = NB.renders_clean({"stem_template": payload.get("stem_template"), **fields})
         if not clean:

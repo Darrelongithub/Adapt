@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..assessment import generated as GEN
 from ..assessment.grading import grade as grade_answer
 from ..db.models import (
     ActiveAdaptation,
@@ -212,6 +213,42 @@ async def submit(
             flags.append("correct after 2+ hints: scaffolding may be doing the work")
         if att.changed_from_correct:
             flags.append("changed from a first answer that was right")
+        # ---- generated items: calibrate from the answer we just recorded ------- #
+        # A model-written question is measured, not believed. The counters below turn its
+        # difficulty into the learners' estimate instead of the writer's, and an item that
+        # four people have failed, or drifted out of the band it claimed, or simply been
+        # answered enough times, is retired rather than left to keep marking people.
+        # Authored items keep their authored difficulty (that number belongs to the
+        # author, and `docs/UNVERIFIED.md` is explicit that it is a prior) but still
+        # record counts, because those counts are what an item review would start from.
+        row = s.get(Item, item_id)
+        if row is not None and correct is not None:
+            row.n_attempts = int(row.n_attempts or 0) + 1
+            row.n_correct = int(row.n_correct or 0) + (1 if correct else 0)
+            if row.source == "ai2":
+                declared = float(row.prior_difficulty if row.prior_difficulty is not None else row.difficulty)
+                row.difficulty = GEN.observed_difficulty(
+                    row.prior_difficulty,
+                    declared=declared,
+                    n_correct=row.n_correct,
+                    n_attempts=row.n_attempts,
+                )
+                row.calibrated_at = utcnow()
+                retire, why = GEN.should_retire(
+                    declared=declared,
+                    observed=row.difficulty,
+                    n_attempts=row.n_attempts,
+                    n_correct=row.n_correct,
+                )
+                if retire:
+                    row.active = False
+                    log.info(
+                        "generated item %s retired after %d attempts (%d correct): %s",
+                        item_id,
+                        row.n_attempts,
+                        row.n_correct,
+                        why,
+                    )
     # ---- phase 2: AI 2 (opens its own sessions; reads the committed attempt) ---- #
     teachback = None
     if item["kind"] == "teachback" and teachback_text:

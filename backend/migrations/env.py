@@ -79,16 +79,20 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    # The migration connection is the *application's engine*, not one rebuilt from
-    # ``alembic.ini``. That engine carries ``module=sqlcipher3`` plus the ``connect``
-    # listener that issues ``PRAGMA key`` and the cipher pragmas (``adapt/db/engine.py``);
-    # ``engine_from_config(url=...)`` re-derives a plain-sqlite3 engine from the URL alone,
-    # and the URL carries neither the module nor the key. What that does, in order of how
-    # hard it is to notice: an already-encrypted database cannot be opened at all, and a
-    # database created by a migration in a fresh ``ADAPT_DATA_DIR`` is written in plaintext,
-    # which the application then cannot read and which nothing on disk protects.
-    connectable = _engine
-    with connectable.connect() as connection:
+    # Connect with the engine ``create_db_engine`` just built -- the one carrying
+    # ``module=sqlcipher3``, the ``connect`` listener that issues ``PRAGMA key`` and the
+    # cipher pragmas, and the keyring the encrypted column types need.
+    #
+    # This used to build a *second* engine from ``str(_engine.url)``, which looked like the
+    # same connection and was not: a URL carries neither the driver module nor the key, so
+    # SQLAlchemy fell back to the stock ``sqlite3`` module and ``alembic upgrade`` wrote a
+    # plaintext file where the app opens an encrypted one. In order of how hard that is to
+    # notice: a database created by a migration in a fresh ``ADAPT_DATA_DIR`` was
+    # unreadable by the application and protected by nothing on disk, and migrating a
+    # database the app had already created failed with "file is not a database". The
+    # migration path was unusable in both directions while the comment beside it promised
+    # the opposite.
+    with _engine.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

@@ -155,3 +155,84 @@ session is the expected result, not a bug.
 * **Model quality:** unchanged from above — no key, no egress, so no real Gemini answer has ever
   been produced by this build. Everything asserting about AI 1 and AI 2 in this repository is
   about the local path and the gate, not about model cleverness.
+
+## Added by the 2026-10-12 full-scan pass
+
+* **The UI probe drives jsdom, not a browser.** `npm run probe` (139 checks) exercises the
+  real Next.js server over HTTP with a real DOM: routing, forms, controlled inputs,
+  fetch/CSRF/error paths, refresh, the voice socket's handshake and the screens' data paths.
+  It cannot observe layout, paint, focus order, scroll, `getUserMedia` permission prompts or
+  `speechSynthesis` voices. "The screen works" therefore means every interaction and every
+  request it makes works -- not that it looks right.
+* **A real Gemini answer, still.** With a syntactically valid but unauthorised key,
+  `POST /api/v1/explain` answers 200 from the local tutor and reports the failure in `llm`
+  (`error: ConnectError …`, `fell_back_to: "local tutor (extractive, grounded in course
+  material)"`). That is the honesty property proven; whether a real answer is *good* still
+  needs a key and a network.
+* **The four resource hosts from here.** All four fail DNS in ~30 ms. The matrix
+  (valid/empty/unreachable/bad key/timeout/429/local rate limit) is now covered in
+  `backend/tests/test_resource_providers.py` with the real adapter code and a substituted
+  transport; the live call remains the unverified half.
+* **Audio, still.** `faster-whisper` and `kokoro` remain uninstallable here. What is newly
+  verified is everything around them, on synthetic audio: endpointing, barge-in on sustained
+  speech, a cough *not* interrupting, `stop()` cancelling obsolete audio, a failed
+  transcription surfacing as a recoverable error, and an empty-but-honest transcript when no
+  local model exists (`backend/tests/test_voice_pipeline.py`).
+* **A real Numbas editor/server.** Still unverified: packages here are round-tripped against
+  this build's own importer. Newly verified is that a *foreign* package (a tag naming a topic
+  by code, or a part type with no local grader) is now handled instead of answering 500.
+
+## Added by the second half of the 2026-10-12 full-scan pass
+
+* **The new endpoint coverage is exercised, not asserted from the schema.** `journey_check.py`
+  §9b/§9c calls `GET /topics`, `/syllabus`, `/materials`, `/strategies`, both revoke forms and the
+  choice-grading path against a real server, and fails if any of them stops working. That is still
+  *this* build's answers, not a second implementation's — the schedule it prints is unverified
+  against an outside planner.
+* **What the coverage sweep cannot tell you.** A route can be called by every check here and still
+  be wrong for a use the checks do not imagine; the sweep proves something *responds and is
+  internally consistent*, not that its judgement is good.
+* **Choice grading, both directions.** A correct choice is graded `correct=True, score=1.0` whether
+  it arrives as the index the reveal gives or as the choice text the screen sends. What is not
+  verified is a learner who picks a *distractor* on purpose: the misconception attached to a wrong
+  choice is stored and shown, but whether a human would agree with the misconception map is a
+  content question, not a code one.
+* **A clean-clone bootstrap is not a deployment.** `venv + pip install -e './backend[dev]'`,
+  `npm ci`, `npm run build`, boot — measured on this machine, single process, SQLite on a local
+  disk, no TLS, no container, no reverse proxy, no concurrency beyond one learner at a time.
+
+## Added when `main` was merged into this branch (2026-10-12, later the same day)
+
+* **`main`'s learning engine is now in this tree and was exercised, but not by a person.** The
+  probe drives the lesson screen end to end against the real API and database (30/30: open, a
+  prediction judged, an explanation, changing the variables, a reload that offers the frame you
+  stopped on, the review, the evidence list), and the backend suite covers the engine's own
+  modules. What no check here can see is whether the *animation* looks right, whether the frames
+  read well in sequence, or whether the narration timing is pleasant — that is a screenshot and a
+  person, and neither is available in this sandbox.
+* **AI 3 with a real model.** Three of its call sites could only be reached with a model
+  configured, and they raised (see C6). They are fixed and now covered with a stub model that
+  answers nothing useful, so what is verified is the *plumbing and the fallback*: a scene is
+  authored through the built-in path, a frame is narrated through the template path, and each says
+  which one the learner got. Whether a real Gemini answer narrates a frame well is unverified for
+  the same reason as everything else model-shaped here: no key, no route.
+* **The whole-suite probe run is a rehearsal, and that is now explicit.** It starts the API with
+  `ADAPT_RATE_LIMIT_MULTIPLIER=10`; at default limits the suite spends the per-IP bucket mid-run
+  and screens are judged while the limiter holds them. The limiter is verified at its real ceiling
+  elsewhere (failure matrix, and the probe's own flood check, which reads the effective bucket from
+  `GET /api/v1/quotas`). A paced whole-suite run's screen-by-screen behaviour is *not* verified.
+* **Two of the three whole-suite flakes were harness races, now fixed; the third is a known
+  unknown.** (a) The proposals check read the "On right now" panel while it was still loading and
+  reported an applied change as missing — it now waits for the panel. (b) The "clearly struggling"
+  learner answered 14 items spread across topics while the detectors need 8 attempts on *one*
+  topic, so the evidence the check claimed did not exist — it now concentrates its wrong answers.
+  (c) The placement answer box was seen read back empty once, with the element still connected,
+  in a default-limits run; it has not reproduced in isolation (21/21 alone, 43/43 with its
+  predecessors) or in any rehearsal-ceiling run since. Treat (c) as a known unknown rather than a
+  repaired defect — what is known is that a heavily paced run can catch a screen mid-render.
+* **The 0002 collision is a real-world migration hazard for anyone who ran the pre-merge branch.**
+  A database stamped `0002` by *this* branch before the merge (item calibration) cannot be told
+  apart from one stamped `0002` by `main` (learning engine); the merged chain reads it as the
+  latter and then fails on 0004 with a duplicate column. These were both unmerged branches, so no
+  deployment is in that state, but a scratch data directory from before the merge needs to be
+  recreated rather than upgraded. Nothing in the repository can distinguish the two.

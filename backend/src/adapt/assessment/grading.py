@@ -150,6 +150,17 @@ def grade(item: dict[str, Any], answer: Any, *, student_text: str | None = None)
                     return Grade(ok, 1.0 if ok else 0.0, "expression", f"evaluated {expected:g}; you wrote {got:g}")
             except Exception:
                 pass
+        if not accepted and not spec.get("keywords"):
+            # Nothing left to compare against. Saying "expected one of: " here marked a
+            # correct answer wrong with an empty sentence; the honest answer is that this
+            # item has no local grader -- a Numbas part type, or a formula-only item
+            # answered with an expression we cannot evaluate.
+            return Grade(
+                False,
+                0.0,
+                "none",
+                "this item carries nothing this build can grade against; it needs the hosted Numbas runtime",
+            )
         exact = any(_norm(a) == norm or (len(_norm(a)) > 3 and _norm(a) in norm) for a in accepted if a)
         keywords = [k.lower() for k in (spec.get("keywords") or [])]
         if not exact and keywords:
