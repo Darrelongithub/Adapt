@@ -167,6 +167,50 @@ are dominated by E501 (line length) — a formatting decision, not a correctness
 
 ---
 
+### 1.9 Every LLM prompt path raised before it reached the model (`ai/ai1.py`, `ai/ai2.py`)
+
+`redact_payload` returns `(sanitized, dropped, kinds)`. **All five call sites unpacked two:**
+
+```python
+safe, dropped = redact_payload({"q": user}, max_chars=7000)
+```
+
+so the first request through AI 1's proposal path, the tutor reply, the teach-back commentary
+or generated practice would have raised `ValueError: too many values to unpack (expected 2)`.
+Nothing caught it because `conftest.py` pops `ADAPT_GEMINI_API_KEY` and the app falls back to
+local rules — the right product decision and the wrong testing one: it meant no test ever
+entered a path that five call sites were standing in front of.
+
+`tests/test_llm_plumbing.py` now guards it structurally (an AST walk asserting every assignment
+from `redact_payload` unpacks three values) and exercises the teach-back path with a stub model.
+The kinds reach the log as well: `LlmCall.redacted_fields` counted removals with no record of
+what they were, which is what a count with no shape buys you.
+
+### 1.10 `alembic upgrade` wrote a plaintext database (`migrations/env.py`)
+
+```python
+connectable = engine_from_config(..., url=str(_engine.url))   # a URL carries no driver
+```
+
+The migration ran on SQLAlchemy's stock `sqlite3` module while the app opens the same file with
+SQLCipher. Measured with the app's actual default (`ADAPT_DB_ENCRYPTION=sqlcipher`):
+
+* `upgrade head` on a fresh data directory produced a **plaintext** file, and the app's next
+  `connect()` raised `sqlcipher3.dbapi2.DatabaseError: file is not a database`
+  (`db/engine.py:128`, at `PRAGMA journal_mode = WAL`);
+* against a database the app had already created, the command failed the same way.
+
+So the migration path was unusable in both directions, for every installation using whole-file
+encryption, while the comment above it said the cipher and keyring were set up on purpose.
+
+The existing migration tests could not have caught it: they run in the suite's
+`ADAPT_DB_ENCRYPTION=field-only` configuration and read the migrated file with plain `sqlite3`
+— correct for that configuration, and silently an assertion that the database *is* plaintext.
+`tests/test_migration_encryption.py` runs the three operator commands (`upgrade head`; stamp an
+existing `create_all` database then upgrade; downgrade and re-upgrade) with whole-file
+encryption and reads the result through `create_db_engine`. Reinstating the old construction
+fails all three.
+
 ## 2. Found, measured, deliberately **not** changed
 
 These change behaviour or thresholds, which is the user's call, not a review's.
@@ -341,7 +385,7 @@ child. Nothing in that loop can detect its own error.
 
 ### 3.4 The measured gap in the generated-content path
 
-`POST /api/v1/tutor/practice` → `ai2.generate_practice` fills the quota from the bank, then
+`POST /api/v1/practice` → `ai2.generate_practice` fills the quota from the bank, then
 `_llm_practice` writes the remainder as `gen_<uuid>` items carrying
 `decision_trace: {"llm": True, "store": True}`. That flag has **exactly one occurrence in the
 tree — the line that writes it.** The only `Item` inserts anywhere are the seeder
@@ -358,10 +402,54 @@ generation is displayed and cannot be answered.** The same function also hardcod
 with no independent check (the prompt *asks* for computability; nothing verifies it), mints a
 fresh uuid per call with a `checksum` computed and never used, and has no retirement path.
 
-It is latent rather than live: `_llm_practice` only runs when an LLM is configured, the test
-suite and the demo run in local mode with the key popped, and the frontend currently calls the
-bank-only `GET /api/v1/practice`. So it is API-reachable today, and it is the first thing AI 3
-will trip over — wiring generated content into the lesson surface is exactly AI 3's job.
+It was latent rather than live: `_llm_practice` only runs when an LLM is configured, the test
+suite and the demo run in local mode with the key popped, and the frontend calls the bank-only
+`GET /api/v1/practice`. So it was API-reachable, and it was the first thing AI 3 would trip
+over — wiring generated content into the lesson surface is exactly AI 3's job.
+
+**Closed** (commit `a157e7d`). `assessment/generated.py` is the rulebook, and it is deliberately
+free of database access so any other path — AI 3, an importer, a script — can import it instead
+of growing a weaker second copy. A generated item is acceptable only if:
+
+1. **the answer is checkable from the stem.** A numeric item must carry a `check_expr` that
+   parses as arithmetic, shares a number with the stem, and agrees with `answer_value` within a
+   tolerance derived from the answer's magnitude (`max(0.005, 0.005·|expected|)` — the grader's
+   1e-6 default is authored-answer precision, not school-rounding precision). The expression is
+   evaluated by an AST walk with per-node bounds, not by a character allowlist around `eval`:
+   it is model output, and `6*7` passes while `2**10**9` and anything naming a function cannot.
+2. **the wrong answers are explained.** Every MCQ distractor needs `why_wrong`, because a
+   distractor with no diagnosed mistake behind it is decoration.
+3. **the question is not already in the bank**, compared against the authored stems for the
+   topic.
+4. **the id is derived from the content** (`gen_<sha256(topic, kind, normalised stem, spec)>`),
+   so re-generating a question updates one row rather than creating a second one with the same
+   text and the same key.
+5. **the response is recorded before the item is shown** — `_persist_generated` writes, then the
+   payload is rendered through `public_item`, so the browser gets no answer key and the id
+   resolves when the answer comes back.
+
+Everything after that is measurement rather than trust. Counters live on the item; difficulty
+becomes `(8·declared + n·rate)/(8+n)` clamped to `[0.05, 0.99]`; `calibrated_at` is stamped; and
+an item is retired — served to nobody, with the reason logged — when four learners have failed
+it, when it drifts more than 0.35 from what its writer claimed after six attempts, or at twelve
+attempts regardless. One policy, three reasons, in `should_retire`.
+
+Two deliberate modelling choices, because both look like bugs from the outside:
+
+* **the prior is not chained.** Each update shrinks toward the *declared* difficulty, not toward
+  the previous estimate. Chaining would quietly raise the prior's weight on every answer, so a
+  question that was unlucky early could never recover.
+* **the prior never fully decays.** After 40 failures a question the writer called 0.9 floors
+  around 0.15, not 0.05. Eight observations is not enough to conclude that a question is trivial
+  for a learner who has never met its like — and the alternative, letting a first batch of wrong
+  answers drive an item to "easy", is how a broken answer key becomes a popular question.
+
+What is left for AI 3 is exactly the part that is not a rule: **reuse before writing.** A stored
+item this learner has not answered is a better use of the shortfall than a fresh call — it has
+attempts behind it, so its difficulty is measured rather than declared — and the same request
+twice must not produce new rows. `_reusable_generated` implements that, including the
+per-learner part: a question this learner has already seen measures their memory of it, so it is
+not a second observation of the skill.
 
 ### 3.5 The boundary AI 3 has to respect
 
@@ -556,11 +644,15 @@ refusing to overrule the rule-grader for score bands that decide a proposal.
 | 7 | **Property-based API testing** with Schemathesis over `adapt.api.app` (`from_asgi`, in-process, no server needed) | Finds 5xx and schema violations across 58 routes for the cost of one fixture |
 | 8 | **Mutation testing** on `learning/` with `mutmut` (or `cosmic-ray` if you want configuration) | Coverage says 86% for `learning/*`; mutation score says whether those tests assert anything |
 | 9 | **No-leak invariant, property-based** — generate random item payloads, assert `PRIVATE_ITEM_KEYS` never serialise | The current test is a fixed string scan; the invariant is stronger |
+| 10 | ✅ **Generated-item contract** — accept/reject matrix, content-id idempotence, the three retirement reasons, and a fake model end-to-end: write → store → serve → answer → calibrate | Added with the fix; it is the first test that exercises the generation path with a model configured |
+| 11 | ✅ **The migration path under whole-file encryption** | Added with `env.py`'s fix: `upgrade head`, stamp-then-upgrade, downgrade/re-upgrade, all read back through the app's own engine |
 
 Coverage today: 72% overall, 86% for `learning/` + `assessment/`. Weakest: `cli` 21%,
 `ai/llm` 22%, `security/redact` 23%, `resources/providers` 38%, `voice` 30–52%, `ai2` 54%.
-`security/redact` is the one I would move up the list — it is the module that keeps a
-learner's name out of an LLM prompt, and it is the least tested thing in the tree.
+`security/redact` was the one I would have moved up the list — it is the module that keeps a
+learner's name out of an LLM prompt — and §1.9 is the argument: its own function signature was
+violated by every caller, and 23% coverage meant nobody noticed. The structural test added there
+is a floor, not an adequacy argument.
 
 ---
 
@@ -619,7 +711,8 @@ export/import, which is a good start and a narrow one.
 | Priority | Item | Effort | Why now |
 |---|---|---|---|
 | P0 | Accept/review this pass's fixes (§1) | — | Defects in the numbers every other feature trusts |
-| P0 | **Generated-content contract** before AI 3 wires generated items into the lesson surface: persist + key-check + difficulty-track them (§3.3, §3.4) | ~1–2 days | Today the tail of a generated practice session cannot be answered at all (422), and nothing verifies a generated answer key |
+| ✅ | ~~**Generated-content contract** before AI 3 wires generated items into the lesson surface~~ — done, `a157e7d` (§3.3, §3.4) | — | The tail of a generated practice session could not be answered at all (422), and nothing verified a generated answer key. AI 3's remaining half is reuse-before-writing, not the contract |
+| ✅ | ~~Migrations run through the app's own engine~~ — done, `438b379` (§1.10) | — | Every installation using whole-file encryption had an unusable migration path, in both directions |
 | P0 | Response-time effort + gate the trace on it (§4.1) | ~1 day | One careless click currently moves mastery and can trigger a proposal |
 | P1 | Detector gate: state one rule, or raise `min_n` to match (§2.1) | half day | The catalogue currently misdescribes its own evidence bar |
 | P1 | Wheel-spinning detector (§4.2) | ~1 day | Fits the existing detector/proposal machinery; prevents the 12th same-question loop |
