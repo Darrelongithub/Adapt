@@ -200,3 +200,35 @@ session is the expected result, not a bug.
 * **A clean-clone bootstrap is not a deployment.** `venv + pip install -e './backend[dev]'`,
   `npm ci`, `npm run build`, boot — measured on this machine, single process, SQLite on a local
   disk, no TLS, no container, no reverse proxy, no concurrency beyond one learner at a time.
+
+## Added when `main` was merged into this branch (2026-10-12, later the same day)
+
+* **`main`'s learning engine is now in this tree and was exercised, but not by a person.** The
+  probe drives the lesson screen end to end against the real API and database (30/30: open, a
+  prediction judged, an explanation, changing the variables, a reload that offers the frame you
+  stopped on, the review, the evidence list), and the backend suite covers the engine's own
+  modules. What no check here can see is whether the *animation* looks right, whether the frames
+  read well in sequence, or whether the narration timing is pleasant — that is a screenshot and a
+  person, and neither is available in this sandbox.
+* **AI 3 with a real model.** Three of its call sites could only be reached with a model
+  configured, and they raised (see C6). They are fixed and now covered with a stub model that
+  answers nothing useful, so what is verified is the *plumbing and the fallback*: a scene is
+  authored through the built-in path, a frame is narrated through the template path, and each says
+  which one the learner got. Whether a real Gemini answer narrates a frame well is unverified for
+  the same reason as everything else model-shaped here: no key, no route.
+* **The whole-suite probe run is a rehearsal, and that is now explicit.** It starts the API with
+  `ADAPT_RATE_LIMIT_MULTIPLIER=10`; at default limits the suite spends the per-IP bucket mid-run
+  and screens are judged while the limiter holds them. The limiter is verified at its real ceiling
+  elsewhere (failure matrix, and the probe's own flood check, which reads the effective bucket from
+  `GET /api/v1/quotas`). A paced whole-suite run's screen-by-screen behaviour is *not* verified.
+* **One paced-run artefact, recorded not fixed.** In one default-limits run the placement answer
+  box read back empty immediately after being typed into, with the element still connected — the
+  shape of a state reset under the learner. It has not reproduced in isolation (21/21 alone, 43/43
+  with its predecessors) or in any rehearsal-ceiling run since. Treat it as a known unknown, not a
+  repaired defect.
+* **The 0002 collision is a real-world migration hazard for anyone who ran the pre-merge branch.**
+  A database stamped `0002` by *this* branch before the merge (item calibration) cannot be told
+  apart from one stamped `0002` by `main` (learning engine); the merged chain reads it as the
+  latter and then fails on 0004 with a duplicate column. These were both unmerged branches, so no
+  deployment is in that state, but a scratch data directory from before the merge needs to be
+  recreated rather than upgraded. Nothing in the repository can distinguish the two.

@@ -1,8 +1,9 @@
 # Full functionality scan — report
 
-**Date:** 2026-10-12 · **Repairs:** `6138577`, `c57c7d5` · **Report and scan tooling:** `0d10722`–`37eacd5`
-(all on top of `2a72aff`, `438b379`, `a157e7d`; the report ships in the tree it describes, so
-read the line above the report's own file history if you need the very latest commit)
+**Date:** 2026-10-12 · **Branch:** `arena/7a52404a-adapt`, now carrying `main` (13 commits: the
+learning engine, scenes/runs/narration) merged in.
+**Scan repairs:** `6138577`, `c57c7d5` · **Report and tooling:** `0d10722`–`37eacd5` ·
+**Merge and integration repairs:** `e8db83d`, `868f9a0`, `e371a3e`
 **Method:** inspect → run → interact → reproduce → fix → retest → verify. Every claim below
 names the command or test that produced it.
 
@@ -10,23 +11,26 @@ names the command or test that produced it.
 
 ## A. Overall status
 
-**The application runs and a student can complete the core journey end to end.** Five defects
-were found and fixed (four in the application, one in this scan's own runner); nothing found is
-still broken. Every route the API exposes is now exercised by something in this repository —
-that check is what surfaced the last four, plus the runner bug.
+**The application runs and a student can complete the core journey end to end.** Nine defects
+were found and fixed: four in the application during the scan, one in the scan's own runner, and
+four more when `main` was merged in (three call sites that only a configured model could reach, a
+migration that assumed a database built the other way, and a lint gate that had gone red). Nothing
+found is still broken. Every route the API exposes is now exercised by something in this
+repository — that check is what surfaced the first batch — and the whole-suite UI probe is
+deterministic again.
 
 The core journey is walked by four independent paths — a UI probe, a data-layer journey, a
 failure matrix and the backend suite — plus two end-to-end demos. All pass:
 
 | Path | What it drives | Result |
 |---|---|---|
-| UI probe (`npm run probe`, jsdom against the real Next.js server) | every screen, form, button, refresh and error path | **139/139 checks** |
+| UI probe (`bash scripts/probe-fresh.sh all`, jsdom against the real Next.js server) | every screen, form, button, refresh and error path, plus the lesson engine | **169/169 checks** |
 | Data-layer journey (`scripts/journey_check.py`) | records, approvals, shutdown/restart | **59/59 checks** |
 | Failure matrix (`scripts/failure_matrix_check.py`) | bad input, auth, floods, dead providers | **25/25 checks** |
-| Backend suite (`pytest -q`) | routes, learner model, grading, adapters, voice, migrations | **256 passed** |
+| Backend suite (`pytest -q`) | routes, learner model, grading, adapters, voice, migrations, the engine, LLM plumbing | **559 passed** |
 | Terminal loop (`adapt.cli demo --turns 3`) | whole loop on a temp database | exit 0 |
 | HTTP demo (`node scripts/demo.mjs --json`) | a synthetic learner over the public API | `warnings: []` |
-| Migrations (`alembic upgrade head`, fresh data dir) | schema, then the app boots on it | 2 revisions, no drift |
+| Migrations (`alembic upgrade head`, fresh data dir) | schema, then the app boots on it | 4 revisions, no drift |
 | Clean checkout → running app | `git clone` of this branch, no venv, no `node_modules` | venv + `pip install -e './backend[dev]'`, `npm ci`, `npm run build`, API boots, web answers 200 |
 
 **Not "unable to run", not "partially functional"** — with one honest qualifier: several
@@ -113,15 +117,17 @@ verify** = implemented, but the environment cannot exercise it.
 | Teacher surface (assign, roster, mark) | **not implemented** | no route or screen exists |
 | Resources screen (search UI) | **not implemented** | the endpoint has no caller; resource hints appear inside explanations |
 | API surface with no screen yet | tested-working | `GET /topics`, `/syllabus`, `/materials`, `/strategies` answer correctly for a real learner and are now asserted in `journey_check.py` §9b — no page renders them, so nothing in the UI depends on them |
+| Learning engine (scenes, runs, narration) — `main`'s work, now in this tree | tested-working | probe `lesson` 30/30 (open, predict, explain, variables, reload-and-resume, review, evidence) against the real API and database; `pytest` engine suites; `scripts/demo.mjs` unchanged |
+| AI 3 scene discussion (author, narrate, why) | tested-fixed | unreachable with a model *configured* until C6 — the fixes are verified with a stub model, and with no key the template path is what answers; a real model's prose stays in **E** |
 | i18n / RTL | **not implemented** | — |
 
 ---
 
 ## C. Repairs
 
-Five defects, each with the smallest change that removes it. The application fixes are C1–C4 and
-each has a regression test that fails if the defect returns; C5 is the one found in this scan's own
-tooling.
+Nine defects, each with the smallest change that removes it. C1–C4 were found by the scan, C5–C9
+on this branch afterwards; C5 and the probe fixes are in the scan's own tooling, the rest in the
+application. Each has a regression test, or a gate that fails, if the defect returns.
 
 ### C1. `POST /api/v1/resources/search` answered 500 for every request
 * **File:** `backend/src/adapt/api/routes/tutor.py:293`
@@ -188,6 +194,54 @@ tooling.
 * **Fix:** default to `/tmp/journey-api.log`, honour `JOURNEY_LOG`, create the parent directory.
 * **Verified:** the whole gate list was re-run from the clean tree (results in **A**).
 
+### C6. Three LLM call sites unpacked two of `redact_payload`'s three values
+* **Files:** `backend/src/adapt/ai/ai2.py:874,917` (scene authoring, and its retry), `ai3.py:137` (frame narration)
+* **Root cause:** `redact_payload` returns `(payload, dropped, kinds)`; these three unpacked
+  `safe, dropped = ...`, which raises `ValueError: too many values to unpack (expected 2)` on the
+  first request that reaches the line. They sit *after* a "no model configured" early return, so
+  the keyless fallback every test run takes never reaches them — which is how they landed on
+  `main` with 555 green tests.
+* **Reproduced:** driving `AI2.author_scene` and `AI3.why` with a stub model raises at
+  `ai2.py:874` (`tests/test_llm_plumbing.py::test_a_scene_is_authored_and_narrated_with_a_model_configured`,
+  added here as the dynamic half of the static contract test that caught it).
+* **Fix:** unpack all three; the two `ai2` sites pass their redaction kinds to the audit log like
+  their neighbours do. With a real Gemini key, scene authoring and frame narration would each have
+  500'd on the first request.
+* **Behaviour restored:** authoring a scene with a model configured returns a draft (or the
+  built-in scene, labelled as such); narrating a frame returns text.
+
+### C7. The two branches both created revision `0002`
+* **Files:** `backend/migrations/versions/`
+* **Root cause:** this branch's item-calibration revision and `main`'s learning-engine revision
+  were both `revision = "0002"`, both with `down_revision = "0001"`. alembic sees two heads and
+  every upgrade fails.
+* **Fix:** `main`'s numbering is referenced by its migration tests and `docs/ENGINE.md`, so the
+  item-calibration revision is now `0004`, chained after `0003`: 0001 → 0002 (engine) → 0003
+  (scene authorship) → 0004 (item calibration).
+* **Verified:** `alembic upgrade head` and `alembic check` on a fresh data dir; the app boots and
+  seeds (`curriculum=55 items, scenes=5`).
+
+### C8. `0004` assumed a database built by migrations, not by `create_all`
+* **File:** `backend/migrations/versions/0004_item_calibration.py`
+* **Root cause:** it added five columns unconditionally. A fresh clone gets its schema from
+  `Base.metadata.create_all`, which already builds them, and the documented way into the chain
+  (`stamp 0002`, then `upgrade head`) replays every later revision — so the recovery step died with
+  `duplicate column name: generated_by`. That is the path that exists so an operator does not
+  delete a database.
+* **Fix:** existence-aware in both directions, like `0003`: read `items`' columns and add (or drop)
+  only what is missing. One assertion in `main`'s test hardcoded `"0003"` as head; it now asks
+  `alembic heads`, so the next revision cannot rot it.
+* **Verified:** `tests/test_migrations.py` 10/10, including the two create_all paths.
+
+### C9. `ruff check src` had gone red
+* **Files:** `ai/ai3.py`, `learning/sims/binary_search.py`, `services/lessons.py`
+* **Root cause:** five findings — a dead local in `ai3.why`, two in the binary-search sim, an
+  f-string with nothing to interpolate, an unused `Sequence` import — all of them four-day-old code
+  the project's own documented lint gate had not been run against.
+* **Fix:** four behaviour-neutral edits; `ruff check src --select F,E7,E9,B017` is green again.
+  (The same gate over `tests/` reports 11 unused imports and two blind-`Exception` assertions in
+  existing tests; left alone, and recorded in **E**, because none of them is a behaviour risk.)
+
 ### Not a defect (recorded so nobody re-investigates)
 
 * **Probe failures under repeated runs** (onboarding reload, proposals reload, diagnose
@@ -213,18 +267,18 @@ tooling.
 
 ```bash
 cd /home/user/Adapt/backend
-../.venv/bin/python -m pytest -q                                   # 256 passed
+../.venv/bin/python -m pytest -q                                   # 559 passed
 ../.venv/bin/python -m ruff check src --select F,E7,E9,B017         # All checks passed
 ../.venv/bin/python -m adapt.cli demo --turns 3                     # exit 0 (whole loop, temp DB)
 
 cd /home/user/Adapt/frontend
-npm run lint        # contract ok: 58 routes / 16 calls, tsc clean
+npm run lint        # contract ok: 71 routes / 51 calls, tsc clean
 npm run build       # built (static pages)
 cd .. && node scripts/demo.mjs --json          # warnings: []
 
 # the UI probe: one fresh API + fresh data dir per run (warm buckets fail spuriously)
-bash scripts/probe-fresh.sh all                 # 139/139 checks passed
-bash scripts/probe-fresh.sh learn               # one scenario: 19/19
+bash scripts/probe-fresh.sh all                 # 169/169 checks passed (starts the API as a rehearsal)
+bash scripts/probe-fresh.sh learn               # one scenario: 30/30
 #   scenarios individually: learn 19/19, proposals 36/36, onboarding 12/12, diagnose 21/21,
 #   home 10/10, progress 5/5, voice 8/8, settings 12/12, review 1/1, failures 14/14
 
@@ -260,9 +314,24 @@ process is what makes a re-run comparable to the first one. Raw output for this 
 
 **Blocking nothing, but unverified — no claim is made about any of these:**
 
+0. **The whole-suite UI run is a rehearsal, on purpose.** `scripts/probe-fresh.sh` starts the API
+   with `ADAPT_RATE_LIMIT_MULTIPLIER=10` because one IP makes a term's worth of traffic in half a
+   minute; at default limits the suite spends the per-IP bucket and judges screens while the
+   limiter is holding them (observed twice: a resume click and a placement answer box paced by the
+   app's own refusal). The limiter is still verified at the real ceiling — `failure_matrix_check.py`
+   25/25 against a default-limits API, and the probe's flood check floods the bucket the server
+   reports. What is *not* verified is a paced whole-suite run's screen-by-screen behaviour: it is
+   the configuration the probe itself documents, not one anything ships with.
+0b. **The placement answer box was seen cleared once under that load** (a paced run, element still
+   connected, value `""`), and not reproduced in isolation (21/21 alone, 43/43 with its
+   predecessors, and clean in every rehearsal-ceiling run since). It is recorded here rather than
+   claimed fixed: what is known is that a busy run can catch the screen mid-render.
 0. **The adaptation measured above is the app's, not a model's.** It was measured with the local
    provider (no key): the *mechanism* — level, prerequisite branch, next step chosen from the
    learner's own trace — is verified; whether a model's prose adapts as well is part of item 1.
+1a. **`ruff` over `tests/` is not clean** (11 unused imports, 2 blind-`Exception` assertions).
+   The project's documented gate is `src`-only and is green; these are noise in existing tests, not
+   behaviour risks, and fixing them would touch files this scan has no other reason to open.
 1. **A real model answer (AI 1 analysis text, AI 2 explanations and generated questions).** No
    `ADAPT_GEMINI_API_KEY` and no route to Google's API. With a syntactically valid but
    unauthorised key, `/explain` answers 200 from the local tutor and reports
