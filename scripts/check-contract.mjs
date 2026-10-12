@@ -47,7 +47,10 @@ function backendRoutes() {
   for (const file of files) {
     const src = read(file);
     const prefix = /APIRouter\(\s*prefix="([^"]+)"/.exec(src)?.[1] ?? "";
-    for (const m of src.matchAll(/@router\.(get|post|put|patch|delete)\(\s*"([^"]+)"/g)) {
+    // `("")` is how a router's own prefix is mounted — `@router.get("")` on
+    // `/api/v1/lessons` *is* the collection route — so the path may be empty. Requiring
+    // one character here hid every list endpoint in the app from both checks below.
+    for (const m of src.matchAll(/@router\.(get|post|put|patch|delete)\(\s*"([^"]*)"/g)) {
       const path = (prefix + m[2]).replace(/\/+$/, "") || "/";
       routes.add(`${m[1].toUpperCase()} ${path}`);
     }
@@ -72,14 +75,17 @@ function frontendCalls() {
     // api<T>(path, { method: "POST", ... }) / apiPost(path, ...) / apiVoid(path, ...) /
     // useApi<T>(path, query). The options object is usually several lines long, so the
     // scan takes the balanced-ish run up to the closing brace rather than one line.
-    const CALL = /\b(api|apiPost|apiVoid|useApi)\s*(?:<[^>()]*(?:\([^)]*\)[^>()]*)*>)?\s*\(\s*(`[^`]*`|"[^"]*"|'[^']*')/g;
+    // `get`/`post`/`del` are the wrappers every page actually uses, so a scan of
+    // `api|useApi` alone left most of the app unchecked: the paths below `post(` were
+    // neither matched against the API nor against a fixture row.
+    const CALL = /\b(api|apiPost|apiVoid|useApi|get|post|del)\s*(?:<[^()]*(?:\([^)]*\)[^()]*)*>)?\s*\(\s*(`[^`]*`|"[^"]*"|'[^']*')/g;
     for (const m of src.matchAll(CALL)) {
       const fn = m[1];
       const literal = m[2].slice(1, -1);
       const tail = src.slice(m.index + m[0].length, m.index + m[0].length + 400);
       const opts = /^\s*,\s*\{([\s\S]{0,300}?)\}/.exec(tail)?.[1] ?? "";
       let method = /method:\s*"(\w+)"/.exec(opts)?.[1];
-      if (!method) method = fn === "apiVoid" ? "DELETE" : fn === "apiPost" ? "POST" : "GET";
+      if (!method) method = fn === "apiVoid" || fn === "del" ? "DELETE" : fn === "apiPost" || fn === "post" ? "POST" : "GET";
       const csrfOnGet = /csrf:\s*true/.test(opts);
       calls.push({ rel, method, path: literal, fn, csrfOnGet });
     }
@@ -215,10 +221,115 @@ const proxySrc = proxyFiles.map((f) => read(join(ROOT, "frontend", f))).join("\n
 if (!/\/ws/.test(proxySrc)) {
   FAILURES.push("frontend: nothing proxies /ws/voice -- the browser would ask Next for the websocket handshake, which answers 405");
 }
+// The dev server refuses a page whose origin it does not know — but only for /_next/*, so
+// the HTML arrives, the screen paints, and no handler is wired. Checked here because nothing
+// else in the build notices: `next build` has no host check, and `next dev` prints a warning
+// that nobody reads when the page looks fine.
+const devSrc = ["next.config.mjs", "next.config.js", "next.config.ts"].map((f) => (existsSync(join(ROOT, "frontend", f)) ? read(join(ROOT, "frontend", f)) : "")).join("\n");
+if (devSrc) {
+  const allowed = /allowedDevOrigins:\s*\[([\s\S]{0,600}?)\]/.exec(devSrc)?.[1] ?? "";
+  const covers = ["localhost", "127.0.0.1", "e2b.app"];
+  const missing = covers.filter((h) => !allowed.includes(h));
+  if (missing.length) {
+    FAILURES.push(`frontend next.config: allowedDevOrigins does not cover ${missing.join(", ")} — a page opened from that origin paints and never hydrates (set ADAPT_DEV_ORIGIN for others)`);
+  }
+}
 for (const file of proxyFiles) {
   const src = read(join(ROOT, "frontend", file));
   if (/destination:\s*"http:\/\/127\.0\.0\.1:8000(?!\")/.test(src)) {
-    NOTES.push(`${file}: the proxy target is 127.0.0.1:8000 with no override -- set ADAPT_API_ORIGIN for a non-default backend port`);
+    // server.mjs reads ADAPT_API; a note naming some other variable would send someone to set a
+    // lever that is attached to nothing
+    NOTES.push(`${file}: the proxy target is 127.0.0.1:8000 with no override -- read it from process.env.ADAPT_API, as server.mjs does, for a non-default backend port`);
+  }
+}
+
+/* scene kinds: the engine's set, the stages that draw it, and the mock that reviews it */
+{
+  /** the identifier keys one level inside an object literal, brace-depth by hand */
+  const keysInside = (block) => {
+    if (!block) return [];
+    const keys = [];
+    let depth = 0;
+    let i = 0;
+    while (i < block.length) {
+      const ch = block[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        i += 1;
+        while (i < block.length && !(block[i] === ch && block[i - 1] !== "\\")) i += 1;
+        i += 1;
+        continue;
+      }
+      if (ch === "{" || ch === "[" || ch === "(") depth += 1;
+      else if (ch === "}" || ch === "]" || ch === ")") depth -= 1;
+      else if (depth === 1) {
+        const m = /^([A-Za-z_][A-Za-z0-9_]*)\s*:/.exec(block.slice(i, i + 64));
+        const before = block.slice(0, i).replace(/\s+$/, "").slice(-1);
+        if (m && (before === "{" || before === ",")) {
+          keys.push(m[1]);
+          i += m[0].length;
+          continue;
+        }
+      }
+      i += 1;
+    }
+    return keys;
+  };
+  /** the `{ ... }` that `marker`'s value opens, balanced by hand (nested literals included) */
+  const objectAfter = (src, marker) => {
+    const at = src.indexOf(marker);
+    if (at === -1) return null;
+    const open = src.indexOf("{", at);
+    if (open === -1) return null;
+    let depth = 0;
+    for (let i = open; i < src.length; i += 1) {
+      if (src[i] === "{") depth += 1;
+      else if (src[i] === "}" && (depth -= 1) === 0) return src.slice(open, i + 1);
+    }
+    return null;
+  };
+
+  const simsDir = join(ROOT, "backend", "src", "adapt", "learning", "sims");
+  const engineKinds = existsSync(simsDir)
+    ? readdirSync(simsDir).filter((f) => f.endsWith(".py") && !f.startsWith("_")).map((f) => f.slice(0, -3)).sort()
+    : [];
+  if (engineKinds.length < 2) {
+    FAILURES.push(`sims: ${engineKinds.length} kind module(s) under ${relative(ROOT, simsDir)} -- the kind scan is reading the wrong directory, not a two-kind engine`);
+  } else {
+    // backend/src/adapt/learning/sims/__init__.py tells the reader that "the contract check
+    // asserts the frontend's renderer registry agrees with this set". A comment describing a
+    // gate that does not run is worse than no comment, so this is that gate.
+    const stagesSrc = existsSync(join(FE_SRC, "components", "scenes", "index.tsx"))
+      ? read(join(FE_SRC, "components", "scenes", "index.tsx"))
+      : "";
+    const drawn = keysInside(objectAfter(stagesSrc, "const KNOWN")).sort();
+    if (!drawn.length) {
+      FAILURES.push("stages: could not read the KNOWN registry out of components/scenes/index.tsx -- this check is not running");
+    } else {
+      const notDrawn = engineKinds.filter((k) => !drawn.includes(k));
+      const stale = drawn.filter((k) => !engineKinds.includes(k));
+      if (notDrawn.length) FAILURES.push(`stages: the engine computes ${notDrawn.join(", ")} and no built-in stage draws it -- the page falls back to narration for a shipped kind (add the stage, or drop the kind)`);
+      if (stale.length) FAILURES.push(`stages: KNOWN lists ${stale.join(", ")} with no sim module behind it -- emphasis ids for a kind nobody computes`);
+    }
+    if (mockSrc) {
+      const mocked = keysInside(objectAfter(objectAfter(mockSrc, "const lessonKinds"), "kinds:")).sort();
+      if (!mocked.length) {
+        FAILURES.push("mock: could not read lessonKinds.kinds out of src/lib/mock.ts -- the mock lesson tour is not the shape this check expects");
+      } else {
+        const absent = engineKinds.filter((k) => !mocked.includes(k));
+        const ghost = mocked.filter((k) => !engineKinds.includes(k));
+        if (absent.length) FAILURES.push(`mock: ?mock=1 advertises no kind entry for ${absent.join(", ")} -- a scene that cannot be reviewed without a backend is a scene that gets shipped unreviewed`);
+        if (ghost.length) FAILURES.push(`mock: lessonKinds carries ${ghost.join(", ")}, which the engine no longer computes -- the review tour would validate a design that cannot run`);
+      }
+      // two fixture scenes sharing an id is invisible until React warns about one key for two
+      // rows -- and "open" then silently always hits the first of them
+      const list = objectAfter(mockSrc, "const lessonList");
+      const names = ((list ?? "").match(/scenes:\s*\[([^\]]*)\]/)?.[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+      const ids = names.map((n) => (mockSrc.match(new RegExp(`const ${n} =\\s*\\{[\\s\\S]{0,400}?\\bid:\\s*"([^"]+)"`)) ?? [])[1]);
+      const dupes = ids.filter((v, i2) => v && ids.indexOf(v) !== i2);
+      if (!names.length) FAILURES.push("mock: no scene list found in lessonList -- the id uniqueness check is reading the wrong shape");
+      else if (dupes.length) FAILURES.push(`mock: fixture scenes share the id ${dupes.join(", ")} -- two rows under one React key, and "open" always opens the first`);
+    }
+    if (drawn.length && engineKinds.length === drawn.length) NOTES.push(`${engineKinds.length} scene kinds: engine, stages and mock agree`);
   }
 }
 
@@ -231,4 +342,4 @@ if (FAILURES.length) {
   for (const f of FAILURES) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log("contract ok: every path the frontend calls exists, ?mock=1 covers them, route modules export what Next allows, no host or env misuse in browser code");
+console.log("contract ok: every path the frontend calls exists, ?mock=1 covers them, the scene kinds agree across engine/stages/mock, route modules export what Next allows, no host or env misuse in browser code");

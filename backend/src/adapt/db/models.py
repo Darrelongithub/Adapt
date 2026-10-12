@@ -36,6 +36,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -718,7 +719,7 @@ class LessonScene(Base):
     __tablename__ = "lesson_scenes"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("scene"))
-    spec_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)  # content-addressed scn_...
+    spec_id: Mapped[str] = mapped_column(String(32), index=True)  # content-addressed scn_...
     kind: Mapped[str] = mapped_column(String(32), index=True)
     title: Mapped[str] = mapped_column(String(160))
     origin: Mapped[str] = mapped_column(String(16), default="builtin")  # builtin|ai2|learner
@@ -731,7 +732,23 @@ class LessonScene(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
-    __table_args__ = (Index("ix_scene_kind_origin", "kind", "origin", "created_at"),)
+    __table_args__ = (
+        Index("ix_scene_kind_origin", "kind", "origin", "created_at"),
+        # Content-addressed, but not globally unique, and the reason is a learner's privacy and
+        # their memory at once: two people who both narrow a search to `[1, 4, 7, 9, 12]` produce
+        # the same *content*, so a unique index on spec_id silently attaches the second learner's
+        # "my copy" to the first learner's row -- their copy then never appears in their list, and
+        # their own note lands on someone else's record. So: one canonical shared row per content
+        # id (the built-in and AI-authored ones, which have no author), and one row per learner.
+        Index(
+            "uq_scene_spec_shared",
+            "spec_id",
+            unique=True,
+            sqlite_where=text("author_student_id IS NULL"),
+            postgresql_where=text("author_student_id IS NULL"),
+        ),
+        Index("uq_scene_spec_author", "spec_id", "author_student_id", unique=True),
+    )
 
 
 class LessonRun(Base):

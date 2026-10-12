@@ -259,6 +259,33 @@ def test_predictions_are_telemetry_and_never_touch_mastery(client, learner, serv
     assert after_bkt == before_bkt, "a lesson moved a mastery number"
 
 
+def test_every_event_names_the_scene_the_api_will_take_back(client, learner, services):
+    """One session, one identifier per scene, and it is a usable one.
+
+    The events for a run are written from four different places (open, frame, prediction,
+    explain, finish), and if some of them report the row id while others report the content
+    id, the log the learner reads back describes two scenes. Worse: only the row id is
+    accepted by `POST /lessons/open`, so half the trail could not be replayed.
+    """
+    session_id = client.post("/api/v1/sessions", json={"mode": "lesson"}, headers=learner["headers"]).json()["session_id"]
+    opened = _open(client, learner, _lessons(client, learner)["scenes"][0]["id"], session_id=session_id)
+    frame = next(f for f in opened["frames"] if f.get("prompt"))
+    _post(client, learner, f"/api/v1/lessons/run/{opened['run_id']}/progress", {"frame_index": frame["i"], "action": "pause"})
+    _post(client, learner, f"/api/v1/lessons/run/{opened['run_id']}/predict", {"frame_index": frame["i"], "choice": frame["prompt"]["choices"][0]})
+    _post(client, learner, f"/api/v1/lessons/run/{opened['run_id']}/explain", {"frame_index": frame["i"], "question": ""})
+    _post(client, learner, f"/api/v1/lessons/run/{opened['run_id']}/finish", {})
+
+    with services.db.session() as s:
+        from adapt.db.models import LearnerEvent, LessonScene
+
+        rows = s.query(LearnerEvent).filter(LearnerEvent.session_id == session_id, LearnerEvent.type.like("scene_%")).all()
+        assert len(rows) >= 4, [r.type for r in rows]
+        named = {(r.payload or {}).get("scene_id") for r in rows}
+        assert named == {opened["scene_id"]}, {r.type: (r.payload or {}).get("scene_id") for r in rows}
+        scene = s.get(LessonScene, opened["scene_id"])
+        assert scene is not None and scene.spec_id not in named, "an event logged the content id where the row id belongs"
+
+
 def test_lesson_events_are_in_the_session_log_with_only_allowed_fields(client, learner, services):
     session_r = client.post("/api/v1/sessions", json={"mode": "lesson"}, headers=learner["headers"])
     assert session_r.status_code == 200, session_r.text
@@ -329,6 +356,70 @@ def test_changing_the_numbers_creates_a_scene_of_your_own(client, learner, servi
     assert not any(x["spec_id"] == body["spec_id"] for x in listing), "a learner's own scene leaked into someone else's list"
 
 
+def test_two_learners_who_make_the_same_copy_each_have_a_copy(client, learner, services):
+    """Content-addressing must not become identity-sharing between two people.
+
+    The same eight numbers typed by two learners is the same content id. With one unique index
+    on that id, ``store_spec`` handed the second learner the *first* learner's row: their list
+    showed no copy of theirs, the note about why they changed it was written onto a stranger's
+    scene, and their run pointed at a lesson they could not see. Finding that needs two real
+    sessions, so the second learner gets a second client with its own cookie jar rather than a
+    header that impersonates one.
+    """
+    from fastapi.testclient import TestClient
+
+    a = learner
+    with TestClient(client.app) as b_client:
+        made = b_client.post("/api/v1/students", json={"display_name": "Same Numbers", "as_guest": True})
+        assert made.status_code == 200, made.text
+        b = {"student_id": made.json()["student_id"], "headers": {"x-csrf-token": made.json()["csrf_token"]}}
+        values = [1, 4, 7, 9, 12, 15, 19, 23]
+        mine = _derive(client, a, values, target=12, note="I wanted a shorter list")
+        theirs = _derive(b_client, b, values, target=12, note="mine was shorter too")
+        assert mine["scene_id"] != theirs["scene_id"], "two learners were handed one row for their own copies"
+
+        with services.db.session() as s:
+            from adapt.db.models import LessonScene
+
+            rows = {k: s.get(LessonScene, k) for k in (mine["scene_id"], theirs["scene_id"])}
+            assert rows[mine["scene_id"]].author_student_id == a["student_id"]
+            assert rows[theirs["scene_id"]].author_student_id == b["student_id"]
+            assert rows[mine["scene_id"]].spec_id == rows[theirs["scene_id"]].spec_id, (
+                "the same content is still the same content: that is what makes a re-run idempotent"
+            )
+            assert (rows[mine["scene_id"]].learner_note or {}).get("why") == "I wanted a shorter list"
+            assert (rows[theirs["scene_id"]].learner_note or {}).get("why") == "mine was shorter too"
+
+        seen = {}
+        for who, sess in ((a, client), (b, b_client)):
+            scenes = _lessons(sess, who)["scenes"]
+            derived = [x for x in scenes if "(your variables)" in x["title"]]
+            assert len(derived) == 1, [x["title"] for x in scenes]
+            seen[who["student_id"]] = {x["id"] for x in scenes}
+        # each sees the builtins and their own copy, and nothing of the other's
+        assert seen[a["student_id"]] != seen[b["student_id"]]
+        assert len(seen[a["student_id"]] ^ seen[b["student_id"]]) == 2, seen
+
+        # the same learner deriving the same numbers again is still one row, not two
+        again = _derive(client, a, values, target=12)
+        assert again["scene_id"] == mine["scene_id"], "the same learner's same numbers authored a second copy"
+
+
+def _derive(client, who, values, *, target, note=""):
+    scene = [x for x in _lessons(client, who)["scenes"] if x["kind"] == "binary_search"][0]["id"]
+    opened = _open(client, who, scene)
+    out = _post(
+        client,
+        who,
+        f"/api/v1/lessons/run/{opened['run_id']}/variables",
+        {"params": {"values": values, "target": target}, "note": note},
+    )
+    assert out.status_code == 200, out.text
+    body = out.json()
+    assert body["ok"] is True, body
+    return body
+
+
 def test_a_bad_set_of_numbers_is_refused_and_nothing_changes(client, learner, services):
     scene = [s for s in _lessons(client, learner)["scenes"] if s["kind"] == "binary_search"][0]
     opened = _open(client, learner, scene["id"])
@@ -385,8 +476,44 @@ def test_why_is_answered_from_the_trace_and_not_from_a_model(client, learner, se
         assert s.query(LlmCall).filter(LlmCall.purpose == "ai3_narrate").count() == 0, "a model call was made for something the sim knows"
         from adapt.db.models import NarrationCache
 
-        rows = s.query(NarrationCache).all()
-        assert len(rows) == 1 and rows[0].source == "deterministic" and rows[0].spec_id == opened["spec_id"]
+        # about *this frame's* row, not the size of the table: the cache is shared between
+        # learners on purpose (one answer per scene, not one per person), so a count over the
+        # whole table measures how many tests ran before this one
+        rows = s.query(NarrationCache).filter(
+            NarrationCache.spec_id == opened["spec_id"], NarrationCache.frame_index == discard["i"]
+        ).all()
+        assert len(rows) == 1 and rows[0].source == "deterministic", [(r.frame_index, r.source, r.question_digest) for r in rows]
+
+
+def test_both_ways_an_ask_is_answered_return_the_same_keys(client, learner, services, settings, monkeypatch):
+    """One endpoint, two code paths, one contract.
+
+    The deterministic answer and the "the model is not answering" fallback come from different
+    objects, and a player that reads `text` from one and `answer` from the other shows a blank
+    box for the half of asks the simulation could not settle.
+    """
+    opened = _open(client, learner, _lessons(client, learner)["scenes"][0]["id"])
+    asked = next(f for f in opened["frames"] if f.get("prompt"))
+    # a question every frame of this kind can answer from its own state, so the deterministic
+    # path is taken whatever the trace looks like today
+    settled = _post(
+        client,
+        learner,
+        f"/api/v1/lessons/run/{opened['run_id']}/explain",
+        {"frame_index": asked["i"], "question": "why does sorted order matter here?"},
+    ).json()
+    assert settled["source"] in ("deterministic", "cache"), settled
+    # a question the trace cannot settle, asked while no model is configured
+    stuck = _post(
+        client, learner, f"/api/v1/lessons/run/{opened['run_id']}/explain", {"frame_index": asked["i"], "question": "does this remind you of anything?"}
+    ).json()
+    assert settled["needs_model"] is False and stuck["needs_model"] is False
+    assert stuck["tried_model"] is True and settled["tried_model"] is False
+    assert set(settled) == set(stuck), (sorted(settled), sorted(stuck))
+    for key in ("ok", "text", "source", "frame", "citations", "model", "tokens_in", "tokens_out", "question"):
+        assert key in stuck, key
+    assert "answer" not in stuck and "answer" not in settled, "the old name leaked back in"
+    assert stuck["text"], stuck
 
 
 def test_a_repeated_ask_is_served_from_the_cache(client, learner, services):
@@ -413,7 +540,8 @@ def test_a_question_the_simulation_cannot_answer_says_so_instead_of_inventing(cl
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is False and body["source"] == "template"
-    assert "nothing has been invented" in body["answer"] or "not answering" in body["note"], body
+    assert "nothing has been invented" in body["text"] or "not answering" in body["note"], body
+    assert "answer" not in body, "the second name for the same field is still on the wire"
     # checked by content, not by the label the writer chose: a fallback stored under any name is
     # a fallback that will be served again as if it were an answer
     with services.db.session() as s:

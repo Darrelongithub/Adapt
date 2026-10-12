@@ -54,9 +54,13 @@ class Answer:
     note: str = ""
 
     def as_dict(self) -> dict[str, Any]:
+        # `text`, not `answer`, and the same source words `services/lessons.Explanation` uses.
+        # The endpoint answers a "why?" from two code paths, and a client must not have to read
+        # both to know which key holds the sentence. `answer` stays as an alias.
         return {
+            "text": self.text,
             "answer": self.text,
-            "source": self.source,
+            "source": {"simulation": "deterministic"}.get(self.source, self.source),
             "frame": self.frame,
             "citations": self.citations,
             "model": self.model,

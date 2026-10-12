@@ -14,7 +14,6 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -80,15 +79,15 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    # No cipher setup here on purpose: ``create_db_engine`` above already built the
-    # keyring the encrypted column types need, and a second, differently-ordered version
-    # of that call is how a migration ends up writing plaintext into an encrypted column.
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-        url=str(_engine.url),
-    )
+    # The migration connection is the *application's engine*, not one rebuilt from
+    # ``alembic.ini``. That engine carries ``module=sqlcipher3`` plus the ``connect``
+    # listener that issues ``PRAGMA key`` and the cipher pragmas (``adapt/db/engine.py``);
+    # ``engine_from_config(url=...)`` re-derives a plain-sqlite3 engine from the URL alone,
+    # and the URL carries neither the module nor the key. What that does, in order of how
+    # hard it is to notice: an already-encrypted database cannot be opened at all, and a
+    # database created by a migration in a fresh ``ADAPT_DATA_DIR`` is written in plaintext,
+    # which the application then cannot read and which nothing on disk protects.
+    connectable = _engine
     with connectable.connect() as connection:
         context.configure(
             connection=connection,

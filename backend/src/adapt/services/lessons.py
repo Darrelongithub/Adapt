@@ -141,8 +141,15 @@ def ensure_scenes(s: Session) -> dict[str, Any]:
 
 
 def store_spec(s: Session, spec: dict[str, Any], *, origin: str, student_id: str | None = None, derived_from: str | None = None, note: dict[str, Any] | None = None) -> LessonScene:
-    """Persist an already-validated spec, reusing the row if this exact scene already exists."""
-    row = s.execute(select(LessonScene).where(LessonScene.spec_id == spec["id"])).scalar_one_or_none()
+    """Persist an already-validated spec, reusing the row if *this learner* already has it.
+
+    Shared scenes (builtin, ai2) are one row per content id; a learner's copy is a row of
+    theirs, so the second person to derive the same numbers gets their own lesson in their own
+    list instead of silently writing into the first person's.
+    """
+    conds = [LessonScene.spec_id == spec["id"]]
+    conds.append(LessonScene.author_student_id == student_id if origin == "learner" else LessonScene.author_student_id.is_(None))
+    row = s.execute(select(LessonScene).where(*conds)).scalar_one_or_none()
     if row is not None:
         if note is not None and row.learner_note != note:
             row.learner_note = note
@@ -176,20 +183,22 @@ def get_scene(s: Session, ident: str) -> LessonScene | None:
 
 def visible_scenes(s: Session, student_id: str, *, kind: str | None = None, limit: int = 60) -> list[LessonScene]:
     """Built-ins, AI-authored ones, and this learner's own versions. Nobody else's."""
-    conds = [LessonScene.origin.in_(["builtin", "ai2"]), LessonScene.author_student_id == student_id]
+    shared = LessonScene.origin.in_(["builtin", "ai2"]) & LessonScene.author_student_id.is_(None)
+    mine = LessonScene.author_student_id == student_id
+    where = shared | mine
     if kind:
-        conds.append(LessonScene.kind == kind)
+        where = where & (LessonScene.kind == kind)
     rows = (
         s.execute(
             select(LessonScene)
-            .where(LessonScene.origin.in_(["builtin", "ai2"]) | (LessonScene.author_student_id == student_id))
+            .where(where)
             .order_by(LessonScene.origin.desc(), LessonScene.created_at)
             .limit(max(1, min(limit, 200)))
         )
         .scalars()
         .all()
     )
-    return list(rows) if not kind else [r for r in rows if r.kind == kind]
+    return list(rows)
 
 
 def scene_card(s: Session, row: LessonScene, *, student_id: str | None = None) -> dict[str, Any]:
@@ -289,7 +298,7 @@ def open_run(
         session_id=run.session_id or "",
         student_id=student_id,
         type="scene_opened",
-        payload={"scene_id": scene.spec_id, "kind": scene.kind, "frame_count": len(frames), "resumed": resumed},
+        payload={"scene_id": scene.id, "kind": scene.kind, "frame_count": len(frames), "resumed": resumed},
     )
     run.last_seen_at = utcnow()
     s.commit()
@@ -397,7 +406,7 @@ def predict(
             student_id=run.student_id,
             type="scene_prediction",
             payload={
-                "scene_id": scene.spec_id,
+                "scene_id": scene.id,
                 "frame": index,
                 "prompt": str(prompt.get("type") or ""),
                 "correct": correct,
@@ -480,7 +489,7 @@ def change_variables(
                 session_id=new_run.session_id,
                 student_id=new_run.student_id,
                 type="scene_variables",
-                payload={"scene_id": new_scene.spec_id, "changed": len(params or {}), "replayed": True},
+                payload={"scene_id": new_scene.id, "changed": len(params or {}), "replayed": True},
             )
         s.commit()
     out = opened.as_dict()
@@ -503,7 +512,7 @@ def finish(s: Session, *, run: LessonRun, status: str = "finished") -> dict[str,
             student_id=run.student_id,
             type="scene_finished",
             payload={
-                "scene_id": (scene.spec_id if scene else run.scene_id),
+                "scene_id": run.scene_id,
                 "frames_viewed": int(run.frames_viewed or 0),
                 "seconds": int(run.seconds_watched or 0),
                 "predictions": int(run.predictions_total or 0),
@@ -656,10 +665,14 @@ class Explanation:
     tokens_in: int = 0
     tokens_out: int = 0
     citations: list[dict[str, str]] = field(default_factory=list)
+    #: why there is no better answer than this one; the model branch fills it, and the
+    #: deterministic branch leaves it empty so both responses carry the same keys
+    note: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "text": self.text,
+            "note": self.note,
             "source": self.source,
             "frame": self.frame,
             "cached": self.cached,

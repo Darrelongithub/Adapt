@@ -310,7 +310,7 @@ async def explain_frame(
     first = L.explain(s, scene=scene, frame_index=body.frame_index, question=body.question)
     if not first.needs_model:
         await _note_explained(s, run, frame_index=first.frame, source=first.source, cached=first.cached)
-        return {"ok": True, **first.as_dict()}
+        return {"ok": True, "tried_model": False, **first.as_dict()}
     svcs = current()
     answer = await svcs.ai3.why(
         spec=dict(scene.spec or {}),
@@ -335,7 +335,18 @@ async def explain_frame(
             tokens_out=answer.tokens_out,
         )
     await _note_explained(s, run, frame_index=body.frame_index, source=answer.source, cached=False)
-    return {"ok": answer.ok, **answer.as_dict()}
+    out = answer.as_dict()
+    # the same keys as the deterministic branch, so the player never has to guess which way
+    # the answer came from to know where the sentence is
+    out.pop("answer", None)
+    return {
+        "ok": answer.ok,
+        **out,
+        "cached": False,
+        "needs_model": False,
+        "tried_model": True,
+        "question": body.question,
+    }
 
 
 @router.post("/run/{run_id}/finish")

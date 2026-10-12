@@ -27,6 +27,11 @@ const arg = (name, dflt) => {
 };
 const BASE = arg("base", "http://127.0.0.1:3000");
 const ONLY = (arg("only", "") || "").split(",").filter(Boolean);
+/** `--mock` runs the lesson scenario against `?mock=1`: no session, no rows, no resume. The
+ *  client-side half of the engine (player, gate, the "this is a new scene" announcement) is still
+ *  under test there; the checks that assert a *database* fact are skipped rather than quietly
+ *  passing, and the mock's own limit is asserted instead of ignored. */
+const MOCK = ARGV.includes("--mock");
 const API = BASE; // the app's own origin: /api is proxied by server.mjs
 
 const results = [];
@@ -46,7 +51,7 @@ function check(scenario, label, ok, detail = "") {
 // Objects must not reach a learner as JSON. Several screens used to stringify a payload into
 // visible text -- a measured effect, the privacy statement, the voice capability list -- so the
 // tripwire runs on every screen that has ever done it, at the moment the page is inspected.
-const JSON_FREE = new Set(["/learn", "/proposals", "/settings", "/voice", "/progress"]);
+const JSON_FREE = new Set(["/learn", "/lesson", "/proposals", "/settings", "/voice", "/progress"]);
 
 function visibleText(page) {
   const doc = page?.dom?.window?.document;
@@ -1056,6 +1061,156 @@ async function main() {
       check("voice", "choosing a gender takes effect without a save that never arrives", (() => { sel.value = opts.find((v) => v !== sel.value) ?? opts[0]; sel.dispatchEvent(new page.dom.window.Event("change", { bubbles: true })); return true; })(), "switched to " + sel.value);
       break;
     }
+    closePage(page);
+  }
+
+  /* ---------------------------------------------------------------- lesson ---- */
+  // The interactive player, driven the way a learner drives it: open a scene, be blocked by
+  // a prediction, answer it, ask why, change the numbers, and read the review back. Every
+  // assertion here is against what the *backend* said, so a player that renders its own
+  // invention would fail even though it looks alive.
+  if (run("lesson")) {
+    console.log("\x1b[1mlesson\x1b[0m");
+    const cookie = jar.getCookieStringSync(BASE);
+    const page = await open(MOCK ? "/lesson?mock=1" : "/lesson", "lesson");
+    // the header is server-rendered, so waiting on it would race the fetch: wait for a card
+    const cardsOf = () => page.find("section").map((el) => el.textContent ?? "");
+    await waitFor(() => cardsOf().some((t) => /moments where you say what happens next/.test(t)), {
+      timeout: 15_000,
+      label: "a scene card with its prediction count",
+    });
+
+    const list = await api("/api/v1/lessons", { cookie });
+    check("lesson", "the list the page shows is the list the API has", list.status === 200 && list.body.scenes.length > 0, JSON.stringify(list.body).slice(0, 120));
+    if (MOCK) {
+      // the point of ?mock=1 is a design review with no backend in the room, so the tell is what
+      // the browser did *not* do: one /api/v1 call means a component stopped consulting the mock
+      const apiCalls = page.requests.filter((r) => /\/api\/v1\//.test(r));
+      check(
+        "lesson",
+        "?mock=1 serves the lesson list without asking the backend for anything",
+        apiCalls.length === 0,
+        apiCalls.slice(0, 3).join(" | ") || "no /api/v1 requests from the lesson page",
+      );
+    }
+    const first = list.body.scenes.find((s) => s.kind === "binary_search") ?? list.body.scenes[0];
+    const cardText = cardsOf().find((t) => t.includes(first.title.slice(0, 24)));
+    check("lesson", "a scene card says how many moments ask you to predict", /moments where you say what happens next/.test(cardText ?? ""), (cardText ?? "no card").slice(0, 160));
+    check("lesson", "the frame count on the card is the backend's, not a guess", (cardText ?? "").includes(`${first.frame_count} frames`), `${first.frame_count} vs ${(cardText ?? "").slice(0, 80)}`);
+    const unrendered = list.body.scenes.filter((s) => !s.has_renderer);
+    const cards = cardsOf();
+    check(
+      "lesson",
+      "a scene with no renderer in this build announces it on its own card",
+      unrendered.every((s) => cards.some((t) => t.includes(s.title.slice(0, 20)) && /no renderer/i.test(t))),
+      `${unrendered.length} unrenderable scene(s) in this database`,
+    );
+
+    await page.click("open", "button");
+    // the player, not the list: "say what happens next" is on the cards too, so a copy
+    // match would let every check below run against the screen the click left behind
+    await waitFor(() => page.byText("next →", "button"), { timeout: 15_000, label: "the player to replace the list" });
+    if (!MOCK) {
+      const opened = page.requests.filter((r) => r.startsWith("POST /api/v1/lessons/open"));
+      check("lesson", "opening a scene asks for a run once", opened.length === 1, page.requests.join(" | ").slice(0, 200));
+    }
+    check("lesson", "the stage draws the backend's own caption", page.text().includes(first.title.slice(0, 20)) && /frame 1/.test(page.text()), page.text().slice(0, 160));
+    check("lesson", "nothing is autoplaying over a question", /say what happens next/i.test(page.text()), "");
+
+    // the gate: 'next' must not walk past a frame that asked something
+    const before = page.text().match(/frame (\d+)/)?.[1];
+    const nextBtn = page.byText("next →", "button");
+    check("lesson", "'next' is present on a blocked frame (the gate is honest, not a disabled button)", !!nextBtn && !nextBtn.disabled, "");
+    await page.click(nextBtn);
+    const afterBlocked = page.text().match(/frame (\d+)/)?.[1];
+    check("lesson", "and it does not advance past an unanswered prediction", before === afterBlocked, `frame ${before} -> ${afterBlocked}`);
+
+    const choice = page.find('button[class*="font-mono"]').find((b) => !/next|back|play|end|ask|re-run/.test(b.textContent ?? ""));
+    check("lesson", "the choices are the ones the frame carried", !!choice, page.find("button").map((b) => (b.textContent ?? "").trim()).slice(0, 6).join(" / ").slice(0, 180));
+    await page.click(choice);
+    await waitFor(() => /the trace agrees|the machine does something else|nothing was answerable/.test(page.text()), { label: "the grade" });
+    check("lesson", "the grade arrives from the simulation, and says so", /graded by the simulation on the backend/.test(page.text()), page.text().match(/predictions? so far[^.]*/)?.[0] ?? "");
+    await page.click(page.byText("next →", "button"));
+    await waitFor(() => /frame 2/.test(page.text()), { label: "the frame to move once the question is answered" });
+    check("lesson", "and the frame moves once it has been answered", /frame 2/.test(page.text()), page.text().match(/frame \d+/)?.[0] ?? "");
+
+    // asking why: the answer must be the trace's, and must say which voice answered
+    const box = page.find("textarea")[0];
+    check("lesson", "there is somewhere to ask a question", !!box, "");
+    page.type(box, "why does sorted order matter here?");
+    await page.click("ask", "button");
+    await waitFor(() => /source:/.test(page.text()), { label: "an answer with its source named" });
+    check("lesson", "a question the simulation can settle is answered by the simulation", /source: deterministic/.test(page.text()), page.text().match(/source: \w+/g)?.join(", ") ?? "");
+    check("lesson", "and no model was billed for it", !/tokens out/.test(page.text()), page.text().match(/source: \w+[^.]{0,80}/)?.[0] ?? "");
+
+    // change the numbers: a new validated scene, and the old run keeps its predictions
+    const values = page.find('input[name="values"]')[0];
+    const target = page.find('input[name="target"]')[0];
+    check("lesson", "the editable parameters are the ones the engine declares", !!values && !!target, page.find("input").map((i) => i.getAttribute("name")).join(","));
+    page.type(values, "1, 4, 7, 9, 12, 15, 19, 23");
+    page.type(target, "12");
+    await page.click("re-run with these", "button");
+    await waitFor(() => /your own copy/.test(page.text()), { timeout: 12_000, label: "the derived scene to come back" });
+    check("lesson", "changing the numbers says plainly that this is a new scene", /your own copy of the scene/.test(page.text()), page.text().match(/this is your own copy[^.]*\./)?.[0] ?? "");
+    if (MOCK) {
+      // the mock answers /variables from a fixture, so the recomputation is a review stub: the
+      // claim worth keeping is that the page announced a new scene and kept playing
+      check("lesson", "and the mock keeps playing after the variables change", /frame \d+/.test(page.text()), page.text().slice(-140));
+    } else {
+      const varReq = page.requests.filter((r) => r.endsWith("/variables"));
+      check("lesson", "and it is the backend that recomputed the trace", varReq.length === 1, page.requests.slice(-4).join(" | "));
+    }
+
+    if (MOCK) {
+      // the mock has no run store and no session, so nothing can come back after a reload. the
+      // honest claim is that the page still works and says nothing was saved.
+      await page.reload();
+      await waitFor(() => cardsOf().length > 0, { timeout: 15_000, label: "the mock list to come back" });
+      const cards = cardsOf().join(" ");
+      check(
+        "lesson",
+        "mock mode saves nothing and does not pretend otherwise",
+        !/your variables|you stopped at frame/.test(cards),
+        "the mock list gained a derived or resumed row it cannot have stored",
+      );
+    } else {
+      // position is a row, not a component: reload and the card offers the same place back
+      await page.click(page.byText("next →", "button"));
+      await page.click(page.byText("next →", "button"));
+      await page.reload();
+      await waitFor(() => cardsOf().some((t) => /your variables/.test(t)), { timeout: 15_000, label: "the derived scene in the list" });
+      const resumeLine = cardsOf().find((t) => /you stopped at frame/.test(t));
+      check("lesson", "a reload offers the frame you stopped on, from the database", /you stopped at frame \d+ of \d+/.test(resumeLine ?? ""), (resumeLine ?? "no resume line").slice(0, 160));
+      const myCard = cardsOf().find((t) => /\(your variables\)/.test(t));
+      check("lesson", "the scene you made is in your list, marked as yours", /your variables/.test(myCard ?? "") && /learner/.test(myCard ?? ""), (myCard ?? "no derived card").slice(0, 160));
+      await page.click(page.byText("resume", "button"));
+      await waitFor(() => /back at frame/.test(page.text()), { label: "the resume notice" });
+      check("lesson", "resuming says where it came from, in one sentence the learner can check", /back at frame \d+ of \d+/.test(page.text()) && /saved on the server/.test(page.text()), page.text().match(/back at frame[^.]*\./)?.[0] ?? "");
+
+      // and the end: a review that refuses to call itself a grade
+      await page.click("end & review", "button");
+      await waitFor(() => /what you just did/.test(page.text()), { label: "the review" });
+      check("lesson", "the review counts predictions before the answer, not accuracy as mastery", /before the machine confirmed them|no predictions, so there is nothing to compare/.test(page.text()), page.text().match(/you called[^.]*\./)?.[0] ?? "");
+      const ev = await api("/api/v1/lessons/evidence", { cookie });
+      check("lesson", "the run is in the learner's evidence, described in the API's own words", ev.status === 200 && ev.body.summary.runs >= 2, JSON.stringify(ev.body.summary).slice(0, 160));
+      check("lesson", "and it is still not a mastery number", /not a mastery number/.test(JSON.stringify(ev.body)), "");
+      // what the card claimed and what the run row holds must be the same number, or the
+      // "saved on the server" sentence on screen is decoration
+      const runs = await api("/api/v1/lessons/runs", { cookie });
+      const newest = (runs.body.runs ?? [])[0] ?? {};
+      const claimed = Number((resumeLine ?? "").match(/you stopped at frame (\d+)/)?.[1] ?? NaN);
+      check(
+        "lesson",
+        "the frame the card offered is the frame the run row holds",
+        Number.isFinite(claimed) && newest.frame_index === claimed - 1,
+        `card said frame ${claimed}, run row says ${JSON.stringify(newest.frame_index)} (status ${newest.status})`,
+      );
+      const progressWrites = page.requests.filter((r) => r.endsWith("/progress"));
+      check("lesson", "a frame the player moved was written back, and a frame the gate held was not", progressWrites.length >= 1, progressWrites.join(" | ").slice(0, 160));
+    }
+    const hardErrors = page.errors.filter((e) => !/not implemented|Could not parse CSS|Not implemented: HTML form submission/i.test(e));
+    check("lesson", "no uncaught error during the whole lesson", hardErrors.length === 0, hardErrors.slice(0, 2).join(" | ").slice(0, 200));
+    check("lesson", "no raw object reached the screen", !/[{\[]\s*"\w+":/.test(page.text()), page.text().slice(0, 160));
     closePage(page);
   }
 
