@@ -1,0 +1,157 @@
+# What has not been verified
+
+Everything in this repository was written and tested in a sandbox with **no outbound network
+except PyPI/npm/GitHub** and no browser. That leaves a specific, nameable set of claims that
+are implemented but *not* proven. Each item says what was done instead and how to check it.
+
+## Model calls (AI 2, Gemini)
+
+* **Verified:** the request shape, the redaction pass (emails, phone numbers, URLs, addresses
+  and id-like fields are stripped before anything is sent), the pseudonym used in place of a
+  name, the daily call/token budget and its accounting, the per-purpose call log, the retry
+  and backoff rules, and — most importantly — that every consumer has a **local fallback**
+  whose response says `provider: "local"` and `grounded: true|false`.
+* **Not verified:** whether a real Gemini answer is *good*. No call has ever been made from
+  this build. Prompt changes must be judged by the pilot's own outcomes
+  (`docs/PILOT.md`), not by how the prompt reads.
+* **To check:** `ADAPT_GEMINI_API_KEY=… uvicorn adapt.api.app:app`, then
+  `POST /api/v1/explain` and look at `llm`, `model_ms` and `privacy.what_was_sent`.
+
+## Speech (STT and TTS)
+
+* **Verified:** the WebSocket protocol end to end through the app's own proxy — a real
+  handshake and a full turn (`hello → state → reply → speak_unavailable → config_ack`), with
+  the reply reporting `provider: local` and `adaptations: [stated_preference, segmented_text,
+  retrieval_practice]`, so the stated preference is visibly reaching the strategy. Also the
+  turn-taking state machine, barge-in flag accounting, latency measurement, and that
+  `voice off` means no microphone access at all. A refused handshake now reaches the browser as
+  a refusal (`ws_handshake_refused`) instead of hanging — the upgrade proxy had no failure path
+  until the voice screen was tested through it.
+* **Not verified:** audio in either direction. `faster-whisper` and `kokoro` could not be
+  installed here (their weights come from Hugging Face, which is unreachable; `kokoro` also
+  needs `espeak-ng` from apt, and pins `python <3.13`). `capabilities()` reports the engines
+  as unavailable and the app degrades to browser dictation and `speechSynthesis` — which is
+  the tested path. Word error rate, latency and "does it feel interruptible" are unknown.
+* **To check:** `docs/VOICE.md` has the install and a 10-turn script.
+
+## Encryption at rest
+
+* **Verified:** field-level AES-256-GCM on the learner's name, email, both answer values,
+  event payloads, material bodies and session summaries; HMAC blind index for login; Argon2id
+  password hashing; per-purpose HKDF subkeys; that raw file bytes contain no plaintext (a test
+  reads the database file itself); that a keyfile which cannot decrypt existing rows stops
+  startup with a message naming the file rather than serving 500s.
+* **Verified later, and it changed the answer:** the audit pass ran in an environment where
+  `sqlcipher3-binary` could not be imported, so `db_encryption="auto"` selected field-only and said
+  so — and that is the state several of the first documents describe. The package is a declared
+  dependency, so once `pip install -e "./backend[dev]"` has run the whole-file path is the one that
+  runs: the database begins with random bytes, `GET /api/v1/status → database.file_encrypted` is
+  `true`, `PRAGMA cipher_version` answers, and `alembic upgrade head` connects through the same
+  engine rather than a URL (an older `env.py` rebuilt one from `alembic.ini`, which quietly wrote a
+  *plaintext* database into a fresh `ADAPT_DATA_DIR`; `test_migrations.py` now fails on that shape).
+* **Still not verified here:** whether the KDF and page-size defaults match a deployment you would
+  actually run — nothing in this codebase tunes cipher parameters — and any behaviour that needs a
+  second process holding the same encrypted file open (WAL under concurrency, backup while live).
+## Item bank and placement quality
+
+* **Verified:** every item's answer key is reachable by the grader, the diagnostic covers one
+  band range per topic, the exported Numbas package carries the correct answer for mcq, and
+  the learner-facing payloads never contain one (asserted by a string scan in the tests).
+* **Not verified:** that the items are *good test questions*. ~90 items across 20 GCSE-maths
+  topics were authored here; `difficulty` is an author's prior, not a pilot-derived estimate,
+  and nothing has been checked against real cohort data, mark schemes or an exam board's
+  content limits. Placement bands are therefore usable for choosing what to practise next and
+  **not** usable as a level to report to anyone.
+* **To check:** a pilot with ≥15 learners, then replace the priors with observed statistics
+  (`docs/PILOT.md` step 5).
+
+## Numbas and the resource providers
+
+* **Verified:** the `.numbas` export/import round trip against our own importer; XML that
+  satisfies the schema the code writes; that one-item-per-topic banks and missing answers are
+  reported instead of silently exported.
+* **Not verified:** opening an export in a real Numbas editor/server, and any live call to
+  OpenAlex, arXiv, Open Library or YouTube (all blocked here). Those providers are unit-tested
+  against canned JSON, and `resources/status` shows each one's real state at runtime.
+* **To check:** upload one exported package to a Numbas instance; then
+  `POST /api/v1/resources/search {"query":"fractions equivalence"}` with network available.
+
+## Frontend
+
+* **Verified:** `tsc --noEmit` clean, `next build` clean (10 routes), every endpoint each page
+  calls exists on the server (checked against the live route table), and every screen's data
+  path exercised over HTTP by `scripts/demo.mjs`.
+* **Not verified:** the rendered pixels. No browser was available, so layout, focus order,
+  screen-reader labels, `speechSynthesis` voice selection and microphone permission prompts
+  have not been observed. The `?mock=1` fixtures are hand-copied from recorded responses, so
+  they can drift from the API; `node scripts/demo.mjs --json` is the check that they have not.
+* **To check:** `npm run dev`, then each screen once with `?mock=1` and once against the API.
+
+## Learning-science claims
+
+The strategies carry citations (testing effect,worked-example fading, spaced retrieval,
+self-explanation). **What was verified is the mechanism, not the effect size**: this build
+demonstrates that a change is proposed, gated on a decision, applied, measured and reported —
+including when the measurement says it did not help. Whether it helps *you* is what the
+`measured_outcomes` block on the progress screen is for, and small samples are labelled
+`insufficient_data` rather than smoothed over. A single learner's `evaluated: 0` after one
+session is the expected result, not a bug.
+
+## Added by the 2026-10-11 audit
+
+* **Teach-back rendering with a real model.** The route now hands AI 2 the learner's own variant
+  instead of the stored template, and a test proves it with a spy. What this sandbox could not
+  check is the *model's* behaviour on it: with `ADAPT_GEMINI_API_KEY` set, ask a parametric
+  teach-back question and confirm the reply quotes the numbers on screen and no `{placeholder}`.
+* **Consent provenance end to end in a browser.** The audit row for a decision now carries
+  `answered_by` and `channel` (`web`, `cli_attested`, `synthetic_demo`), and the API test reads it
+  back from `/api/v1/audit`. Nobody has watched the browser write one: click *Yes, do it* on
+  `/proposals` and then read the last `adaptation_approved` row — `channel` must say `web`.
+* **Whole-file encryption off Linux.** `/api/v1/status` reported `driver=sqlcipher`,
+  `file_encrypted=true` here because `sqlcipher3-binary` installed cleanly. On macOS/Windows it
+  will not, and the app falls back to column-level encryption — honestly reported, but *untested*
+  here. Check `storage.file_encrypted` on the machine you deploy to; and do not switch
+  `ADAPT_DB_ENCRYPTION` on an existing database, which currently fails with
+  `sqlite3.DatabaseError: file is not a database` rather than an explanation.
+* **Login lockout on a real deployment.** The buckets are enforced and unit-proven
+  (5 failures per address/connection-minute, `Retry-After` set, a correct password refused while
+  the budget is empty). What is unproven is the UX around it: on a shared NAT, six failed sign-ins
+  a minute across a class will lock the room out, and the sentence the learner sees comes from the
+  `note` field. Raise `ADAPT_RATE_LIMIT_MULTIPLIER` for a rehearsal; do not lower it to 0.
+* **Upload caps measured from a browser.** `/voice/transcribe` and `/numbas/import` now refuse
+  while streaming, verified with a fake upload that counts bytes handed over
+  (16,777,216 buffered before the fix; at most ~9 MiB after). A real browser's `fetch(stream)`
+  path, and what a 20-minute recording does to memory before the cap bites, is not covered here.
+* **`alembic upgrade head` on a database with learner data.** The tests run it against an empty
+  file, a `create_all` file and a downgraded one. Nobody has run it against a months-old
+  deployment: do that on a copy (`cp adapt.db /tmp/x.db`), because `render_as_batch` rebuilds
+  tables and SQLite has no rollback to offer.
+* **`scripts/check-contract.mjs` coverage of dynamic paths.** It resolves the 16 literal call
+  sites the frontend makes. Paths assembled at runtime (none today) would slip through, and the
+  mock-parity rule is "some fixture regex accepts a concrete sample of the path", which cannot
+  prove the fixture's *body* is the right shape — `?mock=1` still needs a human eye.
+
+## What the second pass added, and what it did not (2026-10-12)
+
+* **Voice, at the protocol boundary:** 12 checks driven by a raw `websockets` client against the
+  running app — `hello` naming both sample rates, `config_ack` echoing what the server actually
+  took, `ping`/`status`/unknown-frame behaviour, a typed turn answered by `reply` with
+  `speak_unavailable` naming the fallback, 130 binary microphone frames reaching the VAD
+  (130 frames, 83,200 bytes, `turns=2`), `stop` returning the turn to listening, a reconnect
+  getting a fresh `hello`, and an anonymous socket refused *in a frame the page can read* (F9).
+* **Voice, below that boundary — still unverified here:** no microphone, no `faster-whisper`, no
+  `kokoro`, no `espeak-ng`, no browser. With no local STT the transcript that comes back is
+  `{"text": "", "backend": "browser", "note": "browser STT supplies text, not audio"}` — an empty
+  result labelled as such, never invented words; that is the *degradation path* being verified,
+  not transcription. Real accuracy, real latency, real barge-in timing and the audible difference
+  between `af_heart` and `am_fenrir` have to be judged on a machine that can install them
+  (`pip install 'adapt-backend[voice]'`, Python ≥3.11 <3.13).
+* **Interaction, without a browser:** `npm run probe` drives the built pages in jsdom (139 checks
+  across ten screens). It catches hydration-order bugs, real click→request→DB round trips and
+  what the screen says afterwards, and it can break one endpoint on purpose (the `failures`
+  scenario answers 429 to the session read and asserts the app does not turn that into a sign-out).
+  It cannot catch: CSS/layout at any viewport, focus rings,
+  `getUserMedia` prompts, autoplay policies, or anything a screenshot would show.
+* **Model quality:** unchanged from above — no key, no egress, so no real Gemini answer has ever
+  been produced by this build. Everything asserting about AI 1 and AI 2 in this repository is
+  about the local path and the gate, not about model cleverness.
