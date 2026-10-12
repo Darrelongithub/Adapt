@@ -106,3 +106,16 @@ sample is also too thin to hang a number on: run `npm run probe -- --only diagno
 times before believing any percentage.
 
 Not an option: making the probe click twice. That would hide the exact state worth seeing.
+
+## `npm run test:server` leaves `tsconfig.json` modified, on purpose-free bad terms
+
+Next adds `<the distDir it was given>/types/**/*.ts` to `tsconfig.json`'s `include` whenever it
+starts a project it has not seen at that path -- so the launcher test, which builds into its own
+temp distDir, edits the repo's `tsconfig.json` as a side effect. The entries name a directory that
+no longer exists by the time the test is over.
+
+Revert it before committing: `git checkout -- frontend/tsconfig.json`. This is how 1391 scratch
+files and three dead `include` paths got committed once already; `tmp/` is now ignored, but the
+`tsconfig.json` edit is not something the test can undo for you. Candidates for removing the
+symptom rather than the note -- `typescript.tsconfigPath` pointed inside the temp distDir, or
+running the test copy with type generation off -- were not tried here, so treat them as open.
