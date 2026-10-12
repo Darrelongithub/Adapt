@@ -25,6 +25,7 @@ a host.
 | `npm run lint` | `node ../scripts/check-contract.mjs && tsc --noEmit`. The contract check reads both sides as *source* — no server, no key, no network: every path the frontend calls exists in the API; `?mock=1` has a fixture for each; route modules export only what Next allows; no hard-coded origin, no `process.env` in browser code, no key material; `/ws/voice` really is proxied; `allowedDevOrigins` covers `localhost`, `127.0.0.1` and the preview domain; and the sim modules, the stage registry and the mock's kinds agree on which scene kinds exist. |
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm run test:engine` | `node --test src/lib/engine/*.test.mjs` — the player's rules (gate, clamping, timing, reduce-motion) plus two source assertions over `player.ts`, `types.ts` and `components/scenes/*`. |
+| `npm run test:server` | `node --test server.test.mjs`: the launcher itself — `ADAPT_API=offline` must refuse with a 503 and keep serving the UI, on its own port and its own output directory. |
 | `npm run probe` | jsdom driving the real pages against a running dev server + API: click, type, answer, reload, then compare what the screen says with what the API says. `--only diagnose,lesson` and `--base http://host:port` are the two knobs. |
 | `npm run probe:mock -- --only lesson` | the same lesson screen on `?mock=1`, asserting the things the mock *can* honestly show — and that it touches no `/api/v1` endpoint at all. |
 
@@ -46,9 +47,11 @@ separated); `check-contract.mjs` fails if the three origins above ever disappear
 Two operational traps, both paid for:
 
 * **Do not run `npm run build` while `npm run dev` is serving.** Both use `.next`; a production build
-  drops a dev server mid-flight and every page answers 500 with
-  `Could not find the module … in the React Client Manifest` until `rm -rf .next` and a restart. When
-  a probe run suddenly reports `Resource was not loaded. Status: 500`, look here first.
+  under a live dev server drops it mid-flight and every page answers 500 with
+  `Could not find the module … in the React Client Manifest` until `rm -rf .next` and a restart. When a
+  probe run suddenly reports `Resource was not loaded. Status: 500`, look here first. The way to have
+  both is a second output directory: `ADAPT_NEXT_DIST=.next-build npm run build` (the same knob
+  `server.test.mjs` uses so it never disturbs a running preview).
 * **A page that paints is not a page that works.** Dev-mode React under jsdom will happily render
   markup for a component that never hydrated, which is why the probe's checks act (click, answer,
   reload) instead of counting nodes, and why the contract check treats an unhydrated origin as a

@@ -4,6 +4,11 @@ const extra = (process.env.ADAPT_DEV_ORIGIN ?? "").split(",").map((s) => s.trim(
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // A second output directory is the only clean way to run `next build` while `next dev` is
+  // serving: they share `.next`, and a build under a live dev server makes every page answer 500
+  // ("Could not find the module ... in the React Client Manifest") until the directory is deleted.
+  // `ADAPT_NEXT_DIST=.next-build npm run build` keeps both honest.
+  distDir: process.env.ADAPT_NEXT_DIST ?? ".next",
   // `127.0.0.1` is not an alias of `localhost` to Next's host check. Left out, a page loaded
   // by IP gets its HTML and its CSS and has its `/_next/*` chunks refused — which renders a
   // *complete-looking* screen whose buttons do nothing, because React never hydrated. The

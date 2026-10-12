@@ -32,6 +32,7 @@ node ../scripts/demo.mjs                 # the same loop driven through the HTTP
 cd ../frontend
 npm run lint        # the API/origin contract (scripts/check-contract.mjs) + tsc, no server
 npm run test:engine # the engine's invariants, against the source that has to keep them
+npm run test:server # the launcher: ADAPT_API=offline refuses with a 503 and still serves the UI
 npm run probe       # the real UI in jsdom: click, answer, reload, and read what the DB says
 npm run probe:mock  # the same screen on ?mock=1, with nothing but its own refusals asserted
 ```
