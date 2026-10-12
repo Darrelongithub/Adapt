@@ -78,6 +78,12 @@ sandbox this was built in (see `docs/UNVERIFIED.md`). Rehearse once: open the pr
 a phone, create a learner, answer one question. If `--tunnel` cannot produce an https address,
 say so and share the LAN address — the command keeps serving and tells you which one it is.
 
+The interface is built to hold up on a phone (the status readout stays out of the way of the
+content and the buttons, typefaces are served from this machine rather than from Google Fonts,
+fields do not trigger iOS's zoom-into-the-page, tables scroll inside their own box). None of that
+has been seen on real glass from inside the sandbox — at rehearsal, walk one question in portrait
+*and* landscape and tap **Check it** once; `docs/UNVERIFIED.md` lists exactly what to look at.
+
 ## What is implemented, and what it refuses to do
 
 * **Estimates, not labels.** BKT per topic with a learning-from-failure path, half-life

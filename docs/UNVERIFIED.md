@@ -262,3 +262,40 @@ session is the expected result, not a bug.
   and say one sentence — the microphone should prompt rather than refuse, and the tutor's reply
   should come back. If the mic is still refused on https, the problem is the browser's
   permission for that origin, not this command.
+
+## Added by the mobile-viewport repair pass (2026-10-12)
+
+The first report of the UI from a real phone was blunt: it broke and was unusable, and the app
+felt slow and weird even served over the LAN. That is now a *repaired, still-unverified-on-glass*
+area. What changed, and what a phone still has to confirm:
+
+* **Repaired (in code, verified only by reasoning, build and the jsdom probe):**
+  * The status readout (`StatusChip`) was a `position: fixed` bar over the bottom-left of every
+    screen. On a phone it covered content and — being a solid overlay above the page — ate taps
+    aimed at whatever was underneath it, including the practice screen's primary button. It now
+    sits in the footer's flow on touch devices and only becomes the prototype's fixed corner on
+    `min-width: 641px and (hover: hover)` (so a landscape phone does not get it back), and it is
+    `pointer-events: none` everywhere.
+  * Typefaces were fetched from `fonts.googleapis.com` by a render-blocking CSS `@import` — two
+    internet round trips before first paint, and a wrong-fallback or blank-text screen on any
+    network that cannot reach Google (a school LAN, an offline room, a tunnel hiccup). The three
+    families are now self-hosted `@fontsource-variable` woff2 files bundled by Next, with
+    metric-similar system fallbacks. Also fixed: iOS Safari's zoom-into-any-field-under-16px
+    behaviour (`input, textarea, select` are 16px on narrow screens), 44px minimum tap targets
+    on `pointer: coarse`, `100dvh` instead of `100vh`, safe-area insets, the review "horizon"
+    plot stepping aside below 700px (its absolute labels overlapped into soup; the cards below
+    carry the same facts), audit/calibration tables scrolling inside their own box instead of
+    stretching the document sideways, band rows wrapping instead of overflowing, and the paper
+    grain being a pre-rasterized PNG tile instead of a full-viewport SVG `feTurbulence` filter
+    (re-rasterized on every pinch-zoom/toolbar resize on iOS — felt as scroll jank).
+* **Not verified:** any of it on actual glass. There is still no browser in this sandbox — no
+  headless Chromium can be installed here — so "the probe is green" means interactions and data
+  are right at jsdom fidelity, *not* that a 375×812 Safari/Chrome viewport looks right. The
+  specific things to look at on a real phone remain: text sizes and tap targets on `/learn`, the
+  filmstrip pan on `/lesson`, no sideways scroll on `/settings` (audit table) and `/review`,
+  the fixed status corner absent (footer copy present instead), and first paint being immediate
+  with the right serif/mono faces even in airplane mode after the first visit.
+* **To check (~5 minutes, same rehearsal as `adapt host`):** open the LAN address on a phone in
+  portrait *and* landscape, walk Practise → answer → Check it (the button must respond on the
+  first tap), open Settings and Review and try to scroll the page sideways (it must not), then
+  reload with wifi off — the typefaces must still be the same ones.
