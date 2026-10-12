@@ -217,8 +217,9 @@ bash scripts/probe-fresh.sh learn               # one scenario: 19/19
 # the failure matrix (against a FRESHLY started API)
 .venv/bin/python scripts/failure_matrix_check.py http://127.0.0.1:8000   # 25/25 checks passed
 
-# the tutor answers two opposite learner states differently (against a FRESH API)
-.venv/bin/python scripts/adaptation_check.py http://127.0.0.1:8050      # adapts to the profile
+# the tutor answers two opposite learner states differently (against a FRESH API of its own --
+# it registers two learners, so anything that has already spent the guest_create bucket answers 429)
+.venv/bin/python scripts/adaptation_check.py http://127.0.0.1:8031      # adapts to the profile
 
 # migrations, fresh installation: empty data directory -> schema -> the app on it
 cd backend && ADAPT_DATA_DIR=/tmp/mig-fresh ../.venv/bin/python -m alembic upgrade head
