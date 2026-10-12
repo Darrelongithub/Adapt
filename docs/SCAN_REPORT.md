@@ -1,6 +1,8 @@
 # Full functionality scan — report
 
-**Date:** 2026-10-12 · **Commit:** `bce50ec` (on top of `9f488a8`, `2a72aff`, `438b379`, `a157e7d`)
+**Date:** 2026-10-12 · **Repairs:** `6138577`, `c57c7d5` · **Report and scan tooling:** `0d10722`–`37eacd5`
+(all on top of `2a72aff`, `438b379`, `a157e7d`; the report ships in the tree it describes, so
+read the line above the report's own file history if you need the very latest commit)
 **Method:** inspect → run → interact → reproduce → fix → retest → verify. Every claim below
 names the command or test that produced it.
 
