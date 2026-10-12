@@ -142,7 +142,7 @@ session is the expected result, not a bug.
   not transcription. Real accuracy, real latency, real barge-in timing and the audible difference
   between `af_heart` and `am_fenrir` have to be judged on a machine that can install them
   (`pip install 'adapt-backend[voice]'`, Python ≥3.11 <3.13).
-* **Interaction, without a browser:** `npm run probe` drives the built pages in jsdom (124 checks
+* **Interaction, without a browser:** `npm run probe` drives the built pages in jsdom (139 checks
   across ten screens). It catches hydration-order bugs, real click→request→DB round trips and
   what the screen says afterwards, and it can break one endpoint on purpose (the `failures`
   scenario answers 429 to the session read and asserts the app does not turn that into a sign-out).

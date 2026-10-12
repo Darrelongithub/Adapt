@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, Notice, Tag, Textarea, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, humanize, Notice, Tag, Textarea, useSession } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
 
 type Caps = {
@@ -338,7 +338,7 @@ export default function VoicePage() {
                 {c?.tts?.local_tts ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.tts?.detail ?? "kokoro not installed here"}. {c?.tts?.fallback}</p>}
                 {c?.tts?.local_tts ? (
                   <p className="mt-1 text-xs text-[var(--muted)]">
-                    voices {JSON.stringify(c.tts.voices ?? {})} at {c.tts.sample_rate} Hz · {c.tts.interruption ?? "chunked"}
+                    voices: {humanize(c.tts.voices ?? {}) || "none reported"} · {c.tts.sample_rate} Hz · {c.tts.interruption ?? "chunked"}
                   </p>
                 ) : null}
               </li>

@@ -32,11 +32,37 @@ const API = BASE; // the app's own origin: /api is proxied by server.mjs
 const results = [];
 let failures = 0;
 
+let CURRENT = "";
+
 function check(scenario, label, ok, detail = "") {
+  CURRENT = scenario;
   results.push({ scenario, label, ok: !!ok, detail: String(detail).slice(0, 240) });
   if (!ok) failures += 1;
   const mark = ok ? "\x1b[32mok\x1b[0m" : "\x1b[31mFAIL\x1b[0m";
   console.log(`  ${mark}  ${label}${ok || !detail ? "" : `\n         -> ${String(detail).slice(0, 200)}`}`);
+}
+
+
+// Objects must not reach a learner as JSON. Several screens used to stringify a payload into
+// visible text -- a measured effect, the privacy statement, the voice capability list -- so the
+// tripwire runs on every screen that has ever done it, at the moment the page is inspected.
+const JSON_FREE = new Set(["/learn", "/proposals", "/settings", "/voice", "/progress"]);
+
+function visibleText(page) {
+  const doc = page?.dom?.window?.document;
+  if (!doc?.body) return "";
+  const clone = doc.body.cloneNode(true);
+  for (const n of clone.querySelectorAll("script, style, template, noscript")) n.remove();
+  return (clone.textContent ?? "").replace(/\s+/g, " ");
+}
+
+function closePage(page) {
+  const path = String(page?.path ?? "").split("?")[0];
+  if (path && JSON_FREE.has(path)) {
+    const blob = visibleText(page).match(/\{"[^"]+"\s*:[^}]{0,90}/)?.[0] ?? "";
+    check(CURRENT || "probe", "no raw JSON object is shown to the learner on this screen", blob === "", blob);
+  }
+  page?.dom?.window?.close?.();
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -322,7 +348,7 @@ class Page {
     if (!el.checked) return;
     el.click();
   }
-  async reload() { const jar = this.jar; this.dom.window.close(); await this.goto(this.path, jar); }
+  async reload() { const jar = this.jar; closePage(this); await this.goto(this.path, jar); }
 }
 
 /** Creates an account for the probe, waiting out `retry_after_s` when the limiter says no.
@@ -516,7 +542,7 @@ async function main() {
     check("onboarding", "a refresh shows the same values (they were persisted, not cached in memory)", /120/.test(reloaded), reloaded);
     const me2 = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
     check("onboarding", "the account is marked as onboarded", me2.status === 200 && Boolean(me2.body.onboarding_complete), JSON.stringify(me2.body).slice(0, 200));
-    page.dom.window.close();
+    closePage(page);
   }
 
   /* -------------------------------------------------------------- diagnose ---- */
@@ -622,9 +648,9 @@ async function main() {
     const landing = await open("/", "diagnose");
     await waitFor(() => !/Checking the session/.test(landing.text()), { timeout: 10_000, label: "the landing page to read the session" });
     check("diagnose", "the landing page then offers practice instead of placing them again", !/not placed yet/.test(landing.text()) && /placed/.test(landing.text()) && !!landing.byText("Practise"), landing.text().slice(0, 260));
-    landing.dom.window.close();
+    closePage(landing);
     check("diagnose", "no uncaught error anywhere on the screen", page.errors.filter((e) => !/not implemented|Could not parse CSS|navigation/.test(e)).length === 0, page.errors.join(" | ").slice(0, 240));
-    page.dom.window.close();
+    closePage(page);
   }
 
   /* ----------------------------------------------------------------- learn ---- */
@@ -704,7 +730,7 @@ async function main() {
       await waitFor(() => answerControl(page) || /placement|nothing due|no items|Start/i.test(page.text()), { timeout: 20_000, label: "the page to redraw after reload" });
       check("learn", "a reload brings practice back with the same session state and no new error", page.errors.length <= errsBefore && page.text().length > 300, `errors ${page.errors.length - errsBefore} new; ${page.text().slice(0, 120)}`);
     }
-    page.dom.window.close();
+    closePage(page);
   }
 
 /** Signs the shared cookie jar in as a fresh learner and manufactures the evidence a
@@ -806,7 +832,7 @@ async function main() {
       check("proposals", "and the refused second answer still applied nothing", (await activeOf(reject.cookie)).active?.length === 0, JSON.stringify(await activeOf(reject.cookie)).slice(0, 160));
     }
     check("proposals", "no uncaught error on the decisions screen", page.errors.filter((e) => !/not implemented|Could not parse CSS|navigation/.test(e)).length === 0, page.errors.join(" | ").slice(0, 200));
-    page.dom.window.close();
+    closePage(page);
 
     /* ---- accepting: the one action that turns teaching off autopilot ---- */
     const accept = await stuckLearner("accept");
@@ -835,7 +861,7 @@ async function main() {
         const learn = await open("/learn", "proposals");
         await waitFor(() => /Changes you have approved|Nothing is applied/i.test(learn.text()), { timeout: 20_000, label: "practice to finish loading" });
         check("proposals", "the learner can see the change in force on the practice screen", /Changes you have approved/i.test(learn.text()), learn.text().slice(0, 260));
-        learn.dom.window.close();
+        closePage(learn);
         const page3 = await open("/proposals", "proposals");
         await settleProposals(page3);
         const appliedText = page3.text();
@@ -849,10 +875,10 @@ async function main() {
         } else {
           check("proposals", "the applied change can be withdrawn from the same screen", false, "no turn-off control beside the applied row");
         }
-        page3.dom.window.close();
+        closePage(page3);
       }
     }
-    page2.dom.window.close();
+    closePage(page2);
 
     /* ---- modifying: the learner's version is the one that is stored ---- */
     const modify = await stuckLearner("modify");
@@ -881,7 +907,7 @@ async function main() {
     } else {
       check("proposals", "modifying is offered when the learner wants to change the numbers", false, page4.text().slice(0, 220));
     }
-    page4.dom.window.close();
+    closePage(page4);
     check("proposals", "the decisions scenario hands the fixture learner back to the rest of the walk", (await signIn(learner.email, learner.password)) === 200, "later screens would have been judged on the wrong account");
   }
 
@@ -899,7 +925,7 @@ async function main() {
     const dash = await api("/api/v1/dashboard", { headers: { cookie: jar.getCookieStringSync(BASE) } });
     const shown = JSON.stringify(dash.body);
     check("progress", "what the page shows exists in the API response", shown.length > 60, shown.slice(0, 140));
-    page.dom.window.close();
+    closePage(page);
   }
 
   /* ---------------------------------------------------------------- review ---- */
@@ -915,7 +941,7 @@ async function main() {
       await sleep(700);
       check("review", "a review control does something visible", page.requests.length > 0 || page.text() !== body, page.requests.join(", "));
     }
-    page.dom.window.close();
+    closePage(page);
   }
 
   /* -------------------------------------------------------------- settings ---- */
@@ -962,7 +988,7 @@ async function main() {
       await sleep(700);
       const again = boxesIn(page2)[idx];
       check("settings", "a flipped control is still flipped after a reload", !!again && again.checked === toggle.checked, again ? `before=${was} after=${again.checked}` : "the box did not come back");
-      page2.dom.window.close();
+      closePage(page2);
     } else {
       check("settings", "a preference can be edited and saved", false, "no enabled checkbox inside the preferences card");
     }
@@ -983,7 +1009,7 @@ async function main() {
           await sleep(700);
           const shown = [...page3.find("input")].map((i) => i.value).find((v) => /word problems/.test(v ?? ""));
           check("settings", "and the page shows the phrases again after a reload", /word problems.*being rushed/.test(shown ?? ""), JSON.stringify(shown));
-          page3.dom.window.close();
+          closePage(page3);
         }
       }
     }
@@ -1001,7 +1027,7 @@ async function main() {
         check("settings", "a changed choice reaches the stored preferences", JSON.stringify(prefs.body).includes(other.value) || prefs.status === 200, JSON.stringify(prefs.body).slice(0, 160));
       }
     }
-    page.dom.window.close();
+    closePage(page);
   }
 
   /* ----------------------------------------------------------------- voice ---- */
@@ -1030,7 +1056,7 @@ async function main() {
       check("voice", "choosing a gender takes effect without a save that never arrives", (() => { sel.value = opts.find((v) => v !== sel.value) ?? opts[0]; sel.dispatchEvent(new page.dom.window.Event("change", { bubbles: true })); return true; })(), "switched to " + sel.value);
       break;
     }
-    page.dom.window.close();
+    closePage(page);
   }
 
   /* ------------------------------------------------------- failure paths ---- */
@@ -1045,7 +1071,7 @@ async function main() {
     const csrfless = await api("/api/v1/sessions", { method: "POST", body: { mode: "practice" }, headers: { cookie } });
     check("failures", "a cookie-authenticated POST without the CSRF token is refused", csrfless.status === 403, `${csrfless.status} ${JSON.stringify(csrfless.body).slice(0, 120)}`);
     const notFound = await open("/settings", "failures");
-    notFound.dom.window.close();
+    closePage(notFound);
     const missing = await api("/api/v1/does-not-exist", { headers: { cookie } });
     check("failures", "an unknown API path 404s rather than 500ing", missing.status === 404, String(missing.status));
     // the rate limiter, surfaced the way a learner would see it. `llm` is the tightest bucket
@@ -1097,7 +1123,7 @@ async function main() {
       recovered = true;
     } catch { /* reported below, not swallowed */ }
     check("failures", "the back-off retry finds the session again without being told to", recovered, throttled.text().slice(0, 200));
-    throttled.dom.window.close();
+    closePage(throttled);
     let proposalsThrottled = true;
     const gated = await open("/proposals", "failures", (win) => {
       const real = win.fetch.bind(win);
@@ -1115,7 +1141,7 @@ async function main() {
     const gateText = gated.text();
     check("failures", "the changes screen does not announce a sign-out it was not told about",
       !/nobody is signed in|Not signed in/i.test(gateText), gateText.slice(0, 220));
-    gated.dom.window.close();
+    closePage(gated);
     const stillOk = await api("/api/v1/health", { headers: { cookie } });
     check("failures", "being rate limited does not break the app (reads still answer)", stillOk.status === 200, String(stillOk.status));
   }

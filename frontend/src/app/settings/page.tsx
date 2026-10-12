@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, Input, Notice, Tag, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Tag, useSession } from "@/components/ui";
 import { del, get, post, useApi } from "@/lib/api";
 
 type PrefReply = { accepted?: Record<string, unknown>; rejected_keys?: string[]; rejected_reasons?: Record<string, string>; note?: string };
@@ -195,7 +195,7 @@ export default function Settings() {
                 label="Allow a model summary when it would help"
                 checked={consent.llm}
                 onChange={(v) => setConsent((c) => ({ ...c, llm: v }))}
-                hint={`Currently: ${JSON.stringify(status.data?.llm ?? {})}`}
+                hint={`Currently: ${humanize(status.data?.llm ?? {}) || "no model configured"}`}
               />
               <Check
                 label="Voice"
@@ -226,7 +226,7 @@ export default function Settings() {
             <ul className="space-y-1 text-xs text-[var(--muted)]">
               {Object.entries(status.data ?? {}).map(([k, v]) => (
                 <li key={k}>
-                  <span className="text-[var(--fg)]/70">{k.replace(/_/g, " ")}:</span> {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                  <span className="text-[var(--fg)]/70">{k.replace(/_/g, " ")}:</span> {typeof v === "object" ? humanize(v) : String(v)}
                 </li>
               ))}
             </ul>
@@ -271,7 +271,7 @@ export default function Settings() {
         </div>
         <div className="mt-3 text-xs">
           <p className="uppercase text-[var(--muted)]">storage</p>
-          <p className="mt-1 text-[var(--muted)]">{JSON.stringify(privacy.data?.storage ?? {})}</p>
+          <p className="mt-1 text-[var(--muted)]">{humanize(privacy.data?.storage ?? {})}</p>
           <p className="mt-2 uppercase text-[var(--muted)]">what you can always do</p>
           <ul className="mt-1 list-disc pl-4 text-[var(--muted)]">
             {(privacy.data?.learner_controls ?? []).map((c) => (

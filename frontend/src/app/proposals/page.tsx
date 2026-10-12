@@ -14,7 +14,7 @@
  */
 import { useState } from "react";
 
-import { Btn, Card, Err, Field, Notice, Tag, Textarea, useSession } from "@/components/ui";
+import { Btn, Card, Err, Field, humanize, Notice, Tag, Textarea, useSession } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
 import type { ActiveAdaptation, DecisionReply, Proposal } from "@/lib/types";
 
@@ -167,7 +167,7 @@ export default function Proposals() {
                     <ul className="list-disc space-y-0.5 pl-5">
                       {p.alternatives.map((a, i) => (
                         <li key={i} className="text-[var(--muted)]">
-                          {typeof a === "string" ? a : (a.explanation ?? JSON.stringify(a))}
+                          {typeof a === "string" ? a : humanize(a)}
                           {typeof a === "object" && a.refuted_by ? <span className="opacity-70"> — refuted by {String(a.refuted_by)}</span> : null}
                         </li>
                       ))}
@@ -318,7 +318,7 @@ export default function Proposals() {
                     </p>
                     {a.effect_summary ? (
                       <p className="text-xs text-[var(--muted)]">
-                        {typeof a.effect_summary === "string" ? a.effect_summary : JSON.stringify(a.effect_summary)}
+                        {typeof a.effect_summary === "string" ? a.effect_summary : humanize(a.effect_summary)}
                       </p>
                     ) : (
                       <p className="text-xs text-[var(--think)]">too few answers so far to say whether it is helping</p>
@@ -345,7 +345,7 @@ export default function Proposals() {
                   <Tag tone={d.status === "approved" ? "good" : d.status === "rejected" ? "line" : "warn"}>{d.status}</Tag>{" "}
                   {d.strategy_label ?? d.strategy}
                   {d.student_note ? <span className="text-xs text-[var(--muted)]"> — you said: {d.student_note}</span> : null}
-                  {d.outcome ? <span className="text-xs text-[var(--muted)]"> · {JSON.stringify(d.outcome)}</span> : null}
+                  {d.outcome ? <span className="text-xs text-[var(--muted)]"> · {humanize(d.outcome)}</span> : null}
                   {d.evaluation_status === "insufficient_data" ? <span className="text-xs text-[var(--warn)]"> · not enough data yet</span> : null}
                 </li>
               ))}

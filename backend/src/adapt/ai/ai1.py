@@ -113,6 +113,44 @@ def recalibrated_target(facts: dict[str, Any], *, current: float = 0.78) -> floa
             return float(current)
     return round(min(0.92, max(0.60, target)), 2)
 
+def describe_effect(effect: dict[str, Any], *, metric: str, n_after: int, min_items: int) -> str:
+    """One sentence a learner can read, from the numbers the statistics already produced.
+
+    ``Effect.explanation`` is deliberately technical -- intervals, Hedges g, the reason for the
+    verdict -- and belongs under a "the numbers" disclosure. What a screen *leads* with has to say
+    the same thing in plain words, including the awkward case: not enough evidence yet is a result,
+    not a silence.
+    """
+    label = metric.replace("_", " ")
+    verdict = str(effect.get("verdict") or "")
+
+    def pct(value: Any) -> str:
+        return "n/a" if value is None else f"{round(float(value) * 100)}%"
+
+    span = f"{pct(effect.get('baseline_mean'))} before the change and {pct(effect.get('after_mean'))} after it"
+    if verdict == "insufficient_evidence":
+        more = max(int(min_items) - int(n_after), 1)
+        return (
+            f"Not enough scored answers yet to judge this -- {n_after} so far, about {more} more to go. "
+            f"{label.capitalize()} stays under observation rather than being rounded off."
+        )
+    if verdict == "supported":
+        return (
+            f"{label.capitalize()} went from {span}, over {n_after} answers since you said yes -- "
+            "the direction this change was supposed to move."
+        )
+    if verdict == "refuted":
+        return (
+            f"{label.capitalize()} moved the wrong way ({span}) across {n_after} answers. "
+            "This change is being switched off, and the finding stays in your history."
+        )
+    return (
+        f"No clear movement in {label} ({span}) across {n_after} answers, so this stays in force "
+        "and keeps being measured."
+    )
+
+
+
 
 @dataclass
 class Analysis:
@@ -862,7 +900,19 @@ class LearningIntelligence:
                 after = self._window_stats(s, student_id, metric, after=prop.applied_at)
                 effect = evaluate_change(base["values"], after["values"], metric=metric)
                 verdict = effect.verdict
-                payload: dict[str, Any] = {"effect": effect.as_dict(), "n_after": after["n"], "n_before": base["n"]}
+                payload: dict[str, Any] = {
+                    "effect": effect.as_dict(),
+                    "n_after": after["n"],
+                    "n_before": base["n"],
+                    # the learner-facing sentence, stored with the measurement rather than
+                    # composed by whichever screen happens to show it first
+                    "verdict_words": describe_effect(
+                        effect.as_dict(),
+                        metric=metric,
+                        n_after=int(after["n"]),
+                        min_items=int(window.get("min_items", 6)),
+                    ),
+                }
                 retention = self._retention_delta(s, student_id, prop.id, prop.applied_at)
                 if retention:
                     payload["retention"] = retention

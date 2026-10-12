@@ -1244,6 +1244,88 @@ def test_rate_limiting_answers_with_retry_after(client, learner, services, items
     assert response.headers.get("retry-after") == "4", "a client needs the header, not only the body"
 
 
+def test_an_approved_change_is_measured_and_the_learner_is_told_in_words(client, learner, items, make_answer):
+    """The loop promises "and then we check whether it helped" -- this is that promise at the API.
+
+    The statistics were unit-tested; what was never checked is the *wiring*: that an insufficient
+    sample is labelled insufficient rather than rounded into a verdict, that a verdict is written
+    onto the live change and the proposal, that a sentence comes back with it (the payload had a
+    technical ``explanation`` and the journey looked for ``verdict_words``, which nothing wrote),
+    and that the learner's own screens can show the result.
+    """
+    headers = learner["headers"]
+    bad = client.post("/api/v1/sessions", json={"mode": "practice"}, headers=headers).json()["session_id"]
+    for _ in range(2):
+        for entry in items[:8]:
+            client.post(
+                "/api/v1/attempts",
+                json={"session_id": bad, "item_id": entry["item"]["id"], "answer": make_answer(entry["item"]["id"], correct=False)},
+                headers=headers,
+            )
+    assert client.post(f"/api/v1/analyze?session_id={bad}", headers=headers).status_code == 200
+    pending = client.get("/api/v1/adaptations/pending", headers=headers).json()["proposals"]
+    target = next((p for p in pending if p.get("strategy") == "difficulty_recalibration"), None)
+    assert target, [p.get("strategy") for p in pending]
+    accepted = client.post(
+        f"/api/v1/adaptations/{target['id']}/decision",
+        json={"decision": "accept", "answered_by": "student"},
+        headers=headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    # too few answers to conclude anything, and it says so instead of guessing
+    early = client.post("/api/v1/sessions", json={"mode": "practice"}, headers=headers).json()["session_id"]
+    for entry in items[:2]:
+        client.post(
+            "/api/v1/attempts",
+            json={"session_id": early, "item_id": entry["item"]["id"], "answer": make_answer(entry["item"]["id"], correct=True)},
+            headers=headers,
+        )
+    first = client.post("/api/v1/adaptations/evaluate", headers=headers)
+    assert first.status_code == 200, first.text
+    rows = first.json()["evaluated"]
+    mine = next((r for r in rows if r["proposal_id"] == target["id"]), None)
+    assert mine, rows
+    assert mine["status"] == "gathering_evidence", mine
+    assert int(mine["n_after"]) < 6, mine
+    assert isinstance(mine.get("verdict_words"), str) and "not enough" in mine["verdict_words"].lower(), mine
+    history = client.get("/api/v1/adaptations/history", headers=headers).json()["decisions"]
+    row = next(h for h in history if h["id"] == target["id"])
+    assert row["status"] == "approved", "an insufficient sample must not be filed as a verdict"
+    assert not row.get("evaluation_status"), row
+
+    # enough answers, every one of them right where the before-window was all wrong
+    later = client.post("/api/v1/sessions", json={"mode": "practice"}, headers=headers).json()["session_id"]
+    for _ in range(2):
+        for entry in items[:8]:
+            client.post(
+                "/api/v1/attempts",
+                json={"session_id": later, "item_id": entry["item"]["id"], "answer": make_answer(entry["item"]["id"], correct=True)},
+                headers=headers,
+            )
+    second = client.post("/api/v1/adaptations/evaluate", headers=headers).json()
+    mine = next((r for r in second["evaluated"] if r["proposal_id"] == target["id"]), None)
+    assert mine and mine["status"] == "evaluated", mine
+    assert int(mine["n_after"]) >= 6, mine
+    assert mine["effect"]["verdict"] == "supported", mine
+    assert float(mine["effect"]["mean_delta"]) > 0, mine
+    words = mine["verdict_words"]
+    assert "%" in words and "before the change" in words, words
+    assert "{" not in words and '"' not in words, f"a sentence, not a payload: {words}"
+
+    # the finding is kept where the learner looks: on the live change, in history, in the timeline
+    live = next(a for a in client.get("/api/v1/adaptations/active", headers=headers).json()["active"] if a["proposal_id"] == target["id"])
+    assert live["effect_summary"] and live["effect_summary"]["verdict_words"] == words, live["effect_summary"]
+    again = client.get("/api/v1/adaptations/history", headers=headers).json()["decisions"]
+    row = next(h for h in again if h["id"] == target["id"])
+    assert row["status"] == "evaluated" and row["evaluation_status"] == "supported", row
+    assert row.get("outcome", {}).get("verdict_words") == words, row
+    dash = client.get("/api/v1/dashboard", headers=headers).json()
+    assert int(dash["measured_outcomes"]["evaluated"]) >= 1, dash["measured_outcomes"]
+    milestones = [m for m in client.get("/api/v1/journey?days=7&limit=40", headers=headers).json()["milestones"] if m.get("type") == "adaptation_effect"]
+    assert milestones and milestones[-1]["verdict_words"] == words, milestones[-1] if milestones else "no effect milestone on the timeline"
+
+
 def test_the_per_ip_refusal_answers_with_the_same_shape_as_every_other_429(client, monkeypatch, services):
     """One contract for "slow down", whichever bucket said it.
 

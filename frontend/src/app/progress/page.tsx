@@ -9,7 +9,7 @@
  */
 import { useState } from "react";
 
-import { Band, Btn, Card, Err, Notice, Tag } from "@/components/ui";
+import { Band, Btn, Card, Err, humanize, Notice, Tag } from "@/components/ui";
 import { get, post, useApi } from "@/lib/api";
 import type { Journey } from "@/lib/types";
 
@@ -49,7 +49,7 @@ export default function Progress() {
       dash.reload();
     } catch (e) {
       const x = e as { status?: number; shown?: string; detail?: unknown };
-      setErr(x?.status === 409 ? JSON.stringify(x.detail ?? x.shown) : (x?.shown ?? String(e)));
+      setErr(x?.status === 409 ? humanize(x.detail ?? x.shown ?? e) : (x?.shown ?? String(e)));
     } finally {
       setTraining(false);
     }

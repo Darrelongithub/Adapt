@@ -222,6 +222,53 @@ export function Err({ error, status }: { error: string | null; status?: number |
 }
 
 /* ------------------------------------------------------------------ */
+/* objects must not reach a learner as JSON                             */
+/* ------------------------------------------------------------------ */
+
+const WORDS_FIRST = ["verdict_words", "explanation", "summary", "note", "message", "detail", "text", "label", "why", "what"];
+
+/** Renders whatever a screen has been handed as a sentence.
+ *
+ *  Several endpoints return a structured finding (a measured effect, a privacy statement, a
+ *  voice capability list) and screens used to `JSON.stringify` them, so the learner read
+ *  `{"baseline_mean":0.12,...}` where an answer to "did it help?" should have been. Sentences
+ *  win when the payload has one; otherwise the pairs are labelled, quoted-free and
+ *  brace-free. Numbers keep two decimals at most.
+ */
+export function humanize(value: unknown, depth = 0): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(Math.round(value * 100) / 100);
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (Array.isArray(value)) {
+    const parts = value.map((v) => humanize(v, depth + 1)).filter(Boolean);
+    // a list of findings is a list of sentences, not a comma soup
+    return parts.length > 1 && parts.some((p) => p.length > 60) ? parts.join(" ") : parts.join(", ");
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    for (const key of WORDS_FIRST) {
+      const v = obj[key];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === null || v === undefined || v === "") continue;
+      const label = k.replace(/_/g, " ");
+      if (typeof v === "object") {
+        if (depth >= 2) continue;
+        const inner = humanize(v, depth + 1);
+        if (inner) parts.push(`${label}: ${inner}`);
+        continue;
+      }
+      parts.push(`${label}: ${humanize(v, depth + 1)}`);
+    }
+    return parts.join(" \u00b7 ");
+  }
+  return String(value);
+}
+
+/* ------------------------------------------------------------------ */
 /* session + status, kept in one place so every page agrees            */
 /* ------------------------------------------------------------------ */
 

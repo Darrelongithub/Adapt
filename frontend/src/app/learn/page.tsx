@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Question } from "@/components/question";
-import { Btn, Card, Err, Notice, Tag } from "@/components/ui";
+import { Btn, Card, Err, humanize, Notice, Tag } from "@/components/ui";
 import { summarise, type AnalyzeRaw, type AnalyzeSummary } from "@/lib/analyze";
 import { useFlow } from "@/lib/flow";
 import { get, post } from "@/lib/api";
@@ -150,7 +150,7 @@ export default function Learn() {
                   {typeof a.effect_summary === "string" ? (
                     <span className="text-[var(--muted)]">{a.effect_summary}</span>
                   ) : a.effect_summary ? (
-                    <span className="text-[var(--muted)]">{JSON.stringify(a.effect_summary)}</span>
+                    <span className="text-[var(--muted)]">{humanize(a.effect_summary)}</span>
                   ) : (
                     <span className="text-[var(--muted)]">being measured on {a.watch_metric ?? "the next few answers"}</span>
                   )}

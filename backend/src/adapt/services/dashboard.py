@@ -173,7 +173,33 @@ def overview(services: Any, student_id: str) -> dict[str, Any]:
             },
             "data_volume": profile.get("data_volume") or _volume(s, student_id),
             "open_questions": profile.get("open_questions") or [],
-            "measured_outcomes": profile.get("measured_outcomes") or {},
+            # Two counts of rows, so they are counted here rather than carried in from the last
+            # profile snapshot: a learner who has just pressed "check whether it helped" must not
+            # be told, on the same screen that lists their change as on right now, that nothing has
+            # been measured -- and an adaptation switched off because it did not help must stop
+            # being counted as in force.
+            "measured_outcomes": {
+                **(profile.get("measured_outcomes") or {}),
+                "evaluated": int(
+                    s.execute(
+                        select(func.count())
+                        .select_from(AdaptationProposal)
+                        .where(
+                            AdaptationProposal.student_id == student_id,
+                            AdaptationProposal.status == ProposalStatus.EVALUATED.value,
+                        )
+                    ).scalar()
+                    or 0
+                ),
+                "applied": int(
+                    s.execute(
+                        select(func.count())
+                        .select_from(ActiveAdaptation)
+                        .where(ActiveAdaptation.student_id == student_id, ActiveAdaptation.active.is_(True))
+                    ).scalar()
+                    or 0
+                ),
+            },
             "strategy_evidence": profile.get("strategy_evidence") or [],
             "student_preferences": profile.get("student_preferences") or {},
             "guardrails": profile.get("guardrails") or {},
