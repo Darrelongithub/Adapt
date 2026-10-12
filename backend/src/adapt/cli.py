@@ -196,6 +196,35 @@ def verify_encryption() -> None:
     )
 
 
+def _database_check(st) -> tuple[bool, str, str] | None:
+    """Can the configured policy actually open the database in this data dir?
+
+    None when there is nothing on disk yet (a first run has no opinion to offer). Otherwise a
+    ``(ok, detail, fix)`` triple: the engine refuses a file written under the other policy with a
+    sentence naming the file and the policy, and that sentence is the detail here.
+    """
+    from .db.engine import Database, _on_disk_format
+
+    path = Path(st.db_file)
+    on_disk = _on_disk_format(path)
+    if on_disk in ("missing", "empty", "unknown"):
+        return None
+    try:
+        db = Database(st)
+    except RuntimeError as exc:
+        return (False, str(exc), "set ADAPT_DB_ENCRYPTION to the policy that wrote the file, or point ADAPT_DATA_DIR at a new directory")
+    try:
+        from sqlalchemy import inspect as _inspect
+
+        if not _inspect(db.engine).has_table("students"):
+            return (True, f"{path.name}: open, no schema yet (run: alembic upgrade head)", "")
+        return (True, f"{path.name}: open, {db.student_count()} learner(s), driver={db.driver.name}", "")
+    except Exception as exc:  # a database that opens but cannot be read is the same problem to an operator
+        return (False, f"{path.name}: {type(exc).__name__}: {str(exc)[:160]}", "see docs/UNVERIFIED.md on encryption policy changes")
+    finally:
+        db.dispose()
+
+
 @app.command("doctor")
 def doctor(as_json: bool = typer.Option(False, "--json")) -> None:
     """Report what is installed, what is optional, and what will fall back."""
@@ -248,6 +277,14 @@ def doctor(as_json: bool = typer.Option(False, "--json")) -> None:
         check("data dir", False, f"{st.data_dir} not writable ({exc})", "set ADAPT_DATA_DIR")
     if data_dir_ok:
         check("data dir", True, str(st.data_dir))
+        # A writable directory is not the same as a readable database: changing
+        # ADAPT_DB_ENCRYPTION after a file exists (auto -> field-only, or the reverse) leaves a
+        # database the configured driver cannot open. This is the screen whose whole job is to
+        # say so before anyone meets it as a stack trace, and it used to report the directory as
+        # fine while the app could not read a byte of what was in it.
+        db_check = _database_check(st)
+        if db_check is not None:
+            check("database", db_check[0], db_check[1], db_check[2])
     from .voice import stt as STT
     from .voice import tts as TTS
 

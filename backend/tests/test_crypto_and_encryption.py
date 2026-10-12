@@ -292,6 +292,138 @@ def test_sqlcipher_container_is_not_readable_without_the_key(settings, tmp_path)
             conn.close()
 
 
+def test_the_header_sniff_tells_the_two_policies_apart(tmp_path):
+    """The check the mismatch refusal is built on, with no driver involved."""
+    from adapt.db.engine import _on_disk_format
+
+    plain = tmp_path / "plain.db"
+    plain.write_bytes(b"SQLite format 3\x00" + b"\x00" * 80)
+    assert _on_disk_format(plain) == "plaintext"
+
+    opaque = tmp_path / "opaque.db"
+    opaque.write_bytes(b"\x1a\x93i}" + bytes(range(64)))  # ciphertext from byte zero, as SQLCipher writes it
+    assert _on_disk_format(opaque) == "opaque"
+
+    assert _on_disk_format(tmp_path / "absent.db") == "missing"
+    empty = tmp_path / "empty.db"
+    empty.touch()
+    assert _on_disk_format(empty) == "empty"
+
+
+def test_a_policy_that_cannot_read_the_file_says_so_instead_of_the_driver(tmp_path):
+    """Both directions of the mismatch, at the point where the sentence is composed.
+
+    The driver's own complaint is ``file is not a database`` raised from inside SQLAlchemy's pool:
+    it names neither the file nor the policy, and the fix is an environment variable the operator
+    has no way of guessing from it. The audit called this out as unresolved; this is the guard.
+    """
+    from adapt.db.engine import _refuse_mismatch
+
+    db_file = tmp_path / "adapt.db"
+    with pytest.raises(RuntimeError) as sqlite_vs_encrypted:
+        _refuse_mismatch(db_file, reader="sqlite", on_disk="opaque", mode="field-only")
+    message = str(sqlite_vs_encrypted.value)
+    assert str(db_file) in message and "ADAPT_DB_ENCRYPTION=field-only" in message
+    assert "ADAPT_DATA_DIR" in message, "the message must name a way out, not just the problem"
+    assert "key" not in message.lower(), "a refusal is never a place to print key material"
+
+    with pytest.raises(RuntimeError) as sqlcipher_vs_plaintext:
+        _refuse_mismatch(db_file, reader="sqlcipher", on_disk="plaintext", mode="auto")
+    message = str(sqlcipher_vs_plaintext.value)
+    assert "unencrypted SQLite database" in message and "field-only" in message
+
+    # nothing to complain about: absent, empty, or matching
+    for reader, on_disk in (("sqlite", "missing"), ("sqlcipher", "empty"), ("sqlite", "plaintext"),
+                            ("sqlcipher", "opaque"), ("sqlite", "unknown"), ("sqlcipher", "unknown")):
+        _refuse_mismatch(db_file, reader=reader, on_disk=on_disk, mode="auto")
+
+
+def test_opening_an_encrypted_database_under_field_only_explains_itself(settings, tmp_path):
+    """The reproduced case: a database written under the default policy, opened with ``field-only``.
+
+    Without the sniff this is ``sqlite3.DatabaseError: file is not a database`` from inside the
+    connection pool -- a traceback, and no mention of the file or the policy that would open it.
+    """
+    pytest.importorskip("sqlcipher3")
+    from adapt.db.engine import Database
+
+    db_file = tmp_path / "enc.db"
+    encrypted = Database(settings.model_copy(update={"db_encryption": "sqlcipher"}), db_file=db_file)
+    try:
+        encrypted.create_all()
+        assert encrypted.file_encrypted(), "the fixture is only meaningful if the file really is ciphertext"
+    finally:
+        encrypted.dispose()
+
+    with pytest.raises(RuntimeError) as refusal:
+        Database(settings.model_copy(update={"db_encryption": "field-only"}), db_file=db_file)
+    assert "does not start with the SQLite header" in str(refusal.value)
+    assert str(db_file) in str(refusal.value)
+
+    # and the policy that wrote it still opens it: the sniff must not refuse the working case
+    again = Database(settings.model_copy(update={"db_encryption": "sqlcipher"}), db_file=db_file)
+    try:
+        assert again.student_count() == 0
+    finally:
+        again.dispose()
+
+
+def test_doctor_reports_a_database_the_policy_cannot_open(settings, tmp_path):
+    """`adapt doctor` is the pre-flight screen: it must not call a data dir fine while the app
+    cannot read a byte of what is in it. Run as a subprocess for the same reason the migration
+    tests are -- a scratch directory with its own key and its own policy."""
+    import json
+    import subprocess
+    import sys
+
+    pytest.importorskip("sqlcipher3")
+    from adapt.db.engine import Database
+
+    backend = Path(__file__).resolve().parents[1]
+    db_file = tmp_path / "adapt.db"
+    # The session's key, named explicitly: a second key in one process is refused (correctly), and
+    # a subprocess that generates its *own* key would report a wrong-key failure -- a real operator
+    # problem, but not the one this test is about. Matching the key isolates the policy.
+    keyfile = settings.keyfile_path
+    db = Database(settings.model_copy(update={"db_encryption": "sqlcipher", "keyfile": keyfile}), db_file=db_file)
+    try:
+        db.create_all()
+        assert db.file_encrypted()
+    finally:
+        db.dispose()
+
+    def doctor(*, encryption: str, data_dir: Path) -> dict:
+        env = {
+            **os.environ,
+            "ADAPT_DATA_DIR": str(data_dir),
+            "ADAPT_DB_ENCRYPTION": encryption,
+            "ADAPT_KEYFILE": str(keyfile),
+            "PYTHONPATH": str(backend / "src"),
+        }
+        for key in ("ADAPT_DB_KEY", "ADAPT_DB_PATH"):
+            env.pop(key, None)
+        out = subprocess.run(
+            [sys.executable, "-m", "adapt.cli", "doctor", "--json"],
+            cwd=str(backend), env=env, capture_output=True, text=True, timeout=120,
+        )
+        assert out.returncode == 0, out.stderr[-600:]
+        return json.loads(out.stdout)
+
+    mismatched = doctor(encryption="field-only", data_dir=tmp_path)
+    assert mismatched["database"]["ok"] is False, mismatched.get("database")
+    assert "field-only" in mismatched["database"]["detail"]
+    assert mismatched["database"]["fix"], "a warning with no remedy is half a warning"
+
+    matching = doctor(encryption="auto", data_dir=tmp_path)
+    assert matching["database"]["ok"] is True, matching.get("database")
+    assert "driver=sqlcipher" in matching["database"]["detail"]
+
+    # nothing on disk: a first run has no opinion to offer, so the line is absent rather than green
+    empty = tmp_path / "fresh"
+    empty.mkdir()
+    assert "database" not in doctor(encryption="auto", data_dir=empty)
+
+
 def test_status_endpoint_names_the_real_driver(client, learner):
     response = client.get("/api/v1/status", headers=learner["headers"])
     assert response.status_code == 200

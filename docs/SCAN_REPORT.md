@@ -312,6 +312,17 @@ process is what makes a re-run comparable to the first one. Raw output for this 
 
 ## E. Remaining problems
 
+**The audit's one open defect is closed in this pass.** `docs/AUDIT.md` ended with a "Verified
+broken, unresolved" bucket; its first item — an `ADAPT_DB_ENCRYPTION` policy change leaving an
+existing database unreadable with an opaque `file is not a database` — is now fixed at the engine
+(header sniff, sentence naming the file and the policy) and at `doctor` (which used to report the
+data directory as fine while the app could not read a byte of what was in it), with three
+mutation-checked tests. Its other two items are a deliberate privacy filter whose learner-visible
+half was fixed earlier (F12), and a claim about there being no frontend test runner that the jsdom
+probe has since superseded. The follow-up section at the end of `docs/AUDIT.md` has the
+reproduction table.
+
+
 **Blocking nothing, but unverified — no claim is made about any of these:**
 
 0. **The whole-suite UI run is a rehearsal, on purpose.** `scripts/probe-fresh.sh` starts the API

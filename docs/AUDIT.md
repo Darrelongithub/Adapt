@@ -285,7 +285,9 @@ text in tunnel mode and a 500 where a 400 belonged; leaked temp files; `ADAPT_KE
 two divergent limiter instances; a `lint` script that could not run; a declared-but-absent
 migration pipeline.
 
-**Verified broken, unresolved** — the `ADAPT_DB_ENCRYPTION` policy change makes an existing
+**Verified broken, unresolved** *(see the follow-up at the end of this file: the first of
+these three is now fixed, the second's learner-visible half is fixed, and the third has been
+superseded)* — the `ADAPT_DB_ENCRYPTION` policy change makes an existing
 database unreadable with an opaque error (recommend a header sniff); throttle denials invisible
 to the learner they concern (by design of the audit filter); no frontend test runner, so
 interaction bugs are not caught by anything here.
@@ -345,3 +347,52 @@ reports *wiped* (React overwrote what was typed, an app fault) separately from *
 (the event never landed, a harness fault); the wiped case never fired after the shim was fixed, and
 the detector stays armed. Its 19 page closes now run one shared assertion (F15) rather than each
 scenario re-inventing one.
+
+---
+
+## Follow-up — the three unresolved items, re-checked (2026-10-12, later pass)
+
+Each was reproduced (or failed to reproduce) against the merged tree, not re-read.
+
+### The encryption-policy mismatch — **fixed**
+
+Reproduced both directions before touching anything:
+
+| File on disk | `ADAPT_DB_ENCRYPTION` | Before | Now |
+| --- | --- | --- | --- |
+| SQLCipher ciphertext | `field-only` or `off` | `sqlite3.DatabaseError: file is not a database` | refused before the engine is built, naming the file, the policy, and the two ways out |
+| plain SQLite | `auto` or `sqlcipher` | `sqlcipher3.dbapi2.DatabaseError: file is not a database` | same, in the other direction |
+
+The fix is the header sniff this document recommended, and it does **not** touch the crypto policy:
+no key, mode, format or pragma changes — `create_db_engine` reads the file's first 16 bytes and
+refuses a mismatch with a sentence instead of letting the driver raise from inside SQLAlchemy's
+pool. The API's startup failure now ends with that sentence rather than a stack trace.
+
+Two guards, both mutation-checked (fix removed → these fail → fix restored → they pass):
+
+* `test_crypto_and_encryption.py::test_opening_an_encrypted_database_under_field_only_explains_itself`
+  and `::test_a_policy_that_cannot_read_the_file_says_so_instead_of_the_driver` (2 failures without
+  the sniff), plus a driver-free test of the sniff itself.
+* `doctor` had the same blind spot one level up: it reported `[ok] data dir` for a directory whose
+  database it cannot open. It now opens what is there and reports `[ok] database: adapt.db: open,
+  N learner(s), driver=sqlcipher` or the refusal sentence with a remedy —
+  `::test_doctor_reports_a_database_the_policy_cannot_open`, which fails when that check is removed.
+
+The related note in "Found, reported, deliberately not changed" (item 1) is answered by the same
+change; the *installation* half of that item (`sqlcipher3-binary` as a core dependency, macOS and
+Windows wheels) is untouched and remains a spec decision.
+
+### Throttle denials invisible to the learner — **deliberate, and the visible half is fixed**
+
+`GET /api/v1/audit` still filters `actor_id == student.id` (line 254), so an anonymous throttle row
+is the operator's and not the learner's. That is the privacy choice the audit named, and it stays.
+What changed since (F12) is the part a learner can actually feel: a 429 now reads "the server is
+asking for a moment between requests… nothing is wrong with your session" instead of being
+mistaken for a sign-out, and the gate retries instead of blanking the screen.
+
+### "No frontend test runner" — **superseded**
+
+`frontend/scripts-ui-probe.mjs` (jsdom against the built pages, `npm run probe`) now exists and runs
+169 checks across eleven scenarios, including the approval-gate phases and the lesson engine. It
+still cannot see layout, focus order, `getUserMedia` prompts or paint — that limitation is recorded
+in `docs/UNVERIFIED.md`, not here.
