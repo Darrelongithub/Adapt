@@ -32,10 +32,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "/tmp/adapt-next-offline-L3A4XS/types/**/*.ts",
-    "/tmp/next-off/types/**/*.ts",
-    "next-env.d.ts",
-    "/tmp/adapt-next-offline-gaDWdS/types/**/*.ts"
+    "next-env.d.ts"
   ],
   "exclude": [
     "node_modules",

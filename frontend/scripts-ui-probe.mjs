@@ -198,6 +198,15 @@ class Page {
     this.requests = [];
   }
 
+  /** Errors the *application* produced. jsdom cannot parse modern CSS (Tailwind's `@layer`,
+   *  nesting, `@property`) and logs a stylesheet failure for every style tag it meets; dev mode
+   *  adds and re-adds tags as HMR runs, so the count is a property of the renderer, not of the
+   *  page. Scenarios that counted the raw list failed a reload whenever HMR happened to be warm --
+   *  which is how a harness trains people to ignore it. One filter, here, for all of them. */
+  appErrors() {
+    return this.errors.filter((e) => !/not implemented|Could not parse CSS|navigation to another Document/i.test(e));
+  }
+
   async goto(path, jar, intercept) {
     this.intercept = intercept;
     const url = new URL(path, BASE).toString();
@@ -353,7 +362,14 @@ class Page {
     if (!el.checked) return;
     el.click();
   }
-  async reload() { const jar = this.jar; closePage(this); await this.goto(this.path, jar); }
+  async reload() {
+    // the third argument is what keeps a mock-backed scenario mocked across a reload; dropping it
+    // meant the re-render asked the real API for /me and got 401, i.e. the harness changed the
+    // conditions of the very thing it was about to measure
+    const [jar, intercept] = [this.jar, this.intercept];
+    closePage(this);
+    await this.goto(this.path, jar, intercept);
+  }
 }
 
 /** Creates an account for the probe, waiting out `retry_after_s` when the limiter says no.
@@ -361,9 +377,15 @@ class Page {
  *  obeys it rather than asserting around it. */
 async function createLearner(body) {
   let res = await api("/api/v1/students", { method: "POST", body });
-  for (let tries = 0; res.status === 429 && tries < 6; tries += 1) {
-    const waitS = Number(res.body?.detail?.retry_after_s ?? 3) + 1;
-    console.log(`\x1b[2m  (learner creation is rate limited: waiting ${waitS}s)\x1b[0m`);
+  // The suite mints a learner per gate (the decisions scenario alone needs five, because each
+  // proposal has to be judged against a learner who has seen exactly one outcome), while
+  // `guest_create` refills at 6/min. Waiting must therefore be paced by the server's own
+  // retry_after_s and given room for a whole window: six tries of ~4s each is a race against a
+  // bucket that needs ~10s per token, and a creation that gives up mid-scenario shows up two
+  // screens later as a missing control -- a moving failure with no mention of the limiter.
+  for (let tries = 0; res.status === 429 && tries < 14; tries += 1) {
+    const waitS = Number(res.body?.detail?.retry_after_s ?? 10) + 1;
+    console.log(`\x1b[2m  (learner creation is rate limited: waiting ${waitS}s -- the API says to raise ADAPT_RATE_LIMIT_MULTIPLIER for a rehearsal)\x1b[0m`);
     await sleep(waitS * 1000);
     res = await api("/api/v1/students", { method: "POST", body });
   }
@@ -371,6 +393,12 @@ async function createLearner(body) {
 }
 
 /* ------------------------------------------------------------------- probe ---- */
+
+/** Every request the harness makes, tallied so a run can say whether it was paced by the app's
+ *  own limiter. `ip` sustains 120/min and learner creation 6/min; the full walk is ~350 requests
+ *  and mints a dozen accounts, so a second run started immediately after the first used to fail at
+ *  a different check each time -- an accurate picture of nothing except the window. */
+const traffic = { reads: 0, writes: 0, total: 0 };
 
 async function api(path, { method = "GET", body, headers = {}, cookie = "" } = {}) {
   const res = await fetch(new URL(path, API).toString(), {
@@ -388,10 +416,16 @@ async function api(path, { method = "GET", body, headers = {}, cookie = "" } = {
   // A read that lands on the per-connection ceiling is not a finding, it is traffic: wait the
   // number the server printed and ask again. Writes keep their 429 -- the failures scenario
   // needs to see one.
+  traffic.total += 1;
+  // the retry_after_s a browser sees for a throttled read is inside `detail` (deps.py puts it
+  // there); reading it off the top level made every one of these waits the 1s default
   for (let tries = 0; method === "GET" && out.status === 429 && tries < 4; tries += 1) {
-    await sleep(Math.min(5000, Number(out.body?.retry_after_s ?? 1) * 1000 + 250));
+    traffic.reads += 1;
+    const wait = Number(out.body?.retry_after_s ?? out.body?.detail?.retry_after_s ?? 1);
+    await sleep(Math.min(12_000, wait * 1000 + 250));
     out = await read(await fetch(new URL(path, API).toString(), { method, headers: { cookie, ...headers } }));
   }
+  if (out.status === 429 && method !== "GET") traffic.writes += 1;
   return out;
 }
 
@@ -406,11 +440,26 @@ async function main() {
   }
 
   const run = (name) => !ONLY.length || ONLY.includes(name);
-  const open = async (path, scenario, intercept) => {
+  /** Opens a page. Without `cookies` the page shares the run's session -- and a page that signs
+   *  itself in (the front door) therefore *becomes* the run's session, which is what the walk
+   *  after it expects. With `cookies` the page gets its own jar seeded from that account, which is
+   *  what the decisions scenario needs: it opens the same screen as three different stuck learners,
+   *  and sharing the run's jar meant a later swap rewrote the cookies under a page that was still
+   *  loading -- the same run passing one minute and failing the next, with nothing in the failure
+   *  line to suggest an account was involved. */
+  const open = async (path, scenario, intercept, cookies) => {
     const page = new Page(scenario);
     page.path = path;
-    page.jar = jar;
-    await page.goto(path, jar, intercept);
+    if (cookies === undefined) {
+      page.jar = jar;
+      await page.goto(path, jar, intercept);
+      return page;
+    }
+    page.jar = new CookieJar();
+    for (const pair of cookies.split("; ").filter(Boolean)) {
+      try { page.jar.setCookieSync(pair, BASE); } catch { /* not storable */ }
+    }
+    await page.goto(path, page.jar, intercept);
     return page;
   };
 
@@ -463,7 +512,7 @@ async function main() {
     check("home", "renders the product's own words, not a placeholder", /proposes what to change/.test(page.text()), page.text().slice(0, 120));
     const hrefs = page.find("a[href]").map((a) => a.getAttribute("href"));
     check("home", "every link is a route inside the app", hrefs.length > 3 && hrefs.every((h) => h.startsWith("/")), hrefs.join(" "));
-    check("home", "no uncaught error during hydration", page.errors.filter((e) => !/not implemented|Could not parse CSS/.test(e)).length === 0, page.errors.join(" | ").slice(0, 200));
+    check("home", "no uncaught error during hydration", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 200));
     check("home", "a signed-out visitor is offered both ways in", /guest/.test(page.text()) && /email \+ password/.test(page.text()), page.text().slice(0, 180));
     const emailTab = page.byText("email + password", "button");
     await page.click(emailTab);
@@ -488,7 +537,7 @@ async function main() {
     }
     if (arrived) {
       const posted = page.requests.filter((r) => /POST \/api\/v1\/students/.test(r)).length;
-      check("home", "registering posts the account once, then hands off to setup", posted === 1 && page.errors.filter((e) => !/not implemented|Could not parse CSS|navigation/.test(e)).length === 0, `posts: ${posted}; errs: ${page.errors.slice(-1).join("")}`);
+      check("home", "registering posts the account once, then hands off to setup", posted === 1 && page.appErrors().length === 0, `posts: ${posted}; errs: ${page.appErrors().slice(-1).join("")}`);
     }
     const cookie = jar.getCookieStringSync(BASE);
     check("home", "the account came back with a session cookie", /adapt_session=/.test(cookie), cookie.slice(0, 80) || "no cookie on the jar");
@@ -542,7 +591,12 @@ async function main() {
     const meAfter = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
     check("onboarding", "the voice switch and the chosen voice reached the learner record", meAfter.body.voice_enabled === true && String(meAfter.body.voice_gender) === "male", JSON.stringify({ voice_enabled: meAfter.body.voice_enabled, voice_gender: meAfter.body.voice_gender }));
     await page.reload();
-    await waitFor(() => page.find('input[type="number"]').length >= 3, { label: "the form to come back after reload" });
+    // SSR paints the defaults and the page's own prefs fetch fills them a beat later; waiting on
+    // "the inputs exist" reads the pre-fill frame and reports a persistence bug that is not there
+    await waitFor(() => /120/.test(page.find('input[type="number"]').map((i) => i.value).join(",")), {
+      timeout: 20_000,
+      label: "the saved numbers to come back from the server",
+    }).catch(() => {});
     const reloaded = page.find('input[type="number"]').map((i) => i.value).join(",");
     check("onboarding", "a refresh shows the same values (they were persisted, not cached in memory)", /120/.test(reloaded), reloaded);
     const me2 = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
@@ -654,7 +708,7 @@ async function main() {
     await waitFor(() => !/Checking the session/.test(landing.text()), { timeout: 10_000, label: "the landing page to read the session" });
     check("diagnose", "the landing page then offers practice instead of placing them again", !/not placed yet/.test(landing.text()) && /placed/.test(landing.text()) && !!landing.byText("Practise"), landing.text().slice(0, 260));
     closePage(landing);
-    check("diagnose", "no uncaught error anywhere on the screen", page.errors.filter((e) => !/not implemented|Could not parse CSS|navigation/.test(e)).length === 0, page.errors.join(" | ").slice(0, 240));
+    check("diagnose", "no uncaught error anywhere on the screen", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 240));
     closePage(page);
   }
 
@@ -686,9 +740,22 @@ async function main() {
       const t = page.text();
       check("learn", "running out of hints says so in words a learner can act on", /no hints left|not have any more|exhausted|limit|worked example|reveal/i.test(t), t.slice(-220));
       check("learn", "the hint budget is enforced by the page, not just by the server", (() => { const b = page.byText("No hints left", "button"); return b ? b.disabled === true : !/Another hint/.test(t); })(), "still offering more hints after exhaustion");
-      await page.click(page.byText("Worked example", "button"));
-      await sleep(600);
-      check("learn", "a worked example opens with steps and no template leak", !/Internal Server Error|\{[a-z]+\}/.test(page.text()), page.text().slice(-200));
+      // byText can legitimately return nothing here: after the loop above spends the budget, the
+      // page offers the worked example through the exhausted-state wording. Clicking null turned
+      // that into a crash -- and a crashed run reports nothing about the screens after it.
+      const example = page.byText(/Worked example|worked example/i, "button");
+      if (example) {
+        await page.click(example);
+        await sleep(600);
+        check("learn", "a worked example opens with steps and no template leak", !/Internal Server Error|\{[a-z]+\}/.test(page.text()), page.text().slice(-200));
+      } else {
+        check(
+          "learn",
+          "an exhausted hint budget still leaves the learner a way forward",
+          /reveal|see the answer|next question/i.test(page.text()),
+          `no worked-example control and no way forward in: ${page.text().slice(-200)}`
+        );
+      }
       const revBefore = page.requests.length;
       const revBtn = page.byText("Reveal it", "button");
       if (revBtn) {
@@ -730,10 +797,15 @@ async function main() {
       }
       const answered = await api("/api/v1/me/attempts?limit=5", { headers: { cookie } });
       check("learn", "the attempt is retrievable afterwards", answered.status === 200 || answered.status === 404, `${answered.status} ${JSON.stringify(answered.body).slice(0, 120)}`);
-      const errsBefore = page.errors.length;
+      const errsBefore = page.appErrors().length;
       await page.reload();
       await waitFor(() => answerControl(page) || /placement|nothing due|no items|Start/i.test(page.text()), { timeout: 20_000, label: "the page to redraw after reload" });
-      check("learn", "a reload brings practice back with the same session state and no new error", page.errors.length <= errsBefore && page.text().length > 300, `errors ${page.errors.length - errsBefore} new; ${page.text().slice(0, 120)}`);
+      check(
+        "learn",
+        "a reload brings practice back with the same session state and no new error",
+        page.appErrors().length <= errsBefore && page.text().length > 300,
+        `errors ${page.appErrors().length - errsBefore} new; ${page.appErrors().slice(errsBefore, errsBefore + 2).join(" || ").slice(0, 300)}`,
+      );
     }
     closePage(page);
   }
@@ -745,12 +817,12 @@ async function main() {
     const email = `probe-${tag}-${Date.now().toString(36)}@example.test`;
     const boot = await createLearner({ display_name: `Probe ${tag}`, email, password: learner.password });
     if (boot.status !== 200) throw new Error(`cannot create the ${tag} learner: ${boot.status} ${JSON.stringify(boot.body).slice(0, 120)}`);
+    const own = new CookieJar();
     for (const raw of boot.headers.getSetCookie?.() ?? []) {
-      try { jar.setCookieSync(raw, BASE); } catch { /* not storable */ }
+      try { own.setCookieSync(raw, BASE); } catch { /* not storable */ }
     }
-    csrf = boot.body.csrf_token ?? "";
-    const cookie = jar.getCookieStringSync(BASE);
-    const hdr = { cookie, "x-csrf-token": csrf };
+    const cookie = own.getCookieStringSync(BASE);
+    const hdr = { cookie, "x-csrf-token": boot.body.csrf_token ?? "" };
     const plan = await api("/api/v1/practice?count=14", { headers: { cookie } });
     const items = (plan.body.items ?? []).map((e) => e.item ?? e).filter((i) => i?.id);
     let sid = "";
@@ -769,9 +841,9 @@ async function main() {
     return { email, cookie, hdr, sid, proposals };
   };
 
-  /** Puts an account on the shared jar. The decisions scenario signs in as three manufactured
-   *  learners, and without this the screens that run afterwards would be judged on the last of
-   *  them instead of on the fixture the rest of the walk built up. */
+  /** Puts an account on the shared jar, which is what the front door does: whoever signed in last
+   *  is who the following screens are judged on. The decisions scenario deliberately does *not*
+   *  use this -- its three throwaway accounts live in their own jars. */
   const signIn = async (email, password) => {
     const r = await api("/api/v1/login", { method: "POST", body: { email, password } });
     for (const raw of r.headers.getSetCookie?.() ?? []) {
@@ -797,6 +869,14 @@ async function main() {
   // The gate: AI 1 may propose, only the learner may apply. Each outcome is judged against a
   // learner who has been asked exactly once, so no earlier decision colours the next answer.
   if (run("proposals")) {
+    // Each gate is judged against a learner who has seen exactly one outcome, so this scenario
+    // borrows three throwaway accounts. It must not borrow the run's own session to do it: an
+    // earlier version wrote each stuck learner into the shared jar and then "put it back" by
+    // signing in again, which 403'd on the token that same code had overwritten -- and left every
+    // scenario after it judging the wrong account. Identity is recorded here so the end of the
+    // scenario can prove nothing was borrowed.
+    const savedWho = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    const savedId = String(savedWho.body?.student_id ?? "");
     console.log("\n\x1b[1mproposals\x1b[0m");
     const activeOf = async (cookie) => (await api("/api/v1/adaptations/active", { headers: { cookie } })).body;
     const prefsOf = async (cookie) => JSON.stringify((await api("/api/v1/me/preferences", { headers: { cookie } })).body);
@@ -808,7 +888,7 @@ async function main() {
     check("proposals", "reject: nothing is applied before the learner has answered", (await activeOf(reject.cookie)).active?.length === 0, JSON.stringify(await activeOf(reject.cookie)).slice(0, 140));
 
     /* ---- rejecting must apply nothing, anywhere ---- */
-    const page = await open("/proposals", "proposals");
+    const page = await open("/proposals", "proposals", undefined, reject.cookie);
     await settleProposals(page);
     const body = () => page.text();
     check("proposals", "a waiting proposal shows observation, pattern, explanation and what it would change", /What was observed/i.test(body()) && /What saying yes would change/i.test(body()) && /How it would be judged/i.test(body()), body().slice(0, 260));
@@ -836,13 +916,13 @@ async function main() {
       check("proposals", "a proposal cannot be answered twice to sneak a change in", again.status === 409 || again.status === 404 || again.status === 400, `${again.status} ${JSON.stringify(again.body).slice(0, 120)}`);
       check("proposals", "and the refused second answer still applied nothing", (await activeOf(reject.cookie)).active?.length === 0, JSON.stringify(await activeOf(reject.cookie)).slice(0, 160));
     }
-    check("proposals", "no uncaught error on the decisions screen", page.errors.filter((e) => !/not implemented|Could not parse CSS|navigation/.test(e)).length === 0, page.errors.join(" | ").slice(0, 200));
+    check("proposals", "no uncaught error on the decisions screen", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 200));
     closePage(page);
 
     /* ---- accepting: the one action that turns teaching off autopilot ---- */
     const accept = await stuckLearner("accept");
     check("proposals", "accept: nothing is applied before the learner has answered", (await activeOf(accept.cookie)).active?.length === 0, JSON.stringify(await activeOf(accept.cookie)).slice(0, 140));
-    const page2 = await open("/proposals", "proposals");
+    const page2 = await open("/proposals", "proposals", undefined, accept.cookie);
     await settleProposals(page2);
     if (!(await waitFor(() => !!page2.byText("Yes, try it", "button"), { timeout: 15_000, label: "a proposal to accept" }).catch(() => null))) {
       check("proposals", "the accept control is reachable from the decisions page", false, page2.text().slice(0, 220));
@@ -863,11 +943,15 @@ async function main() {
         const tuned = (row.payload ?? {}).target ?? null;
         check("proposals", "what the learner approved is the number now in force, not the default already in use", tuned === null || Number(tuned) !== 0.78, JSON.stringify(row.payload ?? {}).slice(0, 160));
         check("proposals", "an approval that was not about settings leaves settings alone", prefsAtAcceptTime === (await prefsOf(accept.cookie)), "preferences moved when only an adaptation was approved");
-        const learn = await open("/learn", "proposals");
+        // this page is the approver's practice screen, so it is opened as the approver. Before the
+        // per-page sessions landed it read the run's shared jar, which a previous swap had happened
+        // to leave pointing at this same learner -- it was checking the right thing by accident,
+        // and one creation finishing a beat earlier made it somebody else's page.
+        const learn = await open("/learn", "proposals", undefined, accept.cookie);
         await waitFor(() => /Changes you have approved|Nothing is applied/i.test(learn.text()), { timeout: 20_000, label: "practice to finish loading" });
         check("proposals", "the learner can see the change in force on the practice screen", /Changes you have approved/i.test(learn.text()), learn.text().slice(0, 260));
         closePage(learn);
-        const page3 = await open("/proposals", "proposals");
+        const page3 = await open("/proposals", "proposals", undefined, accept.cookie);
         await settleProposals(page3);
         const appliedText = page3.text();
         check("proposals", "the applied row carries the evidence line with it", !/turn off/.test(appliedText) || /evidence:\s*\S/.test(appliedText), appliedText.slice(appliedText.indexOf("On right now"), appliedText.indexOf("On right now") + 320));
@@ -888,7 +972,7 @@ async function main() {
     /* ---- modifying: the learner's version is the one that is stored ---- */
     const modify = await stuckLearner("modify");
     check("proposals", "modify: nothing is applied before the learner has answered", (await activeOf(modify.cookie)).active?.length === 0, JSON.stringify(await activeOf(modify.cookie)).slice(0, 140));
-    const page4 = await open("/proposals", "proposals");
+    const page4 = await open("/proposals", "proposals", undefined, modify.cookie);
     await settleProposals(page4);
     const modBtn = await waitFor(() => page4.byText("Yes, but change it", "button"), { timeout: 15_000, label: "the modify control" }).catch(() => null);
     if (modBtn) {
@@ -913,7 +997,15 @@ async function main() {
       check("proposals", "modifying is offered when the learner wants to change the numbers", false, page4.text().slice(0, 220));
     }
     closePage(page4);
-    check("proposals", "the decisions scenario hands the fixture learner back to the rest of the walk", (await signIn(learner.email, learner.password)) === 200, "later screens would have been judged on the wrong account");
+    const back = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    check(
+      "proposals",
+      "the decisions scenario never borrowed the run's own session",
+      // the promise is "the same account you had before this scenario", which is what later
+      // screens are judged on -- the id is the only field that says that
+      back.status === 200 && savedId !== "" && String(back.body?.student_id ?? "") === savedId,
+      `the session after the scenario reads ${back.status} ${JSON.stringify(back.body).slice(0, 120)} (expected ${savedId || "no identity to compare"})`
+    );
   }
 
   /* -------------------------------------------------------------- progress ---- */
@@ -1011,9 +1103,15 @@ async function main() {
           const storedAvoid = (after.body.preferences ?? {})[(fields[0].querySelector(":scope > span")?.textContent ?? "").trim().toLowerCase()];
           check("settings", "what was typed is stored as separate phrases, not one long string", Array.isArray(storedAvoid) && storedAvoid.length === 2 && storedAvoid[0] === "word problems", JSON.stringify(storedAvoid));
           const page3 = await open("/settings", "settings");
-          await sleep(700);
+          // the page fills these fields from its own prefs fetch a beat after first paint; a fixed
+          // sleep read the empty frame and reported a persistence bug that was not there (the same
+          // mistake the reload check in `onboarding` made)
+          await waitFor(
+            () => [...page3.find("input")].some((i) => /word problems/.test(i.value ?? "")),
+            { timeout: 20_000, label: "the saved phrases to come back from the server" }
+          ).catch(() => {});
           const shown = [...page3.find("input")].map((i) => i.value).find((v) => /word problems/.test(v ?? ""));
-          check("settings", "and the page shows the phrases again after a reload", /word problems.*being rushed/.test(shown ?? ""), JSON.stringify(shown));
+          check("settings", "and the page shows the phrases again after a reload", /word problems.*being rushed/.test(shown ?? ""), `the fields read ${JSON.stringify([...page3.find("input")].map((i) => i.value).filter(Boolean).slice(0, 6))}`);
           closePage(page3);
         }
       }
@@ -1208,7 +1306,7 @@ async function main() {
       const progressWrites = page.requests.filter((r) => r.endsWith("/progress"));
       check("lesson", "a frame the player moved was written back, and a frame the gate held was not", progressWrites.length >= 1, progressWrites.join(" | ").slice(0, 160));
     }
-    const hardErrors = page.errors.filter((e) => !/not implemented|Could not parse CSS|Not implemented: HTML form submission/i.test(e));
+    const hardErrors = page.appErrors();
     check("lesson", "no uncaught error during the whole lesson", hardErrors.length === 0, hardErrors.slice(0, 2).join(" | ").slice(0, 200));
     check("lesson", "no raw object reached the screen", !/[{\[]\s*"\w+":/.test(page.text()), page.text().slice(0, 160));
     closePage(page);
@@ -1303,7 +1401,16 @@ async function main() {
 
   /* --------------------------------------------------------------- summary ---- */
   const consoleErrors = results.filter((r) => /hydration error/.test(r.label));
-  console.log(`\n\x1b[1m${results.length - failures}/${results.length} checks passed\x1b[0m`);
+  console.log(`\n\x1b[1m${results.length - failures}/${results.length} checks passed\x1b[0m  \x1b[2m(${traffic.total} API calls)\x1b[0m`);
+  // the `failures` scenario floods /explain on purpose to prove the wait message, so one refused
+  // write is the app answering correctly, not pacing; a second one is
+  if (traffic.reads > 0 || traffic.writes > 1) {
+    console.log(
+      `\x1b[33mthe limiter paced this run: ${traffic.reads} read(s) retried, ${traffic.writes} write(s) answered 429 (the flood check expects one).\x1b[0m\n` +
+        `  that is the app working as designed (ip 120/min, learner creation 6/min), not a UI finding.\n` +
+        `  to walk the whole suite back to back, start the API with ADAPT_RATE_LIMIT_MULTIPLIER=10.`
+    );
+  }
   if (failures) {
     console.log(`\n\x1b[31m${failures} failed:\x1b[0m`);
     for (const r of results.filter((x) => !x.ok)) console.log(`  - [${r.scenario}] ${r.label}\n      ${r.detail}`);
@@ -1314,6 +1421,14 @@ async function main() {
 main().catch((err) => {
   console.error("\n\x1b[31mprobe crashed\x1b[0m (a harness or app fault, not a check failure)");
   console.error(err.stack?.split("\n").slice(0, 6).join("\n"));
+  // A crash stays a crash: exit 3, nothing quietly marked pass. But the checks that already ran are
+  // the truth about the screens they judged, and discarding them meant one stalled scenario hid a
+  // hundred and fifty results and left "which screen broke today" to be guessed from the stack.
+  if (results.length) {
+    console.log(`\n\x1b[1m${results.length - failures}/${results.length} checks passed before the crash\x1b[0m  \x1b[2m(stalled in ${CURRENT || "the first scenario"})\x1b[0m`);
+    for (const r of results.filter((x) => !x.ok)) console.log(`  - [${r.scenario}] ${r.label}\n      ${r.detail}`);
+    console.log(`\x1b[2mscreens after ${CURRENT || "?"} were not judged\x1b[0m`);
+  }
   process.exit(3);
 });
 
