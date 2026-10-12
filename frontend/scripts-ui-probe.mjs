@@ -824,13 +824,27 @@ async function main() {
     const cookie = own.getCookieStringSync(BASE);
     const hdr = { cookie, "x-csrf-token": boot.body.csrf_token ?? "" };
     const plan = await api("/api/v1/practice?count=14", { headers: { cookie } });
-    const items = (plan.body.items ?? []).map((e) => e.item ?? e).filter((i) => i?.id);
+    const entries = (plan.body.items ?? []).map((e) => ({ item: e.item ?? e, topic: e.topic_id ?? (e.item ?? e)?.topic_id ?? "?" }))
+      .filter((e) => e.item?.id);
+    // A proposal needs at least 8 attempts on *one* topic before the detectors will speak --
+    // the gate is deliberate (4 rows is a guess, 8 is a pattern), and it is why this check used
+    // to be flaky: answering 14 items spread over 14 topics puts every topic under the gate, so
+    // the learner looks "clearly struggling" to a person and like noise to the loop. So aim at
+    // the topic the queue offers most of and answer *those* wrong, twice over, which is what a
+    // struggling learner in front of the app would actually do.
+    const byTopic = new Map();
+    for (const e of entries) {
+      if (!byTopic.has(e.topic)) byTopic.set(e.topic, []);
+      byTopic.get(e.topic).push(e.item);
+    }
+    const focus = [...byTopic.values()].sort((a, b) => b.length - a.length)[0] ?? [];
+    const batch = [];
+    while (batch.length < 12 && focus.length) for (const it of focus) { if (batch.length < 12) batch.push(it); }
     let sid = "";
     let proposals = [];
     for (let round = 0; round < 3 && !proposals.length; round += 1) {
       const sess = await api("/api/v1/sessions", { method: "POST", body: { mode: "practice" }, headers: hdr });
       sid = sess.body.session_id;
-      const batch = items.slice(round * 4, round * 4 + 14);
       for (const it of batch) {
         await api("/api/v1/attempts", { method: "POST", body: { session_id: sid, item_id: it.id, answer: "__definitely_wrong__" }, headers: hdr });
       }
@@ -953,6 +967,11 @@ async function main() {
         closePage(learn);
         const page3 = await open("/proposals", "proposals", undefined, accept.cookie);
         await settleProposals(page3);
+        // The "On right now" panel and the pending list are separate responses, and this learner
+        // has an active adaptation (asserted above from the API), so wait for the panel before
+        // judging it -- otherwise a reload can be read mid-load and reported as "Nothing is
+        // applied" while the row exists. If it never appears, the checks below still fail.
+        await waitFor(() => /On right now/i.test(page3.text()), { timeout: 10_000, label: "the applied panel to load" }).catch(() => {});
         const appliedText = page3.text();
         check("proposals", "the applied row carries the evidence line with it", !/turn off/.test(appliedText) || /evidence:\s*\S/.test(appliedText), appliedText.slice(appliedText.indexOf("On right now"), appliedText.indexOf("On right now") + 320));
         check("proposals", "after a reload the accepted change is still listed as on right now", /On right now/.test(page3.text()) && !/Nothing is applied/.test(page3.text()), page3.text().slice(0, 220));
