@@ -871,7 +871,7 @@ class EducationalIntelligence:
             ],
         }
         user = json.dumps({"request": text[:600], "prefer_kind": wanted or None, "previous_rejections": hints[:6]}, separators=(",", ":"))
-        safe, dropped = redact_payload({"q": user}, max_chars=4000)
+        safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=4000)
         res = await self.llm.complete(
             system=json.dumps(system, separators=(",", ":")) + "\n\n" + AI2_SYSTEM,
             user=safe["q"],
@@ -882,7 +882,7 @@ class EducationalIntelligence:
             max_output_tokens=700,
             response_spec=spec_kind,
         )
-        await self._log_llm("ai2_scene_spec", "ai2", res, student_id or "anon", len(user), dropped)
+        await self._log_llm("ai2_scene_spec", "ai2", res, student_id or "anon", len(user), dropped, kinds=redacted_kinds)
         data = res.data if (res.ok and isinstance(res.data, dict)) else None
         if not data:
             fallback = self._builtin_scene(text, wanted or None, why=f"the model returned {res.status or 'nothing'}")
@@ -914,7 +914,7 @@ class EducationalIntelligence:
         retry_user = json.dumps(
             {"request": text[:600], "your_previous_attempt": draft, "rejected_because": result.errors[:6]}, separators=(",", ":")
         )
-        safe2, dropped2 = redact_payload({"q": retry_user}, max_chars=5000)
+        safe2, dropped2, redacted_kinds2 = redact_payload({"q": retry_user}, max_chars=5000)
         res2 = await self.llm.complete(
             system=json.dumps(system, separators=(",", ":")) + "\n\n" + AI2_SYSTEM,
             user=safe2["q"],
@@ -925,7 +925,7 @@ class EducationalIntelligence:
             max_output_tokens=700,
             response_spec=spec_kind,
         )
-        await self._log_llm("ai2_scene_fix", "ai2", res2, student_id or "anon", len(retry_user), dropped2)
+        await self._log_llm("ai2_scene_fix", "ai2", res2, student_id or "anon", len(retry_user), dropped2, kinds=redacted_kinds2)
         d2 = res2.data if (res2.ok and isinstance(res2.data, dict)) else None
         if d2:
             p2: Any = {}

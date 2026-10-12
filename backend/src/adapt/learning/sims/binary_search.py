@@ -141,7 +141,6 @@ def run(params: dict[str, Any]) -> list[dict[str, Any]]:
         mid = (lo + hi) // 2
         v = values[mid]
         compared.append(mid)
-        left_n, right_n = mid - lo, hi - mid
         if v == target:
             frames.append(
                 {
@@ -371,7 +370,7 @@ def grade(params: dict[str, Any], frame_index: int, choice: Any) -> dict[str, An
     state = (run(normalize(params))[frame_index].get("state") or {}) if 0 <= frame_index < len(run(normalize(params))) else {}
     why = ""
     if expected_choice == "keep the right half":
-        why = f"The middle value was below the target, so only the right half could still hold it."
+        why = "The middle value was below the target, so only the right half could still hold it."
     elif expected_choice == "keep the left half":
         why = "The middle value was above the target, so everything right of it is too."
     elif expected_choice == "stop: found it":

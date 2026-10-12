@@ -71,6 +71,17 @@ def _run(args: list[str], data_dir: Path) -> subprocess.CompletedProcess:
     )
 
 
+def _head(data_dir: Path) -> str:
+    """The revision the chain currently ends at, asked of alembic rather than written down.
+
+    A literal here is a test that fails the next time somebody adds a revision, which is a
+    test that gets edited rather than read.
+    """
+    out = _run(["heads"], data_dir)
+    assert out.returncode == 0, out.stderr[-800:]
+    return out.stdout.split()[0]
+
+
 _READER = """
 import json, sys
 sys.path.insert(0, {src!r})
@@ -315,7 +326,7 @@ def test_a_create_all_database_survives_the_documented_stamp_then_upgrade(tmp_pa
     assert _run(["stamp", "0002"], data).returncode == 0
     up = _run(["upgrade", "head"], data)
     assert up.returncode == 0, (up.stdout[-800:] + up.stderr[-1500:])
-    assert _read(data)["current"] == "0003"
+    assert _read(data)["current"] == _head(data)
 
 
 def test_the_revision_still_adds_the_indexes_a_database_is_missing(tmp_path):

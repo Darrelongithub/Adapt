@@ -105,3 +105,35 @@ async def test_teachback_commentary_survives_a_configured_model(client, services
     )
     assert isinstance(result, dict)
     assert "score" in result and 0.0 <= float(result["score"]) <= 1.0
+
+
+async def test_a_scene_is_authored_and_narrated_with_a_model_configured(services, learner):
+    """The engine's scene paths, driven with a model configured.
+
+    Authoring a spec and narrating a frame both sit *after* a no-model early return, so the
+    fallback every keyless run takes keeps these lines out of reach -- which is how three of
+    them shipped unpacking two of ``redact_payload``'s three values. A stub model reaches the
+    line without a key. The contract asserted is the one the learner sees: with a model that
+    answers nothing useful, the lesson still plays and says why, rather than 500ing.
+    """
+    from adapt.ai.ai3 import Answer
+
+    services.ai2.llm = _StubLLM({})
+    authored = await services.ai2.author_scene(
+        request="binary search over a sorted list", kind="binary_search", student_id=learner["student_id"]
+    )
+    # A model that answers nothing usable is not a reason to have no lesson: the built-in
+    # scene is used and labelled as such.
+    assert authored["ok"] is True and authored["source"] == "builtin", authored
+    assert authored["draft"]["kind"] == "binary_search"
+
+    services.ai3.llm = _StubLLM({})
+    answer = await services.ai3.why(
+        spec=authored["draft"],
+        frame_index=0,
+        question="why did we halve the range?",
+        student_id=learner["student_id"],
+    )
+    assert isinstance(answer, Answer)
+    assert answer.text.strip(), "a frame with no usable model text still has to say something"
+    assert answer.source == "template" and answer.ok is False
