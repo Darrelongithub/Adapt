@@ -86,11 +86,13 @@ def start_api(data_dir: str) -> subprocess.Popen:
         "ADAPT_RATE_LIMIT_MULTIPLIER": "50",  # a scripted journey is not a flood
         "PYTHONPATH": f"{ROOT}/backend/src",
     }
+    log_path = os.environ.get("JOURNEY_LOG", "/tmp/journey-api.log")
+    os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
     proc = subprocess.Popen(
         [PY, "-m", "uvicorn", "adapt.api.app:app", "--host", "127.0.0.1", "--port", str(PORT)],
         cwd=f"{ROOT}/backend",
         env=env,
-        stdout=open("/tmp/scans/journey-api.log", "ab"),
+        stdout=open(log_path, "ab"),
         stderr=subprocess.STDOUT,
     )
     for _ in range(120):
@@ -102,12 +104,15 @@ def start_api(data_dir: str) -> subprocess.Popen:
     raise RuntimeError("API did not come up")
 
 
-def stop_api(proc: subprocess.Popen) -> None:
+def stop_api(proc: subprocess.Popen) -> bool:
+    """Ask the server to stop, the way a deploy or a laptop lid does. True if it went quietly."""
     proc.send_signal(signal.SIGINT)
     try:
         proc.wait(timeout=15)
+        return True
     except subprocess.TimeoutExpired:
         proc.kill()
+        return False
 
 
 def main() -> int:
@@ -338,8 +343,64 @@ def main() -> int:
         )
         check(status == 200 and bool(listed), "the privacy view lists what is recorded", f"{status} {str(privacy)[:200]}")
 
+        print("\n9b. the plan and material endpoints the interface does not call yet")
+        status, topics = c.call("GET", "/api/v1/topics")
+        rows = topics if isinstance(topics, list) else (topics.get("topics") or [])
+        check(status == 200 and bool(rows), "the curriculum is readable as topics", f"{status} {len(rows)} topics")
+        check(all(isinstance(t, dict) and t.get("code") for t in rows[:5]),
+              "each topic names itself and the mastery it holds", str(rows[:1])[:200])
+        status, plan = c.call("GET", "/api/v1/syllabus")
+        check(status == 200 and bool(plan), "a study plan is produced for this learner", f"{status} {str(plan)[:200]}")
+        check(bool(plan.get("how_to_read_it")), "and the plan says how to read it",
+              str(list(plan)[:10]))
+        status, mats = c.call("GET", "/api/v1/materials")
+        check(status == 200 and isinstance(mats.get("materials"), list),
+              "stored course material is listed (possibly empty)", f"{status} {len(mats.get('materials') or [])} rows")
+        status, strategies = c.call("GET", "/api/v1/strategies")
+        catalog = strategies.get("strategies") or strategies.get("catalog") or []
+        check(status == 200 and bool(catalog), "the catalogue AI 1 may propose from is readable",
+              f"{status} {len(catalog)} strategies")
+
+        print("\n9c. a correct choice is graded correct, and a learner can take a change back by name")
+        status, q = c.call("GET", "/api/v1/practice?count=6")
+        choices = [e["item"] for e in (q.get("items") or []) if e["item"]["kind"] == "mcq"]
+        if choices:
+            item = choices[0]
+            status, rev = c.call("GET", f"/api/v1/items/{item['id']}/reveal")
+            right = rev.get("correct_index")
+            check(status == 200 and isinstance(right, int),
+                  "the reveal says which choice is right", f"{status} {str(rev)[:160]}")
+            labelled = next((ch for ch in (item.get("choices") or []) if ch.get("index") == right), None)
+            status, sess2 = c.call("POST", "/api/v1/sessions", {"mode": "practice"})
+            sid2 = sess2.get("session_id")
+            status, graded = c.call("POST", "/api/v1/attempts", {
+                "session_id": sid2, "item_id": item["id"], "answer": right, "attempt_no": 1,
+            })
+            check(status == 200 and graded.get("correct") is True and float(graded.get("score") or 0) > 0.9,
+                  "the index the reveal gives is graded correct", f"{status} {str(graded)[:200]}")
+            if labelled:
+                status, sess3 = c.call("POST", "/api/v1/sessions", {"mode": "practice"})
+                status, by_text = c.call("POST", "/api/v1/attempts", {
+                    "session_id": sess3.get("session_id"), "item_id": item["id"],
+                    "answer": labelled.get("text"), "attempt_no": 1,
+                })
+                check(by_text.get("correct") is True,
+                      "so is the same choice sent as its text, as the screen sends it", str(by_text)[:200])
+        live = active_now()
+        by_name = next((a for a in live if a.get("strategy")), None)
+        if by_name is None:
+            print("  (no active adaptation to revoke by name in this run)")
+        else:
+            status, revoked = c.call("POST", f"/api/v1/adaptations/strategy/{by_name['strategy']}/revoke", {})
+            after_names = [a.get("strategy") for a in active_now()]
+            check(status == 200 and by_name["strategy"] not in after_names,
+                  "a learner can switch a change off by naming it", f"{status} {str(revoked)[:160]}")
+            status, unknown = c.call("POST", "/api/v1/adaptations/strategy/not_a_strategy/revoke", {})
+            check(status == 404, "naming a strategy that does not exist is a 404, not a silent success",
+                  f"{status} {str(unknown)[:140]}")
+
         print("\n10. restart: the same data directory, a new process")
-        stop_api(api)
+        check(stop_api(api), "the server stops when asked instead of having to be killed")
         api = start_api(DATA)
         c2 = Client(base)
         # the session cookie is signed with the key on disk, so it survives a restart

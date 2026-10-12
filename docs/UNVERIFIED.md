@@ -177,3 +177,22 @@ session is the expected result, not a bug.
 * **A real Numbas editor/server.** Still unverified: packages here are round-tripped against
   this build's own importer. Newly verified is that a *foreign* package (a tag naming a topic
   by code, or a part type with no local grader) is now handled instead of answering 500.
+
+## Added by the second half of the 2026-10-12 full-scan pass
+
+* **The new endpoint coverage is exercised, not asserted from the schema.** `journey_check.py`
+  §9b/§9c calls `GET /topics`, `/syllabus`, `/materials`, `/strategies`, both revoke forms and the
+  choice-grading path against a real server, and fails if any of them stops working. That is still
+  *this* build's answers, not a second implementation's — the schedule it prints is unverified
+  against an outside planner.
+* **What the coverage sweep cannot tell you.** A route can be called by every check here and still
+  be wrong for a use the checks do not imagine; the sweep proves something *responds and is
+  internally consistent*, not that its judgement is good.
+* **Choice grading, both directions.** A correct choice is graded `correct=True, score=1.0` whether
+  it arrives as the index the reveal gives or as the choice text the screen sends. What is not
+  verified is a learner who picks a *distractor* on purpose: the misconception attached to a wrong
+  choice is stored and shown, but whether a human would agree with the misconception map is a
+  content question, not a code one.
+* **A clean-clone bootstrap is not a deployment.** `venv + pip install -e './backend[dev]'`,
+  `npm ci`, `npm run build`, boot — measured on this machine, single process, SQLite on a local
+  disk, no TLS, no container, no reverse proxy, no concurrency beyond one learner at a time.

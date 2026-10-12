@@ -10,20 +10,23 @@ names the command or test that produced it.
 
 ## A. Overall status
 
-**The application runs and a student can complete the core journey end to end.** Four defects
-were found and fixed; nothing found is still broken.
+**The application runs and a student can complete the core journey end to end.** Five defects
+were found and fixed (four in the application, one in this scan's own runner); nothing found is
+still broken. Every route the API exposes is now exercised by something in this repository —
+that check is what surfaced the last four, plus the runner bug.
 
 The core journey was walked twice, by two different paths, and both pass:
 
 | Path | What it drives | Result |
 |---|---|---|
 | UI probe (`npm run probe`, jsdom against the real Next.js server) | every screen, form, button, refresh and error path | **139/139 checks** |
-| Data-layer journey (`scripts/journey_check.py`) | records, approvals, restart | **47/47 checks** |
+| Data-layer journey (`scripts/journey_check.py`) | records, approvals, shutdown/restart | **59/59 checks** |
 | Failure matrix (`scripts/failure_matrix_check.py`) | bad input, auth, floods, dead providers | **25/25 checks** |
 | Backend suite (`pytest -q`) | routes, learner model, grading, adapters, voice, migrations | **256 passed** |
 | Terminal loop (`adapt.cli demo --turns 3`) | whole loop on a temp database | exit 0 |
 | HTTP demo (`node scripts/demo.mjs --json`) | a synthetic learner over the public API | `warnings: []` |
 | Migrations (`alembic upgrade head`, fresh data dir) | schema, then the app boots on it | 2 revisions, no drift |
+| Clean checkout → running app | `git clone` of this branch, no venv, no `node_modules` | venv + `pip install -e './backend[dev]'`, `npm ci`, `npm run build`, API boots, web answers 200 |
 
 **Not "unable to run", not "partially functional"** — with one honest qualifier: several
 capabilities cannot be exercised in this sandbox and are listed in **E**, not silently counted
@@ -108,14 +111,16 @@ verify** = implemented, but the environment cannot exercise it.
 | Failure handling (auth, bad input, size caps, floods, dead providers) | tested-working | `scripts/failure_matrix_check.py` 25/25 |
 | Teacher surface (assign, roster, mark) | **not implemented** | no route or screen exists |
 | Resources screen (search UI) | **not implemented** | the endpoint has no caller; resource hints appear inside explanations |
+| API surface with no screen yet | tested-working | `GET /topics`, `/syllabus`, `/materials`, `/strategies` answer correctly for a real learner and are now asserted in `journey_check.py` §9b — no page renders them, so nothing in the UI depends on them |
 | i18n / RTL | **not implemented** | — |
 
 ---
 
 ## C. Repairs
 
-Four defects, each with the smallest change that removes it. Every fix has a regression test
-that fails if the defect returns.
+Five defects, each with the smallest change that removes it. The application fixes are C1–C4 and
+each has a regression test that fails if the defect returns; C5 is the one found in this scan's own
+tooling.
 
 ### C1. `POST /api/v1/resources/search` answered 500 for every request
 * **File:** `backend/src/adapt/api/routes/tutor.py:293`
@@ -171,6 +176,17 @@ that fails if the defect returns.
   analysing the record is what they want there.
 * **Test:** `test_analyze_refuses_a_session_that_is_not_this_learners`.
 
+### C5. The scan runner assumed a scratch directory a clean checkout does not have
+* **File:** `scripts/journey_check.py:93`
+* **Root cause:** the runner opened `/tmp/scans/journey-api.log` unconditionally — a path that only
+  existed because the scan was being run from that directory. On any other machine it died with
+  `FileNotFoundError` before its first check, which is the opposite of what a verification script
+  is for.
+* **Found by:** rebuilding this checkout from nothing after the sandbox was recycled — the same
+  thing a new contributor does.
+* **Fix:** default to `/tmp/journey-api.log`, honour `JOURNEY_LOG`, create the parent directory.
+* **Verified:** the whole gate list was re-run from the clean tree (results in **A**).
+
 ### Not a defect (recorded so nobody re-investigates)
 
 * **Probe failures under repeated runs** (onboarding reload, proposals reload, diagnose
@@ -211,8 +227,9 @@ bash scripts/probe-fresh.sh learn               # one scenario: 19/19
 #   scenarios individually: learn 19/19, proposals 36/36, onboarding 12/12, diagnose 21/21,
 #   home 10/10, progress 5/5, voice 8/8, settings 12/12, review 1/1, failures 14/14
 
-# the data layer, including a server restart on the same data directory
-.venv/bin/python scripts/journey_check.py                        # 47/47 checks passed
+# the data layer, including a clean shutdown, a restart on the same data directory,
+# every route the API exposes, correct-choice grading both ways, and revoke-by-name
+.venv/bin/python scripts/journey_check.py                        # 59/59 checks passed
 
 # the failure matrix (against a FRESHLY started API)
 .venv/bin/python scripts/failure_matrix_check.py http://127.0.0.1:8000   # 25/25 checks passed
