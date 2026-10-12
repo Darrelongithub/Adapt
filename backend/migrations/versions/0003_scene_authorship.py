@@ -23,6 +23,13 @@ Nothing is backfilled and no column changes, so an existing deployment upgrades 
 statement pair. ``downgrade`` is the lossy direction and says so: the previous schema cannot
 hold two rows for one content id, so the duplicate learner copies are deleted (their runs
 cascade with them, exactly as deleting a scene always has).
+
+Both directions are existence-aware, and that is not decoration. A fresh clone gets its schema
+from ``Base.metadata.create_all`` at startup, which already builds the indexes below from
+``LessonScene.__table__``; such a database has no ``alembic_version`` row, and the documented way
+to bring it into the chain (``stamp 0002``, then ``upgrade head``) would otherwise replay this
+revision against the tables that already match it and die with ``index uq_scene_spec_shared already
+exists`` -- on the one path the README tells every new operator to take.
 """
 from __future__ import annotations
 
@@ -37,26 +44,58 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+TABLE = "lesson_scenes"
+SHARED_WHERE = "author_student_id IS NULL"
+
+
+def _indexes() -> dict[str, dict]:
+    """What is actually on the table right now, whoever put it there (this chain or create_all).
+
+    ``column_names`` and ``unique`` are the two properties that can disagree with the target: a
+    ``create_all`` database already has all three indexes with the right shape, while a
+    pre-revision database has one unique ``ix_lesson_scenes_spec_id`` and none of the others. A
+    partial index's ``WHERE`` clause is not reported by SQLite's inspector, so the pair below is
+    matched by name and shape -- which is enough to tell those two situations apart, the only two
+    that occur.
+    """
+    return {i["name"]: i for i in sa.inspect(op.get_bind()).get_indexes(TABLE)}
+
+
+def _ensure(name: str, columns: list[str], *, unique: bool, partial: bool = False) -> None:
+    have = _indexes().get(name)
+    right = (
+        have is not None
+        and list(have.get("column_names") or []) == columns
+        and bool(have.get("unique")) == unique
+    )
+    if right:
+        return
+    if have is not None:
+        op.drop_index(name, table_name=TABLE)
+    if partial:
+        op.create_index(
+            name,
+            TABLE,
+            columns,
+            unique=unique,
+            sqlite_where=sa.text(SHARED_WHERE),
+            postgresql_where=sa.text(SHARED_WHERE),
+        )
+    else:
+        op.create_index(name, TABLE, columns, unique=unique)
+
+
 def upgrade() -> None:
     # the old unique index by name; SQLite lets an index be dropped without rebuilding the table
-    op.drop_index("ix_lesson_scenes_spec_id", table_name="lesson_scenes")
-    op.create_index("ix_lesson_scenes_spec_id", "lesson_scenes", ["spec_id"], unique=False)
-    op.create_index(
-        "uq_scene_spec_shared",
-        "lesson_scenes",
-        ["spec_id"],
-        unique=True,
-        sqlite_where=sa.text("author_student_id IS NULL"),
-        postgresql_where=sa.text("author_student_id IS NULL"),
-    )
-    op.create_index(
-        "uq_scene_spec_author", "lesson_scenes", ["spec_id", "author_student_id"], unique=True
-    )
+    _ensure("ix_lesson_scenes_spec_id", ["spec_id"], unique=False)
+    _ensure("uq_scene_spec_shared", ["spec_id"], unique=True, partial=True)
+    _ensure("uq_scene_spec_author", ["spec_id", "author_student_id"], unique=True)
 
 
 def downgrade() -> None:
-    op.drop_index("uq_scene_spec_author", table_name="lesson_scenes")
-    op.drop_index("uq_scene_spec_shared", table_name="lesson_scenes")
+    for name in ("uq_scene_spec_author", "uq_scene_spec_shared"):
+        if name in _indexes():
+            op.drop_index(name, table_name=TABLE)
     # one row per content id again: keep the oldest copy of each scene and let its runs cascade
     op.execute(
         """
@@ -71,5 +110,5 @@ def downgrade() -> None:
         )
         """
     )
-    op.drop_index("ix_lesson_scenes_spec_id", table_name="lesson_scenes")
-    op.create_index("ix_lesson_scenes_spec_id", "lesson_scenes", ["spec_id"], unique=True)
+    # back to one row per content id: the plain index becomes the unique one again
+    _ensure("ix_lesson_scenes_spec_id", ["spec_id"], unique=True)

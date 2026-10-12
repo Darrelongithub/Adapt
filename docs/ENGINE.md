@@ -161,13 +161,15 @@ sqlite file at .../var/adapt.db not encrypted at the file level; falling back to
 field-only (column encryption only). driver=sqlite; reason: no key configured
 ```
 
-That fallback is the live configuration in the sandbox this repo ships from — no cipher module
-installed — so **`var/adapt.db` is plaintext at the file level and encrypted in its columns**, and
-`docs/UNVERIFIED.md` says so. No comment, README or report may claim file encryption for that file.
-With a driver and a key the file level is real: the dev database now begins with random bytes,
-`GET /api/v1/status` reports `driver: sqlcipher`, and startup prints the key check
+`sqlcipher3-binary` is a declared dependency for x86_64/aarch64, so an environment built by the
+README's own `pip install -e "./backend[dev]"` gets the file-level mode: a database written here
+begins with random bytes, `GET /api/v1/status` reports `driver: sqlcipher` +
+`file_encrypted: true`, and startup prints the key check
 (`key check ok (22 encrypted value(s) across 6 column(s) read)`) — which is also how you notice a
 newly encrypted column that is silently *not* being encrypted, because the count goes up or it does not.
+Which of the two modes a machine is in is a fact about the install, not about this code, so neither
+is claimed by default: the log line above is the answer, and `docs/UNVERIFIED.md` records what was
+measured where.
 
 `migrations/env.py` therefore hands Alembic **the application's own engine** (`connectable =
 _engine`) instead of rebuilding one from `alembic.ini`. `engine_from_config(url=str(_engine.url))`
@@ -212,12 +214,25 @@ PYTHONPATH=$PWD/src ADAPT_DATA_DIR=/path/to/data ../.venv/bin/alembic -c alembic
 ```
 
 A database built by `db/init_db.py`'s `init()` (`database.create_all()`) has **no `alembic_version`
-row**, so a bare
-`upgrade head` replays `0001` and dies on `table audit_log already exists`. `stamp head` would
-"fix" that by lying: the later revisions never run, and `create_all` does not add indexes to tables
-that already exist — so the `0003` constraints stay missing and the collision in §4 comes back on a
-database that *looks* migrated. Stamp at the revision the schema actually matches, then upgrade,
-then read the result back through the app's engine:
+row**, so a bare `upgrade head` replays `0001` and dies on `table audit_log already exists`. Stamp
+first — at the revision the file actually matches, which is not always the same answer:
+
+* a database created by *this* build has every column and index already, so it is at head:
+  `stamp head`, and nothing needs to run;
+* a database created by an earlier build matches `0002`: `stamp 0002` then `upgrade head` applies
+  the `0003` constraints it is missing. `stamp head` on that file is the version of this that does
+  damage — the database looks migrated and still has `lesson_scenes.spec_id` unique, which is the
+  collision in §4.
+
+Those two cases are hard to tell apart from the outside, so `0003` does not have to guess: both of
+its directions read `sa.inspect(op.get_bind()).get_indexes("lesson_scenes")` and change only what
+is absent or has the wrong shape. Replaying it onto a file that already matches is a no-op instead
+of `index uq_scene_spec_shared already exists` — which is what it was, on the documented recovery
+step for a fresh clone, until the test below made the two shapes collide on purpose. And
+`test_an_upgraded_database_has_the_indexes_create_all_builds` compares an upgraded database with a
+`create_all` one on **every** index name and uniqueness flag, not just columns, so a model index
+with no revision behind it fails here rather than in a listing query at 3am. Read a result back
+through the app's engine, never a bare `sqlite://` URL:
 
 ```bash
 alembic -c alembic.ini stamp 0002 && alembic -c alembic.ini upgrade head

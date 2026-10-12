@@ -9,8 +9,10 @@ it. These tests are the floor under that promise:
 * ``upgrade head`` on an empty database produces exactly the schema the models describe;
 * nothing the models declare is missing from the migration chain (``alembic check``),
   which is the check that catches the next column added to a model without a revision;
-* a database the app already created can be stamped and then upgraded without complaint,
-  because that is the actual situation for anybody who ran an earlier build.
+* a database the app already created can be stamped and then upgraded without complaint --
+  both as "it is already at head, mark it" and as "mark it at 0002 and replay 0003", which is
+  the instruction an operator with a pre-0003 file is given, and the one that used to fail
+  against a database whose ``create_all`` had already made the indexes.
 
 Everything runs in a subprocess on a scratch ``ADAPT_DATA_DIR``. In-process would let the
 migration build a keyring for a *different* directory and overwrite the process-wide
@@ -74,7 +76,7 @@ def _run(args: list[str], data_dir: Path) -> subprocess.CompletedProcess:
 _READER = """
 import json, sys
 sys.path.insert(0, {src!r})
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from adapt.config import get_settings
 from adapt.db.engine import create_db_engine
 
@@ -82,10 +84,15 @@ settings = get_settings()
 engine, info = create_db_engine(settings)
 try:
     insp = inspect(engine)
+    version = None
+    if "alembic_version" in insp.get_table_names():
+        version = engine.connect().execute(text("SELECT version_num FROM alembic_version")).scalar()
     print(json.dumps({{
         "driver": info.name,
+        "current": version,
         "tables": {{t: sorted(c["name"] for c in insp.get_columns(t)) for t in insp.get_table_names()}},
         "indexes": {{t: sorted(i["name"] for i in insp.get_indexes(t)) for t in insp.get_table_names()}},
+        "unique": {{t: {{i["name"]: bool(i.get("unique")) for i in insp.get_indexes(t)}} for t in insp.get_table_names()}},
     }}))
 finally:
     engine.dispose()
@@ -116,6 +123,43 @@ def _schema(data_dir: Path) -> dict[str, list[str]]:
     return _read(data_dir)["tables"]
 
 
+_SHAPE = """
+import sys
+sys.path.insert(0, {src!r})
+from sqlalchemy import text
+from adapt.config import get_settings
+from adapt.db.engine import create_db_engine
+from adapt.db.models import Base
+
+engine, _info = create_db_engine(get_settings())
+try:
+    Base.metadata.create_all(engine)
+    if sys.argv[1] == "pre-0003":
+        # exactly what the 0002 models produced: one unique index on the content id, and
+        # nothing partial -- the shape a database from that build is in on disk. Only what 0003
+        # owns is removed; ix_scene_kind_origin belongs to 0002 and stays where it was put.
+        with engine.begin() as c:
+            for name in ("uq_scene_spec_author", "uq_scene_spec_shared"):
+                c.execute(text("DROP INDEX IF EXISTS " + name))
+            c.execute(text("DROP INDEX IF EXISTS ix_lesson_scenes_spec_id"))
+            c.execute(text("CREATE UNIQUE INDEX ix_lesson_scenes_spec_id ON lesson_scenes (spec_id)"))
+finally:
+    engine.dispose()
+"""
+
+
+def _boot(data_dir: Path, mode: str = "create_all") -> None:
+    """Build a scratch database the way the application would, then leave it on disk."""
+    out = subprocess.run(
+        [sys.executable, "-c", _SHAPE.format(src=str(BACKEND / "src")), mode],
+        env=_env(data_dir),
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert out.returncode == 0, out.stderr[-2000:]
+
+
 def _expected_schema() -> dict[str, list[str]]:
     return {t.name: sorted(c.name for c in t.columns) for t in Base.metadata.tables.values()}
 
@@ -139,6 +183,23 @@ def test_upgrade_head_builds_the_schema_the_models_describe(tmp_path):
     assert "email_encrypted" in built.get("students", []) or any(
         "email" in c for c in built.get("students", [])
     ), "students lost its email column in translation"
+
+
+def test_an_upgraded_database_has_the_indexes_create_all_builds(tmp_path):
+    """Columns are the easy half. An index a model declares and no revision creates shows up in
+    neither ``create_all`` nor a column listing, and a ``SELECT`` that needs it still returns the
+    right rows -- it just reads every one of them. So the two ways this project builds a schema
+    are held against each other completely: same tables, same index names, same uniqueness.
+    """
+    migrated, created = tmp_path / "migrated", tmp_path / "created"
+    migrated.mkdir()
+    created.mkdir()
+    assert _run(["upgrade", "head"], migrated).returncode == 0
+    _boot(created)
+    mine, theirs = _read(migrated), _read(created)
+    for table in sorted(set(theirs["indexes"]) - {"alembic_version"}):
+        assert set(mine["indexes"].get(table, [])) == set(theirs["indexes"][table]), table
+        assert mine["unique"].get(table, {}) == theirs["unique"][table], f"{table}: unique flags differ"
 
 
 def test_a_migrated_database_is_still_encrypted_and_still_openable(tmp_path):
@@ -236,6 +297,47 @@ def test_an_existing_create_all_database_can_be_stamped_then_upgraded(tmp_path):
     assert again.returncode == 0, again.stderr[-1500:]
     built = _schema(data)
     assert set(built) >= set(_expected_schema()), "stamping lost tables"
+    assert {"uq_scene_spec_shared", "uq_scene_spec_author", "ix_scene_kind_origin"} <= set(
+        _read(data)["indexes"].get("lesson_scenes", [])
+    ), "stamping left the scene table without the indexes the models declare"
+
+
+def test_a_create_all_database_survives_the_documented_stamp_then_upgrade(tmp_path):
+    """``stamp 0002`` then ``upgrade head`` has to be safe on a *fresh* database too.
+
+    A new clone gets its schema from ``create_all``, which already builds the indexes ``0003``
+    creates, and it has no ``alembic_version`` row -- so the instruction in ``README.md`` for an
+    existing file is also the instruction anyone follows by mistake on a new one. Replaying a
+    revision against a schema that already matches it used to die with ``index uq_scene_spec_shared
+    already exists``, which turns the documented recovery step into a reason to delete a database.
+    """
+    data = tmp_path / "fresh-stamped"
+    data.mkdir()
+    _boot(data)
+    assert _run(["stamp", "0002"], data).returncode == 0
+    up = _run(["upgrade", "head"], data)
+    assert up.returncode == 0, (up.stdout[-800:] + up.stderr[-1500:])
+    assert _read(data)["current"] == "0003"
+
+
+def test_the_revision_still_adds_the_indexes_a_database_is_missing(tmp_path):
+    """The guard above must not become "skip everything".
+
+    On the shape ``0002`` actually left behind, ``upgrade head`` has to create both partial
+    indexes and turn the unique content-id index into a plain one -- and the index properties are
+    read back through the application's engine, because "it ran" is not the same as "it did".
+    """
+    data = tmp_path / "pre-0003"
+    data.mkdir()
+    _boot(data, "pre-0003")
+    before = _read(data)
+    assert "uq_scene_spec_shared" not in before["indexes"]["lesson_scenes"]
+    assert before["unique"]["lesson_scenes"]["ix_lesson_scenes_spec_id"] is True
+    assert _run(["stamp", "0002"], data).returncode == 0
+    assert _run(["upgrade", "head"], data).returncode == 0
+    after = _read(data)
+    assert {"uq_scene_spec_shared", "uq_scene_spec_author"} <= set(after["indexes"]["lesson_scenes"])
+    assert after["unique"]["lesson_scenes"]["ix_lesson_scenes_spec_id"] is False
 
 
 def test_downgrade_to_base_leaves_an_empty_database(tmp_path):

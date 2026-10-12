@@ -41,13 +41,17 @@ are implemented but *not* proven. Each item says what was done instead and how t
   password hashing; per-purpose HKDF subkeys; that raw file bytes contain no plaintext (a test
   reads the database file itself); that a keyfile which cannot decrypt existing rows stops
   startup with a message naming the file rather than serving 500s.
-* **Not verified:** SQLCipher whole-file encryption. `sqlcipher3-binary` is not installed in
-  this sandbox, so `db_encryption="auto"` selects field-only and says so. The driver-detection
-  code path for a *working* SQLCipher has never run here.
-* **To check:** `pip install sqlcipher3-binary`, restart, and confirm
-  `GET /api/v1/status → database.file_encrypted` is `true` and
-  `sqlite3 var/adapt.db "PRAGMA cipher_version"` answers.
-
+* **Verified later, and it changed the answer:** the audit pass ran in an environment where
+  `sqlcipher3-binary` could not be imported, so `db_encryption="auto"` selected field-only and said
+  so — and that is the state several of the first documents describe. The package is a declared
+  dependency, so once `pip install -e "./backend[dev]"` has run the whole-file path is the one that
+  runs: the database begins with random bytes, `GET /api/v1/status → database.file_encrypted` is
+  `true`, `PRAGMA cipher_version` answers, and `alembic upgrade head` connects through the same
+  engine rather than a URL (an older `env.py` rebuilt one from `alembic.ini`, which quietly wrote a
+  *plaintext* database into a fresh `ADAPT_DATA_DIR`; `test_migrations.py` now fails on that shape).
+* **Still not verified here:** whether the KDF and page-size defaults match a deployment you would
+  actually run — nothing in this codebase tunes cipher parameters — and any behaviour that needs a
+  second process holding the same encrypted file open (WAL under concurrency, backup while live).
 ## Item bank and placement quality
 
 * **Verified:** every item's answer key is reachable by the grader, the diagnostic covers one

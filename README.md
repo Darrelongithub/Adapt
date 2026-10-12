@@ -146,12 +146,16 @@ cd backend
 ```
 
 A database built by `create_all` has no `alembic_version` row, so a bare `upgrade head` replays
-`0001` and dies on `table audit_log already exists`. `stamp head` "fixes" that by lying: the
-newer revisions then never run, and `create_all` does not add indexes or constraints to tables that
-already exist — a database stamped to `0003` without ever running it keeps the *old* unique index
-on `lesson_scenes.spec_id` and still collides two learners' copies. Stamp at the revision the
-schema actually matches, upgrade from there, and confirm through the app's own engine:
-
+`0001` and dies on `table audit_log already exists`. Stamp first — at the revision the file actually
+matches. A database created by *this* build already has every column and index, so it is at head and
+`stamp head` is the truth. A database created by an earlier build matches `0002`, and stamping *that*
+file to head is the mistake that matters: it looks migrated while `lesson_scenes.spec_id` is still
+unique per database, which is the collision `0003` exists to remove. Replaying a revision onto a file
+that already matches it is now harmless rather than an `index already exists` failure — `0003` reads
+`get_indexes()` and changes only what is absent or wrongly shaped, in both directions — because those
+two situations are hard to tell apart from the outside. Confirm through the app's own engine, and
+`test_migrations.py` holds the line by comparing an upgraded database with a `create_all` one on
+every index name and uniqueness flag:
 ```bash
 ../.venv/bin/python -c "from sqlalchemy import inspect; from adapt.db.engine import create_db_engine, get_settings; e,_=create_db_engine(get_settings()); print(inspect(e).get_indexes('lesson_scenes'))"
 ```
