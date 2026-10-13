@@ -630,16 +630,58 @@ def detect_slow_start(ctx: EvidenceContext) -> list[Observation]:
 
 
 def detect_visual_benefit(ctx: EvidenceContext) -> list[Observation]:
-    """Measured difference between the visual and text variants of the same topic.
+    """Measured difference between visual and non-visual teaching of the same topics.
 
-    This is the anti-"learning styles" detector: the variant is *randomly assigned
-    by the diagnostic* and we compare performance, never self-reported preference.
+    This is the anti-"learning styles" detector: it compares performance between
+    *assigned* methods and never touches self-reported preference — a learner is
+    not a "visual learner" because a picture helped once.
+
+    Two comparisons exist and they are not interchangeable, so they are not
+    labelled as if they were (Phase 6, brief §9.1/§9.4):
+
+    * **Assigned (controlled, weight 1.0)** — rows whose method was set at serve
+      time by ``learning.methods`` (seeded, counterbalanced per learner). Only
+      this comparison may be called assigned, and only when *both* arms reached
+      ``min_n`` as assignments.
+    * **Observed (observational, weight 0.4)** — the learner *chose* to open a
+      visual, or the row carries no assignment. That comparison is kept, scaled
+      down, and stamped with its source, because a learner who opens a picture
+      is usually the learner who was stuck: it can inform and cannot decide.
+
+    The previous version of this detector claimed the variant was "randomly
+    assigned by the diagnostic" while one arm was defined by the learner
+    opening the visual — a false claim about the design, worse than no claim.
     """
     rows = ctx.usable()
-    visual = [a for a in rows if a.experience_mode in ("visual",) or a.visual_opened]
-    plain = [a for a in rows if a not in visual and a.experience_mode in ("read", "practice")]
-    if len(visual) < ctx.min_n or len(plain) < ctx.min_n:
-        return []
+    assigned_visual = [a for a in rows if a.method == "visual" and a.design == "randomised"]
+    assigned_plain = [
+        a for a in rows if a.method and a.method not in ("visual", "unassigned") and a.design == "randomised"
+    ]
+    if len(assigned_visual) >= ctx.min_n and len(assigned_plain) >= ctx.min_n:
+        visual, plain = assigned_visual, assigned_plain
+        design = "randomised"
+        facts = {
+            "assignment": "method assigned at serve time by learning.methods (seeded and counterbalanced per learner), not chosen by the learner",
+            "source": "assigned (controlled)",
+            "weight": 1.0,
+            "note": "a measured difference on these topics, not a general 'visual learner' claim",
+        }
+    else:
+        visual = [a for a in rows if a.experience_mode in ("visual",) or a.visual_opened]
+        plain = [a for a in rows if a not in visual and a.experience_mode in ("read", "practice")]
+        if len(visual) < ctx.min_n or len(plain) < ctx.min_n:
+            return []
+        design = "observational"
+        facts = {
+            "assignment": "the learner opened the visual themselves (self-selected); this is not an assigned comparison",
+            "source": "self-selected (observational)",
+            "weight": 0.4,
+            "note": (
+                "observational, weighted 0.4 next to 1.0 for assigned comparisons and never proof on its own: "
+                "a learner who opens a picture is usually the learner who was stuck. "
+                "A measured difference on these topics, not a general 'visual learner' claim"
+            ),
+        }
     v = _mean([a.ok or 0 for a in visual])
     b = _mean([a.ok or 0 for a in plain])
     obs = make(
@@ -649,10 +691,8 @@ def detect_visual_benefit(ctx: EvidenceContext) -> list[Observation]:
         baseline=b,
         group=visual,
         other=plain,
-        facts={
-            "assignment": "delivery variant was varied by the diagnostic, not chosen by the learner",
-            "note": "a measured difference on this topic, not a general 'visual learner' claim",
-        },
+        design=design,
+        facts=facts,
         strategy="visual_representation",
         min_n=ctx.min_n,
         topics=sorted({a.topic_id for a in visual} | {a.topic_id for a in plain}),
