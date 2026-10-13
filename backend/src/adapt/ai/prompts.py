@@ -20,6 +20,8 @@ reader, and what it has to quote before any of it is used.
 
 from __future__ import annotations
 
+from typing import Sequence
+
 GUARDRAILS = """\
 NON-NEGOTIABLE RULES
 1. Separate measurement from interpretation. Numbers you were given are facts.
@@ -113,6 +115,63 @@ misconceptions. Always output strict JSON: { "score": number 0..1,
 #: (``src/lib/prompts.ts`` -> ``TEACH_BACK_GRADER_SYSTEM_PROMPT``), kept so a port in
 #: either direction keeps resolving.
 TEACH_BACK_GRADER_SYSTEM_PROMPT = TEACHBACK_GRADER_SYSTEM
+
+RESOURCE_CURATION_SYSTEM = """\
+You are AI 2's research assistant. You receive raw search results from
+OpenAlex, arXiv, Open Library, and YouTube for a given topic, plus the
+learner's profile. Select and summarize the 4 most useful items for THIS
+learner (mastery level + preferred modality). Output strict JSON:
+{ "picks": [{ "title": string, "url": string, "source": string,
+"why": string (<=140 chars, speak to the learner directly) }] }.
+Prefer approachable / intro-level sources when mastery is low, and
+primary/academic sources when mastery is high.
+"""
+
+#: The name the web-application prompt set uses for the same string
+#: (``src/lib/prompts.ts`` -> ``RESOURCE_CURATION_SYSTEM_PROMPT``).
+RESOURCE_CURATION_SYSTEM_PROMPT = RESOURCE_CURATION_SYSTEM
+
+RETENTION_CHECK_SYSTEM = """\
+You are AI 1 designing a short spaced-repetition retention check for a
+topic the learner previously reached mastery on. Base the timing rationale
+on the Ebbinghaus forgetting curve. Output strict JSON:
+{ "question": string, "expectedAnswerNotes": string,
+  "rationale": string (<=140 chars, why now, referencing days since
+  practice) }.
+"""
+
+#: The name the web-application prompt set uses for the same string
+#: (``src/lib/prompts.ts`` -> ``RETENTION_CHECK_SYSTEM_PROMPT``).
+RETENTION_CHECK_SYSTEM_PROMPT = RETENTION_CHECK_SYSTEM
+
+#: Prompt 6 of the set -- the Approval Gate script, word for word. This is the
+#: hard-coded script AI 1's proposal ask is filled into; the repo's own guardrail
+#: ("you may propose; you may not persist") is enforced in code elsewhere, and this
+#: template is what the asking sounds like.
+APPROVAL_SCRIPT_TEMPLATE = (
+    "Hey, we noticed you did {A}, {B}, {C}, {D}. Based on what we've observed, "
+    "we want to change {X} to {Y}. Do you want to continue, and is there "
+    "anything else you'd like to add?"
+)
+
+
+def fill_approval_script(
+    observations: Sequence[str], current_label: str, proposed_label: str
+) -> str:
+    """The exact script, filled in. Empty observation slots drop out.
+
+    Mirrors the set's own ``fillApprovalScript``: up to four observations, joined
+    with commas into the one "{A}, {B}, {C}, {D}" slot, then {X} -> current and
+    {Y} -> proposed. Callers pass observations that already read as clauses
+    ("re-answered question 3 four times"), because the template supplies "you did".
+    """
+    clause = ", ".join(o for o in observations[:4] if o and o.strip())
+    return (
+        APPROVAL_SCRIPT_TEMPLATE.replace("{A}, {B}, {C}, {D}", clause)
+        .replace("{X}", current_label)
+        .replace("{Y}", proposed_label)
+    )
+
 
 SCENE_NARRATOR_SYSTEM = f"""{GUARDRAILS}
 You are ADAPT's Narration Intelligence (AI 3). You sit beside an interactive scene -- a

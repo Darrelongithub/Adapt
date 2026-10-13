@@ -360,6 +360,33 @@ def due(
     return {"due": rows, "count": len(rows), "rule": "scheduled at the point your own recall is projected to reach ~85%"}
 
 
+@router.get("/review/check")
+async def retention_check(
+    topic_id: str,
+    use_llm: bool = False,
+    with_notes: bool = False,
+    s: Session = Depends(db_session),
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    """Master prompt 5's check for one due topic: the question, and why now.
+
+    ``with_notes`` is the "I have answered — what should it have covered?" step:
+    the notes name what a good answer covers, so they are withheld until asked for
+    rather than shown beside the question. Without a model the check is still
+    fully formed (deterministic, grounded in the learner's own last item); a 404
+    means the topic has no schedule, i.e. nothing has been practised to check.
+    """
+    check = await current().ai1.design_retention_check(
+        student.id, topic_id, use_llm=use_llm and bool(get_settings().gemini_api_key)
+    )
+    if check is None:
+        raise HTTPException(status_code=404, detail="no scheduled review for this topic")
+    if not with_notes:
+        check.pop("expected_answer_notes", None)
+        check["notes"] = "what a good answer covers arrives with with_notes=1, after you have answered"
+    return check
+
+
 @router.post("/analyze")
 async def analyze(
     session_id: str | None = None,

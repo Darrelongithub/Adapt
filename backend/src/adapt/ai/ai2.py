@@ -49,7 +49,7 @@ from ..db.models import (
 from ..learning.profile import to_llm_payload
 from ..security.redact import redact_payload
 from . import local_tutor as LT
-from .prompts import AI2_SYSTEM, TEACHBACK_GRADER_SYSTEM
+from .prompts import AI2_SYSTEM, RESOURCE_CURATION_SYSTEM, TEACHBACK_GRADER_SYSTEM
 
 log = logging.getLogger("adapt.ai2")
 
@@ -1276,6 +1276,63 @@ class EducationalIntelligence:
         except Exception as exc:  # resource lookup must never break an answer
             log.info("resource hint skipped: %s", exc.__class__.__name__)
             return None
+
+    async def curate_resources(
+        self,
+        *,
+        query: str,
+        results: Sequence[Mapping[str, Any]],
+        level_hint: str = "",
+        student_id: str | None = None,
+        limit: int = 4,
+    ) -> dict[str, Any]:
+        """Master prompt 4: the search results, curated down to the picks for this learner.
+
+        The deterministic path is the floor and always answers: the upstream rank
+        order with a level-appropriate sentence each. The model is the upgrade, and
+        its whole output is refused unless every pick's ``url`` is one it was actually
+        given (:func:`adapt.resources.curation.accept_picks`) -- a curator that could
+        add a plausible URL would be a curator that could recommend a source that does
+        not exist. The reply says which path produced it.
+        """
+        from ..resources import curation as CUR
+
+        out: dict[str, Any] = {
+            "picks": CUR.deterministic_picks(results, level_hint=level_hint, limit=limit),
+            "picks_source": "rules",
+        }
+        if not results:
+            out["note"] = "nothing returned by the search, so there is nothing to curate"
+            return out
+        if self.llm is None or not getattr(self.llm, "configured", False):
+            return out
+        user = CUR.curation_task(query, level_hint, results)
+        safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
+        try:
+            res = await self.llm.complete(
+                system=RESOURCE_CURATION_SYSTEM,
+                user=safe["q"],
+                purpose="ai2_curate",
+                role="ai2",
+                student_id=student_id or "anon",
+                temperature=0.2,
+                max_output_tokens=520,
+                response_spec=CUR.CURATION_SPEC,
+            )
+        except Exception as exc:  # curation decorates a search; it must not break one
+            log.info("resource curation skipped: %s", exc.__class__.__name__)
+            out["llm_status"] = "error"
+            return out
+        await self._log_llm("ai2_curate", "ai2", res, student_id or "anon", len(user), dropped, kinds=redacted_kinds)
+        out["llm_status"] = res.status
+        picks, reason = (None, "no_model_answer")
+        if res.ok and res.data:
+            picks, reason = CUR.accept_picks(res.data, results=results, limit=limit)
+        out["llm_picks"] = reason
+        if picks is not None:
+            out["picks"] = picks
+            out["picks_source"] = "model"
+        return out
 
     async def _llm_practice(
         self, *, student_id: str, topics: dict[str, Any], want: int, topic_id: str | None, note: str

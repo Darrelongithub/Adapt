@@ -83,6 +83,9 @@ class ResourceBody(BaseModel):
     query: str = Field(min_length=2, max_length=240)
     providers: list[str] | None = None
     limit: int = Field(default=6, ge=1, le=12)
+    # Optional mastery band ("developing", "secure", ...) so prompt 4's curation can
+    # lean intro-level or primary-source; the screen is not required to send it.
+    level: str | None = Field(default=None, max_length=24)
 
 
 @router.post("/explain")
@@ -322,6 +325,19 @@ async def search_resources(
         "These were found by a search; that is not a claim that they are correct for you. "
         "Check against your own course notes before you trust a source."
     )
+    # Prompt 4's curation pass on top of the raw results: deterministic picks unless a
+    # model is configured, and the response always says which one produced them.
+    curated = await current().ai2.curate_resources(
+        query=body.query,
+        results=data.get("results") or [],
+        level_hint=body.level or "",
+        student_id=student.id,
+    )
+    data["picks"] = curated["picks"]
+    data["picks_source"] = curated["picks_source"]
+    for key in ("note", "llm_status", "llm_picks"):
+        if curated.get(key):
+            data[f"picks_{key}"] = curated[key]
     return data
 
 
