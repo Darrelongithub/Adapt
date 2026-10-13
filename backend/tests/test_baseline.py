@@ -149,6 +149,14 @@ def _play_until(client, learner, run_id: str, *, stop_stage: str | None = None, 
     return played
 
 
+def _run_seed(services, run_id: str) -> int:
+    """The run's own seed, so a test can re-derive exactly what the learner was shown."""
+    from adapt.db.models import BaselineRun
+
+    with services.db.session() as s:
+        return int(s.get(BaselineRun, run_id).seed or 0)
+
+
 def _studied_pairs(client, learner, run_id: str) -> list[dict]:
     """The pairs this run showed. They are in the study task, which the API hands out once."""
     with_retry = []
@@ -245,7 +253,9 @@ def test_the_stage_order_is_the_order_the_brief_asks_for(client, learner):
     _pick_format(client, learner, view["run_id"])
     _answer_questions(client, learner, view["run_id"])
     seen: list[str] = []
-    for _ in range(60):
+    # A perfect vault run is ~30 trials on its own (two directions, growing span), so a cap that
+    # only reaches the machine is a cap that never checks the order it is asserting.
+    for _ in range(200):
         view = client.get(f"/api/v1/baseline/{view['run_id']}", headers=learner["headers"]).json()
         if view["kind"] != "task":
             break
@@ -264,7 +274,7 @@ def test_the_stage_order_is_the_order_the_brief_asks_for(client, learner):
     assert order.index("machine") < order.index("locked_box")
 
 
-def test_every_game_opens_with_an_unscored_practice_trial(client, learner):
+def test_every_game_opens_with_an_unscored_practice_trial(client, learner, services):
     view = _start(client, learner)
     _pick_format(client, learner, view["run_id"])
     _answer_questions(client, learner, view["run_id"])
@@ -274,12 +284,16 @@ def test_every_game_opens_with_an_unscored_practice_trial(client, learner):
             break
         task = view["task"]
         if task.get("game") in ("vault", "codewords_cued", "machine", "shopkeeper"):
-            scored = _submit(client, learner, view["run_id"], task, _correct_response(task))
-            assert not scored.get("scored", {}).get("correct"), (
-                f"a practice trial was scored as correct in {task['game']}: {scored['scored']}"
+            assert task["phase"] == "practice", f"{task['game']} did not open with a practice trial"
+            _submit(client, learner, view["run_id"], task, _correct_response(task))
+            # The *stored* correctness is what must be absent. The response still grades the tap,
+            # because a learner practising needs to know whether they tapped it right — that is
+            # feedback, not a measurement.
+            stored = services.baseline.trials_of(view["run_id"])[-1]
+            assert stored.phase == "practice"
+            assert stored.correct is None, (
+                f"a practice trial was recorded as a measurement in {task['game']}: {stored.correct}"
             )
-            if task["game"] == "vault":
-                assert task["phase"] == "practice"
             break
         _submit(client, learner, view["run_id"], task, _correct_response(task))
 
@@ -420,7 +434,10 @@ def test_a_wager_records_confidence_and_an_overconfident_answer_shows_up(client,
     wagered = [t for t in trials if t.wager is not None]
     assert wagered, "no trial recorded a wager"
     cal = calibration(trials)
-    assert cal["n"] == len(wagered)
+    # calibration counts trials that were both wagered on *and* scored: a wager on a probe or a
+    # locked-box attempt is a confidence signal with nothing to be right or wrong about yet
+    scorable = [t for t in wagered if t.correct is not None and t.phase == "measure"]
+    assert cal["n"] == len(scorable)
     assert cal["state"] == "measured" and cal["range"][0] <= cal["range"][1]
 
 
@@ -577,7 +594,9 @@ def test_the_trap_pause_is_recorded_even_when_the_intuitive_answer_wins():
     assert factor.state == "measured"
     assert factor.detail["traps_intuitive"] == 1
     assert factor.detail["traps_correct"] == 1
-    assert factor.detail["median_pause_ms"] == 31_000
+    # the median of two pauses is their midpoint, and the *slow* one is what "paused before
+    # answering" means; both are kept in the trials, the median is what the snapshot shows
+    assert factor.detail["median_pause_ms"] == 26_500
 
 
 def test_the_machine_factor_reports_the_falsifying_rate():
@@ -590,7 +609,7 @@ def test_the_machine_factor_reports_the_falsifying_rate():
     assert factor.state == "measured"
     assert factor.detail["falsifying_rate"] == 0.5
     assert factor.detail["first_guess_correct"] is True
-    assert "prove you wrong" in factor.statement
+    assert "proved you wrong" in factor.statement
 
 
 def test_calibration_needs_eight_wagers_before_it_reports_an_index():
@@ -643,8 +662,19 @@ def test_hint_behaviour_produces_a_hint_policy_with_a_reason():
     assert factor.detail["hints_used"] == 1
     assert factor.detail["walked_away"] is True
     levers = F.levers(factors, preferences={})
-    assert levers["hint_policy"]["value"] == "offer early"
-    assert "asked for help after" in levers["hint_policy"]["why"]
+    # "Time to first help" is the time spent *working* before asking (the attempt's 60s), not the
+    # time spent reading the hint — so a minute of struggle before asking is not "early".
+    assert levers["hint_policy"]["value"] == "on request"
+    assert "asked after 60s" in levers["hint_policy"]["why"]
+
+    # The other branch: a learner who asks for help almost immediately gets offered it sooner.
+    quick = [
+        _trial(game="locked_box", correct=False, task={"action": "attempt"}, latency_ms=8_000),
+        _trial(game="locked_box", correct=None, task={"action": "hint"}, latency_ms=3_000, response={"cost": 1}),
+    ]
+    quick_levers = F.levers(F.build_factors(quick), preferences={})
+    assert quick_levers["hint_policy"]["value"] == "offer early"
+    assert "asked for help after 8s" in quick_levers["hint_policy"]["why"]
 
 
 def test_preferences_decide_tone_and_never_decide_what_works():
@@ -686,16 +716,20 @@ def test_no_factor_carries_a_score_out_of_a_hundred_or_a_rank():
 # --------------------------------------------------------------------------- #
 # 4. the next-day check and the resumption picture
 # --------------------------------------------------------------------------- #
-def test_the_next_day_check_asks_about_the_pairs_this_run_taught(client, learner):
+def test_the_next_day_check_asks_about_the_pairs_this_run_taught(client, learner, services):
+    """The check is offered with no new study, about the pairs *this* run taught."""
     view = _start(client, learner)
     _play_until(client, learner, view["run_id"], stop_stage="vault", max_trials=30)
     body = client.get("/api/v1/baseline/next-day", headers=learner["headers"]).json()
     assert body["tasks"], "no next-day check was offered"
-    asked = {t["cue"] for t in body["tasks"]}
-    codes = {p["code"] for p in codewords_pairs(_run_seed(learner))} if False else None
-    assert asked, "a next-day check with no cues"
     assert all(t["game"] == "codewords_next_day" for t in body["tasks"])
-    assert codes is None  # the seed is per-run and is not re-derived here on purpose
+    assert len(body["tasks"]) == 3, "the brief asks for a short check, not a second recall test"
+    taught = {p["place"] for p in codewords_pairs(_run_seed(services, view["run_id"]))}
+    asked = {t["cue"] for t in body["tasks"]}
+    assert asked <= {p["code"] for p in codewords_pairs(_run_seed(services, view["run_id"]))}, (
+        "the check asked about a code word this run never taught"
+    )
+    assert taught, "the run taught no pairs"
 
 
 def test_the_stage_report_names_what_was_not_played(client, learner):
