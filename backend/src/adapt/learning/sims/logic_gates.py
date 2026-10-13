@@ -29,8 +29,8 @@ GATES: dict[str, tuple[int, Callable[..., int], str]] = {
     "AND": (2, lambda a, b: int(bool(a) and bool(b)), "high only when both inputs are high"),
     "OR": (2, lambda a, b: int(bool(a) or bool(b)), "high when at least one input is high"),
     "XOR": (2, lambda a, b: int(bool(a) != bool(b)), "high when the inputs differ"),
-    "NAND": (2, lambda a, b: int(not (bool(a) and bool(b))), "AND, then inverted -- low only when both are high"),
-    "NOR": (2, lambda a, b: int(not (bool(a) or bool(b))), "OR, then inverted -- high only when both are low"),
+    "NAND": (2, lambda a, b: int(not (bool(a) and bool(b))), "AND, then inverted — low only when both are high"),
+    "NOR": (2, lambda a, b: int(not (bool(a) or bool(b))), "OR, then inverted — high only when both are low"),
     "XNOR": (2, lambda a, b: int(bool(a) == bool(b)), "high when the inputs agree"),
     "NOT": (1, lambda a: int(not bool(a)), "the input, inverted"),
     "BUFFER": (1, lambda a: int(bool(a)), "the input, passed through"),
@@ -53,7 +53,7 @@ PARAMS: dict[str, dict[str, Any]] = {
         "help": "off: only the inputs you set. on: every row, in counting order.",
     },
     "a": {"type": "bool", "default": 1, "label": "Input A", "help": "0 or 1"},
-    "b": {"type": "bool", "default": 0, "label": "Input B", "help": "ignored by a one-input gate"},
+    "b": {"type": "bool", "default": 0, "label": "Input B", "help": "ignored by a single input gate"},
 }
 
 

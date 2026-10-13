@@ -197,7 +197,7 @@ def test_next_schedule_schedules_the_next_review_at_the_target():
     assert sched.due_at > now
     assert sched.expected_recall_at_due == pytest.approx(0.85, abs=0.02)
     assert sched.half_life_hours >= 0.25
-    assert "half-life" in sched.rationale
+    assert "halves" in sched.rationale, sched.rationale
 
     lapse = next_schedule(
         model=model,

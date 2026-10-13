@@ -181,7 +181,7 @@ def test_a_half_assigned_comparison_is_not_called_randomised():
     assert obs, "the comparison should still be reported"
     assert obs[0].design == "observational", obs[0].as_dict()
     assert "chose to do" in str(obs[0].facts["comparison"]), obs[0].facts
-    assert "self-selected" in str(obs[0].facts["after"]), obs[0].facts
+    assert "self selected" in str(obs[0].facts["after"]), obs[0].facts
 
 
 def test_a_method_that_beats_expectation_can_become_a_proposal():

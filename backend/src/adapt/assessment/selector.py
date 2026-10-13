@@ -708,7 +708,7 @@ def review_queue(
                 utility=1.0 + max(0.0, 0.85 - float(s.get("expected_recall_at_due", 0.85))),
                 reason=(
                     f"review due: model expects {s.get('expected_recall_at_due', 0.85):.0%} recall "
-                    f"after a {s.get('half_life_hours', 24):.0f}h half-life"
+                    f"after about {s.get('half_life_hours', 24):.0f}h"
                 ),
                 meta={"half_life_hours": s.get("half_life_hours"), "reps": s.get("reps", 0)},
             )

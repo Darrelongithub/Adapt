@@ -147,7 +147,7 @@ export default function Review() {
                 >
                   <p className="text-sm">
                     projected recall at this moment:{" "}
-                    <strong>{Math.round((r.expected_recall_at_due ?? 0.85) * 100)}%</strong> · half-life{" "}
+                    <strong>{Math.round((r.expected_recall_at_due ?? 0.85) * 100)}%</strong> · recall halves after{" "}
                     {Math.round(r.half_life_hours ?? 0)} h · {r.reps ?? 0} successful review{r.reps === 1 ? "" : "s"}
                     {r.lapses ? `, ${r.lapses} lapse${r.lapses === 1 ? "" : "s"}` : ""}
                   </p>
@@ -160,21 +160,21 @@ export default function Review() {
                     </Notice>
                   ) : (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {/* Each rating is its own control with its own accessible name, and
+                          each sends a distinct rating to review/complete. */}
                       <button
-                        className="rate-btn again"
+                        className="btn-ctl btn-secondary danger"
                         aria-label={`${r.title}: It went`}
                         disabled={busy === r.topic_id}
                         onClick={() => answer(r, false)}
-                        style={{ padding: "8px 14px", borderRadius: 999, border: "2px solid var(--line)", background: "var(--panel)", fontSize: 13, cursor: "pointer" }}
                       >
                         It went
                       </button>
                       <button
-                        className="rate-btn good"
+                        className="btn-ctl btn-secondary good"
                         aria-label={`${r.title}: I still know it`}
                         disabled={busy === r.topic_id}
                         onClick={() => answer(r, true)}
-                        style={{ padding: "8px 14px", borderRadius: 999, border: "2px solid var(--ink)", background: "var(--ink)", color: "var(--bg)", fontSize: 13, cursor: "pointer" }}
                       >
                         I still know it
                       </button>
@@ -205,7 +205,7 @@ export default function Review() {
         ) : (
           <>
             <p className="text-sm">
-              Brier score <strong>{cal.brier?.toFixed(3)}</strong> (lower is better; always-guessing-0.5 scores 0.25) ·
+              Brier score <strong>{cal.brier?.toFixed(3)}</strong> (lower is better, and answering 0.5 every time scores 0.25) ·
               expected calibration error <strong>{cal.ece?.toFixed(3)}</strong>
             </p>
             <div className="table-scroll">

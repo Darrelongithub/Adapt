@@ -339,7 +339,7 @@ export default function LessonPlayer() {
           <h1 className="text-xl font-semibold">Interactive lessons</h1>
           <p className="max-w-[70ch] text-[13px] text-[var(--muted)]">
             {catalogue?.note ??
-              "every scene is computed by a simulation in the backend; nothing here is a video, and nothing here is graded into a mastery number"}
+              "Every scene is computed by a simulation in the backend. Nothing here is a video, and nothing here is graded into a mastery number."}
           </p>
         </div>
         <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
@@ -364,7 +364,7 @@ export default function LessonPlayer() {
           {!catalogue && !loadError ? (
             <Card title="lessons">
               <p className="text-[13px] text-[var(--muted)]">
-                asking the backend which scenes it has validated… the frames are computed there, so there is nothing to
+                Asking the backend which scenes it has validated. The frames are computed there, so there is nothing to
                 show until it answers.
               </p>
             </Card>
@@ -381,11 +381,11 @@ export default function LessonPlayer() {
           {!catalogue?.scenes.length ? (
             <Card title="nothing seeded">
               <p className="text-[13px] text-[var(--muted)]">
-                the backend has stored no scenes. they are seeded at startup from validated specifications, so an empty
+                The backend has stored no scenes. They are seeded at startup from validated specifications, so an empty
                 list means the seed step did not run.
               </p>
               <p className="mt-2 text-[12px] text-[var(--muted)]">
-                restart the backend: seeding runs once at startup, and it refuses to store a spec the validator
+                Restart the backend. Seeding runs once at startup, and it refuses to store a spec the validator
                 rejects.
               </p>
             </Card>
@@ -453,7 +453,7 @@ export default function LessonPlayer() {
                       onKeyDown={(e) => filmRoving.onKeyDown(e, idx)}
                       onFocus={() => filmRoving.setActiveIndex(idx)}
                       onClick={() => dispatch({ type: "jump", index: idx })}
-                      className="frame"
+                      className="btn-ctl btn-secondary frame"
                       title={f.title ?? `frame ${idx + 1}`}
                     >
                       {String(idx + 1).padStart(2, "0")} {(f.title ?? f.kind ?? "frame").slice(0, 14)}
@@ -480,7 +480,7 @@ export default function LessonPlayer() {
                   you passed {owed.length} moment{owed.length === 1 ? "" : "s"} that asked you to say what happens next.
                   <button
                     type="button"
-                    className="ml-2 underline"
+                    className="btn-ctl btn-ghost ml-2"
                     onClick={() => dispatch({ type: "jump", index: owed[0] })}
                   >
                     go to the first one
@@ -540,7 +540,7 @@ export default function LessonPlayer() {
               <p className="text-[12px]">
                 positions, which choice you made, how long you took, and whether the simulation agreed. no keystrokes,
                 no screenshots, and prediction accuracy is never fed into a mastery number.{" "}
-                <a className="underline" href="/progress">
+                <a className="link-inline" href="/progress">
                   see what was recorded
                 </a>
                 .
@@ -632,16 +632,19 @@ function PredictionPanel({
           <div className="flex flex-wrap gap-2">
             {choices.map((c, ci) => {
               const chosen = answer === c;
-              const tone =
-                graded && chosen ? (graded.correct ? "border-[var(--good)] bg-[var(--good)]/15" : "border-[var(--bad)] bg-[var(--bad)]/10") : "border-[var(--line)]";
+              const tone = graded && chosen ? (graded.correct ? "correct" : "incorrect") : "";
               return (
                 <button
                   key={`${c}#${ci}`}
                   type="button"
+                  role="radio"
+                  aria-checked={chosen}
                   disabled={busy || !!graded}
                   onClick={() => onAnswer(c)}
-                  className={`rounded-md border px-3 py-1.5 text-left text-[13px] font-mono transition-colors hover:border-[var(--accent)] disabled:opacity-60 ${tone}`}
+                  className={`option-card ${tone}`}
+                  style={{ width: "auto" }}
                 >
+                  <span className="radio-dot" aria-hidden="true" />
                   {c}
                 </button>
               );
@@ -823,7 +826,7 @@ function VariablesPanel({
         </Field>
         {problem ? <Notice tone="bad">{problem}</Notice> : null}
         <Btn onClick={submit} disabled={busy || editable.length === 0}>
-          {busy ? "re-validating" : "re-run with these"}
+          {busy ? "checking again" : "run again with these"}
         </Btn>
         {!editable.length ? (
           <p className="text-[12px] text-[var(--warn)]">

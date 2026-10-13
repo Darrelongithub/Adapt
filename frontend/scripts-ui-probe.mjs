@@ -481,7 +481,15 @@ async function main() {
     return page;
   };
 
-  const learner = { email: `probe-${Date.now().toString(36)}@example.test`, password: "probe password long", name: "Probe Learner" };
+  const learner = {
+    // The door's own account: a username, which is what the form asks for now.
+    username: `probe.${Date.now().toString(36)}`,
+    // Kept for the fixture sign-in below and the other scenarios, which create their learner
+    // over the API with an email. Both identifier kinds have to keep working.
+    email: `probe-${Date.now().toString(36)}@example.test`,
+    password: "probe password long",
+    name: "Probe Learner",
+  };
   let csrf = "";
 
   // Scenarios are individually runnable, so any run that skipped the front door signs
@@ -534,15 +542,62 @@ async function main() {
     const offsite = hrefs.filter((h) => !h.startsWith("/") && !h.startsWith("#"));
     check("home", "every link is a route inside the app", hrefs.length > 3 && offsite.length === 0, `offsite: ${offsite.join(" ")} | all: ${hrefs.join(" ")}`);
     check("home", "no uncaught error during hydration", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 200));
-    check("home", "a signed-out visitor is offered both ways in", /guest/.test(page.text()) && /email \+ password/.test(page.text()), page.text().slice(0, 180));
-    const emailTab = page.byText("email + password", "button");
-    await page.click(emailTab);
-    await waitFor(() => page.find('input[type="email"]').length > 0, { label: "the email+password form" });
-    check("home", "switching to email+password reveals email and password fields", page.find('input[type="email"]').length === 1 && page.find('input[type="password"]').length === 1, `${page.find("input").length} inputs`);
-    page.type(page.find('input[type="text"]')[0] ?? page.find("input")[0], learner.name);
-    page.type(page.find('input[type="email"]')[0], learner.email);
+
+    /* ---- consent stands in front of account creation (brief 2.4) ----
+     * Nothing may be created — not by email, and not by the guest path — before a learner has
+     * answered the required consent box themselves. So the form is not even on the page yet,
+     * and these checks are about that ordering: two separate boxes, neither pre-ticked, the
+     * primary control closed until the required one is, and a decline that explains itself
+     * without creating anything. */
+    const consentBoxes = page.find('.check-row input[type="checkbox"]');
+    const agree = page.byText("Agree & continue", "button");
+    check(
+      "home",
+      "consent is asked before any account can be created",
+      consentBoxes.length === 2 && page.find('input[type="password"]').length === 0 && !!agree,
+      `${consentBoxes.length} boxes, ${page.find('input[type="password"]').length} password fields, agree: ${agree ? "present" : "missing"}`,
+    );
+    check("home", "neither consent box is pre-ticked", consentBoxes.length === 2 && consentBoxes.every((b) => b.checked === false), consentBoxes.map((b) => b.checked).join(","));
+    check("home", "the primary control is closed until the required box is ticked", !!agree && agree.disabled, agree ? `disabled=${agree.disabled}` : "no agree control");
+    if (consentBoxes[0]) page.checkInput(consentBoxes[0]);
+    await sleep(150);
+    check("home", "ticking the required box opens the way forward", !!agree && !agree.disabled, agree ? `disabled=${agree.disabled}` : "no agree control");
+    check(
+      "home",
+      "the optional research box is a separate question and stays unticked",
+      consentBoxes.length === 2 && consentBoxes[0].checked === true && consentBoxes[1].checked === false,
+      consentBoxes.map((b) => b.checked).join(","),
+    );
+    const decline = page.byText("Decline", "button");
+    if (decline) {
+      await page.click(decline);
+      await sleep(150);
+      check(
+        "home",
+        "declining explains what will not work instead of dead-ending",
+        /without that consent|cannot record answers/i.test(page.text()) &&
+          page.requests.every((r) => !/POST \/api\/v1\/students/.test(r)),
+        page.text().slice(-220),
+      );
+    }
+    await page.click(agree);
+    await sleep(200);
+
+    check("home", "a signed-out visitor is offered both ways in", !!page.byText("Continue as guest", "button") && !!page.byText("Sign in", "button"), page.text().slice(0, 180));
+    await page.click("Create account", "button");
+    // The form is two identity fields and no email: the account is found again by username.
+    await waitFor(() => page.find('input[autocomplete="username"]').length > 0, { label: "the create-account form" });
+    check(
+      "home",
+      "the create-account tab asks for a username and a password, and no email",
+      page.find('input[autocomplete="username"]').length === 1 &&
+        page.find('input[type="password"]').length === 1 &&
+        page.find('input[type="email"]').length === 0,
+      `${page.find("input").length} inputs, types: ${page.find("input").map((i) => i.type || i.getAttribute("autocomplete")).join(", ")}`,
+    );
+    page.type(page.find('input[autocomplete="username"]')[0], learner.username);
     page.type(page.find('input[type="password"]')[0], learner.password);
-    const submit = page.byText("Register", "button");
+    const submit = page.find('button[type="submit"]')[0];
     check("home", "the submit button is enabled once the fields are filled", !!submit && !submit.disabled, submit ? "enabled" : "not found");
     await page.click(submit);
     // jsdom refuses cross-document navigation, so a router.push that leaves the document
@@ -567,6 +622,52 @@ async function main() {
     check("home", "and a csrf token the page can read (by design, that one is not httpOnly)", csrf.length > 8, page.doc.cookie?.slice(0, 120) ?? "no document.cookie");
     const after = await api("/api/v1/me", { headers: { cookie } });
     check("home", "the session the browser got really authenticates", after.status === 200 && after.body.email === undefined ? true : after.status === 200, JSON.stringify(after.body).slice(0, 160));
+    // The account has to be findable by the identifier the door asked for, or the next visit
+    // cannot get back in: this signs out, signs back in with the typed username, and checks
+    // the same learner row answers.
+    const back = await api("/api/v1/login", { method: "POST", body: { username: learner.username, password: learner.password } });
+    check(
+      "home",
+      "and the username it was made with signs back into the same account",
+      back.status === 200 && back.body.student_id === after.body.student_id,
+      `${back.status} ${JSON.stringify(back.body).slice(0, 120)}`,
+    );
+
+    /* ---- signed in, home is status and one way forward (brief 2.5) ----
+     * The screen this redesign replaced carried a word-field menu of every section: a second
+     * navigation surface, and the reason a whole screen could go missing from a room. Signed
+     * in, home has to behave like a status page — one primary action, and anything not
+     * measured yet said in words rather than printed as a confident zero. */
+    const homeIn = await open("/", "home");
+    await waitFor(() => !/Checking the session/.test(homeIn.text()), { label: "the session check to finish" });
+    // The cards read three endpoints; waiting for the dashes to go is waiting for the data,
+    // not a fixed sleep that would read the loading frame and call it an empty state.
+    await waitFor(
+      () => homeIn.find(".stat-card").length === 4 && homeIn.find(".stat-value").every((el) => (el.textContent ?? "").trim() !== "\u2014"),
+      { timeout: 20_000, label: "the status cards to answer" },
+    ).catch(() => {});
+    const row = homeIn.find(".home-cta-row")[0];
+    const primaries = row ? [...row.querySelectorAll(".btn-primary")] : [];
+    check(
+      "home",
+      "signed in, home offers exactly one primary action and no word-field menu",
+      primaries.length === 1 && homeIn.find(".word-field").length === 0,
+      `${primaries.length} primary control(s), ${homeIn.find(".word-field").length} word-field(s)`,
+    );
+    check(
+      "home",
+      "and it is the next step in the journey for this learner, not a link to a menu",
+      (primaries[0]?.getAttribute("href") ?? "") === "/diagnose" && /Start learning/i.test(primaries[0]?.textContent ?? ""),
+      `${primaries[0]?.getAttribute("href") ?? "(none)"} "${(primaries[0]?.textContent ?? "").trim()}"`,
+    );
+    const statusText = homeIn.text();
+    check(
+      "home",
+      "nothing measured yet is said in words rather than shown as a zero",
+      ["Nothing due yet", "Nothing waiting", "Not measured yet", "No answers yet"].every((w) => statusText.includes(w)),
+      homeIn.find(".stat-card").map((c) => (c.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 70)).join(" | "),
+    );
+    closePage(homeIn);
   }
 
   /* ----------------------------------------------------------- onboarding ---- */
@@ -577,10 +678,17 @@ async function main() {
     check("onboarding", "the setup screen renders as a form, not an error", /Time and words/.test(page.text()) && page.find("input").length >= 3, page.text().slice(0, 140));
     // the form is seeded from GET me/preferences; editing before that lands loses the edits
     await waitFor(() => [...page.find("span")].some((el) => el.textContent?.trim() === "weekly_minutes"), { timeout: 15_000, label: "the allowed-key list from the server" });
-    // The page talks *about* learning styles in the card that explains why it refuses to ask.
-    // What must not exist is a field that asks for one, so the check is on the controls.
+    // The screen does not raise the idea at all any more (the paragraph that explained the
+    // refusal was removed, at the user's instruction), so the check can be made about the whole
+    // screen rather than only its controls -- a stronger claim than the one it replaces.
     const fieldText = [...page.find("label, .field, [data-field]")].map((el) => el.textContent ?? "").join(" ");
-    check("onboarding", "no input asks the learner for a learning style", !/learning style|visual learner|auditory|kinesthetic/i.test(fieldText) && page.find("input,select,textarea").every((el) => !/style/.test(el.name ?? "")), fieldText.slice(0, 160));
+    check(
+      "onboarding",
+      "no input asks the learner for a learning style",
+      !/learning styles?|visual learner|auditory|kinesthetic/i.test(page.text()) &&
+        page.find("input,select,textarea").every((el) => !/style/.test(el.name ?? "")),
+      fieldText.slice(0, 160),
+    );
     const goal = page.find("input[type='text']")[0];
     if (goal) page.type(goal, "GCSE maths, higher tier");
     const numbers = page.find('input[type="number"]');
@@ -760,7 +868,14 @@ async function main() {
     check("diagnose", "finishing placement marks the learner as placed, and that survives a reload", me2.status === 200 && me2.body.diagnostic_complete === true, JSON.stringify(me2.body).slice(0, 200));
     const landing = await open("/", "diagnose");
     await waitFor(() => !/Checking the session/.test(landing.text()), { timeout: 10_000, label: "the landing page to read the session" });
-    check("diagnose", "the landing page then offers practice instead of placing them again", !/not placed yet/.test(landing.text()) && /placed/.test(landing.text()) && !!landing.byText("Practise"), landing.text().slice(0, 260));
+    // Home is status plus one primary action now, so the claim is asserted on the control
+    // itself: it offers to continue practising, and it no longer offers to place them again.
+    check(
+      "diagnose",
+      "the landing page then offers practice instead of placing them again",
+      !!landing.byText(/continue practising/i) && !landing.byText(/start learning/i) && landing.find('a[href="/diagnose"]').length === 0,
+      landing.text().slice(0, 260),
+    );
     closePage(landing);
     check("diagnose", "no uncaught error anywhere on the screen", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 240));
     closePage(page);
@@ -1229,12 +1344,13 @@ async function main() {
     check("progress", "the page says what each dimension of the chart means", !masteryRows.length || (/position is the estimate/i.test(drawn) && /more confident one/i.test(drawn)), drawn.slice(0, 160));
     check("progress", "every lane has a row of exact figures underneath it", !masteryRows.length || lanes.length === masteryRows.length, `${lanes.length} rows drawn for ${masteryRows.length} topics in the response`);
     check("progress", "the interval around the estimate is named as an interval", !masteryRows.length || /uncertainty/i.test(drawn), drawn.slice(0, 140));
-    // The corner tab says which section you are in, as the snapshot does, rather than the brand
-    // on every screen — with an accessible name that still says it is the index.
-    const tab = page.find("button.index-tab");
-    const tabText = String(tab[0]?.textContent ?? "");
-    check("progress", "the corner tab names the section it is standing on", /§\s*05\s*·\s*Progress/.test(tabText), tabText || "(no tab)");
-    check("progress", "and still says what pressing it would do", /section index/i.test(String(tab[0]?.getAttribute("aria-label") ?? "")), String(tab[0]?.getAttribute("aria-label") ?? "(no name)"));
+    // The corner index tab is gone (brief 2.3): navigation is a permanent sidebar, and the
+    // current page is marked rather than hidden behind a control. These two assertions target
+    // that structure instead — same count, stronger claim: the marked item must be this
+    // section *and* the sidebar must offer every other one in plain words.
+    const here = page.find('.sidebar-item[aria-current="page"]');
+    check("progress", "the sidebar names the section it is standing on", here.length === 1 && /Progress/i.test(here[0]?.textContent ?? ""), here.map((el) => el.textContent?.trim()).join(" | ") || "(nothing marked)");
+    check("progress", "and offers every other section in plain words", ["Practise", "Lessons", "Changes", "Review", "Progress", "Voice", "Settings"].every((l) => !!page.byText(l, ".sidebar-item")), page.find(".sidebar-item").map((el) => el.textContent?.trim()).join(" | ") || "(no sidebar)");
 
     /* ---- the same chart on mock data, where the numbers are known exactly ----
      * Live, this learner may have no mastery rows at all, and every check above is gated on
@@ -1285,8 +1401,8 @@ async function main() {
       /Reviews completed this session/i.test(reviewBody) && (/Nothing reviewed yet/i.test(reviewBody) || /rated/i.test(reviewBody)),
       reviewBody.slice(0, 160),
     );
-    const reviewTab = String(page.find("button.index-tab")[0]?.textContent ?? "");
-    check("review", "the corner tab names this section too", /§\s*04\s*·\s*Review/.test(reviewTab), reviewTab || "(no tab)");
+    const reviewHere = page.find('.sidebar-item[aria-current="page"]');
+    check("review", "the sidebar names this section too", reviewHere.length === 1 && /Review/i.test(reviewHere[0]?.textContent ?? ""), reviewHere.map((el) => el.textContent?.trim()).join(" | ") || "(nothing marked)");
     closePage(page);
   }
 
@@ -1472,8 +1588,19 @@ async function main() {
     const afterBlocked = page.text().match(/frame (\d+)/)?.[1];
     check("lesson", "and it does not advance past an unanswered prediction", before === afterBlocked, `frame ${before} -> ${afterBlocked}`);
 
-    const choice = page.find('button[class*="font-mono"]').find((b) => !/next|back|play|end|ask|re-run/.test(b.textContent ?? ""));
-    check("lesson", "the choices are the ones the frame carried", !!choice, page.find("button").map((b) => (b.textContent ?? "").trim()).slice(0, 6).join(" / ").slice(0, 180));
+    // The prediction choices are selectable options, so they are selected as options (role and
+    // state) rather than by an implementation class that a restyle is allowed to change. The
+    // claim is the same and holds the same things: a choice exists, it is a *selectable* one,
+    // and it carries the frame's own words.
+    const choice = page
+      .find('button.option-card[role="radio"]')
+      .find((b) => !/next|back|play|end|ask|run again/.test(b.textContent ?? ""));
+    check(
+      "lesson",
+      "the choices are the ones the frame carried",
+      !!choice && choice.getAttribute("aria-checked") !== null && (choice.textContent ?? "").trim().length > 0,
+      page.find("button").map((b) => (b.textContent ?? "").trim()).slice(0, 6).join(" / ").slice(0, 180) || "(no buttons)",
+    );
     await page.click(choice);
     await waitFor(() => /the trace agrees|the machine does something else|nothing was answerable/.test(page.text()), { label: "the grade" });
     check("lesson", "the grade arrives from the simulation, and says so", /graded by the simulation on the backend/.test(page.text()), page.text().match(/predictions? so far[^.]*/)?.[0] ?? "");
@@ -1496,7 +1623,9 @@ async function main() {
     check("lesson", "the editable parameters are the ones the engine declares", !!values && !!target, page.find("input").map((i) => i.getAttribute("name")).join(","));
     page.type(values, "1, 4, 7, 9, 12, 15, 19, 23");
     page.type(target, "12");
-    await page.click("re-run with these", "button");
+    // the label follows the app's copy sweep ("run again with these"): the check is the same
+    // one -- new numbers, a new validated scene -- and it is still clicked by what it says
+    await page.click("run again with these", "button");
     await waitFor(() => /your own copy/.test(page.text()), { timeout: 12_000, label: "the derived scene to come back" });
     check("lesson", "changing the numbers says plainly that this is a new scene", /your own copy of the scene/.test(page.text()), page.text().match(/this is your own copy[^.]*\./)?.[0] ?? "");
     if (MOCK) {

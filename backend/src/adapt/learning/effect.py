@@ -239,13 +239,13 @@ def evaluate_change(
     g, pooled = hedges_g(A, B)
     rope = rope_sd * (pooled if math.isfinite(pooled) and pooled > 0 else 1.0)
     if math.isfinite(lo) and lo > rope:
-        verdict, why = "supported", "the whole confidence interval sits above the no-practical-change band"
+        verdict, why = "supported", "the whole confidence interval sits above the no practical change band"
     elif math.isfinite(hi) and hi < -rope:
         verdict, why = "refuted", "the change made this metric worse"
     elif math.isfinite(lo) and lo <= rope <= hi:
         verdict, why = (
             "inconclusive",
-            "the interval crosses both zero and the practical-equivalence band",
+            "the interval crosses both zero and the practical equivalence band",
         )
     else:
         verdict, why = "inconclusive", "point estimate positive but the interval includes no real change"

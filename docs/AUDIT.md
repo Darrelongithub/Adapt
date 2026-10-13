@@ -393,7 +393,7 @@ mistaken for a sign-out, and the gate retries instead of blanking the screen.
 ### "No frontend test runner" — **superseded**
 
 `frontend/scripts-ui-probe.mjs` (jsdom against the built pages, `npm run probe`) now exists and runs
-169 checks across eleven scenarios, including the approval-gate phases and the lesson engine. It
+208 checks across eleven scenarios, including the approval-gate phases and the lesson engine. It
 still cannot see layout, focus order, `getUserMedia` prompts or paint — that limitation is recorded
 in `docs/UNVERIFIED.md`, not here.
 
@@ -403,7 +403,8 @@ in `docs/UNVERIFIED.md`, not here.
 
 Fifteen defects, fixed against the user's own specification of the fix. The table is the map:
 what was wrong, where the fix lives, and what fails if the fix is removed. Every test named here
-runs in the 640-test suite; the UI claims are checked by `scripts/probe-fresh.sh all` (199 checks).
+runs in the 645-test suite; the UI claims are checked by `scripts/probe-fresh.sh all` (208 checks after the
+visual-redesign pass below; 199 at the time this table was written).
 
 | # | Defect | Root cause | Fix (where) | Guard |
 |---|---|---|---|---|
@@ -508,3 +509,48 @@ able to answer its own bank correctly.
   decided below the printed digits reported `expected 11.3333, got 11.3333` — two identical strings
   either side of the mark — and now names the form the item accepts (`34/3`), while a correct answer
   is never told it was rounded.
+
+## Fourth pass — the visual redesign (2026-10-13)
+
+The redesign brief at the repository root (`UI file.txt`) implemented against a tree whose
+gates were measured first, not assumed. Two things were wrong before any pixels moved.
+
+**A gate on `main` could never pass.** `scripts/journey_check.py` asserted `answered >= 10`,
+a threshold written for the old fixed twelve-item diagnostic; PR #7 split placement from the
+method probe and the default sequence became eight, so the check reported `FAIL answers are
+accepted and recorded -> 8/8 accepted` — a failure whose own detail text reads like a pass.
+The assertion now says what it was always for (`answered == len(served) and answered >= 5`:
+every item served was accepted, and the sequence is long enough to place somebody). The
+diagnostic was not lengthened and the threshold was not tuned to the observed value. Fixed in
+its own commit (`f8987a1`) before the redesign started; 59/59 passes.
+
+**The corner index tab is cancelled, and it took two probe assertions with it.** Navigation is
+now the permanent sidebar (brief 2.3). The two checks that read `button.index-tab` for
+`§ 05 · Progress` and `§ 04 · Review` were rewritten, not deleted: the marked item must be this
+section *and* the sidebar must offer every other one in plain words. Same count on the screen
+that had two, one on the screen that had one, and a stronger claim in both places.
+
+| Command | Result after this pass |
+|---|---|
+| `cd frontend && npm run build` | exit 0 — 11 routes, shared 103 kB |
+| `bash scripts/probe-fresh.sh all` | **208/208 checks, 224 API calls**, exit 0 (was 199/199) |
+| `.venv/bin/python scripts/journey_check.py` | **59/59**, exit 0 (was 58/59 and failing) |
+| `cd frontend && npm run lint` | contract ok — 74 backend routes / 54 frontend calls, 4 scene kinds agree |
+| `cd frontend && npm run test:engine / test:lib / test:server` | 15/15, 8/8, 2/2 |
+
+What changed in the interface: the button contract (`.btn-primary` / `.btn-secondary` /
+`.btn-ghost`, plus `.option-card` with a real selection indicator and `.check-row` for
+consent); the permanent sidebar with a drawer below 860px; the consent step in front of every
+account-creating call; and home rebuilt as status cards from `dashboard` / `review/due` /
+`adaptations/pending` with one primary action — the word-field navigation it used to carry is
+gone, because a second navigation surface is how the app's own author lost Settings.
+
+**The consent gap this pass does not close, stated plainly.** `Student.consent_analytics`
+defaults to `True` (`db/models.py`), and `OnboardingBody` defaults both consents to `True`
+(`api/routes/auth.py`), so a learner who is never asked is still recorded as having agreed.
+The screen cannot fix that: it can refuse to create an account without the required consent,
+and it can carry the answer to `/onboarding` (the first screen with a session to store it on),
+but "no decision" and "yes" are the same value in the column. Closing it needs a tri-state
+field or a migration that backfills un-asked learners as unknown — and deliberately *not* a
+flip of the default to `False`, which would silently stop the event log for every existing
+learner and take the proposals with it.

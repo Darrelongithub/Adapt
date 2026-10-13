@@ -33,7 +33,7 @@ PARAMS: dict[str, dict[str, Any]] = {
         "max": 999,
         "default": None,
         "label": "The list",
-        "help": "any order, repeats allowed -- 2 to 20 numbers",
+        "help": "any order, repeats allowed — 2 to 20 numbers",
     },
     "n": {"type": "int", "min": MIN_ITEMS, "max": MAX_ITEMS, "default": 8, "label": "List size", "help": "how many values to sort"},
     "seed": {"type": "int", "min": 1, "max": 10_000_000, "default": 11, "label": "Seed", "help": "same seed, same list", "ui": "hidden"},
@@ -153,7 +153,7 @@ def run(params: dict[str, Any]) -> list[dict[str, Any]]:
                 {
                     "kind": "shift",
                     "title": f"{left} now at index {j + 1}",
-                    "narration": f"The hole moves to index {j}. Nothing has been swapped twice -- a shift is one write.",
+                    "narration": f"The hole moves to index {j}. Nothing has been swapped twice — a shift is one write.",
                     "state": _array(a, i, j, list(range(i + 1)), j, held=(key if j < i else None)),
                     "highlights": ["hole"],
                     "cause": f"moved {left} from {j} to {j + 1}",
@@ -199,7 +199,7 @@ def explain(params: dict[str, Any], frame_index: int, question: str = "") -> dic
     cause = str(frame.get("cause") or "")
     if frame["kind"] == "shift" or ("why" in q and ("move" in q or "slide" in q or "right" in q)):
         return {
-            "answer": f"{cause}. A value only slides right while it is bigger than the held card -- that test is the whole algorithm, and it is why an already-sorted list costs one comparison per card.",
+            "answer": f"{cause}. A value only slides right while it is bigger than the held card — that test is the whole algorithm, and it is why an already sorted list costs one comparison per card.",
             "source": "frame_cause",
             "frame": frame_index,
         }
@@ -212,7 +212,7 @@ def explain(params: dict[str, Any], frame_index: int, question: str = "") -> dic
     if "how many" in q or "cost" in q or "fast" in q or "slow" in q:
         n = len(p["values"])
         return {
-            "answer": f"This run took {cause}. Worst case for {n} values is {n * (n - 1) // 2} comparisons; best case is {n - 1}. Insertion sort is cheap when little is out of order, which is why it wins on small and nearly-sorted inputs.",
+            "answer": f"This run took {cause}. Worst case for {n} values is {n * (n - 1) // 2} comparisons; best case is {n - 1}. Insertion sort is cheap when little is out of order, which is why it wins on small and nearly sorted inputs.",
             "source": "count",
             "frame": frame_index,
         }

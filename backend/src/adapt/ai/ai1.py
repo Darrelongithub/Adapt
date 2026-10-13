@@ -131,12 +131,12 @@ def describe_effect(effect: dict[str, Any], *, metric: str, n_after: int, min_it
     if verdict == "insufficient_evidence":
         more = max(int(min_items) - int(n_after), 1)
         return (
-            f"Not enough scored answers yet to judge this -- {n_after} so far, about {more} more to go. "
+            f"Not enough scored answers yet to judge this — {n_after} so far, about {more} more to go. "
             f"{label.capitalize()} stays under observation rather than being rounded off."
         )
     if verdict == "supported":
         return (
-            f"{label.capitalize()} went from {span}, over {n_after} answers since you said yes -- "
+            f"{label.capitalize()} went from {span}, over {n_after} answers since you said yes — "
             "the direction this change was supposed to move."
         )
     if verdict == "refuted":
@@ -493,7 +493,7 @@ class LearningIntelligence:
         if learners < min_learners:
             diag["skipped"] = (
                 f"need >= {min_learners} learners with >= 2 scored attempts to fit cohort parameters; "
-                "using literature-informed priors meanwhile"
+                "using literature informed priors meanwhile"
             )
             return diag
         # ``model="online"``: fit the transition rule ``update`` actually applies.
@@ -562,7 +562,7 @@ class LearningIntelligence:
                 trow.n_sequences = int(fitted["sequences"])
                 trow.log_likelihood = float(fitted["log_likelihood"])
                 trow.trained_at = utcnow()
-                trow.note = "per-topic fit, shrunken toward the cohort estimate"
+                trow.note = "per topic fit, shrunken toward the cohort estimate"
                 s.merge(trow)
             stale = (
                 s.execute(
@@ -1059,7 +1059,7 @@ class LearningIntelligence:
             "caveat_text": "Other explanations we cannot rule out: "
             + "; ".join(draft.alternatives if draft.alternatives else ["sampling noise"]),
             "change_text": f"{strategy.what} {strategy.caveat}".strip(),
-            "ask_text": "Want me to try that? You can say no, or change it -- I will not change how you learn without asking.",
+            "ask_text": "Want me to try that? You can say no, or change it — I will not change how you learn without asking.",
             "expected_effect": (
                 f"We will watch {strategy.watch_metric.replace('_', ' ')} over the next several items and "
                 "compare it with how you have been doing. " + draft.falsification

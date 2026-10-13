@@ -19,27 +19,18 @@ export const NAV = [
   { href: "/settings", label: "Settings" },
 ];
 
-/** The corner tab says which section you are in, as the design snapshot does: `§ 03 · Changes`
- *  on the changes screen rather than the brand on every screen. One source of truth — the numbers
- *  come from NAV's own order, so a section cannot be numbered here and named differently there.
- *  A route with no section (onboarding, placement) keeps the brand rather than inventing one. */
-export const SECTION_LABELS: Record<string, string> = {
-  "/": "§ ADAPT",
-  ...Object.fromEntries(NAV.map((n, i) => [n.href, `§ ${String(i + 1).padStart(2, "0")} · ${n.label}`])),
-};
-
 /** Red bar, every screen, whenever the data on it is not real. */
 export function MockBanner() {
   const [mock, setMock] = useState(false);
   useEffect(() => setMock(isMock()), []);
   if (!mock) return null;
   return (
-    // pl-28 clears the fixed § ADAPT index tab at the top-left corner, which used to sit on
-    // top of the banner's first line on phones.
-    <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 py-2 pl-28 pr-4 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
-      <strong>DEMO DATA</strong> — this screen is running on fixtures (<code>?mock=1</code>). Nothing here was measured from a
-      learner, and nothing was saved.{" "}
-      <Link className="underline" href="/?mock=off">
+    // pl-4: there is no fixed corner control any more, so the banner starts at the edge
+    // on every screen size.
+    <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 py-2 pl-4 pr-4 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
+      <strong>DEMO DATA.</strong> This screen is running on fixtures (<code>?mock=1</code>), so nothing you see here was
+      measured from a learner and nothing on it was saved.{" "}
+      <Link className="link-inline" href="/?mock=off">
         turn it off
       </Link>
     </div>
@@ -74,18 +65,18 @@ export function StatusChip() {
       ? "db encrypted at rest"
       : status.encryption?.field_level_encryption
         ? "columns encrypted"
-        : "no at-rest encryption";
+        : "no encryption at rest";
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
       {error ? (
-        <span className="text-[var(--bad)]">api unreachable</span>
+        <span className="text-[var(--bad)]">the API is unreachable</span>
       ) : (
         <>
           <span title={`mode=${health?.mode ?? "not read yet"}`}>
-            {health == null ? "checking the api…" : health.ok ? "api up" : "api down"} · {llm} · {enc}
+            {health == null ? "checking the API…" : health.ok ? "API up" : "API down"} · {llm} · {enc}
           </span>
           {status?.version ? <span>v{status.version}</span> : null}
-          {status?.mode === "demo" ? <span className="text-[var(--warn)]">demo mode (writes need a passphrase)</span> : null}
+          {status?.mode === "demo" ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
         </>
       )}
     </div>
@@ -95,101 +86,110 @@ export function StatusChip() {
 export function Chrome({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname() || "/";
-  const section = SECTION_LABELS[pathname] ?? "§ ADAPT";
-  const overlayRef = useFocusTrap(open);
-  const tabRef = useRef<HTMLButtonElement>(null);
+  // The drawer's focus trap only exists while it is open; the sidebar is always in the
+  // document on desktop, where trapping focus in it would be exactly the trap that makes
+  // the rest of the page unreachable.
+  const drawerRef = useFocusTrap(open);
+  const burgerRef = useRef<HTMLButtonElement>(null);
 
-  // Close on Escape at Chrome level as well (focus trap handles inward, this handles state)
+  // Escape closes the drawer and hands focus back to the control that opened it.
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setOpen(false);
-        tabRef.current?.focus();
+        burgerRef.current?.focus();
       }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
+  const current = activeHref(pathname);
+
   return (
     <>
-      <MockBanner />
-      {/* corner index tab - always visible, triggers full-screen overlay */}
-      <button
-        ref={tabRef}
-        className="index-tab"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls="indexOverlay"
-        // The visible text is the section; the accessible name still says what the control does,
-        // because "§ 05 · Progress" on its own reads as a heading and not as a button.
-        aria-label={`Section index — you are in ${section}`}
-        title={`Open the section index (you are in ${section})`}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {section}
-      </button>
-
-      {/* full-screen index overlay */}
-      {open ? (
-        <div
-          ref={overlayRef}
-          id="indexOverlay"
-          className="index-overlay open"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Section index"
+      {/* Below 860px the sidebar slides in from here. The control is a labelled button,
+          not a bare glyph: navigation must never be something you have to discover. */}
+      <div className="topbar">
+        <button
+          ref={burgerRef}
+          type="button"
+          className="hamburger"
+          aria-expanded={open}
+          aria-controls="adapt-sidebar"
+          onClick={() => setOpen((v) => !v)}
         >
-          <button className="index-close" onClick={() => { setOpen(false); tabRef.current?.focus(); }}>
-            close ✕
-          </button>
-          <Link href="/" className="index-brand" onClick={() => setOpen(false)}>
-            ad<b>apt</b> — index
-          </Link>
-          <nav className="index-list" aria-label="Sections">
-            {NAV.map((n, i) => (
+          <span aria-hidden="true">☰</span>
+          <span>Menu</span>
+        </button>
+        <span className="topbar-label">{current ? NAV.find((n) => n.href === current)?.label : "ADAPT"}</span>
+      </div>
+      <button
+        type="button"
+        className={`sidebar-overlay${open ? " show" : ""}`}
+        aria-label="Close navigation"
+        tabIndex={-1}
+        onClick={() => setOpen(false)}
+      />
+
+      {/* The permanent sidebar: every top-level destination, in plain words, with the page
+          you are on marked in three ways (aria-current, colour, and the accent edge). */}
+      <aside id="adapt-sidebar" ref={drawerRef} className={`sidebar${open ? " open" : ""}`} aria-label="Main navigation">
+        <Link href="/" className="sidebar-brand" onClick={() => setOpen(false)}>
+          ad<b>apt</b>
+        </Link>
+        <nav>
+          {NAV.map((n, i) => {
+            const here = n.href === current;
+            return (
               <Link
                 key={n.href}
                 href={n.href}
-                className="index-row"
+                className={`sidebar-item${here ? " active" : ""}`}
+                aria-current={here ? "page" : undefined}
                 onClick={() => setOpen(false)}
               >
-                <span className="n">{String(i + 1).padStart(2, "0")}</span>
-                <span className="t">{n.label}</span>
+                <span className="sidebar-num">{String(i + 1).padStart(2, "0")}</span>
+                <span className="sidebar-label">{n.label}</span>
               </Link>
-            ))}
-          </nav>
-          <div className="mt-10 flex items-center gap-3 text-xs">
+            );
+          })}
+        </nav>
+        <div className="sidebar-status">
+          {/* What the app is running on, in the one place that is on every screen. */}
+          <StatusChip />
+        </div>
+      </aside>
+
+      <div className="main-content">
+        {/* Inside the content column, so it never runs under the fixed sidebar. */}
+        <MockBanner />
+        <div className="flex justify-end px-4 py-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
+          <div className="flex items-center gap-3">
             <Who />
           </div>
         </div>
-      ) : null}
 
-      {/* Fallback header for who/status when overlay not open - keep accessible.
-          pl-28 keeps a long name or the sign-in link from running under the fixed index tab. */}
-      <div className="flex justify-end py-2 pl-28 pr-4 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
-        <div className="flex items-center gap-3">
-          <Who />
-        </div>
+        <main id="main-content" className="mx-auto max-w-5xl px-4 py-6 pt-2">
+          {children}
+        </main>
+        <footer className="mx-auto max-w-5xl px-4 pb-10 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+          Estimates, not labels: nothing here is a fixed trait, and no lasting change is applied without you answering a
+          question about it. <Link href="/settings" className="link-inline">
+            what is recorded about you
+          </Link>
+        </footer>
       </div>
-
-      <main id="main-content" className="mx-auto max-w-5xl px-4 py-6 pt-2">
-        {children}
-      </main>
-      <footer className="mx-auto max-w-5xl px-4 pb-10 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-        {/* What the app is running on. In the footer's flow on phones (never covering the
-            content); the CSS lifts it to the fixed bottom-left corner on wide screens. */}
-        <div className="status-corner mb-3" aria-hidden="false">
-          <StatusChip />
-        </div>
-        Estimates, not labels: nothing here is a fixed trait, and no lasting change is applied without you answering a
-        question about it. <Link href="/settings" className="underline">
-          what is recorded about you
-        </Link>
-      </footer>
     </>
   );
+}
+
+/** Which NAV entry the current route belongs to. `/lesson` marks Lessons; `/` marks nothing,
+ *  because home is not a section — the sidebar still shows it as the brand. */
+export function activeHref(pathname: string): string | null {
+  const hit = NAV.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
+  return hit ? hit.href : null;
 }
 
 function Who() {
@@ -197,16 +197,19 @@ function Who() {
   if (loading && !me) return <span className="text-xs text-[var(--muted)]">…</span>;
   if (!me && unknown)
     return (
-      <button type="button" onClick={() => refresh()} className="text-xs text-[var(--warn)] underline decoration-dotted">
+      <button type="button" onClick={() => refresh()} className="btn-ctl btn-ghost">
         checking who you are… retry
       </button>
     );
-  if (!me)
+  if (!me) {
+    // Navigation, so a plain link is the right control for it; everything that *acts*
+    // wears one of the three button classes.
     return (
-      <Link href="/" className="rounded-[2px] border border-[var(--line)] px-2 py-1 text-xs hover:border-[var(--accent)]" style={{ fontFamily: "var(--font-mono)" }}>
+      <Link href="/" className="link-inline text-xs" style={{ fontFamily: "var(--font-mono)" }}>
         sign in
       </Link>
     );
+  }
   return (
     <span className="flex items-center gap-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
       <Link href="/settings" className="text-[var(--muted)] hover:text-[var(--ink)] hover:underline">
@@ -214,7 +217,7 @@ function Who() {
       </Link>
       <button
         type="button"
-        className="text-[var(--muted)] underline decoration-dotted hover:text-[var(--ink)]"
+        className="btn-ctl btn-ghost"
         onClick={async () => {
           await signOut();
           refresh();
@@ -299,7 +302,7 @@ export function NeedSetup() {
       <Notice tone="warn">
         Still checking who you are — the server said: {unknown}. Nothing here has been lost or
         signed out.{" "}
-        <button type="button" className="underline decoration-dotted" onClick={() => refresh()}>
+        <button type="button" className="btn-ctl btn-ghost" onClick={() => refresh()}>
           try again
         </button>
       </Notice>

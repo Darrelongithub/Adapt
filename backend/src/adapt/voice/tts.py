@@ -236,7 +236,7 @@ def capabilities(settings: Any) -> dict[str, Any]:
     return {
         "local_tts": ok,
         "detail": why,
-        "fallback": "browser speechSynthesis with male/female voice selection (free, on-device)",
+        "fallback": "browser speechSynthesis with male/female voice selection (free, on your device)",
         "voices": {
             "female": KokoroTTS.voice_for("female", getattr(settings, "kokoro_lang", "a")),
             "male": KokoroTTS.voice_for("male", getattr(settings, "kokoro_lang", "a")),

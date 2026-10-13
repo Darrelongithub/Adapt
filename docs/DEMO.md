@@ -8,6 +8,7 @@ Read the first column out loud and press the thing in the second when you get to
 
 | Say | Do |
 | --- | --- |
+| "Nothing is created until you say so: two separate consents, neither pre-ticked, and the button is closed until the required one is answered." | open `/`, tick the required box in front of the guests, and let them watch the primary button unlock |
 | "It doesn't ask you what kind of learner you are. It watches what happens and says so." | open `/onboarding`, point at the absence of a learning-styles question |
 | "Eight unaided questions, no hints — this part is placement, not a test." | `/diagnose`, answer two |
 | "Every question gets taught one way first, and which way is decided per learner, per attempt. Same question, different teaching — that's the thing being measured." | `/learn`, point at the panel above the question |
@@ -80,6 +81,8 @@ number that pretends to be a result.
 cd backend && ../.venv/bin/python -m pytest -q     # 640 tests, no network, no model call
 scripts/probe-fresh.sh all                        # the whole UI on fresh servers
 node scripts/demo.mjs --as <email>                # the loop, over HTTP, on the demo learner
+                                                  # (the app's door takes the username; the
+                                                  # address a script made is accepted too)
 ```
 
 Run all three on the machine and the database you will demo from, not a fresh one.

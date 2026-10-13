@@ -91,7 +91,7 @@ class SearchResponse:
             "disclaimer": (
                 "Relevance here means 'matches the topic words and is the kind of source we "
                 "trust for that topic'. It is not a check that the content is correct or "
-                "matches your syllabus -- open the source before relying on it."
+                "matches your syllabus — open the source before relying on it."
             ),
         }
 
@@ -180,7 +180,7 @@ class ResourceService:
             note = (
                 "No resources available right now. Search results are cached for "
                 f"{self.settings.resource_cache_ttl_hours // 24} days, so this clears as soon as one provider is "
-                "reachable -- teaching and assessment continue to work without them."
+                "reachable — teaching and assessment continue to work without them."
             )
         return SearchResponse(
             query=query,

@@ -90,7 +90,7 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
             strategy="",
             statement=(
                 "Questions taught as {method} landed at {value}, where the difficulty of those same "
-                "questions predicted {baseline} -- {points} points against expectation, over {n} answers"
+                "questions predicted {baseline} — {points} points against expectation, over {n} answers"
                 "{pilot}, with the answer format held the same. One explanation that fits: this way of teaching "
                 "it is doing more for you than the questions alone suggest."
             ),
@@ -102,7 +102,7 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
             ),
             citations=(
                 "Hattie & Donoghue 2016 (learning strategies: effect sizes differ by method and stage)",
-                "Karpicke & Blunt 2011 (retrieval practice produced more learning than re-reading)",
+                "Karpicke & Blunt 2011 (retrieval practice produced more learning than reading it again)",
             ),
             falsification=(
                 "If the next block of questions taught this way lands back at what its difficulty predicts, "
@@ -123,7 +123,7 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
                 "fits: the procedure is easier to copy from a solved example than to reconstruct from prose."
             ),
             mechanism="A worked example removes the need to invent the procedure while also learning the content.",
-            citations=("Sweller & Cooper 1985 (worked-example effect)", "Renkl 2014 (example fading)"),
+            citations=("Sweller & Cooper 1985 (the worked example effect)", "Renkl 2014 (example fading)"),
             falsification="If accuracy after examples is not maintained on the next unassisted quiz, the example was doing the thinking, not supporting it.",
             alternatives=("items after examples may have been easier", "reading time, not reading, was the real difference"),
         ),
@@ -140,7 +140,7 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
                 "Stating an expectation before the frame confirms it is retrieval with feedback; it turns "
                 "observation into a model you have to check, instead of a story you were told."
             ),
-            citations=("Chi et al. 1989 (self-explanation effect)", "Bisra et al. 2018 (simulation-based learning)"),
+            citations=("Chi et al. 1989 (the self explanation effect)", "Bisra et al. 2018 (simulation based learning)"),
             falsification=(
                 "If predicting rises once you narrate each step out loud, the gap was watching without committing, "
                 "not the idea itself; if it stays flat, the frames are too coarse and need stepping."
@@ -161,7 +161,7 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
             ),
             mechanism="Help offered before retrieval turns into a crutch; help offered after an attempt improves retention.",
             citations=("Depper et al. 2023 (hint timing)", "McLaren et al. 2016 (fading hints)"),
-            falsification="If unaided accuracy does not rise within ~10 questions, the gap is a knowledge gap, not a hint-timing effect.",
+            falsification="If unaided accuracy does not rise within ~10 questions, the gap is a knowledge gap, not an effect of hint timing.",
             alternatives=("you may simply prefer checking rather than guessing", "the unaided items were harder"),
         ),
         HypothesisTemplate(
@@ -171,10 +171,10 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
                 "Questions with long setup text land at {baseline}; short ones at {value} ({n} questions, median "
                 "{words}-word setups). One explanation that fits: the set-up is where the errors start, before any maths."
             ),
-            mechanism="Long single-pass text overruns working memory before the task itself begins.",
+            mechanism="Long single pass text overruns working memory before the task itself begins.",
             citations=("Tabbers et al. 2004 (segmented instructions)", "Mayer & Anderson 1991"),
             falsification="If segmented accuracy is no better on the next 6 items, the text length was not the cause.",
-            alternatives=("long-stem items also happen to be the harder topics", "reading effort vs reading skill are not separated by this data"),
+            alternatives=("long stem items also happen to be the harder topics", "reading effort vs reading skill are not separated by this data"),
         ),
         HypothesisTemplate(
             detector="answer_oscillation",
@@ -200,7 +200,7 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
             mechanism="Dependent skills cannot be consolidated while the ingredient skill is missing.",
             citations=("Anderson et al. 2004 (ACCEL/prerequisite structure)", "Biswas et al. 2005"),
             falsification="If remediating the prerequisite leaves {topics} unchanged, this was not the binding constraint.",
-            alternatives=("both topics may be under-taught", "the upper topic may just need more reps"),
+            alternatives=("both topics may be under taught", "the upper topic may just need more reps"),
         ),
         HypothesisTemplate(
             detector="retention_decay",
@@ -209,48 +209,48 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
                 "Delayed checks came in at {baseline} where our spacing model predicted {value} ({n} reviews). "
                 "One explanation that fits: the review gaps are slightly too long for these items."
             ),
-            mechanism="Shortening intervals until recall is reliable again restores a workable half-life estimate.",
-            citations=("Cepeda et al. 2006 (spacing)", "Settles & Meeder 2016 (half-life regression)"),
+            mechanism="Shortening intervals until recall is reliable again restores a workable estimate of the half life.",
+            citations=("Cepeda et al. 2006 (spacing)", "Settles & Meeder 2016 (half life regression)"),
             falsification="If recall stays flat at shorter intervals, forgetting is not the binding factor.",
-            alternatives=("lapses may cluster on one subtopic", "sleep/study-session timing is not measured here"),
+            alternatives=("lapses may cluster on one subtopic", "sleep and study session timing is not measured here"),
         ),
         HypothesisTemplate(
             detector="slow_start",
             strategy="worked_examples",
             statement=(
-                "You spend a median of {seconds}s before the first input on the items you miss, versus near-immediate "
+                "You spend a median of {seconds}s before the first input on the items you miss, versus near immediate "
                 "starts on the ones you get right ({n} questions). One explanation that fits: the blank step is the "
                 "hard part, not the arithmetic that follows it."
             ),
-            mechanism="The opening move of a solution is the highest-cost retrieval for a novice.",
-            citations=("Renkl 2014 (first-step scaffolding)", "Sweller 1988"),
-            falsification="If time-to-first-input returns to baseline after 6 examples, this was not a starting-step problem.",
+            mechanism="The opening move of a solution is the highest cost retrieval for a novice.",
+            citations=("Renkl 2014 (first step scaffolding)", "Sweller 1988"),
+            falsification="If the time to first input returns to baseline after 6 examples, this was not a starting step problem.",
             alternatives=("deliberate reading time is not distinguishable from stalling in this data",),
         ),
         HypothesisTemplate(
             detector="visual_representation_benefit",
             strategy="visual_representation",
             statement=(
-                "On {topics} the version with a diagram ran at {value} against {baseline} on the text-only version "
+                "On {topics} the version with a diagram ran at {value} against {baseline} on the text only version "
                 "({n} items, variant assigned randomly). One explanation that fits: the relation is easier to see "
                 "than to hold in words."
             ),
             mechanism="An external representation of a relation reduces the need to maintain it verbally.",
             citations=("Mayer 2009 (multimedia principle)", "Pashler et al. 2008 (against style matching)"),
-            falsification="This is deliberately topic-local: if the diagram stops helping on new items, we stop attaching it.",
+            falsification="This is deliberately topic local: if the diagram stops helping on new items, we stop attaching it.",
             alternatives=("the diagrammed items may be more concrete/harder to misread", "we tested one comparison, so we hold this loosely"),
         ),
         HypothesisTemplate(
             detector="retrieval_over_reread",
             strategy="retrieval_practice",
             statement=(
-                "Items you were re-quizzeed on land at {value}; items you re-read land at {baseline} ({n} cases). "
-                "One explanation that fits: re-reading feels safer and works less."
+                "Items you were quizzed on again land at {value}; items you read again land at {baseline} ({n} cases). "
+                "One explanation that fits: reading again feels safer and works less."
             ),
-            mechanism="Retrieval strengthens memory; re-reading mostly strengthens familiarity.",
+            mechanism="Retrieval strengthens memory; reading again mostly strengthens familiarity.",
             citations=("Roediger & Karpicke 2006 (testing effect)", "Karpicke & Blunt 2011"),
             falsification="If delayed retention does not improve, practice effects confounded this comparison.",
-            alternatives=("students who re-read may differ from those who self-test",),
+            alternatives=("students who reread may differ from those who test themselves",),
         ),
         HypothesisTemplate(
             detector="type_confusion",
@@ -262,7 +262,7 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
             ),
             mechanism="Interleaving trains discrimination between procedures that blocking does not.",
             citations=("Rohrer & Taylor 2007 (interleaving)", "Carroll 1966"),
-            falsification="If mixed practice does not reduce cross-method errors in the next 8 items, this was content confusion.",
+            falsification="If mixed practice does not reduce cross method errors in the next 8 items, this was content confusion.",
             alternatives=("both methods may be incompletely learned",),
         ),
         HypothesisTemplate(
@@ -281,13 +281,13 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
             detector="teachback_gain",
             strategy="self_explanation",
             statement=(
-                "After teach-backs that covered the rubric you hit {value} later; after thin ones {baseline} "
+                "After teach backs that covered the rubric you hit {value} later; after thin ones {baseline} "
                 "({n} pairs). One explanation that fits: explaining is where the gap becomes visible to you."
             ),
-            mechanism="Self-explanation surfaces missing steps before they are consolidated as errors.",
-            citations=("Chi et al. 1989 (self-explanation)", "Dunlosky et al. 2013"),
-            falsification="If coverage improves but later accuracy does not, teaching-to-the-rubric is the mechanism, not learning.",
-            alternatives=("stronger prior knowledge predicts both good teach-backs and good scores",),
+            mechanism="Self explanation surfaces missing steps before they are consolidated as errors.",
+            citations=("Chi et al. 1989 (self explanation)", "Dunlosky et al. 2013"),
+            falsification="If coverage improves but later accuracy does not, teaching to the rubric is the mechanism, not learning.",
+            alternatives=("stronger prior knowledge predicts both good teach backs and good scores",),
         ),
     ]
 }

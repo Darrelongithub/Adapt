@@ -103,7 +103,7 @@ def _plain_text(value: Any, *, where: str, limit: int, errors: list[str]) -> str
     if len(text) > limit:
         errors.append(f"{where} is {len(text)} characters, over the limit of {limit}")
     if BAD_TEXT.search(text):
-        errors.append(f"{where} contains markup or code-shaped text; a scene spec is data, not something to run")
+        errors.append(f"{where} contains markup or code shaped text; a scene spec is data, not something to run")
     return text
 
 
@@ -322,7 +322,7 @@ def builtin_specs() -> list[dict[str, Any]]:
             "intent": "predict which half survives each comparison, and say why sorted order makes that safe",
             "framing": {
                 "intro": "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
-                "outro": "If you can say, before the animation does, which half gets thrown away -- you have the idea.",
+                "outro": "If you can say, before the animation does, which half gets thrown away — you have the idea.",
             },
             "concepts": ["sorted order as a precondition", "loop invariant on the range", "logarithmic steps"],
             "citations": [{"ref": "CLRS 2.3.1", "claim": "binary search on a sorted array runs in Theta(lg n) comparisons."}],
@@ -336,7 +336,7 @@ def builtin_specs() -> list[dict[str, Any]]:
                 "outro": "Nearly sorted input cost you almost nothing per card. That is why this sort survives in real libraries for small ranges.",
             },
             "concepts": ["sorted prefix as invariant", "stability from a strict test", "quadratic worst case"],
-            "citations": [{"ref": "Cormen et al. 2.1", "claim": "insertion sort runs in Theta(n) on already-sorted input and Theta(n^2) worst case."}],
+            "citations": [{"ref": "Cormen et al. 2.1", "claim": "insertion sort runs in Theta(n) on already sorted input and Theta(n^2) worst case."}],
         },
         {
             "kind": "logic_gates",
@@ -355,7 +355,7 @@ def builtin_specs() -> list[dict[str, Any]]:
             "The instruction cycle, register by register",
             ["LOAD 4", "ADD 5", "STORE 6", "HLT"],
             [7, 5, 0],
-            "a straight-line program: three fetch-decode-execute cycles, then a halt",
+            "a straight line program: three fetch, decode, execute cycles, then a halt",
         ),
         (
             "A loop in the cycle: counting down to a jump",
@@ -370,8 +370,8 @@ def builtin_specs() -> list[dict[str, Any]]:
                 "title": title,
                 "intent": "name what each phase of the cycle moves, and why PC advances before execute",
                 "framing": {"intro": note, "outro": "Every phase in here is a register transfer. If you cannot say which register changed, that is the frame to replay."},
-                "concepts": ["stored program", "fetch-decode-execute", "conditional jump as a PC write"],
-                "citations": [{"ref": "Von Neumann et al. 1945", "claim": "storing instructions and data in one memory makes a program self-modifiable and the machine general."}],
+                "concepts": ["stored program", "fetch, decode, execute", "conditional jump as a PC write"],
+                "citations": [{"ref": "Von Neumann et al. 1945", "claim": "storing instructions and data in one memory makes a program self modifiable and the machine general."}],
                 "params": {"program": program, "data": data, "max_steps": 24 if len(program) > 4 else 12},
             }
         )

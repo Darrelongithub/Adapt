@@ -237,8 +237,8 @@ def overview(services: Any, student_id: str) -> dict[str, Any]:
 _STATUS_NOTE = {
     "candidate": "we have not seen enough either way",
     "supported": "the recent evidence leans this way; it could still be wrong",
-    "refuted": "the follow-up evidence argues against it",
-    "inconclusive": "the follow-up was too small or too mixed to say",
+    "refuted": "later evidence argues against it",
+    "inconclusive": "the later evidence was too small or too mixed to say",
     "retired": "kept for the record; no longer driving anything",
 }
 

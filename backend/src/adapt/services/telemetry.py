@@ -265,7 +265,7 @@ def privacy_summary() -> dict[str, Any]:
             "which later items the same topic appeared in, and the result",
         ],
         "never_recorded": [
-            "keystrokes, key timing, or per-character edit content",
+            "keystrokes, key timing, or per character edit content",
             "screenshots, screen content, other tabs, or any other app",
             "webcam, microphone audio (only transcribed text when voice is switched on, and only if the learner records a turn)",
             "clipboard contents, names, emails, or any identifier we can map to a real person",

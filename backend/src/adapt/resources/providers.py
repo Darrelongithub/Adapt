@@ -22,7 +22,7 @@ from .base import Provider, ProviderResult, Resource, cache_key, keywords
 
 
 class OpenAlex(Provider):
-    """OpenAlex -- open scholarly graph (papers, authors, concepts). No key needed."""
+    """OpenAlex — open scholarly graph (papers, authors, concepts). No key needed."""
 
     name = "openalex"
     auth_note = "optional ?mailto= for the polite pool"
@@ -88,7 +88,7 @@ class OpenAlex(Provider):
 
 
 class ArXiv(Provider):
-    """arXiv API -- preprints (Atom XML parsed by us; no key, 3s courtesy spacing)."""
+    """arXiv API — preprints (Atom XML parsed by us; no key, 3s courtesy spacing)."""
 
     name = "arxiv"
     auth_note = "none"
@@ -125,7 +125,7 @@ class ArXiv(Provider):
                     authors=[_clean(a.get("name")) for a in (e.get("author") or []) if isinstance(a, dict)][:6],
                     year=_year(e.get("published")),
                     snippet=_clean(e.get("summary"))[:600],
-                    license="arXiv open access (per-article licence)",
+                    license="arXiv open access (licence per article)",
                     flags={"note": "preprint: not peer reviewed"},
                 )
             )
@@ -134,7 +134,7 @@ class ArXiv(Provider):
 
 
 class OpenLibrary(Provider):
-    """Open Library -- books and covers, free JSON, no key."""
+    """Open Library — books and covers, free JSON, no key."""
 
     name = "openlibrary"
     auth_note = "none"
@@ -183,11 +183,11 @@ class OpenLibrary(Provider):
 
 
 class YouTube(Provider):
-    """YouTube Data API v3 -- needs a free key; skipped entirely when absent."""
+    """YouTube Data API v3 — needs a free key; skipped entirely when absent."""
 
     name = "youtube"
     auth_note = "ADAPT_YOUTUBE_API_KEY required (free tier)"
-    quota_note = "10,000 units/day; search=100 units, so ~100 searches/day -- cached aggressively"
+    quota_note = "10,000 units/day; search=100 units, so ~100 searches/day — cached aggressively"
 
     def configured(self) -> bool:
         return bool(self.settings.youtube_api_key)

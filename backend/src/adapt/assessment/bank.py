@@ -72,7 +72,7 @@ TOPIC_NOTES: dict[str, str] = {
     ),
     "equivalent_fractions": (
         "Two fractions are equivalent when they name the same point on the number line, even though the "
-        "digits differ. Multiplying the numerator and the denominator by the same non-zero number cannot "
+        "digits differ. Multiplying the numerator and the denominator by the same number, as long as it is not zero, cannot "
         "change the value, because you have multiplied by 1. Cancelling down divides both by a common "
         "factor, for the same reason. To compare fractions, rewrite them over a common denominator."
     ),
@@ -128,19 +128,19 @@ TOPIC_NOTES: dict[str, str] = {
         "cannot cancel a term that is part of a sum; factorise first."
     ),
     "graphs_lines": (
-        "In y = mx + c, m is the gradient (change in y over change in x) and c is the y-intercept. Parallel "
+        "In y = mx + c, m is the gradient (change in y over change in x) and c is the y intercept. Parallel "
         "lines share a gradient; perpendicular lines have gradients whose product is -1. A point lies on the "
         "line exactly when its coordinates satisfy the equation."
     ),
     "indices": (
-        "A power counts repeated multiplication of a base. Multiplying same-base powers adds indices, "
+        "A power counts repeated multiplication of a base. Multiplying powers of the same base adds indices, "
         "dividing subtracts them, and a power of a power multiplies them. Anything to the power zero is 1, "
         "and a negative index means reciprocal: x^-2 = 1/x^2."
     ),
     "standard_form": (
         "Standard form writes a number as A x 10^n where 1 <= A < 10, which makes size comparisons easy. A "
         "large number gets a positive n and a small one a negative n. Multiply the A values and add the "
-        "indices, then re-adjust so A is back in range."
+        "indices, then readjust so A is back in range."
     ),
     "statistical_mean": (
         "The mean is the total divided by the count, so it depends on every value and is pulled by outliers. "
@@ -155,7 +155,7 @@ TOPIC_NOTES: dict[str, str] = {
     "unit_conversion": (
         "Converting units is multiplying by 1 written as an equivalent pair, such as 100 cm over 1 m, so the "
         "unit you do not want cancels. Squared units need the factor squared; cubic units cubed. Estimate the "
-        "answer first to catch a multiply-versus-divide slip."
+        "answer first to catch a multiply versus divide slip."
     ),
     "history_ww1": (
         "The First World War began in 1914, and no single cause explains it. Two armed camps had "
@@ -281,7 +281,7 @@ def teachback(topic_title, concepts, *, est=150, difficulty=0.5, prompt=None):
         "solution_steps": [],
         "difficulty": difficulty,
         "est_seconds": est,
-        "tags": ["meta-cognition"],
+        "tags": ["meta cognition"],
     }
 
 
@@ -296,7 +296,7 @@ def example(stem, steps, *, est=90, difficulty=0.3, prompt=None):
         "hints": [],
         "difficulty": difficulty,
         "est_seconds": est,
-        "tags": ["worked-example"],
+        "tags": ["worked example"],
     }
 
 
@@ -358,7 +358,7 @@ ITEMS: dict[str, list[dict[str, Any]]] = {
         example("Working through 12 - 5 - 4 without sign errors",
                 ["Read it as two moves, left to right: start at 12, subtract 5, then subtract 4.",
                  "12 - 5 = 7.",
-                 "7 - 4 = 3. The answer is a position on the number line, not a calculation left half-done."],
+                 "7 - 4 = 3. The answer is a position on the number line, not a calculation left half finished."],
                 difficulty=0.2, est=70),
     ],
     "fractions_intro": [
@@ -417,7 +417,7 @@ ITEMS: dict[str, list[dict[str, Any]]] = {
                    "the denominator is NOT added: that would change the size of each part"],
             difficulty=0.5, est=110, derived={"bd": "b*d", "an": "a*d", "cn": "c*b"}),
         mcq("Why can you not do 1/2 + 1/3 = 2/5?",
-            [("Because the denominators count different-sized parts", "Halves and thirds are not the same unit, so the counts cannot be added."),
+            [("Because the denominators count differently sized parts", "Halves and thirds are not the same unit, so the counts cannot be added."),
              ("Because you must add denominators too", "Adding denominators changes the size of each part."),
              ("Because the fractions are both less than 1", "That is not the obstacle here."),
              ("Because 2/5 is not in lowest terms", "Cancelling is a separate step.")], 0,
@@ -465,7 +465,7 @@ ITEMS: dict[str, list[dict[str, Any]]] = {
             steps=["The first column after the point is tenths", "so {d} there means {d} x 0.1 = {ans}"],
             difficulty=0.35, tolerance=1e-9),
         mcq("Which is largest?",
-            [("0.4", "Four tenths."), ("0.36", "Thirty-six hundredths, i.e. 0.36."),
+            [("0.4", "Four tenths."), ("0.36", "Thirty six hundredths, i.e. 0.36."),
              ("0.401", "Four tenths and a thousandth more, so this beats 0.4."),
              ("0.04", "Four hundredths, the smallest.")], 2,
             difficulty=0.4, mode="read",
@@ -528,7 +528,7 @@ ITEMS: dict[str, list[dict[str, Any]]] = {
     ],
     "order_of_operations": [
         num("Work out {a} + {b} x {c}.", "a+b*c", {"a": [1, 9], "b": [2, 9], "c": [2, 9]}, {"a": 7, "b": 3, "c": 2},
-            hints=["Multiplication outranks addition, whatever the left-to-right order looks like."],
+            hints=["Multiplication outranks addition, whatever the left to right order looks like."],
             steps=["{b} x {c} = {bc}", "{a} + {bc} = {ans}"], difficulty=0.3, derived={"bc": "b*c"}),
         mcq("What is 12 - 3 x 2 + 4?",
             [("10", None),
@@ -565,7 +565,7 @@ ITEMS: dict[str, list[dict[str, Any]]] = {
             steps=["{a}x + 3 = {b}x + {c}", "subtract {a}x: 3 = {d}x + {c}",
                    "subtract {c}: {neg} = {d}x", "divide by {d}: x = {ans}"],
             difficulty=0.7, tolerance=1e-6, est=140, derived={"d": "b-a", "neg": "3-c"}),
-        teachback("how you solve a two-step equation",
+        teachback("how you solve a two step equation",
                   [("same operation on both sides", ["both sides", "balance", "equal"]),
                    ("undo operations in reverse order", ["reverse", "inverse", "undo"]),
                    ("check by substituting", ["substitute", "check", "plug"])],
@@ -683,13 +683,13 @@ ITEMS: dict[str, list[dict[str, Any]]] = {
                ["1914", "in 1914", "the year 1914"],
                keywords=["1914"],
                hints=["The Archduke was assassinated in the summer of that year."],
-               steps=["The war began in 1914 -- the year of the July Crisis."],
+               steps=["The war began in 1914 — the year of the July Crisis."],
                difficulty=0.35, est=60, prompt="Answer with the year."),
         mcq("What was the immediate trigger of the First World War in 1914?",
             [("The assassination of Archduke Franz Ferdinand in Sarajevo",
               "The notes say the trigger came on 28 June 1914, when he was assassinated in Sarajevo."),
              ("The German invasion of Belgium",
-              "That is what brought Britain in on 4 August -- it is a consequence, not the trigger."),
+              "That is what brought Britain in on 4 August — it is a consequence, not the trigger."),
              ("The formation of the Triple Alliance",
               "The alliance was formed before 1914: it shaped the war rather than starting it."),
              ("The sinking of a passenger ship",
@@ -703,8 +703,8 @@ ITEMS: dict[str, list[dict[str, Any]]] = {
                   difficulty=0.5, est=150),
         example("How to answer 'why did the war begin?' without listing one cause",
                 ["Open with the distinction: the trigger and the causes are different things.",
-                 "Name the trigger and date it -- 28 June 1914, Sarajevo.",
-                 "Name the structures that turned it into a European war -- the two alliance blocs.",
+                 "Name the trigger and date it — 28 June 1914, Sarajevo.",
+                 "Name the structures that turned it into a European war — the two alliance blocs.",
                  "Say how you are weighing them: 'the alliance system turned a local quarrel into a European war'."],
                 difficulty=0.4, est=90),
     ],
