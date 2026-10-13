@@ -106,12 +106,12 @@ answered 200. Two separate React effects were wiping the learner's in-progress a
    and keys `startedItemIdRef` by `item.id` without mutating refs during render (10/10 passes on
    `bash scripts/probe-fresh.sh diagnose` and 5/5 with `PROBE_FIRST_ITEM_KIND=numeric`).
 
-## `npm run test:server` leaves `tsconfig.json` modified, on purpose-free bad terms
+## `npm run test:server` snapshots and restores `tsconfig.json`
 
 Next adds `<the distDir it was given>/types/**/*.ts` to `tsconfig.json`'s `include` whenever it
-starts a project it has not seen at that path -- so the launcher test, which builds into its own
-temp distDir, edits the repo's `tsconfig.json` as a side effect. The entries name a directory that
-no longer exists by the time the test is over.
+starts a project it has not seen at that path. `server.test.mjs` snapshots `tsconfig.json` before
+spawning `server.mjs`, restores it inside `stopAndSweep`, and asserts that `tsconfig.json` is
+byte-identical after each test.
 
 Revert it before committing: `git checkout -- frontend/tsconfig.json`. This is how 1391 scratch
 files and three dead `include` paths got committed once already; `tmp/` is now ignored, but the

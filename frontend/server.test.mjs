@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,6 +22,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const TSCONFIG_PATH = join(HERE, "tsconfig.json");
 
 async function freePort() {
   const probe = createServer();
@@ -45,6 +46,7 @@ async function until(fn, { timeoutMs = 45_000, everyMs = 500 } = {}) {
 async function startServer({ api, prefix }) {
   const port = await freePort();
   const out = mkdtempSync(join(tmpdir(), prefix));
+  const tsconfigBefore = readFileSync(TSCONFIG_PATH, "utf8");
   const child = spawn(process.execPath, ["server.mjs"], {
     cwd: HERE,
     env: { ...process.env, PORT: String(port), ADAPT_API: api, ADAPT_NEXT_DIST: out, HOST: "127.0.0.1" },
@@ -53,15 +55,15 @@ async function startServer({ api, prefix }) {
   let logs = "";
   child.stdout.on("data", (b) => { logs += b; });
   child.stderr.on("data", (b) => { logs += b; });
-  return { port, child, out, logs: () => logs };
+  return { port, child, out, tsconfigBefore, logs: () => logs };
 }
 
 async function startOffline() {
   return startServer({ api: "offline", prefix: "adapt-next-offline-" });
 }
 
-/** Stop a launcher and take its build output with it (see the note in the first test). */
-async function stopAndSweep(child, out) {
+/** Stop a launcher, take its build output with it, and restore tsconfig.json. */
+async function stopAndSweep(child, out, tsconfigBefore) {
   child.kill("SIGTERM");
   await until(async () => (child.exitCode !== null ? true : null), { timeoutMs: 8_000 });
   if (child.exitCode === null) child.kill("SIGKILL");
@@ -71,6 +73,9 @@ async function stopAndSweep(child, out) {
   }
   await sleep(400); // Next flushes its manifests on the way out; see the note in the first test.
   rmSync(out, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  if (typeof tsconfigBefore === "string" && readFileSync(TSCONFIG_PATH, "utf8") !== tsconfigBefore) {
+    writeFileSync(TSCONFIG_PATH, tsconfigBefore, "utf8");
+  }
 }
 
 function sleep(ms) {
@@ -101,7 +106,7 @@ function requestWithHost({ port, host, path: requestPath, upgrade = false, heade
 }
 
 test("ADAPT_API=offline answers 503 and stays up, and the UI still serves", async () => {
-  const { port, child, out, logs } = await startOffline();
+  const { port, child, out, tsconfigBefore, logs } = await startOffline();
   try {
     const api = await until(async () => {
       const res = await fetch(`http://127.0.0.1:${port}/api/v1/health`);
@@ -121,8 +126,9 @@ test("ADAPT_API=offline answers 503 and stays up, and the UI still serves", asyn
     const html = await page.text();
     assert.match(html, /ADAPT/, "the shell is the app's, not a blank page");
   } finally {
-    await stopAndSweep(child, out);
+    await stopAndSweep(child, out, tsconfigBefore);
   }
+  assert.equal(readFileSync(TSCONFIG_PATH, "utf8"), tsconfigBefore, "tsconfig.json must remain byte-identical after offline test");
 });
 
 test("a LAN Host header reaches the API as 127.0.0.1, and the 101 keeps its own headers", async () => {
@@ -155,7 +161,7 @@ test("a LAN Host header reaches the API as 127.0.0.1, and the 101 keeps its own 
   });
   await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
   const apiPort = upstream.address().port;
-  const { port, child, out, logs } = await startServer({ api: `http://127.0.0.1:${apiPort}`, prefix: "adapt-next-proxy-" });
+  const { port, child, out, tsconfigBefore, logs } = await startServer({ api: `http://127.0.0.1:${apiPort}`, prefix: "adapt-next-proxy-" });
   try {
     const answer = await until(async () => {
       const res = await requestWithHost({ port, host: "192.168.1.50:3000", path: "/api/v1/health" }).catch(() => null);
@@ -177,11 +183,12 @@ test("a LAN Host header reaches the API as 127.0.0.1, and the 101 keeps its own 
     assert.match(String(upgrade.headers["sec-websocket-extensions"]), /permessage-deflate/);
     assert.equal(String(upgrade.headers.connection).toLowerCase(), "upgrade");
   } finally {
-    await stopAndSweep(child, out);
+    await stopAndSweep(child, out, tsconfigBefore);
     // No awaiting upstream.close(): it only calls back once every connection is gone, and a
     // socket that is merely open (never closed by either side) is not a reason to hang a test.
     for (const socket of sockets) socket.destroy();
     upstream.closeAllConnections?.();
     upstream.close();
   }
+  assert.equal(readFileSync(TSCONFIG_PATH, "utf8"), tsconfigBefore, "tsconfig.json must remain byte-identical after proxy test");
 });
