@@ -27,7 +27,7 @@ failure matrix and the backend suite — plus two end-to-end demos. All pass:
 | UI probe (`bash scripts/probe-fresh.sh all`, jsdom against the real Next.js server) | every screen, form, button, refresh and error path, plus the lesson engine | **169/169 checks**, twice in a row |
 | Data-layer journey (`scripts/journey_check.py`) | records, approvals, shutdown/restart | **59/59 checks** |
 | Failure matrix (`scripts/failure_matrix_check.py`) | bad input, auth, floods, dead providers | **25/25 checks** |
-| Backend suite (`pytest -q`) | routes, learner model, grading, adapters, voice, migrations, the engine, LLM plumbing | **559 passed** |
+| Backend suite (`pytest -q`) | routes, learner model, grading, adapters, voice, migrations, the engine, LLM plumbing | **589 passed** |
 | Terminal loop (`adapt.cli demo --turns 3`) | whole loop on a temp database | exit 0 |
 | HTTP demo (`node scripts/demo.mjs --json`) | a synthetic learner over the public API | `warnings: []` |
 | Migrations (`alembic upgrade head`, fresh data dir) | schema, then the app boots on it | 4 revisions, no drift |
@@ -246,8 +246,8 @@ application. Each has a regression test, or a gate that fails, if the defect ret
 
 * **Probe failures under repeated runs** (onboarding reload, proposals reload, diagnose
   numeric input) were **rate-limit buckets and warm state from earlier runs in the same
-  process**, not app behaviour: with one fresh API per scenario, all ten scenarios and the full
-  probe pass (139/139), repeatedly.
+  process**, not app behaviour: with one fresh API per scenario, all eleven scenarios and the full
+  probe pass (169/169), repeatedly.
 * `ResourceService.search` slicing at `max(6, limit*2)` is by design; the route now truncates.
 * Local-mode 500 responses include the exception text on purpose (`app.py`); on a tunnel they
   carry a request id instead.
@@ -267,20 +267,20 @@ application. Each has a regression test, or a gate that fails, if the defect ret
 
 ```bash
 cd /home/user/Adapt/backend
-../.venv/bin/python -m pytest -q                                   # 559 passed
+../.venv/bin/python -m pytest -q                                   # 589 passed
 ../.venv/bin/python -m ruff check src --select F,E7,E9,B017         # All checks passed
 ../.venv/bin/python -m adapt.cli demo --turns 3                     # exit 0 (whole loop, temp DB)
 
 cd /home/user/Adapt/frontend
-npm run lint        # contract ok: 71 routes / 51 calls, tsc clean
+npm run lint        # contract ok: 71 routes / 49 calls, tsc clean
 npm run build       # built (static pages)
 cd .. && node scripts/demo.mjs --json          # warnings: []
 
 # the UI probe: one fresh API + fresh data dir per run (warm buckets fail spuriously)
 bash scripts/probe-fresh.sh all                 # 169/169 checks passed (starts the API as a rehearsal)
-bash scripts/probe-fresh.sh learn               # one scenario: 30/30
-#   scenarios individually: learn 19/19, proposals 36/36, onboarding 12/12, diagnose 21/21,
-#   home 10/10, progress 5/5, voice 8/8, settings 12/12, review 1/1, failures 14/14
+bash scripts/probe-fresh.sh lesson              # one scenario: 30/30
+#   scenarios individually: learn 19/19, lesson 30/30, proposals 36/36, onboarding 12/12,
+#   diagnose 21/21, home 10/10, progress 5/5, voice 8/8, settings 12/12, review 1/1, failures 14/14
 
 # the data layer, including a clean shutdown, a restart on the same data directory,
 # every route the API exposes, correct-choice grading both ways, and revoke-by-name

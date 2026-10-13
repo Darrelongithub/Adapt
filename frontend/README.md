@@ -113,8 +113,3 @@ starts a project it has not seen at that path. `server.test.mjs` snapshots `tsco
 spawning `server.mjs`, restores it inside `stopAndSweep`, and asserts that `tsconfig.json` is
 byte-identical after each test.
 
-Revert it before committing: `git checkout -- frontend/tsconfig.json`. This is how 1391 scratch
-files and three dead `include` paths got committed once already; `tmp/` is now ignored, but the
-`tsconfig.json` edit is not something the test can undo for you. Candidates for removing the
-symptom rather than the note -- `typescript.tsconfigPath` pointed inside the temp distDir, or
-running the test copy with type generation off -- were not tried here, so treat them as open.

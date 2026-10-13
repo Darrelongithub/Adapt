@@ -22,7 +22,7 @@ also audited.
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e "./backend[dev]"          # fastapi, sqlalchemy, numpy, cryptography, argon2…
-cd backend && pytest -q                  # 483 tests, no network, no model call needed
+cd backend && pytest -q                  # 589 tests, no network, no model call needed
 adapt demo --turns 3                     # the whole loop, in a terminal, on a temp database
 
 uvicorn adapt.api.app:app --port 8000    # the API (docs at /api, health at /healthz)

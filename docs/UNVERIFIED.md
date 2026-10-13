@@ -126,8 +126,8 @@ session is the expected result, not a bug.
   file, a `create_all` file and a downgraded one. Nobody has run it against a months-old
   deployment: do that on a copy (`cp adapt.db /tmp/x.db`), because `render_as_batch` rebuilds
   tables and SQLite has no rollback to offer.
-* **`scripts/check-contract.mjs` coverage of dynamic paths.** It resolves the 16 literal call
-  sites the frontend makes. Paths assembled at runtime (none today) would slip through, and the
+* **`scripts/check-contract.mjs` coverage of dynamic paths.** It resolves the 49 call
+  sites the frontend makes against the 71 backend routes. Paths assembled at runtime (none today) would slip through, and the
   mock-parity rule is "some fixture regex accepts a concrete sample of the path", which cannot
   prove the fixture's *body* is the right shape — `?mock=1` still needs a human eye.
 
@@ -146,8 +146,8 @@ session is the expected result, not a bug.
   not transcription. Real accuracy, real latency, real barge-in timing and the audible difference
   between `af_heart` and `am_fenrir` have to be judged on a machine that can install them
   (`pip install 'adapt-backend[voice]'`, Python ≥3.11 <3.13).
-* **Interaction, without a browser:** `npm run probe` drives the built pages in jsdom (139 checks
-  across ten screens). It catches hydration-order bugs, real click→request→DB round trips and
+* **Interaction, without a browser:** `npm run probe` drives the built pages in jsdom (169 checks
+  across eleven scenarios). It catches hydration-order bugs, real click→request→DB round trips and
   what the screen says afterwards, and it can break one endpoint on purpose (the `failures`
   scenario answers 429 to the session read and asserts the app does not turn that into a sign-out).
   It cannot catch: CSS/layout at any viewport, focus rings,
@@ -158,7 +158,7 @@ session is the expected result, not a bug.
 
 ## Added by the 2026-10-12 full-scan pass
 
-* **The UI probe drives jsdom, not a browser.** `npm run probe` (139 checks) exercises the
+* **The UI probe drives jsdom, not a browser.** `npm run probe` (169 checks) exercises the
   real Next.js server over HTTP with a real DOM: routing, forms, controlled inputs,
   fetch/CSRF/error paths, refresh, the voice socket's handshake and the screens' data paths.
   It cannot observe layout, paint, focus order, scroll, `getUserMedia` permission prompts or
