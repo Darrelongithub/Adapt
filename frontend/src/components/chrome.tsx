@@ -12,6 +12,7 @@ import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 export const NAV = [
   { href: "/learn", label: "Practise" },
   { href: "/lesson", label: "Lessons" },
+  { href: "/contrast", label: "Compare lessons" },
   { href: "/proposals", label: "Changes" },
   { href: "/review", label: "Review" },
   { href: "/progress", label: "Progress" },

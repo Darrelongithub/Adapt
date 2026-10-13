@@ -1049,6 +1049,82 @@ const lessonAuthor = {
   already_existed: false,
 };
 
+const mockWhy = (text: string, lever: string, source: string, n: number) => ({ text, lever, source, evidence_ids: [] as string[], n });
+const mockPlanVisualFirst = {
+  concept: "adding fractions",
+  title: "Adding fractions",
+  topic_id: "top_frac",
+  content: { concept: "adding fractions", title: "Adding fractions", topic_id: "top_frac", content_id: null, source: "demo content written for this screen" },
+  lead_format: "visual",
+  ladder_rung: 2,
+  subject: null,
+  blocks: [
+    { block: 1, chunk_id: "chk_mock_visual", kind: "visual", content: { spec: { kind: "bar", title: "Adding fractions in sixths", bars: [{ label: "1/2", value: 3 }, { label: "1/3", value: 2 }, { label: "total", value: 5 }], unit: "sixths", unfilled: [] } }, why: mockWhy("you chose diagrams for a new topic (stated, not measured)", "lead_format_prior", "stated", 0) },
+    { block: 2, chunk_id: "chk_mock_text1", kind: "text", content: { text: "A fraction names parts of one whole. The parts must be the same size before you can add them.", part: 1, of: 2 }, why: mockWhy("step 1 of 2: sized to at most 30 words before a check", "step_size", "measured", 6) },
+    { block: 3, chunk_id: "chk_mock_check1", kind: "check", content: { question: "Quick check: what does this step say about size?", kind: "recall", questions: 1, hint_policy: "offer early" }, why: mockWhy("a one-question check after every step", "step_size", "measured", 6) },
+    { block: 4, chunk_id: "chk_mock_reflect", kind: "reflect", content: { text: "Look back before you move on.", kind: "review", review_in_hours: 18, review_note: "recalled 40% of new pairs straight away (n=8)" }, why: mockWhy("the close: what to look back at, and when this comes round again", "review_halflife_prior", "measured", 8) },
+  ],
+  limits: { max_words_per_block: 30, step_size: "small", language: "en", tone: "gentle", reading_level: "standard", max_blocks: 24, rules: [] },
+  why_panel: {
+    title: "Why this lesson looks like this",
+    rows: [
+      { decision: "opens with visual", ...mockWhy("you chose diagrams for a new topic (stated, not measured)", "lead_format_prior", "stated", 0) },
+      { decision: "steps of at most 30 words", ...mockWhy("holds about 4 steps at once (n=6)", "step_size", "measured", 6) },
+    ],
+    what_would_change_it: ["more answers under a different teaching method, measured against expectation, would change what leads"],
+    fallbacks: [],
+    mode: "deterministic",
+    mode_note: "built by the template adapter from your measured profile (simple mode: no model was involved)",
+  },
+  fallbacks: [],
+  mode: "deterministic",
+  provenance: { model_version: 0, content_id: null, content_source: "demo content written for this screen", evidence_ids: [], evidence_n: 0 },
+};
+const mockPlanWorkedFirst = {
+  ...mockPlanVisualFirst,
+  lead_format: "worked_example",
+  ladder_rung: 5,
+  blocks: [
+    { block: 1, chunk_id: "chk_mock_worked", kind: "worked_example", content: { title: "Adding fractions", steps: [{ index: 1, text: "1/2 = 3/6, because both parts are scaled by three.", why: "scaling keeps the value" }, { index: 2, text: "3/6 + 2/6 = 5/6.", why: "add the numerators, keep the denominator" }], intro: "Work through this example step by step." }, why: mockWhy("no stated or measured lead yet: a worked example is the default first look at a new idea", "lead_format_prior", "default", 0) },
+    { block: 2, chunk_id: "chk_mock_text_big", kind: "text", content: { text: "A fraction names parts of one whole. The parts must be the same size before you can add them. Find a denominator both fractions share. Rewrite each fraction over that denominator. Then add the numerators and keep the denominator.", part: 1, of: 1 }, why: mockWhy("step 1 of 1: sized to at most 75 words before a check", "step_size", "measured", 6) },
+    { block: 3, chunk_id: "chk_mock_check_big", kind: "check", content: { question: "Quick check: what does this step say about denominator?", kind: "recall", questions: 1, hint_policy: "on request" }, why: mockWhy("a one-question check after every step", "step_size", "measured", 6) },
+    { block: 4, chunk_id: "chk_mock_explain", kind: "explain", content: { question: "In your own words: explain Adding fractions so someone meeting it for the first time would follow you.", kind: "teachback" }, why: mockWhy("at rung 5 the test is whether you can say why, not only whether you can do it", "ladder", "measured", 0) },
+    { block: 5, chunk_id: "chk_mock_reflect_b", kind: "reflect", content: { text: "Look back before you move on.", kind: "review", review_in_hours: 48, review_note: "recalled 80% of new pairs straight away (n=8)" }, why: mockWhy("the close: what to look back at, and when this comes round again", "review_halflife_prior", "measured", 8) },
+  ],
+  limits: { max_words_per_block: 75, step_size: "large", language: "en", tone: "straight", reading_level: "standard", max_blocks: 24, rules: [] },
+  why_panel: {
+    title: "Why this lesson looks like this",
+    rows: [
+      { decision: "opens with worked example", ...mockWhy("no stated preference, so the default", "lead_format_prior", "default", 0) },
+      { decision: "steps of at most 75 words", ...mockWhy("holds about 7 steps at once (n=6)", "step_size", "measured", 6) },
+    ],
+    what_would_change_it: ["more answers under a different teaching method, measured against expectation, would change what leads"],
+    fallbacks: [],
+    mode: "deterministic",
+    mode_note: "built by the template adapter from your measured profile (simple mode: no model was involved)",
+  },
+};
+const lessonPlanMock = { plan: mockPlanVisualFirst, plan_id: "pln_mock_0001", recorded: true };
+const lessonContrastMock = {
+  concept: "adding fractions",
+  title: "Adding fractions",
+  lessons: [
+    { profile: "Demo profile 1 — smaller steps, pictures first", plan: mockPlanVisualFirst },
+    { profile: "Demo profile 2 — bigger steps, examples first", plan: mockPlanWorkedFirst },
+  ],
+  differences: [
+    { aspect: "opens with", a: "visual", b: "worked_example" },
+    { aspect: "step size", a: "small", b: "large" },
+    { aspect: "words per step, at most", a: 30, b: 75 },
+    { aspect: "number of blocks", a: 4, b: 5 },
+    { aspect: "first block", a: "visual", b: "worked_example" },
+    { aspect: "has a picture", a: true, b: false },
+    { aspect: "tone", a: "gentle", b: "straight" },
+  ],
+  visibly_different: true,
+  note: "both lessons teach the same checked content; what differs is how it is laid out, and every difference above is read off the two plans, not written about them",
+};
+
 const rows: Row[] = [
   { method: "GET", match: /^\/api\/v1\/health/, body: { ok: true, mode: "local", learners: 1, mock: true } },
   { method: "GET", match: /^\/api\/v1\/me$/, body: learner },
@@ -1177,6 +1253,11 @@ const rows: Row[] = [
   { method: "POST", match: /^\/api\/v1\/resources\/search$/, body: { results: [], provider: "none", note: "no network egress allowed from this instance, and no OpenAlex key is configured" } },
   { method: "POST", match: /^\/api\/v1\/numbas\/import$/, body: { imported: 0, skipped: [], note: "a paste of Numbas XML; nothing was accepted because the mock has no file" } },
   { method: "POST", match: /^\/api\/v1\/adaptations\/strategy\/[^/]+\/revoke$/, body: { ok: true, revoked: 1, strategies: ["retrieval_practice"], note: "turned off by strategy name" } },
+  /* lesson-plan: the adapted lesson + contrast demo (Phase 5). Recorded shapes from
+     backend/tests/test_adapter.py; the demo profiles are made up and say so. */
+  { method: "POST", match: /^\/api\/v1\/lesson-plan$/, body: lessonPlanMock },
+  { method: "POST", match: /^\/api\/v1\/lesson-plan\/contrast$/, body: lessonContrastMock },
+  { method: "GET", match: /^\/api\/v1\/lesson-plan\/visual-kinds$/, body: { kinds: ["flow", "comparison_table", "timeline", "labelled_diagram", "number_line", "venn", "bar"], aliases: {}, limits: { max_items_per_picture: 8, max_text_chars: 220 }, schemas: {}, note: "a spec that fails validation is never drawn; the lesson shows the same content in words and says why" } },
   /* lessons: the interactive engine (?mock=1 reviews the player, it does not run it) */
   { method: "GET", match: /^\/api\/v1\/lessons$/, body: lessonList },
   { method: "GET", match: /^\/api\/v1\/lessons\/kinds$/, body: lessonKinds },
