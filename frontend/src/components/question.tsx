@@ -382,9 +382,9 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
       {!canSubmit ? <span id="submit-hint" className="sr-only">Enter an answer to enable checking</span> : null}
 
       {error ? (
-        <p className="mt-4 max-w-[660px]">
+        <div className="mt-4 max-w-[660px]">
           <Notice tone="bad">{error}</Notice>
-        </p>
+        </div>
       ) : null}
 
       {hints.length ? (
@@ -566,7 +566,7 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
         <Tag>{receipt.grading_method}</Tag>
       </div>
       <p className="text-sm leading-relaxed">{receipt.feedback}</p>
-      <p className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         <Band band={receipt.mastery.band} pKnow={receipt.mastery.p_know} ci={undefined} />
         <span>
           {receipt.mastery.p_know_before !== undefined
@@ -578,7 +578,7 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
         </span>
         {receipt.mastery.due_at ? <span>review {new Date(receipt.mastery.due_at).toLocaleDateString()}</span> : null}
         {receipt.mastery.first_observation ? <Tag tone="think">first data point on this topic</Tag> : null}
-      </p>
+      </div>
       {tb ? (
         <p className="mt-2 text-xs text-[var(--muted)]">
           teach-back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas

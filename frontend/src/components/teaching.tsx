@@ -184,7 +184,7 @@ function SegmentWalkthrough({ teaching, headline }: { teaching: NonNullable<Teac
             )}
           </div>
           {ack ? (
-            <p className="mt-2 text-xs">
+            <div className="mt-2 text-xs">
               {ack.enough ? (
                 <Notice tone="good">
                   That has the idea in it{last ? " — you can go on to the question" : " — the next step is open"}.
@@ -197,7 +197,7 @@ function SegmentWalkthrough({ teaching, headline }: { teaching: NonNullable<Teac
               <span className="mt-1 block text-[var(--muted)]">
                 This check is not marked and is not sent anywhere: nothing here moves your estimate of what you know.
               </span>
-            </p>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -285,12 +285,12 @@ function VisualTemplate({ visual, headline }: { visual: TeachingVisual; headline
       ) : null}
 
       {visual.unfilled?.length ? (
-        <p className="mt-3 text-xs">
+        <div className="mt-3 text-xs">
           <Notice tone="warn">
             {visual.unfilled.length} slot{visual.unfilled.length === 1 ? "" : "s"} could not be filled from this concept&rsquo;s
             material ({visual.unfilled.join(", ")}). They are left empty on purpose: a guessed label looks exactly like a checked one.
           </Notice>
-        </p>
+        </div>
       ) : null}
 
       {visual.why ? (

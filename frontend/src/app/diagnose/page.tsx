@@ -117,9 +117,9 @@ export default function Diagnose() {
         <Card title="Placement done" tone={report.proposals ? "good" : "muted"}>
           <p className="text-sm">{report.note ?? `${report.hypotheses} hypotheses on file from ${report.evidence} evidence rows.`}</p>
           {shortfall ? (
-            <p className="mt-2">
+            <div className="mt-2">
               <Notice tone="warn">{shortfall}</Notice>
-            </p>
+            </div>
           ) : null}
           <ol className="mt-2 space-y-1 text-xs text-[var(--muted)]">
             {report.loop.map((l, i) => (
