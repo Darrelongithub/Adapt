@@ -149,7 +149,7 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
                     "max_latency_ms": 30000,
                 }
             return free
-        return codewords_delayed(seed, [t for t in trials if t.task.get("kind") == "recognition"], kind="recognition")
+        return codewords_delayed(seed, [t for t in trials if t.task.get("kind") in ("free", "recognition")], kind="recognition")
     return None
 
 
@@ -226,6 +226,7 @@ def next_day_tasks(seed: int, trials: Sequence[Trial]) -> list[dict[str, Any]]:
     It is a separate call rather than part of the flow: the point of the check is the *gap*, and a
     flow that ended yesterday cannot serve it today.
     """
+    trials = [t for t in trials if t.game == "codewords_next_day"]
     out: list[dict[str, Any]] = []
     for _ in range(3):
         task = codewords_next_day(seed, [*trials, *[_trial_from(t) for t in out]])

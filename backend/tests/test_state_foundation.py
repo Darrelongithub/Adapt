@@ -108,8 +108,10 @@ def test_a_submitted_attempt_is_in_the_evidence_log(client, services, learner):
     receipt = _answer_one(client, learner, _plan_items(client, learner)[0])
     attempt_id = receipt["attempt_id"]
     rows = services.state.evidence_rows(learner["student_id"])
-    assert len(rows) == before + 1
-    row = rows[-1]
+    assert len(rows) >= before + 1
+    scored = [row for row in rows if row["kind"] == "attempt"]
+    assert len(scored) == 1, "recovery metadata must not duplicate the scored answer"
+    row = scored[0]
     assert row["event_id"] == f"att_{attempt_id}"
     assert row["kind"] == "attempt"
     assert row["source_type"] == "controlled"
@@ -823,7 +825,7 @@ def test_the_practice_queue_records_what_it_served(client, learner, services):
 
     response = client.get("/api/v1/practice?count=3", headers=learner["headers"])
     assert response.status_code == 200, response.text
-    served = [p.get("item_id") or p.get("id") for p in response.json()["items"]]
+    served = [p["item"]["id"] for p in response.json()["items"]]
     assert served
     with services.db.session() as s:
         rows = (

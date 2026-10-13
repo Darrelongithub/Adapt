@@ -1160,6 +1160,15 @@ const baselineNextDayBody = {
 };
 
 const rows: Row[] = [
+  { method: "GET", match: /^\/api\/v1\/evidence$/, body: {
+    methods: [], strategies: [], preference_vs_performance: null,
+    excluded_n: 0, attributed_elsewhere_n: 0, format_comparable: true,
+    note: "Demo mode has no measured method outcomes. Insufficient evidence; no comparison was invented.",
+  } },
+  { method: "GET", match: /^\/api\/v1\/evidence\/failure\//,
+    body: null, status: 422, error: { message: "Recovery requires a real graded attempt and checked matched content; unavailable in demo mode." } },
+  { method: "POST", match: /^\/api\/v1\/evidence\/failure/,
+    body: null, status: 422, error: { message: "Recovery requires a real graded attempt and checked matched content; unavailable in demo mode." } },
   /* the baseline first: `/baseline/snapshot` and `/baseline/next-day` must be matched before the
      run-id row, or a GET of the snapshot would be read as a run view */
   { method: "POST", match: /^\/api\/v1\/baseline$/, body: () => baselineView("format") },

@@ -264,6 +264,8 @@ class LearningIntelligence:
         self_explain: float = 0.0,
         opportunity: bool = True,
         active_strategies: Sequence[str] = (),
+        expected_success: float | None = None,
+        strategy_weight: float = 1.0,
         kind: str | None = None,
         choices: int | None = None,
     ) -> dict[str, Any]:
@@ -337,7 +339,11 @@ class LearningIntelligence:
                         s.add(row)
                         s.flush()
                     model = ST.StrategyModel.from_rows([row])
-                    model.record(strat, lift=delta if score is None else float(score) - 0.5)
+                    lift = (
+                        float(correct) - expected_success if expected_success is not None
+                        else delta if score is None else float(score) - 0.5
+                    )
+                    model.record(strat, lift=lift, weight=strategy_weight)
                     upd = model.stats[strat]
                     row.alpha, row.beta, row.n, row.mean_lift = upd.alpha, upd.beta, upd.n, upd.mean_lift
                     row.last_updated_at = utcnow()

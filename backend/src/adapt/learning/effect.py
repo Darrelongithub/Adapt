@@ -1,6 +1,7 @@
 """Did the adaptation actually help? Non-parametric effect estimation.
 
-AI 1's proposals are experiments, so each one needs a pre/after comparison that a
+Approved changes are observational before/after comparisons, not experiments.
+Each one needs a pre/after comparison that a
 sceptical reader would accept:
 
 * paired or unpaired mean difference on the pre-registered metric,
@@ -228,7 +229,7 @@ def evaluate_change(
             hedges_g=None,
             verdict="insufficient_evidence",
             explanation=(
-                f"{metric}: need >= {min_n} scored attempts on each side of the change; "
+                f"Insufficient evidence for {metric}: need >= {min_n} scored attempts on each side of the change; "
                 f"have {len(A)} baseline and {len(B)} after. Keeping the change under "
                 "observation rather than drawing a conclusion."
             ),

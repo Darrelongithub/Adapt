@@ -1072,7 +1072,8 @@ function SnapshotScreen({ snap, view }: { snap: BaselineSnapshot | null; view: B
 
       {snap.preference_vs_performance ? (
         <Card title="What you said, and what happened">
-          <p>{String(snap.preference_vs_performance.statement ?? "")}</p>
+          <p>{String(snap.preference_vs_performance.sentence ?? snap.preference_vs_performance.statement ?? "")}</p>
+          <Btn href="/evidence">View method ranges and evidence sources</Btn>
           {snap.preference_vs_performance.note ? (
             <p className="muted small">{String(snap.preference_vs_performance.note)}</p>
           ) : null}

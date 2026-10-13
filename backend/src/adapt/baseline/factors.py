@@ -209,9 +209,9 @@ def _attention(trials: Sequence[Trial]) -> Factor:
     last_acc = _band_score(*[(0.0, bool(t.correct)) for t in drift_trials[-third:]])
     intuitive = sum(1 for t in traps if str(t.response.get("value") or "") == str(t.task.get("intuitive") or ""))
     correct_traps = sum(1 for t in traps if t.correct)
-    # Pause time on a trap is the measurement of "did you think about it": the near-miss of the
-    # intuitive answer is kept beside it, because the interesting case is the learner who paused,
-    # saw the trap, and still chose the wrong one.
+    # Report successful resistance separately from all trap pauses. A paused
+    # intuitive error is still retained, not mistaken for successful resistance.
+    successful_pauses = [int(t.latency_ms) for t in traps if t.latency_ms and t.correct]
     pauses = [int(t.latency_ms) for t in traps if t.latency_ms]
     return Factor(
         key="attention_self_control",
@@ -241,6 +241,7 @@ def _attention(trials: Sequence[Trial]) -> Factor:
             "traps_correct": correct_traps,
             "traps_intuitive": intuitive,
             "median_pause_ms": int(median(pauses)) if pauses else None,
+            "median_successful_trap_pause_ms": int(median(successful_pauses)) if successful_pauses else None,
         },
     )
 

@@ -34,6 +34,7 @@ from ...services import journey as J
 from ...services import telemetry as TEL
 from ...services import sessions as S
 from ...services import current
+from ...services.evidence import remember_offers
 
 router = APIRouter(prefix="/api/v1", tags=["learning"])
 
@@ -56,9 +57,8 @@ class AttemptBody(BaseModel):
     teachback_text: str | None = Field(default=None, max_length=4000)
     attempt_no: int | None = None
     client_ts: str | None = None
-    # What the serving path told the client it was doing. These are *echoed*, not
-    # trusted: an unknown method is discarded and re-derived server-side, and the
-    # design/arm are only recorded when they name one of the real values.
+    # Backwards-compatible echoes only. The server delivery log owns assignment
+    # and prediction; client metadata cannot manufacture controlled evidence.
     method: str | None = Field(default=None, max_length=32)
     method_design: str | None = Field(default=None, max_length=24)
     method_arm: str | None = Field(default=None, max_length=24)
@@ -167,7 +167,13 @@ def diagnostic(
     every answer gets a real adaptive test rather than a fixed 12-item form.
     """
     svcs = current()
+    if session_id:
+        owned = s.get(LearningSession, session_id)
+        if owned is None or owned.student_id != student.id:
+            raise HTTPException(status_code=404, detail="unknown session")
     items = svcs.ai2.diagnostic_items(student.id, count=max(4, min(12, count)), session_id=session_id)
+    if session_id:
+        remember_offers(svcs, student.id, items, session_id=session_id, placement=True)
     # Say what the plan was built *from*. The client may ask again after each answer, and
     # "n answers went into this" is the difference between an adaptive test and a fixed
     # form that happens to be re-requested.
@@ -240,7 +246,7 @@ def methods_report(
     carries ``n`` and an ``evidence`` label, and anything under eight observations says
     ``early_signal`` rather than drawing a conclusion.
     """
-    return A.method_report_for(s, student.id)
+    return A.method_report_for(s, student.id, state=current().state)
 
 
 @router.post("/attempts")
@@ -313,6 +319,7 @@ def practice(
 ) -> dict[str, Any]:
     svcs = current()
     picks = svcs.ai2.next_items(student.id, topic_id=topic_id, count=max(1, min(12, count)))
+    remember_offers(svcs, student.id, picks)
     why = "selected for expected information gain, review due date and gap utility"
     # "What the learner actually saw, and why" (brief 2A, step 5). The queue is the delivery; the
     # store keeps the item ids and the reason, with the model version that produced it.
@@ -320,7 +327,7 @@ def practice(
         svcs.orchestrator.deliver(
             student.id,
             block="practice_queue",
-            seen={"items": [p.get("item_id") or p.get("id") for p in picks], "topic_id": topic_id},
+            seen={"items": [p["item"]["id"] for p in picks], "topic_id": topic_id},
             why={"reason": why},
         )
     except Exception:  # pragma: no cover - recording a delivery must never withhold the queue

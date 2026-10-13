@@ -31,6 +31,7 @@ from .games import (
     seed_of,
     shopkeeper_score,
     vault_score,
+    wager_allowed,
 )
 
 log = logging.getLogger("adapt.baseline")
@@ -435,9 +436,11 @@ class Baseline:
             if action:
                 task = {**task, "action": action}
             index = len(trials)
+            if scored.get("action"):
+                task["action"] = scored["action"]
             correct = scored.get("correct")
             if task.get("phase") == "practice":
-                correct = None  # a practice trial is not a measurement, and is never reported as one
+                correct = None  # practice never enters measured correctness
             row = BaselineTrial(
                 run_id=run_id,
                 student_id=student_id,
@@ -447,7 +450,7 @@ class Baseline:
                 phase=str(task.get("phase") or "measure"),
                 correct=correct,
                 latency_ms=int(latency_ms) if latency_ms is not None else None,
-                wager=int(wager) if wager is not None else None,
+                wager=int(wager) if wager is not None and correct is not None and wager_allowed(task) else None,
                 task=task,
                 response={**response, "scored": scored},
                 score=scored,
@@ -574,14 +577,14 @@ class Baseline:
                 levers_data=levers,
                 preferences=prefs,
                 completion=report,
-                preference_row=F.preference_vs_performance(built, prefs),
+                preference_row=self._method_comparison(student_id),
             )
             row = MindSnapshot(
                 student_id=student_id,
                 run_id=run_id,
                 factors=payload["factors"],
                 levers=payload["levers"],
-                completion=report,
+                completion={**report, "preference_vs_performance": payload["preference_vs_performance"]},
             )
             s.add(row)
             run.status = "complete"
@@ -611,6 +614,7 @@ class Baseline:
                     "levers": dict(row.levers or {}),
                     "completion": dict(row.completion or {}),
                     "state": "sealed",
+                    "preference_vs_performance": (row.completion or {}).get("preference_vs_performance"),
                 }
             run = (
                 s.query(BaselineRun)
@@ -636,8 +640,16 @@ class Baseline:
                 "snapshot_id": None,
                 "taken_at": None,
                 "state": "in_progress",
-                **F.snapshot_payload(built, levers_data=levers, preferences=prefs, completion=report),
+                **F.snapshot_payload(built, levers_data=levers, preferences=prefs, completion=report,
+                                     preference_row=self._method_comparison(student_id)),
             }
+
+    def _method_comparison(self, student_id: str) -> dict[str, Any] | None:
+        if self.state is None:
+            return None
+        from ..learning.failure import FailureLoop
+
+        return FailureLoop(self.state).report(student_id)["preference_vs_performance"]
 
     def next_day(self, student_id: str, *, run_id: str | None = None) -> dict[str, Any]:
         """The codeword check for a learner who has come back (brief §5.2)."""
