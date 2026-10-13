@@ -1769,6 +1769,99 @@ async function main() {
     closePage(page);
   }
 
+  /* ---------------------------------------------------------------- subject ----
+   * §6's screen, driven against its `?mock=1` fixtures: the subjects router is wired into
+   * the app by the integrator (see agent-notes/2-subject-round.md), so until that merge the
+   * live API cannot answer these calls and asserting against it would test the wiring, not
+   * the screen. What is under test here is the screen itself: that the reason travels with
+   * the skill set, that "calculus" and "government" produce visibly different rounds, that
+   * skipped skills render as "not measured yet" with no number attached, and that a whole
+   * round can be clicked through to a subject map whose ladder positions are per sub-area.
+   * The backend half of every one of these claims is asserted in
+   * backend/tests/test_subjects.py against the real service and the real router. */
+  if (run("subject")) {
+    console.log("\n\x1b[1msubject\x1b[0m");
+    const page = await open("/subject?mock=1", "subject");
+    const input = await waitFor(() => page.find('input[aria-label="Topic"]')[0], { label: "the topic box" }).catch(() => null);
+    check("subject", "the screen opens on a topic box, not a dashboard", !!input, page.text().slice(0, 160));
+    if (input) {
+      page.type(input, "calculus");
+      await page.click("Find my subject");
+      await waitFor(() => /What we will check for Calculus/.test(page.text()), { label: "the calculus plan" }).catch(() => {});
+      const planText = page.text();
+      check("subject", "the plan says why these skills, in so many words", /Why these\?/.test(planText) && /leans hardest on symbol fluency/i.test(planText), planText.slice(0, 200));
+      check("subject", "calculus chooses symbol fluency, graph sense and checking, plus a cross-check", /Symbol fluency/.test(planText) && /Graph sense/.test(planText) && /cross-check/i.test(planText), planText.slice(0, 200));
+      check("subject", "the skills the round skips are already listed as not measured, before anything is answered", /not measured yet/i.test(planText) && /Number sense/.test(planText), planText.slice(0, 220));
+      check("subject", "nothing unmeasured is wearing a number", !/Number sense[^.]*\d+\s?%/.test(planText), planText.slice(0, 220));
+
+      // The other half of §6's gate, on a second page so the first round stays open:
+      // government must not look like calculus with the title changed.
+      const gov = await open("/subject?mock=1", "subject");
+      const govInput = await waitFor(() => gov.find('input[aria-label="Topic"]')[0], { label: "the government topic box" }).catch(() => null);
+      if (govInput) {
+        gov.type(govInput, "government and civics");
+        await gov.click("Find my subject");
+        await waitFor(() => /What we will check for Government/.test(gov.text()), { label: "the government plan" }).catch(() => {});
+        const govText = gov.text();
+        check("subject", "government chooses a visibly different set: sources, argument, the other side", /Source analysis/.test(govText) && /Supporting a claim with evidence/.test(govText) && /Seeing the other side/.test(govText), govText.slice(0, 200));
+        check("subject", "and does not borrow calculus's skills or its reason", !/Symbol fluency/.test(govText) && !/leans hardest on symbol fluency/i.test(govText), govText.slice(0, 200));
+      }
+      closePage(gov);
+
+      /* The round itself: skills, ladder, the pop-up lesson, then the map. The loop
+       * answers whatever is on offer — a choice when there is one, the lesson's
+       * continue button when there is not — and stops at the map or not at all. */
+      await page.click("Start the round");
+      let steps = 0;
+      let sawLadder = false;
+      let sawLesson = false;
+      for (; steps < 60; steps += 1) {
+        await sleep(120);
+        const now = page.text();
+        // The done stage's card is also titled "Your subject map"; the map itself is
+        // the one with a topic after the dash and another round on offer.
+        if (/Your subject map —/.test(now) && page.byText("Measure another topic", "button")) break;
+        if (/ladder item/i.test(now)) sawLadder = true;
+        if (/Pop-up lesson/i.test(now) || /about 90 seconds/i.test(now)) sawLesson = true;
+        const finish = page.byText("See my subject map", "button");
+        if (finish) {
+          await page.click(finish);
+          continue;
+        }
+        const read = page.byText("I have read it", "button");
+        if (read) {
+          await page.click(read);
+          continue;
+        }
+        const radio = page.find('[role="radio"]')[0];
+        if (radio) {
+          radio.click();
+          await sleep(30);
+          // Exact text, not a substring: the first option is labelled "The first
+          // answer", and a substring match presses that instead of the submit
+          // button forever — a stall that looks exactly like a dead control.
+          const answer = page.find("button").find((b) => (b.textContent ?? "").trim() === "Answer");
+          if (answer) await page.click(answer);
+          continue;
+        }
+        const done = page.byText("Finish early", "button");
+        if (done) await page.click(done);
+      }
+      const map = page.text();
+      check("subject", "the round can be clicked through to its end", /Your subject map/.test(map), `stopped after ${steps} answers: ${map.slice(0, 180)}`);
+      check("subject", "the ladder was one of the stages on the way", sawLadder, map.slice(0, 120));
+      check("subject", "and the pop-up lesson was served inside the round", sawLesson, map.slice(0, 120));
+      check("subject", "the map repeats the reason next to the skills it measured", /Why these skills\?/.test(map) && /leans hardest on/i.test(map), map.slice(0, 200));
+      check("subject", "skipped skills are on the map as not measured yet, not as failures", /not measured yet/i.test(map) && /not measured is not the same/i.test(map), map.slice(0, 220));
+      check("subject", "the ladder reports a position per sub-area, with unreached ones unmeasured rather than at rung 0", /Where the ladder settled/.test(map) && /sub-areas placed/.test(map), map.slice(0, 200));
+      check("subject", "every measured skill carries its answer count", /from \d+ answers?/.test(map), map.slice(0, 220));
+      check("subject", "no way of teaching is turned into a label for the learner", !/learning style|visual learner|auditory learner|kinesthetic/i.test(map), map.slice(0, 200));
+      check("subject", "no raw object reached the screen", !/[{[]\s*"\w+":/.test(map), map.slice(0, 160));
+      check("subject", "no uncaught error during the whole round", page.appErrors().length === 0, page.appErrors().slice(0, 2).join(" | ").slice(0, 200));
+    }
+    closePage(page);
+  }
+
   /* ------------------------------------------------------- failure paths ---- */
   if (run("failures")) {
     console.log("\n\x1b[1mfailures\x1b[0m");
