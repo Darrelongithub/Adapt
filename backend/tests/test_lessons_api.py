@@ -404,6 +404,37 @@ def test_two_learners_who_make_the_same_copy_each_have_a_copy(client, learner, s
         again = _derive(client, a, values, target=12)
         assert again["scene_id"] == mine["scene_id"], "the same learner's same numbers authored a second copy"
 
+        # opening by content spec_id resolves each learner's own copy instead of MultipleResultsFound
+        open_a = _post(client, a, "/api/v1/lessons/open", {"spec_id": mine["spec_id"]})
+        open_b = _post(b_client, b, "/api/v1/lessons/open", {"spec_id": theirs["spec_id"]})
+        assert open_a.status_code == 200 and open_a.json()["scene_id"] == mine["scene_id"]
+        assert open_b.status_code == 200 and open_b.json()["scene_id"] == theirs["scene_id"]
+
+        # and learner B cannot open learner A's private scene row by scene_id
+        forbidden = _post(b_client, b, "/api/v1/lessons/open", {"scene_id": mine["scene_id"]})
+        assert forbidden.status_code == 404
+
+
+def test_review_broken_scene_falls_back_to_scene_frame_count_and_shared_ai2_spec_is_idempotent(client, learner, services, monkeypatch):
+    from adapt.learning import scenespec
+    from adapt.services import lessons as L
+
+    validated = scenespec.validate({"kind": "sorting", "title": "Shared AI2 Sort", "params": {"values": [8, 3, 5, 1]}})
+    assert validated.ok
+    with services.db.session() as s:
+        first = L.store_spec(s, validated.spec, origin="ai2", student_id=learner["student_id"])
+        second = L.store_spec(s, validated.spec, origin="ai2", student_id=learner["student_id"])
+        assert first.id == second.id
+        assert first.author_student_id is None
+
+    scene = _lessons(client, learner)["scenes"][0]
+    opened = _open(client, learner, scene["id"])
+    monkeypatch.setattr(sims, "frames_for", lambda kind, params: (_ for _ in ()).throw(RuntimeError("corrupt trace")))
+    review = client.get(f"/api/v1/lessons/run/{opened['run_id']}", headers=learner["headers"])
+    assert review.status_code == 200, review.text
+    assert review.json()["frame_count"] == scene["frame_count"]
+
+
 
 def _derive(client, who, values, *, target, note=""):
     scene = [x for x in _lessons(client, who)["scenes"] if x["kind"] == "binary_search"][0]["id"]

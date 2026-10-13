@@ -110,7 +110,9 @@ def ensure_scenes(s: Session) -> dict[str, Any]:
     created = 0
     refreshed = 0
     for spec in scenespec.builtin_specs():
-        row = s.execute(select(LessonScene).where(LessonScene.spec_id == spec["id"])).scalar_one_or_none()
+        row = s.execute(
+            select(LessonScene).where(LessonScene.spec_id == spec["id"], LessonScene.author_student_id.is_(None))
+        ).scalar_one_or_none()
         if row is None:
             s.add(
                 LessonScene(
@@ -147,8 +149,9 @@ def store_spec(s: Session, spec: dict[str, Any], *, origin: str, student_id: str
     theirs, so the second person to derive the same numbers gets their own lesson in their own
     list instead of silently writing into the first person's.
     """
+    owner_id = student_id if origin == "learner" else None
     conds = [LessonScene.spec_id == spec["id"]]
-    conds.append(LessonScene.author_student_id == student_id if origin == "learner" else LessonScene.author_student_id.is_(None))
+    conds.append(LessonScene.author_student_id == owner_id if owner_id is not None else LessonScene.author_student_id.is_(None))
     row = s.execute(select(LessonScene).where(*conds)).scalar_one_or_none()
     if row is not None:
         if note is not None and row.learner_note != note:
@@ -160,7 +163,7 @@ def store_spec(s: Session, spec: dict[str, Any], *, origin: str, student_id: str
         kind=spec["kind"],
         title=spec["title"],
         origin=origin,
-        author_student_id=student_id,
+        author_student_id=owner_id,
         derived_from=derived_from,
         spec=spec,
         frame_count=int(spec.get("frame_count") or 0),
@@ -173,12 +176,22 @@ def store_spec(s: Session, spec: dict[str, Any], *, origin: str, student_id: str
     return row
 
 
-def get_scene(s: Session, ident: str) -> LessonScene | None:
+def get_scene(s: Session, ident: str, *, student_id: str | None = None) -> LessonScene | None:
     """Look a scene up by row id or by its content id."""
     row = s.get(LessonScene, ident)
     if row is not None:
+        if student_id is not None and row.author_student_id not in (None, student_id):
+            return None
         return row
-    return s.execute(select(LessonScene).where(LessonScene.spec_id == ident)).scalar_one_or_none()
+    if student_id is not None:
+        own = s.execute(
+            select(LessonScene).where(LessonScene.spec_id == ident, LessonScene.author_student_id == student_id)
+        ).scalar_one_or_none()
+        if own is not None:
+            return own
+    return s.execute(
+        select(LessonScene).where(LessonScene.spec_id == ident, LessonScene.author_student_id.is_(None))
+    ).scalar_one_or_none()
 
 
 def visible_scenes(s: Session, student_id: str, *, kind: str | None = None, limit: int = 60) -> list[LessonScene]:
@@ -263,7 +276,7 @@ def open_run(
     Returns a dict with ``ok: False`` rather than raising when the scene does not exist: the route
     turns that into a 404 with a useful note, and the service stays usable from the CLI.
     """
-    scene = get_scene(s, scene_ident)
+    scene = get_scene(s, scene_ident, student_id=student_id)
     if scene is None:
         return {"ok": False, "reason": "no such scene", "next": "GET /api/v1/lessons lists the ones that exist"}
     spec = dict(scene.spec or {})
@@ -542,7 +555,7 @@ def review(s: Session, *, run: LessonRun) -> dict[str, Any]:
         "frame_index": run.frame_index,
         "furthest_frame": run.furthest_frame,
         "frames_viewed": run.frames_viewed,
-        "frame_count": len(frames) or run.frame_count if scene else 0,
+        "frame_count": len(frames) or (scene.frame_count if scene else 0),
         "predictions": [
             {
                 **e,
