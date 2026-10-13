@@ -960,6 +960,282 @@ class LlmCall(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+# --------------------------------------------------------------------------- #
+# the Learner State Store (round brief 2A)
+# --------------------------------------------------------------------------- #
+#
+# One logical store, four domains, and a *write-permission matrix* enforced in code (see
+# ``adapt.state.permissions``). The tables here are deliberately new rather than extra columns on
+# the older ones: this repo has no migration tool in the seed path (``create_all`` adds tables and
+# never alters one), and a store that only exists on a fresh clone is not a store.
+#
+# Nothing here is a second copy of the curriculum: ``ContentPack`` is the *registry* for
+# generated content (id, hash, validation status), while the authored bank stays in ``Item``.
+
+
+class StateEvidence(Base):
+    """One append-only entry in the evidence log.
+
+    Distinct from ``LearnerEvent`` (the raw client telemetry stream, unfiltered) and from
+    ``EvidenceRecord`` (a *detector's* quantified finding about a pattern). This is the layer
+    between them: every scored observation, game result and method assignment, with the weight
+    its source deserves and an idempotency key, so re-ingesting the same event cannot double-count
+    it.
+
+    ``source_type`` is the load-bearing field:
+
+    * ``controlled`` (weight 1.0) — produced by an instrument the app ran: a graded attempt, a
+      baseline-game result, a scored teach-back. It is evidence about ability.
+    * ``observational`` (weight ~0.4) — noticed rather than measured: a stall, a tab switch, a
+      re-asked question. It is evidence about the *session*, and it is not allowed to move the
+      learner model as far as a controlled observation does.
+    """
+
+    __tablename__ = "state_evidence"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("evd"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[str | None] = mapped_column(String, index=True)
+    #: The event's own id when it has one (``Attempt.id``, a game result id, a client ``client_id``).
+    #: Unique per learner: that is what makes ingestion idempotent.
+    event_id: Mapped[str] = mapped_column(String(96), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    source_type: Mapped[str] = mapped_column(String(16), index=True)  # controlled | observational
+    weight: Mapped[float] = mapped_column(Float, default=1.0)
+    topic_id: Mapped[str | None] = mapped_column(String, index=True)
+    item_id: Mapped[str | None] = mapped_column(String, index=True)
+    correct: Mapped[bool | None] = mapped_column(Boolean)
+    score: Mapped[float | None] = mapped_column(Float)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(EncryptedJSON(context="state.evidence"), default=None)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("student_id", "event_id", name="uq_state_evidence_event"),
+        Index("ix_state_evidence_student_time", "student_id", "occurred_at"),
+    )
+
+
+class ModelVersion(Base):
+    """An immutable version of the derived learner model.
+
+    Every write produces a new row; nothing is ever updated in place. That is what makes the
+    "rebuild equals incremental" test meaningful (both routes write versions from the same
+    evidence and the same code) and what lets a lesson say *exactly* which model it was built
+    from.
+
+    ``evidence_upto`` is the id of the last evidence row folded in, and ``evidence_count`` the
+    number folded in in total: the first makes the version's provenance precise, the second lets a
+    rebuild prove it consumed the same evidence.
+    """
+
+    __tablename__ = "model_versions"
+
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    evidence_upto: Mapped[str | None] = mapped_column(String)
+    evidence_count: Mapped[int] = mapped_column(Integer, default=0)
+    model: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(context="state.model"))
+    #: Why this version exists: ``ingest`` (new evidence), ``rebuild`` (from the log), ``manual``.
+    reason: Mapped[str] = mapped_column(String(24), default="ingest")
+    #: The version this one was derived from, when it was derived rather than rebuilt.
+    parent_version: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (Index("ix_model_versions_student_created", "student_id", "created_at"),)
+
+
+class ContentPack(Base):
+    """The content registry: a generated (or authored) pack, addressed by its own content hash.
+
+    "Content generated once is reused by id" is only true if the id is a function of the content.
+    ``id`` is ``cpk_<sha256 of the canonical payload>``, so generating the same pack twice produces
+    the same row rather than a second one, and a *changed* pack is a new id — which is what the
+    lesson plan's provenance needs to stay exact.
+    """
+
+    __tablename__ = "content_packs"
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    topic_id: Mapped[str | None] = mapped_column(String, index=True)
+    concept: Mapped[str] = mapped_column(String(96), index=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)  # explanation | variant_set | rubric | scene
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    payload: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(context="state.content"))
+    #: ``unvalidated`` | ``valid`` | ``rejected`` — set by the deterministic checker, never by the
+    #: module that wrote the content.
+    validation: Mapped[str] = mapped_column(String(16), default="unvalidated", index=True)
+    validation_notes: Mapped[list[str] | None] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(16), default="ai2")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (Index("ix_content_packs_concept_kind", "concept", "kind"),)
+
+
+class TeachingMemoryEntry(Base):
+    """What this learner has already been told, shown or asked — so nothing repeats by accident.
+
+    One row per (session, kind, ref): adding the same fact twice is a no-op, which is what makes
+    "the app never asks for anything already stored" checkable rather than aspirational.
+    """
+
+    __tablename__ = "teaching_memory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[str | None] = mapped_column(String, index=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    ref: Mapped[str] = mapped_column(String(96))
+    text: Mapped[str | None] = mapped_column(EncryptedText(context="memory.text"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("student_id", "session_id", "kind", "ref", name="uq_teaching_memory_entry"),
+    )
+
+
+class LessonPlanRecord(Base):
+    """The plan an adaptor produced, with the model version and content ids it was built from.
+
+    ``superseded_by`` is how the mid-lesson re-plan is recorded: the old plan stays in the log (the
+    learner saw it) and the new one points back at it.
+    """
+
+    __tablename__ = "lesson_plans"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("pln"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[str | None] = mapped_column(String, index=True)
+    model_version: Mapped[int] = mapped_column(Integer, default=0)
+    content_ids: Mapped[list[str] | None] = mapped_column(JSON)
+    plan: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(context="state.plan"))
+    superseded_by: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (Index("ix_lesson_plans_student_created", "student_id", "created_at"),)
+
+
+class DeliveryRecord(Base):
+    """What the learner actually saw, and why — the provenance side of every screen.
+
+    ``why`` stores the references (evidence ids, model version, pack ids) rather than a sentence,
+    so the "why this lesson looks like this" panel is exact rather than narrated.
+    """
+
+    __tablename__ = "deliveries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("dlv"))
+    plan_id: Mapped[str | None] = mapped_column(String, index=True)
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[str | None] = mapped_column(String, index=True)
+    block: Mapped[str] = mapped_column(String(48), index=True)
+    content_id: Mapped[str | None] = mapped_column(String)
+    seen: Mapped[dict[str, Any] | None] = mapped_column(EncryptedJSON(context="state.delivery"), default=None)
+    why: Mapped[dict[str, Any] | None] = mapped_column(EncryptedJSON(context="state.why"), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class SessionState(Base):
+    """Where the learner is right now: topic, block, pace, fatigue and the plan in force.
+
+    Server-side on purpose: a learner who switches device mid-lesson resumes at the same block of
+    the same plan, because nothing about the session lives in the browser.
+    """
+
+    __tablename__ = "session_states"
+
+    session_id: Mapped[str] = mapped_column(String, primary_key=True)
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    topic_id: Mapped[str | None] = mapped_column(String)
+    block: Mapped[str] = mapped_column(String(48), default="")
+    plan_id: Mapped[str | None] = mapped_column(String)
+    pace: Mapped[float] = mapped_column(Float, default=1.0)
+    fatigue: Mapped[float] = mapped_column(Float, default=0.0)
+    #: Optimistic concurrency: a writer states the version it read, and a mismatch is refused
+    #: rather than silently overwriting (two simultaneous events must both land).
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# --------------------------------------------------------------------------- #
+# the baseline (round brief section 5): games, trials, and the mind snapshot
+# --------------------------------------------------------------------------- #
+# Three tables rather than one. A run is *when* a learner sat the baseline; a trial is one scored
+# attempt inside it (and is the only place a measurement lives — one row per tap, one row per
+# machine probe); a snapshot is the derived mind map, stored with the run that produced it so
+# "which baseline is this reading from?" is answerable years later.
+#
+# Trials are the same shape as the shared evidence log (brief 2A) on purpose: the baseline is
+# evidence, so it is ingested into ``state_evidence`` as well, with its own event ids, which is what
+# makes a partial baseline usable by the rest of the app instead of a special case.
+
+
+class BaselineRun(Base):
+    """One sitting of the mind baseline: skippable at any point, resumable at any point."""
+
+    __tablename__ = "baseline_runs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("base"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="in_progress")  # in_progress|complete|abandoned
+    #: The seed everything in this run derives from. Stored, not inferred: the same learner must get
+    #: the same codewords and the same machine rules on a second device mid-run.
+    seed: Mapped[int] = mapped_column(Integer, default=0)
+    format_pick: Mapped[str | None] = mapped_column(String(24))
+    stage: Mapped[str | None] = mapped_column(String(32), default="format")
+    completion: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_baseline_runs_student", "student_id", "started_at"),)
+
+
+class BaselineTrial(Base):
+    """One task attempt: what was asked, what was answered, how long it took, how sure they were."""
+
+    __tablename__ = "baseline_trials"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("btrial"))
+    run_id: Mapped[str] = mapped_column(ForeignKey("baseline_runs.id", ondelete="CASCADE"), nullable=False)
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    game: Mapped[str] = mapped_column(String(32), nullable=False)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    index: Mapped[int] = mapped_column(Integer, default=0)
+    phase: Mapped[str] = mapped_column(String(12), default="measure")  # practice|measure|show
+    correct: Mapped[bool | None] = mapped_column(Boolean)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    #: Confidence, 0-3 coins. Nullable because most trials are not wagered on.
+    wager: Mapped[int | None] = mapped_column(Integer)
+    task: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    response: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    score: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        # The idempotency rule, the same one the evidence log uses: a re-sent trial is one row.
+        UniqueConstraint("run_id", "task_id", "index", name="uq_baseline_trial_task"),
+        Index("ix_baseline_trials_run", "run_id", "index"),
+        Index("ix_baseline_trials_student_game", "student_id", "game"),
+    )
+
+
+class MindSnapshot(Base):
+    """The eight factors, their ranges and n, and the levers derived from them."""
+
+    __tablename__ = "mind_snapshots"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("mind"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("baseline_runs.id", ondelete="SET NULL"))
+    factors: Mapped[Any] = mapped_column(EncryptedJSON, default=list)
+    levers: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    completion: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    taken_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (Index("ix_mind_snapshots_student", "student_id", "taken_at"),)
+
+
 __all__ = [
     "Base",
     "utcnow",
@@ -968,6 +1244,9 @@ __all__ = [
     "AuthSession",
     "AuditLog",
     "StudentPreference",
+    "BaselineRun",
+    "BaselineTrial",
+    "MindSnapshot",
     "Course",
     "Topic",
     "TopicPrerequisite",
@@ -1001,4 +1280,11 @@ __all__ = [
     "ItemKind",
     "ExperienceMode",
     "VoiceGender",
+    "StateEvidence",
+    "ModelVersion",
+    "ContentPack",
+    "TeachingMemoryEntry",
+    "LessonPlanRecord",
+    "DeliveryRecord",
+    "SessionState",
 ]

@@ -1,23 +1,10 @@
-"""AI 3 -- the learner's voice beside the simulation.
+"""Scene narrator — the learner's voice beside the simulation.
 
-AI 3 exists because a frame that shows *what* happens invites the question *why*, and answering
-it from a language model every time would be slow, costly and able to be wrong about a
-deterministic machine. So the order here is fixed:
-
-1. **The simulation answers.** Every scene kind ships an ``explain(params, frame, question)``
-   that reads the trace it just produced. It cannot contradict the animation, it costs nothing,
-   and it works with no API key. This is the common case, not the fallback.
-2. **The cache answers.** One model call per (scene, frame, question) ever -- a replay, a second
-   learner on the same spec, or the same learner asking twice all hit the row AI 3 wrote the
-   first time. A changed spec changes the key, so a stale explanation cannot be served.
-3. **Only then the model**, and only about the frames the learner is looking at: the prompt carries
-   the trace slice and the spec's own citations, and the reply is refused if it invents markup or
-   strays into describing something the simulation does not do.
-4. **If none of that works, say so.** A short, true sentence beats a confident paragraph: the
-   stage keeps working, and the reply says which part was unavailable.
-
-Nothing in this module writes to ``active_adaptations`` or to BKT. Narration is teaching, not
-measurement.
+**Not AI 3.** This module answers "why did that happen?" about a simulation frame: it narrates a
+scene. It was called ``ai3`` until the functionality round; the real AI 3 is the *adaptation layer*
+(plans, deliveries, teaching memory — see ``adapt.state.orchestrator``), and a codebase where "AI 3"
+means two different things is a codebase where a learner-facing sentence gets attributed to the
+wrong component. ``tests/test_state_foundation.py`` asserts the old module name is gone.
 """
 
 from __future__ import annotations
@@ -29,7 +16,7 @@ from typing import Any, Callable
 
 from ..learning import scenespec, sims
 from ..security.redact import redact_payload
-from .prompts import AI3_SYSTEM
+from .prompts import SCENE_NARRATOR_SYSTEM
 
 log = logging.getLogger("adapt.ai3")
 
@@ -71,11 +58,11 @@ class Answer:
         }
 
 
-class Narrator:
+class SceneNarrator:
     """The narration half of the teaching loop.
 
-    ``llm`` is the *same* client AI 2 uses, so one quota guard covers both voices; ``sf`` is a
-    session factory used for the LLM-call audit row, which is how "AI 3 cost 2 calls today" is
+    ``llm`` is the *same* client the tutor uses, so one quota guard covers both voices; ``sf`` is a
+    session factory used for the LLM-call audit row, which is how "the scene narrator cost 2 calls today" is
     answerable without log files.
     """
 
@@ -95,7 +82,10 @@ class Narrator:
             except Exception as exc:  # a broken status probe must not break the lesson
                 info = {"error": str(exc)[:160]}
         return {
+            # ``role`` is the audit label written into ``llm_calls`` rows and is kept for
+            # continuity with calls already recorded; ``component`` is the name a human reads.
             "role": "ai3",
+            "component": "scene narrator",
             "model_configured": llm_ok,
             "llm": info,
             "answers_from_simulation": sorted(DRAFT_KINDS),
@@ -136,9 +126,9 @@ class Narrator:
         safe, dropped, _kinds = redact_payload({"q": prompt}, max_chars=7000)  # _audit records the count, not the kinds
         try:
             res = await self.llm.complete(
-                system=AI3_SYSTEM,
+                system=SCENE_NARRATOR_SYSTEM,
                 user=safe["q"],
-                purpose="ai3_narrate",
+                purpose="ai3_narrate",  # audit label: see ``status`` for why this keeps the old name
                 role="ai3",
                 student_id=student_id or "anon",
                 temperature=0.2,
@@ -302,4 +292,4 @@ def _template_answer(spec: dict[str, Any], frame_index: int, question: str) -> s
     return " ".join(parts)[:MAX_ANSWER]
 
 
-__all__ = ["Answer", "Narrator", "_clean", "_template_answer"]
+__all__ = ["Answer", "SceneNarrator", "_clean", "_template_answer"]

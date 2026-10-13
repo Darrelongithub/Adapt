@@ -350,6 +350,14 @@ class LearningIntelligence:
                 "delta": round(delta, 4),
                 "band": state.mastery_band,
                 "observations": state.n_obs,
+                # The estimate travels with its interval and with the label that says how much
+                # evidence stands behind it (brief 4.2). The screen that shows this receipt is
+                # the one a learner reads right after answering, which is precisely where a bare
+                # "0.42" gets mistaken for a measurement.
+                "ci": [round(x, 3) for x in B.credible_interval(new_p, state.n_obs, state.correct_count)],
+                "evidence": B.evidence_label(state.n_obs),
+                "n": state.n_obs,
+                "correct": state.correct_count,
                 "expected_recall": round(params.p_correct(new_p), 4),
                 "half_life_hours": round(state.half_life_hours, 2) if state.half_life_hours else None,
                 "due_at": schedule.due_at.isoformat() if schedule and schedule.due_at else None,
@@ -1486,13 +1494,20 @@ class LearningIntelligence:
         for tid, st in states.items():
             sc = schedules.get(tid)
             hours = (utcnow() - st.last_practice_at).total_seconds() / 3600.0 if st.last_practice_at else None
+            n_obs = int(st.n_obs)
+            n_correct = int(getattr(st, "correct_count", 0) or 0)
             traces.append(
                 TopicTrace(
                     topic_id=tid,
                     title=titles.get(tid, tid),
                     p_know=float(st.p_know),
                     band=st.mastery_band,
-                    n_obs=int(st.n_obs),
+                    n_obs=n_obs,
+                    # The estimate travels with its interval (brief 4.2) and with the label that
+                    # says how much evidence is behind it. A screen that prints `p_know` and not
+                    # these two is printing a measurement where there is only an estimate.
+                    ci=B.credible_interval(float(st.p_know), n_obs, n_correct),
+                    n_correct=n_correct,
                     half_life_hours=float(sc.half_life_hours) if sc else None,
                     due_at=sc.due_at if sc else None,
                     expected_recall=SP.expected_recall(sc.half_life_hours, hours or 0.0) if sc else None,

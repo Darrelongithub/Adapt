@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..learning import effect as E
+from ..learning import bkt as B
 from ..learning import strategies as ST
 
 from ..db.models import (
@@ -70,6 +71,11 @@ def overview(services: Any, student_id: str) -> dict[str, Any]:
                 "observations": st.n_obs,
                 "correct": st.correct_count,
                 "ci": _ci(st),
+                # The count under its second name and the label that says how much it is worth.
+                # Every surface that prints an estimate prints these with it (brief 4.2), and
+                # the Progress screen reads them straight off this payload.
+                "n": st.n_obs,
+                "evidence": B.evidence_label(st.n_obs),
                 "half_life_hours": round(st.half_life_hours, 1) if st.half_life_hours else None,
                 "last_practice": st.last_practice_at.isoformat() if st.last_practice_at else None,
                 "stale": bool(st.last_practice_at and st.last_practice_at < utcnow() - timedelta(days=14)),
@@ -244,19 +250,15 @@ _STATUS_NOTE = {
 
 
 def _ci(state: BktState) -> list[float]:
-    """Rough 90% interval on the mastery estimate from observation count."""
-    from math import sqrt
+    """The 90% interval the rest of the app uses (``learning.bkt.credible_interval``).
 
-    def cl(x: float) -> float:
-        return min(0.999, max(0.001, x))
-
-    p = cl(state.p_know)
-    n = max(1, state.n_obs)
-    # Binomial-style spread on the empirical rate, widened by the number of
-    # observations: 4/5 and 40/50 are not the same claim, and the UI must not
-    # let them look identical.
-    se = sqrt(max(1e-6, p * (1 - p) / n))
-    return [round(cl(p - 1.645 * se), 3), round(cl(p + 1.645 * se), 3)]
+    This used to be a normal approximation invented here, which meant the dashboard and the
+    attempt receipt could show two different ranges for the same learner and the same evidence.
+    One interval, one implementation: a Beta posterior over the observed success rate, seeded
+    with the model's reading of those same answers.
+    """
+    lo, hi = B.credible_interval(float(state.p_know), int(state.n_obs or 0), int(state.correct_count or 0))
+    return [round(lo, 3), round(hi, 3)]
 
 
 def _bands(mastery: list[dict[str, Any]]) -> dict[str, int]:

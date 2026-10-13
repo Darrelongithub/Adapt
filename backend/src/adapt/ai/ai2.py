@@ -35,6 +35,7 @@ from ..assessment import selector as SEL
 from ..assessment.grading import grade as grade_item
 from ..config import Settings, get_settings
 from ..db.models import (
+    Attempt,
     ChatMessage,
     Item,
     LearningMaterial,
@@ -128,6 +129,9 @@ class Reply:
     teachback_prompt: str | None = None
     resource_hint: str | None = None
     level: str = "developing"
+    #: The explanation as short steps, each with a check question (``learning.segments``).
+    #: Empty on replies that are not built from a body of text (a hint, a refusal).
+    steps: list[dict[str, Any]] = field(default_factory=list)
     model_ms: int = 0
     llm: dict[str, Any] = field(default_factory=dict)
     message_id: str | None = None
@@ -142,6 +146,7 @@ class Reply:
             "next_action": self.next_action,
             "adaptations_applied": self.adaptations_applied,
             "sources": self.sources,
+            "steps": self.steps,
             "teachback_prompt": self.teachback_prompt,
             "resource_hint": self.resource_hint,
             "level": self.level,
@@ -162,12 +167,17 @@ class EducationalIntelligence:
         settings: Settings | None = None,
         llm: Any = None,
         resources: Any = None,
+        state: Any = None,
     ) -> None:
         self.sf = session_factory
         self.ai1 = ai1
         self.settings = settings or get_settings()
         self.llm = llm
         self.resources = resources
+        #: The shared Learner State Store (round brief 2A). This is how AI 2 reads the learner's
+        #: level: one immutable snapshot that says which ``model_version`` it came from, instead of
+        #: assembling a private view of the database. ``None`` in tests that build AI 2 on its own.
+        self.state = state
 
     # ------------------------------------------------------------------ #
     # context assembly
@@ -184,10 +194,13 @@ class EducationalIntelligence:
                 )
                 .limit(40)
             ).scalars().all() if topic else s.execute(select(LearningMaterial).limit(40)).scalars().all()
+            titles = {row.id: row.title for row in s.execute(select(Topic)).scalars().all()}
             items = []
             if topic:
                 for it in s.execute(select(Item).where(Item.topic_id == topic.id).limit(30)).scalars().all():
-                    items.append(_tutor_item_view(it, student_id))
+                    view = _tutor_item_view(it, student_id)
+                    view["topic_title"] = topic.title
+                    items.append(view)
             resources = s.execute(
                 select(ResourceReference).where(ResourceReference.topic_id == (topic.id if topic else "%")).limit(24)
             ).scalars().all() if topic else []
@@ -208,13 +221,34 @@ class EducationalIntelligence:
                     f"{float(gap.get('prerequisite_mastery', 0)):.0%}, and that is what these errors point at. "
                     "Two sentences on it, then back to the main thread."
                 )
+            # Was this learner's last attempt on this topic wrong? The explanation's opening
+            # line is chosen from this, so a repeat question after a miss does not read like a
+            # first attempt (and vice versa).
+            last_attempt_correct: bool | None = None
+            if topic:
+                row = s.execute(
+                    select(Attempt)
+                    .where(Attempt.student_id == student_id, Attempt.topic_id == topic.id, Attempt.correct.is_not(None))
+                    .order_by(Attempt.submitted_at.desc())
+                ).scalars().first()
+                last_attempt_correct = None if row is None else bool(row.correct)
+            # The store's view, built once, immutable, and stamped with its version. A caller that
+            # wants "what did the tutor know when it taught this?" reads this rather than the
+            # profile above, which is a live query and can move under it.
+            snapshot = self.state.get_snapshot(student_id) if self.state is not None else None
             return {
                 "profile": profile,
                 "profile_dict": profile.as_dict(),
+                "snapshot": snapshot,
+                "model_version": (snapshot.model_version if snapshot is not None else None),
                 "topic": topic,
+                "last_attempt_correct": last_attempt_correct,
                 "p_know": p_know,
                 "directives": directives,
-                "materials": [(m.id, m.topic_id or "", m.body, {"title": m.title}) for m in materials],
+                "materials": [
+                    (m.id, m.topic_id or "", m.body, {"title": m.title, "topic_title": titles.get(m.topic_id or "", "")})
+                    for m in materials
+                ],
                 "items": items,
                 "resources": [
                     {
@@ -265,24 +299,46 @@ class EducationalIntelligence:
         # whichever row the database happened to return first.
         pool = ctx["items"] or []
         item = next((i for i in pool if item_id and i.get("id") == item_id), pool[0] if pool else None)
+        # What is the learner asking *from*? A repeat question after a wrong answer reads
+        # differently from a first attempt, and the same opener every time is how a tutor
+        # sounds like a form ("Let's start from one concrete case." was every reply's first
+        # line). The context is derived from the evidence, not from the phrasing.
+        ask_context = "first_attempt"
+        if intent == "show_work":
+            ask_context = "after_hint"
+        elif intent == "check_answer":
+            ask_context = "after_reveal"
+        elif ctx.get("last_attempt_correct") is False:
+            ask_context = "repeat_error"
         local = LT.explain(
             question,
             index=idx,
             topic_title=ctx["topic"].title if ctx.get("topic") else None,
+            topic_id=(item or {}).get("topic_id") or topic_id,
             p_know=ctx.get("p_know"),
             directives=ctx["directives"],
             item=item,
             prereq_note=ctx.get("prereq_note"),
             max_words=600 if intent in ("simpler", "shorter") else 320,
+            context=ask_context,
+            seed=f"{student_id}:{item_id or ''}:{ask_context}",
         )
         reply = Reply(
             text=local.text,
             sections=local.sections,
             sources=local.sources,
+            steps=local.steps,
             adaptations_applied=local.directives_applied,
             level=local.level,
             intent=intent,
-            meta={"grounded": local.confident, "provider_detail": "local BM25 over course materials"},
+            # ``grounded`` means "these words came from your material, for this topic". The
+            # old value was ``local.confident``, which was about something else.
+            meta={
+                "grounded": local.grounded,
+                "note": local.note,
+                "topic_id": local.source_topic,
+                "provider_detail": "local BM25 over course materials, filtered to this item's topic",
+            },
         )
         if ctx["presentation"].get("require_teachback"):
             reply.teachback_prompt = (
@@ -664,7 +720,7 @@ class EducationalIntelligence:
                 rows = s.execute(
                     select(Item).where(Item.topic_id == t.id, Item.active.is_(True)).order_by(Item.difficulty)
                 ).scalars().all()
-                items_by_topic[t.id] = [self._item_dict(it) for it in rows]
+                items_by_topic[t.id] = [{**self._item_dict(it), "topic_title": t.title} for it in rows]
             teaching_text, titles = self._teaching_material(s)
             answered: list[dict[str, Any]] = []
             if session_id:
@@ -700,7 +756,18 @@ class EducationalIntelligence:
             # Same seed as every other surface for this learner+item, so a reveal or a
             # follow-up hint can never disagree with the stem that was placed.
             rendered = render_item_for(pick.item, seed=bank_seed(student_id, pick.item.get("id")))
-            out.append({**pick.as_dict(), "item": public_item(rendered), "position": i + 1, "of": len(picks)})
+            public = public_item(rendered)
+            # Placement promises "no hints". ``prompt_context`` is a hint in all but name
+            # ("More digits does not mean a bigger decimal…"), and it was shown above the very
+            # questions that promise is about. Withheld here *and* in the component, because a
+            # promise the client keeps and the server does not is not a promise.
+            withheld = public.pop("prompt_context", None)
+            entry = {**pick.as_dict(), "item": public, "position": i + 1, "of": len(picks)}
+            if withheld:
+                entry["prompt_context_withheld"] = (
+                    "placement questions are answered unaided; this text is kept for practice"
+                )
+            out.append(entry)
         return out
 
     def method_probe_items(self, student_id: str, *, count: int = 8) -> list[dict[str, Any]]:
@@ -718,7 +785,7 @@ class EducationalIntelligence:
                     select(Item).where(Item.topic_id == t.id, Item.active.is_(True)).order_by(Item.difficulty)
                 ).scalars().all()
                 if rows:
-                    items_by_topic[t.id] = [self._item_dict(it) for it in rows]
+                    items_by_topic[t.id] = [{**self._item_dict(it), "topic_title": t.title} for it in rows]
             teaching_text, titles = self._teaching_material(s)
         picks = SEL.method_probe_plan(
             topics=[{"id": t.id, "code": t.code, "title": t.title, "difficulty": t.difficulty} for t in topics],
@@ -742,6 +809,10 @@ class EducationalIntelligence:
         return {
             "id": it.id,
             "topic_id": it.topic_id,
+            # Filled in by the callers that have the Topic rows in hand (see
+            # ``diagnostic_items`` and ``_picks``); absent means "show no title" rather than
+            # "show the id".
+            "topic_title": getattr(it, "topic_title", None),
             "kind": it.kind,
             "stem": it.stem,
             "stem_template": getattr(it, "stem_template", None),
@@ -793,6 +864,14 @@ class EducationalIntelligence:
             due_topics=[d["topic_id"] for d in (prof.retention or {}).get("due_now", [])],
             gap_topics=[g.get("topic_id") for g in prof.gaps if g.get("topic_id")],
             gap_severity={g.get("topic_id"): float(g.get("severity", 0.5)) for g in prof.gaps},
+            # The *prerequisite* behind each gap, so the queue can put real prerequisite
+            # items first instead of only saying that it did (see
+            # ``selector.enforce_target_band``).
+            gap_prerequisites={
+                g.get("topic_id"): [g["blocking_prerequisite"]]
+                for g in prof.gaps
+                if g.get("topic_id") and g.get("blocking_prerequisite")
+            },
             directives=[d.as_dict() for d in prof.directives],
             used_item_ids=used,
             count=count,
@@ -1390,10 +1469,16 @@ def spoken_form(reply: Reply) -> str:
 
 
 def public_item(item: Mapping[str, Any]) -> dict[str, Any]:
-    """Strip answers/hints from an item before it reaches the browser."""
+    """Strip answers/hints from an item before it reaches the browser.
+
+    ``topic_title`` travels with the item because the question screen used to print the
+    topic *id* (``top_a6062406``) at the learner. An id is an internal key and reads as
+    machine noise; the title is the thing the learner chose when they picked the topic.
+    """
     return {
         "id": item.get("id"),
         "topic_id": item.get("topic_id"),
+        "topic_title": item.get("topic_title"),
         "kind": item.get("kind"),
         "stem": item.get("stem"),
         "prompt_context": item.get("prompt_context"),

@@ -19,7 +19,8 @@
  */
 import { useMemo, useRef, useState } from "react";
 
-import { Band, Btn, Card, Field, Input, Notice, Receipt, Tag, Textarea, Trace, announce } from "./ui";
+import { Band, Btn, Card, Field, Input, Notice, Receipt, Tag, Textarea, announce } from "./ui";
+import { EvidenceBadge } from "./evidence";
 import { TeachingPanel, type Teaching } from "./teaching";
 import { api, post } from "@/lib/api";
 import { loadDraft, saveDraft, type Draft } from "@/lib/drafts";
@@ -193,8 +194,13 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
 
   return (
     <div className="page-practice" style={{ padding: "clamp(24px,4vw,48px) clamp(16px,4vw,32px) 40px" }}>
+      {/* The title the learner chose, never the topic id. `top_a6062406` is a primary key;
+          printing it at a learner is the app talking to itself out loud. When a pick arrives
+          without a title (an older client, a mock fixture) the line simply omits it rather
+          than falling back to the id. */}
       <div className="pz-label">
-        {entry.position && entry.of ? `§ ${item.topic_id.slice(0, 8)} · question ${entry.position} of ${entry.of}` : `§ ${item.topic_id.slice(0, 8)} · practice`} · {item.kind}
+        {item.topic_title ? `${item.topic_title} · ` : ""}
+        {entry.position && entry.of ? `question ${entry.position} of ${entry.of}` : "practice"}
       </div>
 
       {/* The method that was assigned for *this* attempt, before the question it teaches.
@@ -212,7 +218,12 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
       <h2 className="pz-q">{item.stem}</h2>
       <div className="pz-rule" aria-hidden="true" />
 
-      {item.prompt_context ? <p className="mb-3 max-w-[660px] text-sm italic text-[var(--muted)]">{item.prompt_context}</p> : null}
+      {/* Placement says "no hints", so placement gets no prompt_context either. The text is
+          a hint in all but name ("More digits does not mean a bigger decimal…"), and it was
+          being printed above the very questions the screen promises are unaided. */}
+      {!aidless && item.prompt_context ? (
+        <p className="mb-3 max-w-[660px] text-sm italic text-[var(--muted)]">{item.prompt_context}</p>
+      ) : null}
       {item.visual_spec ? (
         <pre className="mb-6 max-w-[660px] overflow-x-auto rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3 text-xs" aria-label={String((item.visual_spec as Record<string, unknown>).alt ?? "diagram")}>
           {typeof item.visual_spec === "string" ? item.visual_spec : JSON.stringify(item.visual_spec, null, 1)}
@@ -321,17 +332,30 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
         </div>
       ) : null}
 
-      <div className="marginalia" aria-label="question metadata">
-        <div className="tag-corner">
-          topic<b>{item.topic_id.slice(0, 12)} · {item.difficulty !== undefined ? `d${item.difficulty}` : item.kind}</b>
-        </div>
-        {entry.reason ? (
+      {/* What the learner can act on: which topic, why this question now (in plain words),
+          and how the question was set up. No ids, no belief values, no metric names. */}
+      <div className="marginalia" aria-label="about this question">
+        {item.topic_title ? (
+          <div className="tag-corner">
+            topic<b>{item.topic_title}</b>
+          </div>
+        ) : null}
+        {entry.reason_plain ? (
           <div className="tag-vert">
-            why this one<b>{entry.reason}</b>
+            why this question<b>{entry.reason_plain}</b>
           </div>
         ) : null}
         <div className="tag-vert">
-          adaptations<b>{pres.max_words ? `≤${pres.max_words} words` : "default presentation"}</b>
+          how it is set up
+          <b>
+            {[
+              pres.max_words ? `≤${pres.max_words} words a step` : null,
+              pres.hints_allowed === 0 ? "no hints" : pres.hints_allowed ? `up to ${pres.hints_allowed} hints` : null,
+              (pres as { method_label?: string }).method_label ?? null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "the usual way"}
+          </b>
         </div>
       </div>
 
@@ -486,40 +510,6 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
         </div>
       )}
 
-      {entry.decision_trace ? (
-        <div className="mt-4 max-w-[660px]">
-          <Trace title="why this question, now">
-            <TraceBody trace={entry.decision_trace} />
-          </Trace>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function TraceBody({ trace }: { trace: NonNullable<PlanEntry["decision_trace"]> }) {
-  if (Array.isArray(trace))
-    return (
-      <ul className="list-disc space-y-1 pl-4">
-        {trace.map((t, i) => (
-          <li key={i}>{String(t)}</li>
-        ))}
-      </ul>
-    );
-  const rows = trace as { chosen?: string[]; skipped?: { id: string; why: string }[]; why?: string };
-  return (
-    <div className="space-y-1">
-      {rows.why ? <p>{rows.why}</p> : null}
-      {rows.chosen?.length ? <p>considered: {rows.chosen.join(", ")}</p> : null}
-      {rows.skipped?.length ? (
-        <ul className="list-disc pl-4">
-          {rows.skipped.map((s) => (
-            <li key={s.id}>
-              {s.id} — {s.why}
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </div>
   );
 }
@@ -569,15 +559,17 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
       </div>
       <p className="text-sm leading-relaxed">{receipt.feedback}</p>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-        <Band band={receipt.mastery.band} pKnow={receipt.mastery.p_know} ci={undefined} />
+        {/* The interval the server computed, not `undefined`: this row used to print a bare
+            estimate next to an observation count, which reads as a measurement. It now shows
+            the range the evidence supports and, while there are fewer than eight answers, says
+            so in words next to the number. */}
+        <Band band={receipt.mastery.band} pKnow={receipt.mastery.p_know} ci={receipt.mastery.ci ?? undefined} />
         <span>
           {receipt.mastery.p_know_before !== undefined
             ? `${receipt.mastery.p_know_before.toFixed(2)} → ${receipt.mastery.p_know.toFixed(2)}`
             : `p ${receipt.mastery.p_know.toFixed(2)}`}
         </span>
-        <span>
-          {receipt.mastery.observations} observation{receipt.mastery.observations === 1 ? "" : "s"}
-        </span>
+        <EvidenceBadge n={receipt.mastery.observations} />
         {receipt.mastery.due_at ? <span>review {new Date(receipt.mastery.due_at).toLocaleDateString()}</span> : null}
         {receipt.mastery.first_observation ? <Tag tone="think">first data point on this topic</Tag> : null}
       </div>

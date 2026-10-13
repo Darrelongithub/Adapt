@@ -166,6 +166,11 @@ kbd {
 }
 .opening-word {
   display: inline-block;
+  /* The gap between words is CSS, not a text space: a trailing space inside an
+     `inline-block` is trimmed by the line box, which rendered "Let's learn the right way"
+     as "Let'slearntherightway". The space before the first word is the phrase's own
+     default spacing; the last word's margin adds nothing visible because it is trailing. */
+  margin-right: 0.26em;
   opacity: 0;
   filter: blur(10px);
   transform: translateY(22px);
@@ -250,15 +255,27 @@ kbd {
   font-weight: 500;
   margin-top: 3px;
 }
-@media (min-width: 900px) {
+/* The margin note sits beside the question only where there is genuinely room for it.
+   It used to be absolute from 900px up, and it is inside `.page-practice`
+   (`position: relative`, horizontal padding `clamp(24px, 8vw, 100px)`), so `right: 90px`
+   put its left edge at `viewport - 410px`. The question column is 660px wide starting at
+   `232px (sidebar) + padding`: at 1280px the note began ~120px inside the question text and
+   the two overlapped. The arithmetic that has to hold, with `right: 40px` and a 220px note,
+   is `232 + pad + 660 + 24 <= viewport - pad - 40 - 220`, which is true from about 1370px.
+   Below that the same markup flows *under* the question as a labelled block, which is what
+   a narrow screen needs anyway. `.page-practice` is only wide enough to try this on a
+   question screen, so the rule is scoped to the shell that uses it. */
+@media (min-width: 1400px) {
   .marginalia {
     position: absolute;
     top: 70px;
-    right: 90px;
+    right: 40px;
     flex-direction: column;
     align-items: flex-end;
     text-align: right;
     max-width: 220px;
+    border-left: 1px solid var(--line);
+    padding-left: 18px;
   }
   .tag-corner {
     transform: rotate(1deg);

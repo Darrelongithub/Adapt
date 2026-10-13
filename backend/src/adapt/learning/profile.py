@@ -58,12 +58,24 @@ class TopicTrace:
     p_know: float
     band: str
     n_obs: int
+    #: The range the evidence supports (see ``bkt.credible_interval``). ``None`` means no
+    #: interval was computed for this row, not "no uncertainty": a caller that shows an estimate
+    #: without it is showing a point estimate, and that is the thing the brief asked to stop.
+    ci: tuple[float, float] | None = None
+    n_correct: int = 0
     half_life_hours: float | None = None
     due_at: datetime | None = None
     expected_recall: float | None = None
     trend: str | None = None
     recent_lift: float | None = None
     note: str | None = None
+
+    @property
+    def evidence(self) -> str:
+        """``early signal`` until there is enough evidence to call it anything else."""
+        from .bkt import EARLY_SIGNAL_N
+
+        return "early signal" if self.n_obs < EARLY_SIGNAL_N else "measured"
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -72,6 +84,13 @@ class TopicTrace:
             "p_know": round(self.p_know, 3),
             "band": self.band,
             "observations": self.n_obs,
+            # ``ci`` is a pair of percentages in 0..1: the range the evidence supports. It goes
+            # out with every estimate, because a mastery number without one is read as a
+            # measurement — which is exactly how "0.42" from three answers was being read.
+            "ci": [round(self.ci[0], 3), round(self.ci[1], 3)] if self.ci else None,
+            "evidence": self.evidence,
+            "n": self.n_obs,
+            "correct": self.n_correct,
             "half_life_hours": round(self.half_life_hours, 2) if self.half_life_hours else None,
             "due_at": self.due_at.isoformat() if self.due_at else None,
             "expected_recall": round(self.expected_recall, 3) if self.expected_recall is not None else None,

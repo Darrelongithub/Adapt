@@ -32,7 +32,7 @@ from ..security.middleware import (
     TrustedHostMiddleware,
 )
 from ..services import attach, build
-from .routes import adaptations, auth, learning, lessons, system, tutor
+from .routes import adaptations, auth, baseline, evidence, learning, lesson_plan, lessons, system, tutor
 from .ws import router as ws_router
 
 log = logging.getLogger("adapt.api")
@@ -148,7 +148,18 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware, settings=st)
     app.state.limiter = limiter
 
-    for r in (auth.router, learning.router, lessons.router, adaptations.router, tutor.router, system.router, ws_router):
+    for r in (
+        auth.router,
+        learning.router,
+        lessons.router,
+        adaptations.router,
+        tutor.router,
+        baseline.router,
+        lesson_plan.router,
+        evidence.router,
+        system.router,
+        ws_router,
+    ):
         app.include_router(r)
 
     @app.exception_handler(RequestValidationError)

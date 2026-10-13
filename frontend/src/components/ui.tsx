@@ -275,9 +275,9 @@ export function Err({ error, status }: { error: string | null; status?: number |
         </>
       ) : status === 0 ? (
         <>
-          {error}. Start the backend with{" "}
-          <code className="text-xs">uvicorn adapt.api.app:app --port 8000</code>, or open this page with{" "}
-          <code className="text-xs">?mock=1</code> to look at the design without it.
+          {error}. Nothing you did caused this and nothing has been lost — your answers are saved on the server, and
+          this screen will load again as soon as it is back. (If you are running ADAPT yourself, `docs/OPERATIONS.md`
+          has the start-up command.)
         </>
       ) : (
         <>

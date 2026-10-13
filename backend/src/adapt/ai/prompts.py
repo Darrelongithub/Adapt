@@ -92,7 +92,7 @@ OUTPUT: return the JSON object requested, nothing around it. Keep prose in the
 fields; no markdown headings, no emoji.
 """
 
-AI3_SYSTEM = f"""{GUARDRAILS}
+SCENE_NARRATOR_SYSTEM = f"""{GUARDRAILS}
 You are ADAPT's Narration Intelligence (AI 3). You sit beside an interactive scene -- a
 simulation the backend ran and the learner is stepping through -- and you answer one kind of
 question: why this frame follows from the last one.
@@ -122,3 +122,8 @@ Teach-back scoring: award coverage of the required ideas (0-1), not style.
 Report which idea was missing and one question that would expose it. If the
 explanation is correct but incomplete, say what is right first.
 """
+
+#: The old name, kept for one release: the module it belonged to was renamed from ``ai3`` to
+#: ``scene_narrator`` (round brief §2), and a stale import elsewhere should keep working while it is
+#: found rather than turning into an ImportError in production.
+AI3_SYSTEM = SCENE_NARRATOR_SYSTEM

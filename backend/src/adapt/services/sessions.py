@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy import func, select
@@ -59,6 +60,22 @@ PREFERENCE_KEYS = {
     "push_me": bool,
     "want_voice": bool,
     "want_review_reminders": bool,
+    # --- answers from the mind baseline (round brief section 5.3) ------------------ #
+    # These are *stated*, so they live here rather than in the measured tables. Note what is still
+    # absent: there is no "learning_style" key, and there will not be one. A learner saying they
+    # like diagrams is an instruction about what to show first; a system deciding they are "a visual
+    # learner" and teaching them only that way is the thing this whole app refuses to do.
+    "preferred_format": str,       # diagram | text | worked_example  (asked before the games)
+    "feedback_style": str,         # straight | gentle | just show the answer
+    "challenge_first": str,        # challenge me first | safe success first
+    "study_days": int,
+    "study_when": str,
+    "motivation": list,
+    "quit_trigger": list,
+    "when_stuck": str,
+    "device_context": list,
+    "anything_else": str,
+    "timers_help": bool,           # shows or hides the clock; the app still measures quietly
 }
 
 # Onboarding answers that map straight onto a catalog strategy live in
@@ -301,6 +318,96 @@ COURSE_BLURB = (
 COURSE_LEVEL = "GCSE / foundation to higher bridging"
 
 
+def _bank_content_covered(bank_value: Any, stored_value: Any) -> bool:
+    """Is the bank's authored content already at the front of what the row holds?
+
+    The row can legitimately hold *more* than the bank: ``complete_content`` appends the
+    derived hints and steps that fill a gap. A reseed must recognise "the author's three
+    lines plus what we derived" as current, or every start-up rewrites 57 rows and reports
+    a change that did not happen. An empty value from the bank never overwrites anything.
+    """
+    if not bank_value:
+        return True
+    if not stored_value:
+        return False
+    if isinstance(bank_value[0], dict) or isinstance(stored_value[0], dict):
+        def pairs(seq: Any) -> list[tuple[str, str | None]]:
+            out: list[tuple[str, str | None]] = []
+            for x in seq or []:
+                if isinstance(x, dict):
+                    out.append((str(x.get("text") or ""), x.get("why")))
+                else:
+                    out.append((str(x), None))
+            return out
+
+        b, s = pairs(bank_value), pairs(stored_value)
+        return len(s) >= len(b) and s[: len(b)] == b
+    b, s = [str(x) for x in bank_value], [str(x) for x in stored_value]
+    return len(s) >= len(b) and s[: len(b)] == b
+
+
+def complete_content(s: Session, *, by_code: Mapping[str, str] | None = None) -> dict[str, int]:
+    """Fill in every item's missing worked example and hint ladder. Idempotent.
+
+    Verification runs on a *rendered* copy of the item (one concrete draw), because a
+    parametric item's stored steps are templates: ``{a}`` is correct in the row and a
+    placeholder in the rendered stem, and the check has to tell those apart. The stored form
+    keeps the template so ``render_item_for`` can substitute the learner's own numbers.
+    """
+    from ..assessment import worked as W
+    from ..assessment.bank import render_item_for
+
+    rows = s.execute(select(Item).where(Item.active.is_(True))).scalars().all()
+    titles = {t.id: t.title for t in s.execute(select(Topic)).scalars().all()}
+    filled_examples = filled_hints = flagged = 0
+    for row in rows:
+        payload = {
+            "id": row.id,
+            "topic_id": row.topic_id,
+            "topic_title": titles.get(row.topic_id),
+            "kind": row.kind,
+            "stem": row.stem,
+            "stem_template": row.stem_template,
+            "choices": row.choices,
+            "answer_spec": row.answer_spec,
+            "solution_steps": row.solution_steps,
+            "hints": row.hints,
+            "rubric": row.rubric,
+            "difficulty": row.difficulty,
+            "prompt_context": row.prompt_context,
+            "experience_mode": row.experience_mode,
+            "est_seconds": row.est_seconds,
+        }
+        new_steps = W.ensure_example(payload, render=lambda p2: render_item_for(p2, seed=0))
+        new_hints = W.ensure_hints(payload)
+        rendered = render_item_for({**payload, "solution_steps": new_steps}, seed=0)
+        check = W.verify_example(rendered, W.normalize_steps(rendered.get("solution_steps") or []))
+        if not check.ok:
+            flagged += 1
+            log.warning("item %s: worked example flagged %s", row.id, check.flags)
+        # Compare *content*, not structure: ``ensure_example`` normalizes what it returns
+        # (drops the ``derived`` marker), so a structural comparison would rewrite all 63
+        # rows on every boot and report "63 examples filled" on a database that has not
+        # changed. A report that cries wolf is a report nobody reads.
+        if [(s.get("text"), s.get("why")) for s in (row.solution_steps or [])] != [
+            (s.get("text"), s.get("why")) for s in new_steps
+        ]:
+            row.solution_steps = new_steps
+            filled_examples += 1
+        if [str(h) for h in (row.hints or [])] != [str(h) for h in new_hints]:
+            row.hints = new_hints
+            filled_hints += 1
+        # The item's own record of how its key was checked, kept honest: ``authored`` means a
+        # person wrote the steps, ``generated`` means this module derived them from the key.
+        if any(st.get("derived") for st in new_steps if isinstance(st, Mapping)):
+            if row.verification == "authored" and not (payload.get("solution_steps") or []):
+                row.verification = "generated"
+        elif not (payload.get("solution_steps") or []):
+            row.verification = "generated"
+    s.commit()
+    return {"examples": filled_examples, "hints": filled_hints, "flagged": flagged, "items": len(rows)}
+
+
 def ensure_curriculum(s: Session, *, settings: Settings | None = None, force: bool = False) -> dict[str, Any]:
     """Idempotently materialise the built-in bank into SQLite.
 
@@ -380,6 +487,13 @@ def ensure_curriculum(s: Session, *, settings: Settings | None = None, force: bo
         else:
             changed = False
             for k, v in fields.items():
+                # An empty value from the bank never overwrites content the row already has.
+                # ``solution_steps`` and ``hints`` are completed after this loop (see
+                # ``complete_content``), so a reseed that wiped them would make the database
+                # and the app disagree until the next start-up pass — and would report
+                # "26 items updated" on a boot that changed nothing.
+                if k in ("solution_steps", "hints") and _bank_content_covered(v, getattr(row, k)):
+                    continue
                 if getattr(row, k) != v:
                     setattr(row, k, v)
                     changed = True
@@ -392,6 +506,14 @@ def ensure_curriculum(s: Session, *, settings: Settings | None = None, force: bo
         if row_id not in seen_ids and row.active:
             row.active = False
             updated += 1
+
+    # --- content completion (see assessment/worked.py) ---------------------------
+    # Two defects end here: a worked example that was empty while the explanation told the
+    # learner to "copy the first line of the example", and hints that fell back to one
+    # generic sentence. Every seeded item leaves this loop with a checked example and three
+    # graded hints. Authored content is never overwritten; only gaps are filled, and only
+    # when the derived version passes verification against the item's own answer key.
+    content = complete_content(s, by_code=by_code)
 
     have = set(s.execute(select(TopicPrerequisite.topic_id, TopicPrerequisite.prerequisite_id)).all())
     edges = 0
@@ -446,6 +568,7 @@ def ensure_curriculum(s: Session, *, settings: Settings | None = None, force: bo
         "items_total": len(seen_ids),
         "prerequisite_edges": edges,
         "materials": mats,
+        "content": content,
     }
 
 

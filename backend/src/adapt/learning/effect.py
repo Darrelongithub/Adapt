@@ -28,6 +28,21 @@ import numpy as np
 ROPE_SD = 0.10
 MIN_GROUP_N = 5
 
+#: The two words a learner is shown when there is not enough data to say
+#: anything (brief §9.8). Added in Phase 6 without touching any existing key:
+#: below ``MIN_GROUP_N`` the verdict has always been ``insufficient_evidence``
+#: internally; this is the same fact in the words the learner reads, so a
+#: screen never has to translate the verdict itself (and cannot soften it
+#: into "loading" or "looks promising").
+INSUFFICIENT_EVIDENCE_LABEL = "insufficient evidence"
+
+
+def verdict_label(verdict: str | None) -> str:
+    """Learner-facing words for a verdict value."""
+    if verdict == "insufficient_evidence":
+        return INSUFFICIENT_EVIDENCE_LABEL
+    return (verdict or "not measured").replace("_", " ")
+
 
 def _rng(seed: int | None) -> np.random.Generator:
     return np.random.default_rng(seed if seed is not None else 20260101)

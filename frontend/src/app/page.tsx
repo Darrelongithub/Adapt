@@ -393,19 +393,24 @@ export default function Home() {
             </li>
           </ol>
         </Card>
-        <Card title="If you are running this" tone="muted">
-          <ul className="space-y-1 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        <Card title="What you can check for yourself" tone="muted">
+          {/* This card used to list shell commands ("uvicorn adapt.api.app:app", "adapt demo",
+              "GET /api/v1/health"). A learner opening the app is not the person running it, and
+              a terminal command on the front page reads as an instruction to them. The operator
+              material lives in docs/OPERATIONS.md and README.md now; what stays here is the
+              part a learner can actually act on. */}
+          <ul className="space-y-1 text-sm text-[var(--muted)]">
             <li>
-              backend: <code>uvicorn adapt.api.app:app --port 8000</code>
+              <strong>Your data</strong> — everything recorded about you is listed on the Settings screen, with what it is
+              used for.
             </li>
             <li>
-              one command loop demo: <code>adapt demo</code>
+              <strong>Your changes</strong> — nothing about how you are taught changes until you answer a proposal on the
+              Changes screen, and a &ldquo;no&rdquo; is recorded as well as a &ldquo;yes&rdquo;.
             </li>
             <li>
-              health: <code>GET /api/v1/health</code> · routes: <code>GET /api</code>
-            </li>
-            <li>
-              add <code>?mock=1</code> to any URL to look at the screens with no backend.
+              <strong>Your estimates</strong> — every number on the Progress screen carries how many answers it rests on,
+              and says &ldquo;early signal&rdquo; until there are enough.
             </li>
           </ul>
         </Card>
@@ -428,6 +433,11 @@ function SignedIn({ me }: { me: Me }) {
   const attempts = dash.data?.data_volume?.attempts ?? dash.data?.last_7_days?.attempts ?? null;
   const mean = dash.data?.last_7_days?.mean_score;
   const weakest = mastery.length ? mastery.reduce((a, b) => (b.p_know < a.p_know ? b : a), mastery[0]) : null;
+  // The home page's one-line summary carries the same caveat as the chart: an estimate from two
+  // answers is an early signal, and the count is what says so.
+  const weakestNote = weakest
+    ? `topic${mastery.length === 1 ? "" : "s"} with an estimate · weakest: ${weakest.title ?? weakest.topic_id ?? "—"} (${weakest.band ?? "—"}, n=${weakest.observations ?? 0}${(weakest.observations ?? 0) < 8 ? ", early signal" : ""})`
+    : null;
 
   return (
     <div className="mt-8 space-y-5">
@@ -472,7 +482,7 @@ function SignedIn({ me }: { me: Me }) {
           value={mastery.length ? `${mastery.length}` : "Not measured yet"}
           note={
             mastery.length
-              ? `topic${mastery.length === 1 ? "" : "s"} with an estimate · weakest: ${weakest?.title ?? weakest?.topic_id ?? "—"} (${weakest?.band ?? "—"})`
+              ? weakestNote ?? "answers build an estimate per topic as you practise"
               : placed
                 ? "answers build an estimate per topic as you practise"
                 : "your placement is the first thing that fills this in"

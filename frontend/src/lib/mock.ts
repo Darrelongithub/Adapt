@@ -1049,6 +1049,82 @@ const lessonAuthor = {
   already_existed: false,
 };
 
+const mockWhy = (text: string, lever: string, source: string, n: number) => ({ text, lever, source, evidence_ids: [] as string[], n });
+const mockPlanVisualFirst = {
+  concept: "adding fractions",
+  title: "Adding fractions",
+  topic_id: "top_frac",
+  content: { concept: "adding fractions", title: "Adding fractions", topic_id: "top_frac", content_id: null, source: "demo content written for this screen" },
+  lead_format: "visual",
+  ladder_rung: 2,
+  subject: null,
+  blocks: [
+    { block: 1, chunk_id: "chk_mock_visual", kind: "visual", content: { spec: { kind: "bar", title: "Adding fractions in sixths", bars: [{ label: "1/2", value: 3 }, { label: "1/3", value: 2 }, { label: "total", value: 5 }], unit: "sixths", unfilled: [] } }, why: mockWhy("you chose diagrams for a new topic (stated, not measured)", "lead_format_prior", "stated", 0) },
+    { block: 2, chunk_id: "chk_mock_text1", kind: "text", content: { text: "A fraction names parts of one whole. The parts must be the same size before you can add them.", part: 1, of: 2 }, why: mockWhy("step 1 of 2: sized to at most 30 words before a check", "step_size", "measured", 6) },
+    { block: 3, chunk_id: "chk_mock_check1", kind: "check", content: { question: "Quick check: what does this step say about size?", kind: "recall", questions: 1, hint_policy: "offer early" }, why: mockWhy("a one-question check after every step", "step_size", "measured", 6) },
+    { block: 4, chunk_id: "chk_mock_reflect", kind: "reflect", content: { text: "Look back before you move on.", kind: "review", review_in_hours: 18, review_note: "recalled 40% of new pairs straight away (n=8)" }, why: mockWhy("the close: what to look back at, and when this comes round again", "review_halflife_prior", "measured", 8) },
+  ],
+  limits: { max_words_per_block: 30, step_size: "small", language: "en", tone: "gentle", reading_level: "standard", max_blocks: 24, rules: [] },
+  why_panel: {
+    title: "Why this lesson looks like this",
+    rows: [
+      { decision: "opens with visual", ...mockWhy("you chose diagrams for a new topic (stated, not measured)", "lead_format_prior", "stated", 0) },
+      { decision: "steps of at most 30 words", ...mockWhy("holds about 4 steps at once (n=6)", "step_size", "measured", 6) },
+    ],
+    what_would_change_it: ["more answers under a different teaching method, measured against expectation, would change what leads"],
+    fallbacks: [],
+    mode: "deterministic",
+    mode_note: "built by the template adapter from your measured profile (simple mode: no model was involved)",
+  },
+  fallbacks: [],
+  mode: "deterministic",
+  provenance: { model_version: 0, content_id: null, content_source: "demo content written for this screen", evidence_ids: [], evidence_n: 0 },
+};
+const mockPlanWorkedFirst = {
+  ...mockPlanVisualFirst,
+  lead_format: "worked_example",
+  ladder_rung: 5,
+  blocks: [
+    { block: 1, chunk_id: "chk_mock_worked", kind: "worked_example", content: { title: "Adding fractions", steps: [{ index: 1, text: "1/2 = 3/6, because both parts are scaled by three.", why: "scaling keeps the value" }, { index: 2, text: "3/6 + 2/6 = 5/6.", why: "add the numerators, keep the denominator" }], intro: "Work through this example step by step." }, why: mockWhy("no stated or measured lead yet: a worked example is the default first look at a new idea", "lead_format_prior", "default", 0) },
+    { block: 2, chunk_id: "chk_mock_text_big", kind: "text", content: { text: "A fraction names parts of one whole. The parts must be the same size before you can add them. Find a denominator both fractions share. Rewrite each fraction over that denominator. Then add the numerators and keep the denominator.", part: 1, of: 1 }, why: mockWhy("step 1 of 1: sized to at most 75 words before a check", "step_size", "measured", 6) },
+    { block: 3, chunk_id: "chk_mock_check_big", kind: "check", content: { question: "Quick check: what does this step say about denominator?", kind: "recall", questions: 1, hint_policy: "on request" }, why: mockWhy("a one-question check after every step", "step_size", "measured", 6) },
+    { block: 4, chunk_id: "chk_mock_explain", kind: "explain", content: { question: "In your own words: explain Adding fractions so someone meeting it for the first time would follow you.", kind: "teachback" }, why: mockWhy("at rung 5 the test is whether you can say why, not only whether you can do it", "ladder", "measured", 0) },
+    { block: 5, chunk_id: "chk_mock_reflect_b", kind: "reflect", content: { text: "Look back before you move on.", kind: "review", review_in_hours: 48, review_note: "recalled 80% of new pairs straight away (n=8)" }, why: mockWhy("the close: what to look back at, and when this comes round again", "review_halflife_prior", "measured", 8) },
+  ],
+  limits: { max_words_per_block: 75, step_size: "large", language: "en", tone: "straight", reading_level: "standard", max_blocks: 24, rules: [] },
+  why_panel: {
+    title: "Why this lesson looks like this",
+    rows: [
+      { decision: "opens with worked example", ...mockWhy("no stated preference, so the default", "lead_format_prior", "default", 0) },
+      { decision: "steps of at most 75 words", ...mockWhy("holds about 7 steps at once (n=6)", "step_size", "measured", 6) },
+    ],
+    what_would_change_it: ["more answers under a different teaching method, measured against expectation, would change what leads"],
+    fallbacks: [],
+    mode: "deterministic",
+    mode_note: "built by the template adapter from your measured profile (simple mode: no model was involved)",
+  },
+};
+const lessonPlanMock = { plan: mockPlanVisualFirst, plan_id: "pln_mock_0001", recorded: true };
+const lessonContrastMock = {
+  concept: "adding fractions",
+  title: "Adding fractions",
+  lessons: [
+    { profile: "Demo profile 1 — smaller steps, pictures first", plan: mockPlanVisualFirst },
+    { profile: "Demo profile 2 — bigger steps, examples first", plan: mockPlanWorkedFirst },
+  ],
+  differences: [
+    { aspect: "opens with", a: "visual", b: "worked_example" },
+    { aspect: "step size", a: "small", b: "large" },
+    { aspect: "words per step, at most", a: 30, b: 75 },
+    { aspect: "number of blocks", a: 4, b: 5 },
+    { aspect: "first block", a: "visual", b: "worked_example" },
+    { aspect: "has a picture", a: true, b: false },
+    { aspect: "tone", a: "gentle", b: "straight" },
+  ],
+  visibly_different: true,
+  note: "both lessons teach the same checked content; what differs is how it is laid out, and every difference above is read off the two plans, not written about them",
+};
+
 const rows: Row[] = [
   { method: "GET", match: /^\/api\/v1\/health/, body: { ok: true, mode: "local", learners: 1, mock: true } },
   { method: "GET", match: /^\/api\/v1\/me$/, body: learner },
@@ -1061,7 +1137,7 @@ const rows: Row[] = [
   { method: "DELETE", match: /^\/api\/v1\/me$/, body: { deleted: true, hard_purge_available_via: "adapt db purge-student --student-id <id> --confirm", note: "learning history is removed from every query path immediately" } },
   { method: "GET", match: /^\/api\/v1\/assessment\/diagnostic/, body: { purpose: "place you on each topic with a confidence band, not to grade you", items: [planEntry, { ...planEntry, position: 2 }], how_it_is_used: "Answers, timings, hint use and answer changes are recorded as events.", note_on_time: "If you need longer, say so - time spent is evidence about the interaction, not a score." } },
   { method: "POST", match: /^\/api\/v1\/sessions$/, body: { session_id: "lrs_mock_0001", mode: "practice", started_at: "2026-10-11T09:00:00", event_types_accepted: ["question_shown", "first_interaction", "hint_opened", "answer_submitted"] } },
-  { method: "POST", match: /^\/api\/v1\/sessions\/[^/]+\/finish/, body: { ok: true, session_id: "lrs_mock_0001", duration_seconds: 640, active_ms: 592000, mode: "practice", next: "run AI 1 analysis to update mastery, hypotheses and any proposed adaptation" } },
+  { method: "POST", match: /^\/api\/v1\/sessions\/[^/]+\/finish/, body: { ok: true, session_id: "lrs_mock_0001", duration_seconds: 640, active_ms: 592000, mode: "practice", next: "run the analysis to update mastery, hypotheses and any proposed adaptation" } },
   { method: "POST", match: /^\/api\/v1\/sessions\/[^/]+\/events/, body: { accepted: 4, rejected: 0, duplicate: 0, dropped_fields: 0, reasons: [], session_id: "lrs_mock_0001", event_types: ["question_shown", "first_interaction", "hint_opened", "answer_submitted"] } },
   { method: "GET", match: /^\/api\/v1\/sessions\/[^/]+\/events/, body: { events: [{ seq: 1, ts: "2026-10-11T09:00:04", type: "question_shown", item_id: item.id, payload: { stem_words: 9 } }] } },
   { method: "POST", match: /^\/api\/v1\/attempts/, body: receipt },
@@ -1079,6 +1155,36 @@ const rows: Row[] = [
       labels: { unit: "actual minus expected success rate", expected: "the model's own prediction for the same items" },
       note: "each method is judged on actual minus expected success, so a method that met harder material is not punished for it; under 8 observations is labelled an early signal",
     },
+  },
+  {
+    method: "GET",
+    match: /^\/api\/v1\/evidence\/methods/,
+    body: {
+      topic_id: null,
+      scope: "all topics",
+      methods: [
+        { method: "visual", label: "Structure shown visually", n: 8, n_controlled: 8, n_observational: 0, effective_n: 8, actual: 0.75, expected: 0.5, residual: 0.25, evidence: "signal", source: "assigned at serve time (controlled)", weights: { controlled: 1, observational: 0.4 }, note: "DEMO DATA" },
+        { method: "explanation", label: "Explanation first", n: 8, n_controlled: 8, n_observational: 0, effective_n: 8, actual: 0.25, expected: 0.5, residual: -0.25, evidence: "signal", source: "assigned at serve time (controlled)", weights: { controlled: 1, observational: 0.4 }, note: "DEMO DATA" },
+      ],
+      strategies: {
+        strategies: [
+          { strategy: "visual_representation", posterior_mean: 0.78, p_helps: 0.78, ci: [0.52, 0.93], n: 8, band: "promising" },
+          { strategy: "segmented_text", posterior_mean: 0.31, p_helps: 0.31, ci: [0.12, 0.58], n: 8, band: "uncertain" },
+        ],
+        thompson_sample: { strategy: "visual_representation", seed: 20260101, note: "the draw the model would act on next; seeded, so this demo can be re-run and get the same draw" },
+        note: "Thompson sampling chooses behind the scenes; what is shown is the posterior mean with its interval and n, never the draw alone",
+      },
+      detectors: [
+        { detector: "opened_example", label: "Opened a worked example before answering", design: "observational", source: "self-selected: the learner chose to do this", weight: 0.4, is_proof: false, status: "measured", n: 8, n_baseline: 8, value: 0.75, baseline: 0.38, range: [0.41, 0.93], note: "not proof: learners who open help are usually the ones who were stuck, so this can inform and cannot decide" },
+      ],
+      preference_vs_performance: { available: true, stated: "diagram", measured: [{ format: "diagram", n: 8, accuracy: 0.75 }, { format: "text", n: 8, accuracy: 0.25 }], sentence: "You picked diagram; after diagram you did best, 75% right over 8 questions.", note: "this compares formats the app has actually shown you, not a test of learning styles" },
+      note: "actual minus expected per method: expected is what the model predicted for that exact question before it was served, so harder material does not punish a method. Assigned evidence weighs 1.0; self-selected observations weigh 0.4 and are labelled observational wherever they appear.",
+    },
+  },
+  {
+    method: "GET",
+    match: /^\/api\/v1\/evidence\/preference-vs-performance/,
+    body: { available: true, stated: "diagram", measured: [{ format: "diagram", n: 8, accuracy: 0.75 }, { format: "text", n: 8, accuracy: 0.25 }], sentence: "You picked diagram; after diagram you did best, 75% right over 8 questions.", note: "this compares formats the app has actually shown you, not a test of learning styles" },
   },
   { method: "POST", match: /^\/api\/v1\/items\/[^/]+\/hint/, body: { hint: "Write the two fractions over the same denominator before you add anything.", hint_no: 1, max_hints: 2, level: "developing", hints_available: 2, exhausted: false, item_id: item.id } },
   { method: "GET", match: /^\/api\/v1\/items\/[^/]+\/worked-example/, body: { steps: [{ index: 1, text: "Make the denominators equal: 2 and 3 both divide 6.", why: "a fraction only names parts of one whole" }, { index: 2, text: "Scale both numerators: 1/2 = 3/6, 1/3 = 2/6.", why: "scaling both sides keeps the value" }], item_id: item.id, note: "worked examples are faded on purpose: we add steps back when you ask, and remove them when you no longer need them" } },
@@ -1145,7 +1251,7 @@ const rows: Row[] = [
   },
   { method: "POST", match: /^\/api\/v1\/adaptations\/evaluate/, body: { evaluated: [], note: "small samples are labelled insufficient rather than smoothed over" } },
   { method: "GET", match: /^\/api\/v1\/adaptations\/history/, body: { decisions: [{ ...proposal, status: "approved", decided_at: "2026-10-11T09:20:00", student_note: "yes, but fade them after two" }] } },
-  { method: "POST", match: /^\/api\/v1\/adaptations\/[^/]+\/decision/, body: { proposal_id: proposal.id, strategy: proposal.strategy, decision: "accept", active_adaptation_id: "act_mock_0001", payload: proposal.action_payload, review: { metric: "accuracy_after_read", window: proposal.review_window, note: "AI 1 compares this against the baseline and reports it to you either way." }, note: null, ok: true, status: "approved" } },
+  { method: "POST", match: /^\/api\/v1\/adaptations\/[^/]+\/decision/, body: { proposal_id: proposal.id, strategy: proposal.strategy, decision: "accept", active_adaptation_id: "act_mock_0001", payload: proposal.action_payload, review: { metric: "accuracy_after_read", window: proposal.review_window, note: "this gets compared against the baseline either way, and the result is shown to you." }, note: null, ok: true, status: "approved" } },
   { method: "POST", match: /^\/api\/v1\/adaptations\/[^/]+\/revoke/, body: { ok: true, revoked: 1, strategies: [proposal.strategy] } },
   { method: "GET", match: /^\/api\/v1\/plan/, body: { gaps: [], remediation: [], path: { steps: [{ topic_id: item.topic_id, topic_title: mastery.title, status: "next_up", mastery: 0.62, action: "teach_then_practice" }] }, bkt: {}, retention: {}, notes: [] } },
   { method: "GET", match: /^\/api\/v1\/topics/, body: [({ id: item.topic_id, code: "fraction_add", title: mastery.title, difficulty: 0.5, items: 5, p_know: 0.62 } as unknown) as Row["body"]] },
@@ -1170,13 +1276,18 @@ const rows: Row[] = [
   // Recorded here so `?mock=1` never 404s on a real route: a fixture that says "no
   // fixture" would look like a backend bug to anyone reviewing the interface.
   { method: "GET", match: /^\/api\/v1\/items\/[^/]+$/, body: { ...item, answer_key: undefined, mock: true } },
-  { method: "GET", match: /^\/api\/v1\/profile$/, body: { student_id: learner.student_id, taken_at: "2026-10-11T09:29:40", mastery: [mastery], hypotheses: [], directives: [], note: "profile snapshot: what AI 1 currently believes, with the evidence counts behind it" } },
+  { method: "GET", match: /^\/api\/v1\/profile$/, body: { student_id: learner.student_id, taken_at: "2026-10-11T09:29:40", mastery: [mastery], hypotheses: [], directives: [], note: "profile snapshot: the current estimates, with the evidence counts behind them" } },
   { method: "POST", match: /^\/api\/v1\/events$/, body: { accepted: 0, rejected: 0, duplicate: 0, dropped_fields: 0, reasons: [], session_id: "lrs_mock_0001", event_types: [] } },
   { method: "POST", match: /^\/api\/v1\/learning\/train$/, body: { trained: 1, scope: "global", note: "estimates derived again from the event log; nothing was invented to fill a gap" } },
   { method: "POST", match: /^\/api\/v1\/tutor\/message$/, body: { answer: "Like units have to match before you add, so find a denominator both parts share. Sixths work for halves and thirds.", provider: "local", sections: [{ label: "explanation", text: "Make the parts the same size, then add the counts." }], next_action: "Try 1/3 + 1/4 the same way.", sources: [], privacy: { sent_to_model: false, what_was_sent: "nothing - no model was called" }, message_id: "msg_mock_0002", llm: { used: false } } },
   { method: "POST", match: /^\/api\/v1\/resources\/search$/, body: { results: [], provider: "none", note: "no network egress allowed from this instance, and no OpenAlex key is configured" } },
   { method: "POST", match: /^\/api\/v1\/numbas\/import$/, body: { imported: 0, skipped: [], note: "a paste of Numbas XML; nothing was accepted because the mock has no file" } },
   { method: "POST", match: /^\/api\/v1\/adaptations\/strategy\/[^/]+\/revoke$/, body: { ok: true, revoked: 1, strategies: ["retrieval_practice"], note: "turned off by strategy name" } },
+  /* lesson-plan: the adapted lesson + contrast demo (Phase 5). Recorded shapes from
+     backend/tests/test_adapter.py; the demo profiles are made up and say so. */
+  { method: "POST", match: /^\/api\/v1\/lesson-plan$/, body: lessonPlanMock },
+  { method: "POST", match: /^\/api\/v1\/lesson-plan\/contrast$/, body: lessonContrastMock },
+  { method: "GET", match: /^\/api\/v1\/lesson-plan\/visual-kinds$/, body: { kinds: ["flow", "comparison_table", "timeline", "labelled_diagram", "number_line", "venn", "bar"], aliases: {}, limits: { max_items_per_picture: 8, max_text_chars: 220 }, schemas: {}, note: "a spec that fails validation is never drawn; the lesson shows the same content in words and says why" } },
   /* lessons: the interactive engine (?mock=1 reviews the player, it does not run it) */
   { method: "GET", match: /^\/api\/v1\/lessons$/, body: lessonList },
   { method: "GET", match: /^\/api\/v1\/lessons\/kinds$/, body: lessonKinds },

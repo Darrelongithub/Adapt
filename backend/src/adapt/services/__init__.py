@@ -20,9 +20,11 @@ from typing import Any, Callable, Iterator
 
 from sqlalchemy.orm import Session
 
+from ..baseline import Baseline
+from ..state import LearnerState, Orchestrator
 from ..ai.ai1 import LearningIntelligence
 from ..ai.ai2 import EducationalIntelligence
-from ..ai.ai3 import Narrator
+from ..ai.scene_narrator import SceneNarrator
 from ..ai.llm import GeminiLLM
 from ..config import Settings, get_settings
 from ..db.engine import Database, get_db, set_db
@@ -39,9 +41,15 @@ log = logging.getLogger("adapt.services")
 class AppServices:
     settings: Settings
     db: Database
+    #: The Learner State Store (round brief 2A). Every intelligence reads and writes through it.
+    state: LearnerState
+    #: The deterministic turn cycle: ingest → model → content → plan → deliver.
+    orchestrator: Orchestrator
+    #: The mind baseline (round brief section 5): six games, code-scored, one snapshot.
+    baseline: Baseline
     ai1: LearningIntelligence
     ai2: EducationalIntelligence
-    ai3: Narrator | None
+    ai3: SceneNarrator | None
     resources: ResourceService | None
     limiter: Any
     _reply_fn: Callable[..., Any] | None = field(default=None, repr=False)
@@ -121,11 +129,13 @@ class AppServices:
                 else {
                     "configured": False,
                     "provider": "none",
-                    "note": "no API key: AI 1 phrases hypotheses from templates, AI 2 teaches from your materials",
+                    "note": "no model configured: explanations and questions come from your own material (simple mode)",
                 }
             ),
             "resources": ({"providers": self.resources.status()} if self.resources else {"providers": []}),
-            "narration": (self.ai3.status() if self.ai3 is not None else {"model_configured": False, "note": "AI 3 not built"}),
+            "narration": (
+                self.ai3.status() if self.ai3 is not None else {"model_configured": False, "note": "scene narrator not built"}
+            ),
             "voice": {
                 "stt": STT.capabilities(self.settings),
                 "tts": TTS.capabilities(self.settings),
@@ -207,15 +217,37 @@ def build(
     if model is None and settings.gemini_api_key:
         model = GeminiLLM(settings, limiter=limiter)
     elif model is None and settings.allow_local_fallback:
-        model = None  # AI 2 will use the local tutor; AI 1 will phrase hypotheses locally
+        model = None  # the tutor will use the local path; analysis will phrase its hypotheses locally
+    # The store is constructed first: it is the one thing every intelligence shares, and it
+    # takes the session *factory* (a plain callable) so it owns its own sessions.
+    state = LearnerState(database.sessionmaker, settings=settings)
     ai1 = LearningIntelligence(database.session, settings=settings, llm=model, limiter=limiter)
     resources: ResourceService | None = None
     if with_resources:
         resources = ResourceService(settings=settings, session_factory=database.session, limiter=limiter)
-    ai2 = EducationalIntelligence(database.session, ai1=ai1, settings=settings, llm=model, resources=resources)
-    # AI 3 shares AI 2's client on purpose: one quota guard, one audit trail, one outage.
-    ai3 = Narrator(llm=model, sf=database.session, settings=settings)
-    return AppServices(settings=settings, db=database, ai1=ai1, ai2=ai2, ai3=ai3, resources=resources, limiter=limiter)
+    ai2 = EducationalIntelligence(
+        database.session, ai1=ai1, settings=settings, llm=model, resources=resources, state=state
+    )
+    # The scene narrator shares the tutor's client on purpose: one quota guard, one audit
+    # trail, one outage.
+    ai3 = SceneNarrator(llm=model, sf=database.session, settings=settings)
+    # The Orchestrator is the only place a turn is sequenced (brief 2A). It is built from the
+    # services rather than the other way round: the intelligences never reach for the orchestrator.
+    orchestrator = Orchestrator(state=state, settings=settings, ai1=ai1, ai2=ai2, ai3=ai3)
+    # The baseline talks to the store (its trials are evidence) and to nobody else.
+    baseline = Baseline(database.sessionmaker, state=state, settings=settings)
+    return AppServices(
+        settings=settings,
+        db=database,
+        state=state,
+        orchestrator=orchestrator,
+        baseline=baseline,
+        ai1=ai1,
+        ai2=ai2,
+        ai3=ai3,
+        resources=resources,
+        limiter=limiter,
+    )
 
 
 def attach(services: AppServices) -> None:

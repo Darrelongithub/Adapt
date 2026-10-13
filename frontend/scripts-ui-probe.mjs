@@ -746,6 +746,35 @@ async function main() {
     check("diagnose", "the learner is told what the answers are for", /recorded|events|confidence|not to grade/i.test(page.text()), page.text().slice(160, 420));
     check("diagnose", "placement really withholds help, as the copy promises", !page.byText("A hint", "button") && !page.byText("Worked example", "button"), "hints or examples were offered during placement");
     check("diagnose", "the question offers a way in (choices, a box to type in, or a teach-back)", !!answerControl(page), page.text().slice(0, 240));
+    // Defect 1 (`/diagnose`: pressing a choice did not unlock the submit control). The welcome
+    // overlay is a full-screen layer -- `position: fixed; inset: 0; z-index: 200` -- dismissed
+    // by a click *on itself*, so in a real browser the learner's first press on an option was
+    // received by the overlay and never reached the control; jsdom, which has no hit-testing,
+    // delivered it straight to the option and the suite stayed green while the browser did not.
+    // The probe cannot hit-test, so it checks the two things that are checkable here: no
+    // full-screen layer exists on a question route at all, and pressing the option *button*
+    // (the element a pointer actually lands on) unlocks the control.
+    const overlays = [...page.find(".opening-overlay"), ...page.find('[role="dialog"][aria-label="Welcome"]')];
+    check("diagnose", "nothing is covering the question screen", overlays.length === 0, `${overlays.length} full-screen layer(s) rendered on /diagnose`);
+    const optionButtons = page.find('[role="radio"]');
+    if (optionButtons.length) {
+      const control = page.byText("Check it", "button");
+      const wasDisabled = control ? control.disabled : null;
+      const choice = optionButtons.find((b) => b.getAttribute("aria-checked") !== "true") ?? optionButtons[0];
+      choice.click();
+      await sleep(60);
+      const after = page.byText("Check it", "button");
+      check(
+        "diagnose",
+        "pressing the choice itself unlocks the submit control",
+        wasDisabled === true && !!after && after.disabled === false,
+        `disabled before=${wasDisabled}, after=${after ? after.disabled : "control missing"}, aria-checked=${choice.getAttribute("aria-checked")}`,
+      );
+    } else {
+      // Not a fault by itself: this run's first item may be a typed or teach-back question.
+      // Reported rather than skipped, so "the check ran" is never assumed from silence.
+      console.log(`\x1b[2m  note  the first item is not a choice question — the choice path is checked on the first choice question in the walk below\x1b[0m`);
+    }
     // what the learner is measured on has to survive the round trip, so the answer is
     // checked at three points: the request the page made, the reply it showed, the row the
     // backend kept.
@@ -818,10 +847,33 @@ async function main() {
     // bug broke: answering a question used to turn "Next" into "finish", so question 2 was
     // unreachable and the band was built on one answer.
     let walked = questionCounter(page).at;
+    let choicePathChecked = false;
     for (let n = 0; n < 60; n += 1) {
       const where = questionCounter(page);
       if (where.of === 0) break;
       if (where.at >= where.of) break; // the last question has no Next, only finishing
+      // Defect 1, on the first choice question in this sequence: press the option the learner
+      // actually sees — the `role="radio"` *button* — rather than the `sr-only` input that
+      // `fillAnswer` uses. `el.click()` on the hidden input would be eaten by an overlay in a
+      // browser just as surely; on the button it is the learner's own press, and it has to
+      // unlock the submit control without any other event.
+      if (!choicePathChecked) {
+        const options = page.find('[role="radio"]');
+        const control = page.byText("Check it", "button");
+        if (options.length && control && control.disabled) {
+          choicePathChecked = true;
+          const chosen = options.find((b) => b.getAttribute("aria-checked") !== "true") ?? options[0];
+          chosen.click();
+          await sleep(80);
+          const unlocked = page.byText("Check it", "button");
+          check(
+            "diagnose",
+            "pressing the choice itself unlocks the submit control",
+            !!unlocked && unlocked.disabled === false,
+            `question ${where.at} of ${where.of}: ${options.length} options, aria-checked=${chosen.getAttribute("aria-checked")}, control ${unlocked ? (unlocked.disabled ? "still disabled" : "unlocked") : "missing"}`,
+          );
+        }
+      }
       const next = page.byText(/^Next$/, "button");
       if (!next) break; // no Next on the final question: that one offers finishing instead
       if (next.disabled) {
@@ -847,6 +899,9 @@ async function main() {
     }
     const counter = questionCounter(page);
     check("diagnose", "every question in the sequence can be reached from the previous one", counter.at >= counter.of && counter.of >= 6, `reached question ${counter.at} of ${counter.of}`);
+    if (!choicePathChecked) {
+      console.log("\x1b[2m  note  this placement sequence served no choice question (the selector picks the most informative item per topic, and for these topics they are typed or teach-back) — the press check runs on the choice question in the learn scenario\x1b[0m");
+    }
     check("diagnose", "the final question offers finishing rather than another page turn", !!page.byText("Finish and analyse", "button") && !page.byText(/^Next$/, "button"), `at ${counter.at}/${counter.of}: ${page.text().slice(0, 120)}`);
     await fillAnswer(page);
     await markAnswer(page);
@@ -994,6 +1049,30 @@ async function main() {
         await waitFor(() => page.requests.slice(revBefore).some((r) => /\/reveal/.test(r)), { timeout: 10_000, label: "the reveal request" });
         await sleep(500);
         check("learn", "revealing the answer is allowed, asked of the API, and shown on screen", !/Internal Server Error/.test(page.text()) && !!page.byText("Revealed", "button"), page.requests.slice(revBefore).join(" ; "));
+      }
+      // Defect 1 on the practice screen: press the option the learner sees — the `role="radio"`
+      // button — and require the submit control to unlock.
+      //
+      // What this can and cannot prove, measured rather than assumed: jsdom does no hit-testing,
+      // so rendering the full-screen welcome overlay on this route *still passes this check*
+      // (verified by putting `const allowedHere = true` back and re-running: 26/26 green). This
+      // is therefore a guard on the wiring — button press → selection → unlocked control — not
+      // on the occlusion. Only a real browser can check the occlusion, which is exactly why
+      // `tests-e2e/placement.mjs` exists and why docs/UNVERIFIED.md carries the caveat.
+      const learnOptions = page.find('[role="radio"]');
+      if (learnOptions.length) {
+        const control = page.byText("Check it", "button");
+        const lockedBefore = control ? control.disabled : null;
+        const chosen = learnOptions.find((b) => b.getAttribute("aria-checked") !== "true") ?? learnOptions[0];
+        chosen.click();
+        await sleep(80);
+        const unlocked = page.byText("Check it", "button");
+        check(
+          "learn",
+          "pressing the choice itself unlocks the submit control",
+          !!unlocked && unlocked.disabled === false,
+          `${learnOptions.length} options, aria-checked=${chosen.getAttribute("aria-checked")}, was ${lockedBefore === true ? "locked" : String(lockedBefore)}, now ${unlocked ? (unlocked.disabled ? "still locked" : "unlocked") : "missing"}`,
+        );
       }
       await fillAnswer(page);
       const learnMark = await markAnswer(page);

@@ -1,4 +1,5 @@
 'use client';
+import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 // Exported so this is trivial to extend later — exact wording and blue word preserved
@@ -32,9 +33,19 @@ export function Opening() {
   const [exiting, setExiting] = useState(false);
   const phraseRef = useRef(OPENING_PHRASES[0]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Where the overlay is allowed to appear. It is a full-screen layer (`position: fixed;
+  // inset: 0; z-index: 200`), so anywhere it renders, it is *in front of* the page's own
+  // controls. On a question screen that meant a learner's first click on a choice was
+  // received by the overlay ("click anywhere to continue") and never reached the option:
+  // the answer looked selected-by-intent but the box stayed empty and the submit control
+  // stayed closed. The welcome only belongs on the front door, where there is nothing to
+  // swallow but the door itself.
+  const pathname = usePathname();
+  const allowedHere = pathname === "/" || pathname === "";
 
   useEffect(() => {
     setMounted(true);
+    if (!allowedHere) return;
     let seen = false;
     try { seen = sessionStorage.getItem(SEEN_KEY) === '1'; } catch { /* storage blocked — fail open, don't show */ seen = true; }
     if (!seen) {
@@ -48,7 +59,7 @@ export function Opening() {
       timerRef.current = setTimeout(dismiss, reduced ? 900 : 4200);
     }
     return () => clearTimeout(timerRef.current);
-  }, []);
+  }, [allowedHere]);
 
   function dismiss() {
     clearTimeout(timerRef.current);
@@ -59,7 +70,7 @@ export function Opening() {
     setTimeout(() => setVisible(false), 500);
   }
 
-  if (!mounted || !visible) return null;
+  if (!mounted || !visible || !allowedHere) return null;
 
   const { text, blue } = phraseRef.current;
   const words = text.split(' ');
@@ -74,16 +85,20 @@ export function Opening() {
       tabIndex={-1}
     >
       <p className="opening-mark">A·D·A·P·T</p>
-      <p className="opening-phrase" aria-live="off">
+      <p className="opening-phrase" aria-live="off" aria-label={text}>
+        {/* One word per span, and the *space is the CSS* (`margin-right` on .opening-word).
+            A trailing text space inside an `inline-block` span is trimmed by the line box, so
+            "Let's learn the right way" rendered as "Let'slearntherightway". */}
         {words.map((w, i) => {
           const isBlue = w.replace(/[?.!,]/g, '') === blue || w.includes(blue);
           return (
             <span
               key={i}
+              aria-hidden="true"
               className={`opening-word${isBlue ? ' blue' : ''}`}
               style={{ animationDelay: `${i * 0.14}s` }}
             >
-              {w}{' '}
+              {w}
             </span>
           );
         })}

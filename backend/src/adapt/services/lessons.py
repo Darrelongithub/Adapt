@@ -648,7 +648,7 @@ def evidence_summary(s: Session, student_id: str, *, since: datetime | None = No
 
 
 # --------------------------------------------------------------------------- #
-# narration: AI 3's cache in front of the model
+# narration: the scene narrator's cache in front of the model
 # --------------------------------------------------------------------------- #
 
 
