@@ -41,8 +41,10 @@ app = typer.Typer(
 )
 db_app = typer.Typer(help="database lifecycle and inspection", no_args_is_help=True)
 voice_app = typer.Typer(help="speech engine checks", no_args_is_help=True)
+config_app = typer.Typer(help="console-only provider credentials and budgets", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(voice_app, name="voice")
+app.add_typer(config_app, name="config")
 
 
 def _settings():
@@ -1021,6 +1023,191 @@ def token_cmd(student_id: str = typer.Option(..., "--for"), hours: int = typer.O
         typer.echo(f"csrf:  {issued.csrf}")
         typer.echo(f"expires: {issued.session.expires_at.isoformat()}")
         typer.echo('use:  curl -H "Cookie: adapt_session=<token>" -H "X-CSRF-Token: <csrf>" ...')
+
+@config_app.command("set-key")
+def config_set_key(
+    service: str = typer.Option(
+        "gemini",
+        "--service",
+        help=(
+            "Credential to store. Enter it at the hidden prompt, never as an argument; "
+            "shell history records arguments."
+        ),
+        case_sensitive=False,
+    ),
+) -> None:
+    """Store a key at a hidden prompt; never pass it on the command line or in shell history."""
+    from .config_secrets import ConfigSecretError, set_key
+
+    st = _settings()
+    chosen = service.strip().lower()
+    if chosen not in {"gemini", "youtube"}:
+        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    secret = typer.prompt("API key (input is hidden)", hide_input=True, confirmation_prompt=True)
+    try:
+        set_key(st.data_dir, chosen, secret)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"Stored the {chosen} credential in the owner-only console settings file.")
+    typer.echo("Restart the application process to load the new configuration.")
+
+
+@config_app.command("status")
+def config_status() -> None:
+    """Show credential state and, when set, at most the final four characters."""
+    from .config_secrets import ConfigSecretError, status_rows
+
+    try:
+        for row in status_rows(_settings()):
+            if row["configured"]:
+                typer.echo(f"{row['service']}: configured · {row['masked']}")
+            else:
+                typer.echo(f"{row['service']}: not configured")
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+
+
+@config_app.command("test")
+def config_test() -> None:
+    """Make one minimal connection check and print only pass or fail."""
+    from .config_secrets import ConfigSecretError, settings_with_managed_values
+    from .security.secrecy import install_log_redaction
+
+    st = _settings()
+    try:
+        st = settings_with_managed_values(st)
+    except ConfigSecretError as exc:
+        typer.echo("Connection test failed. Check the console settings file.")
+        raise typer.Exit(code=1) from None
+    if not st.gemini_api_key:
+        typer.echo("Connection test failed. No credential is configured.")
+        raise typer.Exit(code=1)
+
+    # Do not retain upstream exception text in logs while testing a live credential.
+    install_log_redaction(st)
+    from .ai.llm import GeminiLLM
+
+    # The command promises one minimal request: no retries, delays, learner text, or
+    # configured budget figures are exposed by its output.
+    st = st.model_copy(update={"gemini_max_retries": 0, "gemini_min_interval_ms": 0})
+    llm = GeminiLLM(st)
+
+    async def one_minimal_request():
+        try:
+            return await llm.complete(
+                system="Reply with the single word OK.",
+                user="Connection check.",
+                purpose="console_connection_test",
+                role="ai2",
+                temperature=0.0,
+                max_output_tokens=8,
+            )
+        finally:
+            await llm.aclose()
+
+    try:
+        result = _run(one_minimal_request())
+    except Exception:
+        typer.echo("Connection test failed. Check connectivity and the console settings.")
+        raise typer.Exit(code=1) from None
+    if result.ok:
+        typer.echo("Connection test passed.")
+    else:
+        typer.echo("Connection test failed. Check connectivity and the console settings.")
+        raise typer.Exit(code=1)
+
+
+@config_app.command("rotate")
+def config_rotate(
+    service: str = typer.Option(
+        "gemini", "--service", help="Credential to rotate.", case_sensitive=False
+    ),
+) -> None:
+    """Replace a credential using a hidden prompt; the new value is never a shell argument."""
+    from .config_secrets import ConfigSecretError, set_key
+
+    chosen = service.strip().lower()
+    if chosen not in {"gemini", "youtube"}:
+        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    secret = typer.prompt(
+        "Replacement API key (input is hidden)",
+        hide_input=True,
+        confirmation_prompt=True,
+    )
+    try:
+        set_key(_settings().data_dir, chosen, secret)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"Rotated the {chosen} credential in the owner-only console settings file.")
+    typer.echo("Restart the application process to load the new configuration.")
+
+
+@config_app.command("remove")
+def config_remove(
+    service: str = typer.Option(
+        "gemini", "--service", help="Credential to remove.", case_sensitive=False
+    ),
+) -> None:
+    """Remove a stored credential without printing it."""
+    from .config_secrets import ConfigSecretError, remove_key
+
+    chosen = service.strip().lower()
+    if chosen not in {"gemini", "youtube"}:
+        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if not typer.confirm(f"Remove the stored {chosen} credential?", default=False):
+        typer.echo("No changes made.")
+        return
+    try:
+        remove_key(_settings().data_dir, chosen)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(
+        f"Removed the stored {chosen} credential. An environment override may still be active."
+    )
+
+
+@config_app.command("set-budget")
+def config_set_budget(
+    calls: int | None = typer.Option(
+        None, "--calls", min=0, help="Daily call limit; omitted values are requested interactively."
+    ),
+    tokens: int | None = typer.Option(
+        None,
+        "--tokens",
+        min=0,
+        help="Daily token limit; omitted values are requested interactively.",
+    ),
+) -> None:
+    """Set the optional daily service limits in console settings, never in learner records."""
+    from .config_secrets import ConfigSecretError, set_budgets, settings_with_managed_values
+
+    st = _settings()
+    try:
+        current = settings_with_managed_values(st)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    calls = calls if calls is not None else typer.prompt(
+        "Daily call limit", default=current.gemini_daily_call_budget, type=int
+    )
+    tokens = tokens if tokens is not None else typer.prompt(
+        "Daily token limit", default=current.gemini_daily_token_budget, type=int
+    )
+    try:
+        set_budgets(st.data_dir, calls=calls, tokens=tokens)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo("Saved the daily service limits in the owner-only console settings file.")
+    typer.echo("Restart the application process to load the new configuration.")
+
 
 if __name__ == "__main__":  # pragma: no cover
     app()
