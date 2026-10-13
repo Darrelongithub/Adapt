@@ -282,7 +282,11 @@ def shopkeeper_next(seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None
     afterwards. `recall under distraction` is compared with the same learner's plain span, which is
     why both live in the working-memory factor.
     """
-    done = [t for t in trials]
+    # Filtered to this game's own trials: `next_task_for` hands every generator the whole run's
+    # log, and counting all of it here meant the stage looked finished the moment anything else had
+    # been measured -- so the shopkeeper never ran at all and "recall under distraction" was
+    # silently missing from the working-memory factor.
+    done = [t for t in trials if t.game == "shopkeeper"]
     if not done:
         return {
             "id": "vault_shop_practice",

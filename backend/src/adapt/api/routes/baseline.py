@@ -79,7 +79,7 @@ def snapshot(run_id: str | None = None, student: Student = Depends(student_from_
     """The mind map: eight factors with ranges and n, the levers, and the stated preferences."""
     svcs = current()
     if run_id:
-        _owned(s, run_id, student.id)
+        _owned(run_id, student.id)
     return svcs.baseline.snapshot(student.id, run_id=run_id)
 
 
@@ -88,7 +88,7 @@ def next_day(run_id: str | None = None, student: Student = Depends(student_from_
     """The delayed codeword check, for a learner who has come back since."""
     svcs = current()
     if run_id:
-        _owned(s, run_id, student.id)
+        _owned(run_id, student.id)
     return svcs.baseline.next_day(student.id, run_id=run_id)
 
 

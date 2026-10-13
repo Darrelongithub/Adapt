@@ -507,6 +507,48 @@ def test_the_snapshot_is_available_before_finishing(client, learner):
     assert all(f["state"] == "not_enough_data" or f["state"] == "measured" for f in body["factors"])
 
 
+def test_the_snapshot_and_next_day_accept_a_run_id_in_the_query(client, learner):
+    """Regression: both routes had a leftover call that passed an undefined session.
+
+    `GET /baseline/snapshot?run_id=…` and `GET /baseline/next-day?run_id=…` were never exercised
+    with the parameter, so a `NameError` sat behind a branch no test entered. These are the two
+    read routes the frontend calls after a reload, so a broken branch there is a broken resume.
+    """
+    view = _start(client, learner)
+    run_id = view["run_id"]
+    snap = client.get(f"/api/v1/baseline/snapshot?run_id={run_id}", headers=learner["headers"])
+    assert snap.status_code == 200, snap.text
+    assert len(snap.json()["factors"]) == 8
+    nxt = client.get(f"/api/v1/baseline/next-day?run_id={run_id}", headers=learner["headers"])
+    assert nxt.status_code == 200, nxt.text
+    body = nxt.json()
+    # The route answers with the tasks (possibly none) and a sentence the screen can show; it has no
+    # `state` key, which is what an earlier version of this assertion invented.
+    assert body["run_id"] == run_id and isinstance(body["tasks"], list)
+    assert isinstance(body["studied"], bool) and body["note"]
+
+
+def test_the_shopkeeper_stage_is_actually_offered(client, learner):
+    """Regression: the stage was marked complete with zero trials and never ran.
+
+    `shopkeeper_next` counted *every* trial in the run instead of its own game's, so as soon as any
+    other game had been measured the stage looked finished. The learner never saw the distraction
+    task and "recall under distraction" was silently absent from the working-memory factor.
+    """
+    view = _start(client, learner)
+    _pick_format(client, learner, view["run_id"])
+    _answer_questions(client, learner, view["run_id"])
+    played = _play_until(client, learner, view["run_id"], stop_stage="shopkeeper", max_trials=160)
+    last = played[-1]
+    assert last["stage"] == "shopkeeper", "the flow never reached the shopkeeper stage"
+    assert last["task"]["game"] == "shopkeeper"
+    assert "Hold these three items" in last["task"]["prompt"]
+    # and it ends: two measured rounds, then the next stage
+    after = _play_until(client, learner, view["run_id"], stop_stage="machine", max_trials=160)
+    shop = [v for v in after if v.get("stage") == "shopkeeper" and v.get("task")]
+    assert len(shop) >= 2, "the shopkeeper stage offered fewer than two measured rounds"
+
+
 def test_a_learner_with_no_baseline_gets_a_first_class_empty_state(client, learner):
     body = client.get("/api/v1/baseline/snapshot", headers=learner["headers"]).json()
     assert body["state"] in ("not_started", "in_progress")
