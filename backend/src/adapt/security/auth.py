@@ -86,15 +86,23 @@ class Issued:
     csrf: str
 
 
-def create_session(db: Session, student_id: str, *, ip: str | None = None, user_agent: str | None = None) -> Issued:
+def create_session(
+    db: Session,
+    student_id: str,
+    *,
+    ip: str | None = None,
+    user_agent: str | None = None,
+    hours: int | None = None,
+) -> Issued:
     s = get_settings()
+    ttl_hours = max(1, int(hours)) if hours is not None else s.session_ttl_hours
     token = new_token()
     csrf = new_token(24)
     row = AuthSession(
         student_id=student_id,
         token_hash=hash_token(token),
         csrf_token=csrf,
-        expires_at=utcnow() + timedelta(hours=s.session_ttl_hours),
+        expires_at=utcnow() + timedelta(hours=ttl_hours),
         ip_hash=hash_ip(ip),
         user_agent_hash=hashlib.sha256((user_agent or "")[:200].encode()).hexdigest()[:32]
         if user_agent

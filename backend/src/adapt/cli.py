@@ -257,8 +257,13 @@ def doctor(as_json: bool = typer.Option(False, "--json")) -> None:
         ("webrtcvad", "tighter endpointing", "pip install webrtcvad (energy VAD is the fallback)"),
     ]:
         try:
+            import importlib.metadata as _meta
+
             mod = __import__(pkg)
-            ver = getattr(mod, "__version__", "installed")
+            try:
+                ver = _meta.version("argon2-cffi" if pkg == "argon2" else pkg.replace("_", "-"))
+            except _meta.PackageNotFoundError:
+                ver = getattr(mod, "__version__", "installed")
             check(pkg, True, str(ver))
         except Exception as exc:
             check(pkg, False, f"not importable ({type(exc).__name__})", fix)
@@ -886,7 +891,7 @@ def token_cmd(student_id: str = typer.Option(..., "--for"), hours: int = typer.O
     from .security import auth
 
     with get_db().session() as s:
-        issued = auth.create_session(s, student_id)
+        issued = auth.create_session(s, student_id, hours=hours)
         s.commit()
         typer.echo(f"token: {issued.token}")
         typer.echo(f"csrf:  {issued.csrf}")
