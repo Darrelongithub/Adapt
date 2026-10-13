@@ -540,7 +540,7 @@ export default function LessonPlayer() {
               <p className="text-[12px]">
                 positions, which choice you made, how long you took, and whether the simulation agreed. no keystrokes,
                 no screenshots, and prediction accuracy is never fed into a mastery number.{" "}
-                <a className="underline" href="/progress">
+                <a className="link-inline" href="/progress">
                   see what was recorded
                 </a>
                 .

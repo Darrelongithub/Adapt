@@ -350,7 +350,7 @@ export default function VoicePage() {
               <Check label="Interrupt me when I start talking" checked={barge} onChange={setBarge} hint="any keypress stops the current utterance — being able to cut in is the difference between a tutor and a lecture" />
               <Field label="Which voice">
                 <select
-                  className="w-full rounded-md border border-[var(--line)] bg-black/25 px-3 py-2 text-sm"
+                  className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]"
                   value={gender}
                   onChange={(e) => setGender(e.target.value)}
                 >

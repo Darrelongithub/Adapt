@@ -349,3 +349,43 @@ area. What changed, and what a phone still has to confirm:
   is compared against the words the step is about, never posted, and cannot move a mastery
   estimate. Its wording and its gate are asserted in the probe; how a *learner* reacts to being
   asked to write a sentence before the next step is a pilot question, not a sandbox one.
+
+## Added by the visual-redesign pass (2026-10-13): navigation, consent, buttons
+
+* **Verified (jsdom, 204/204):** that the consent step renders before the account form and
+  before any `POST /students` on either the email or the guest path; that neither checkbox is
+  pre-ticked; that the primary control is `disabled` until the required box is, and enabled
+  after; that the optional box is a separate control and stays unticked; that Decline explains
+  itself and creates nothing; that every screen's sidebar contains all seven destinations and
+  marks the current one with `aria-current="page"`; that every migrated control carries a
+  `.btn-*` class with an accessible name; and that the whole existing flow (placement,
+  practice, the approval gate, lessons, review, settings, voice refusals) still passes.
+* **Not verified, and not verifiable here — layout and paint.** There is no browser in this
+  sandbox, and jsdom applies no CSS, so none of the following is evidence of anything on glass:
+  the fixed 232px sidebar against the body's scrolling (including whether the drawer's
+  `translateX(-100%)` state is correctly off-screen below 860px, and whether the topbar's 52px
+  offset lines up with the drawer's `top`); the `position: fixed` sidebar over a long
+  `/progress` chart; `main-content`'s 232px left margin and the footer inside it; the custom
+  `appearance: none` consent checkbox with its `::after` tick; hover/pressed/focus-visible
+  affordances on the new button classes; whether `color-mix(in oklab, …)` produces the intended
+  tints in the browser a school actually runs (a plain alpha colour is the fallback if not);
+  and whether the `--line` token at the brief's 72% still reads as a boundary rather than as
+  text at 100% zoom.
+* **Not verified — focus order and keyboard operation as a sequence.** The elements are
+  operable buttons with names and states (checked by role and attribute), the roving tabindex
+  and focus trap are the same utilities that already existed, and the drawer is a focus-trapped
+  container while open — but with no browser, the tab order that a learner would actually walk
+  (skip link → hamburger → sidebar → main) has not been demonstrated.
+* **A functional gap, not a rendering one.** The optional research-consent answer is not
+  persisted anywhere: there is no field for it, the screen says so, and the decision is
+  deliberately not written into `consent_share_with_llm` (which means "a model may read a
+  summary"). And "no decision" is still stored as consent by the database default
+  (`Student.consent_analytics = True`) — see `docs/AUDIT.md`, fourth pass, for the shape of the
+  fix and why flipping the default is not it.
+* **To check (~5 minutes on a laptop, then a phone):** load `/` and confirm the sidebar is
+  visible without hovering anything and Settings is one click away; narrow the window past
+  860px and confirm the Menu button opens the drawer and Escape closes it; tab through the
+  consent step with the keyboard only and confirm the tick and the primary button are
+  reachable and visibly focused; submit the email path and confirm `/onboarding` shows the
+  consent answer carried from the door; then open `/progress` and confirm the chart, its
+  table and the marked sidebar item are all visible together at 1280px and at 375px.

@@ -17,7 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { Btn, Card, Err, Field, Input, Notice, Tag, useSession } from "@/components/ui";
+import { announce, Btn, Card, Err, Field, Input, Notice, Tag, useSession } from "@/components/ui";
 import { api, get, isMock, post, useApi, type Me } from "@/lib/api";
 import type { Health, Mastery } from "@/lib/types";
 
@@ -199,10 +199,23 @@ export default function Home() {
               </p>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Btn kind="primary" onClick={() => setStep("auth")} disabled={!consent}>
+                <Btn
+                  kind="primary"
+                  onClick={() => {
+                    announce("Consent recorded. Continuing to account creation.");
+                    setStep("auth");
+                  }}
+                  disabled={!consent}
+                >
                   Agree &amp; continue
                 </Btn>
-                <Btn kind="ghost" onClick={() => setDeclined(true)}>
+                <Btn
+                  kind="ghost"
+                  onClick={() => {
+                    announce("Declined — what will not work is explained below.");
+                    setDeclined(true);
+                  }}
+                >
                   Decline
                 </Btn>
                 <Btn kind="ghost" onClick={() => { setMode("signin"); setStep("auth"); }}>

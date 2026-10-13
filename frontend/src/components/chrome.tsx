@@ -30,7 +30,7 @@ export function MockBanner() {
     <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 py-2 pl-4 pr-4 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
       <strong>DEMO DATA</strong> — this screen is running on fixtures (<code>?mock=1</code>). Nothing here was measured from a
       learner, and nothing was saved.{" "}
-      <Link className="underline" href="/?mock=off">
+      <Link className="link-inline" href="/?mock=off">
         turn it off
       </Link>
     </div>
@@ -197,7 +197,7 @@ function Who() {
   if (loading && !me) return <span className="text-xs text-[var(--muted)]">…</span>;
   if (!me && unknown)
     return (
-      <button type="button" onClick={() => refresh()} className="text-xs text-[var(--warn)] underline decoration-dotted">
+      <button type="button" onClick={() => refresh()} className="btn-ctl btn-ghost">
         checking who you are… retry
       </button>
     );
@@ -302,7 +302,7 @@ export function NeedSetup() {
       <Notice tone="warn">
         Still checking who you are — the server said: {unknown}. Nothing here has been lost or
         signed out.{" "}
-        <button type="button" className="underline decoration-dotted" onClick={() => refresh()}>
+        <button type="button" className="btn-ctl btn-ghost" onClick={() => refresh()}>
           try again
         </button>
       </Notice>
