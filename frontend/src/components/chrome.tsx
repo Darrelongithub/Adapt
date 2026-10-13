@@ -271,37 +271,3 @@ export function SessionGate({ children }: { children: ReactNode }) {
   return <SessionProvider value={value}>{children}</SessionProvider>;
 }
 
-/** A learner who has not been placed yet should not land on an empty practice screen. */
-export function NeedSetup() {
-  const { me, loading, unknown, refresh } = useSession();
-  if (loading) return null;
-  if (me) return null;
-  // "we could not ask" is not "nobody is home". A throttle or a hiccup gets a retry; only an
-  // answer that says the session is no good sends a learner off to sign in again.
-  if (unknown)
-    return (
-      <Notice tone="warn">
-        Still checking who you are — the server said: {unknown}. Nothing here has been lost or
-        signed out.{" "}
-        <button type="button" className="underline decoration-dotted" onClick={() => refresh()}>
-          try again
-        </button>
-      </Notice>
-    );
-  return (
-    <Err error="Not signed in — open /api/v1/me directly or sign in on the home screen." status={401} />
-  );
-}
-
-export function csrfHint() {
-  return csrfToken() ? "session cookie present" : "no csrf cookie yet";
-}
-
-export async function startSession(mode = "practice"): Promise<string | null> {
-  try {
-    const out = await post<{ session_id: string }>("sessions", { mode });
-    return out.session_id;
-  } catch {
-    return null;
-  }
-}

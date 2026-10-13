@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Tag, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Select, Tag, useSession } from "@/components/ui";
 import { del, get, post, useApi } from "@/lib/api";
 
 type PrefReply = { accepted?: Record<string, unknown>; rejected_keys?: string[]; rejected_reasons?: Record<string, string>; note?: string };
@@ -146,9 +146,8 @@ export default function Settings() {
                     onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
                   />
                 ) : NUMERIC.has(k) ? (
-                  <input
+                  <Input
                     type="number"
-                    className="w-full rounded-md border border-[var(--line)] bg-[var(--bg-elev)] px-3 py-2 text-sm text-ink"
                     value={String(form[k] ?? "")}
                     onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
                   />
@@ -206,14 +205,13 @@ export default function Settings() {
               />
               {consent.voice ? (
                 <Field label="Voice for replies">
-                  <select
-                    className="w-full rounded-md border border-[var(--line)] bg-[var(--bg-elev)] px-3 py-2 text-sm text-ink"
+                  <Select
                     value={consent.gender}
                     onChange={(e) => setConsent((c) => ({ ...c, gender: e.target.value }))}
                   >
                     <option value="female">female</option>
                     <option value="male">male</option>
-                  </select>
+                  </Select>
                 </Field>
               ) : null}
               <Btn onClick={saveConsent} disabled={busy} kind="primary">

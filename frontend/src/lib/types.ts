@@ -54,19 +54,6 @@ export type PlanEntry = {
   of?: number;
 };
 
-export type Mastery = {
-  topic_id: string;
-  title?: string;
-  p_know: number;
-  band: string;
-  observations: number;
-  correct?: number;
-  ci?: [number, number];
-  half_life_hours?: number | null;
-  last_practice?: string | null;
-  stale?: boolean;
-};
-
 export type Receipt = {
   attempt_id: string;
   item_id: string;
@@ -155,17 +142,6 @@ export type ActiveAdaptation = {
   citations?: string[];
 };
 
-export type DueRow = {
-  topic_id: string;
-  title: string;
-  due_at: string;
-  overdue: boolean;
-  half_life_hours?: number | null;
-  expected_recall_at_due?: number | null;
-  reps?: number;
-  lapses?: number;
-};
-
 export type JourneyNode = {
   ts: string;
   kind: string;
@@ -191,16 +167,6 @@ export type ExplainReply = {
   meta?: { grounded?: boolean; provider_detail?: string };
   provider_note?: string;
   privacy?: { sent_to_model?: boolean; redacted_fields?: number; what_was_sent?: string };
-};
-
-export type VoiceCaps = {
-  stt: { local_stt: boolean; detail?: string; fallback?: string; [k: string]: unknown };
-  tts: { local_tts: boolean; detail?: string; fallback?: string; sample_rate?: number; [k: string]: unknown };
-  voices: Record<string, Record<string, string>>;
-  barge_in: boolean;
-  transport: string;
-  path: string;
-  note?: string;
 };
 
 export type Health = { ok: boolean; mode: string; learners?: number; [k: string]: unknown };
