@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Err, Notice, SessionProvider, useSession } from "./ui";
@@ -17,6 +18,15 @@ export const NAV = [
   { href: "/voice", label: "Voice" },
   { href: "/settings", label: "Settings" },
 ];
+
+/** The corner tab says which section you are in, as the design snapshot does: `§ 03 · Changes`
+ *  on the changes screen rather than the brand on every screen. One source of truth — the numbers
+ *  come from NAV's own order, so a section cannot be numbered here and named differently there.
+ *  A route with no section (onboarding, placement) keeps the brand rather than inventing one. */
+export const SECTION_LABELS: Record<string, string> = {
+  "/": "§ ADAPT",
+  ...Object.fromEntries(NAV.map((n, i) => [n.href, `§ ${String(i + 1).padStart(2, "0")} · ${n.label}`])),
+};
 
 /** Red bar, every screen, whenever the data on it is not real. */
 export function MockBanner() {
@@ -84,6 +94,8 @@ export function StatusChip() {
 
 export function Chrome({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname() || "/";
+  const section = SECTION_LABELS[pathname] ?? "§ ADAPT";
   const overlayRef = useFocusTrap(open);
   const tabRef = useRef<HTMLButtonElement>(null);
 
@@ -110,9 +122,13 @@ export function Chrome({ children }: { children: ReactNode }) {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls="indexOverlay"
+        // The visible text is the section; the accessible name still says what the control does,
+        // because "§ 05 · Progress" on its own reads as a heading and not as a button.
+        aria-label={`Section index — you are in ${section}`}
+        title={`Open the section index (you are in ${section})`}
         onClick={() => setOpen((v) => !v)}
       >
-        § ADAPT
+        {section}
       </button>
 
       {/* full-screen index overlay */}

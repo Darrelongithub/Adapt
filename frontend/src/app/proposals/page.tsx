@@ -14,7 +14,8 @@
  */
 import { useState } from "react";
 
-import { Btn, Card, Err, Field, humanize, Ledger, LedgerEntry, Notice, Tag, Textarea, When, announce, useSession } from "@/components/ui";
+import { Btn, Card, Err, Field, humanize, Ledger, LedgerEntry, Notice, SessionLog, Tag, Textarea, When, announce, useSession, useSessionLedger } from "@/components/ui";
+import { EffectLine, type EffectSummary } from "@/components/evidence";
 import { post, useApi } from "@/lib/api";
 import type { ActiveAdaptation, DecisionReply, Proposal } from "@/lib/types";
 
@@ -24,6 +25,12 @@ const VERBS = [
   { id: "modify", label: "Yes, but change it", tone: "think" as const, hint: "Edit the numbers below; only known keys are applied." },
   { id: "later", label: "Not now", tone: "warn" as const, hint: "Kept, unapplied, and it will surface once more before it goes quiet." },
 ];
+
+/** The session log speaks in the buttons' own words, so a decision reads back as the answer the
+ *  learner actually gave — and there is one list of them, not two that can drift apart. */
+const decisionWord = (decision: string) => VERBS.find((v) => v.id === decision)?.label ?? decision;
+
+const stamp = () => new Date().toLocaleTimeString();
 
 export default function Proposals() {
   const { me, loading: meLoading, unknown: meUnknown } = useSession();
@@ -37,6 +44,10 @@ export default function Proposals() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DecisionReply | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** What this browser has decided, newest first — the snapshot's ledger. One entry is not a
+   *  log: a learner who answers three proposals and then wants to know what they already said
+   *  has to be able to read it back, including a refusal and a change of mind. */
+  const ledger = useSessionLedger("adapt:ledger-decisions");
 
   const rows = pending.data?.proposals ?? [];
   const live = active.data?.active ?? [];
@@ -62,13 +73,18 @@ export default function Proposals() {
       if (decision === "modify" && proposal.review_window?.kind === "days") body.days = days;
       const out = await post<DecisionReply>(`adaptations/${proposal.id}/decision`, body);
       setResult(out);
-      announce(`Decision recorded: ${decision} for ${proposal.strategy_label ?? proposal.strategy}`);
+      const label = proposal.strategy_label ?? proposal.strategy;
+      announce(`Decision recorded: ${decision} for ${label}`);
+      ledger.add(`${stamp()} — “${label}” → ${decisionWord(decision)}`);
       pending.reload();
       active.reload();
       history.reload();
     } catch (err) {
       const e = err as { shown?: string; status?: number; detail?: unknown };
-      if (e?.status === 409) setResult({ ok: false, status: "approved", proposal_id: proposal.id, reason: "already answered" });
+      if (e?.status === 409) {
+        setResult({ ok: false, status: "approved", proposal_id: proposal.id, reason: "already answered" });
+        ledger.add(`${stamp()} — “${proposal.strategy_label ?? proposal.strategy}” → refused: it had already been answered`);
+      }
       else if (e?.status === 403) setError(`the gate refused it: ${JSON.stringify(e.detail)}`);
       else setError(e?.shown ?? String(err));
     } finally {
@@ -82,6 +98,7 @@ export default function Proposals() {
     try {
       await post(`adaptations/${row.id}/revoke`, {});
       announce(`Decision revoked for ${row.label ?? row.strategy}`);
+      ledger.add(`${stamp()} — “${row.label ?? row.strategy}” decision revoked`);
       active.reload();
       history.reload();
     } catch (err) {
@@ -314,11 +331,8 @@ export default function Proposals() {
         </Ledger>
       ) : null}
 
-      <div className="ledger-log mt-8">
-        <h5>Decisions made this session</h5>
-        <ul>
-          {result ? <li>{new Date().toLocaleTimeString()} — “{rows.find((r) => r.id === result.proposal_id)?.strategy_label ?? result.proposal_id}” → {result.decision ?? result.status}</li> : <li className="empty">Nothing decided yet.</li>}
-        </ul>
+      <div className="mt-8">
+        <SessionLog title="Decisions made this session" entries={ledger.entries} empty="Nothing decided yet." />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 mt-6">
@@ -341,11 +355,12 @@ export default function Proposals() {
                       </span>
                     </p>
                     {a.effect_summary ? (
-                      <p className="text-xs text-[var(--muted)]">
-                        {typeof a.effect_summary === "string" ? a.effect_summary : humanize(a.effect_summary)}
-                      </p>
+                      <EffectLine effect={a.effect_summary as unknown as EffectSummary} />
                     ) : (
-                      <p className="text-xs text-[var(--think)]">too few answers so far to say whether it is helping</p>
+                      <p className="text-xs text-[var(--think)]">
+                        applied {a.started_at ? relative(a.started_at) : "just now"} — nothing has been
+                        measured against it yet, and it will not be called a success until it is
+                      </p>
                     )}
                     {a.mechanism ? <p className="text-xs text-[var(--muted)]">{a.mechanism}</p> : null}
                     {a.citations?.length ? <p className="text-xs text-[var(--muted)]">evidence: {a.citations.join(" · ")}</p> : null}
@@ -370,7 +385,12 @@ export default function Proposals() {
                   {d.strategy_label ?? d.strategy}
                   {d.student_note ? <span className="text-xs text-[var(--muted)]"> — you said: {d.student_note}</span> : null}
                   {d.outcome ? <span className="text-xs text-[var(--muted)]"> · {humanize(d.outcome)}</span> : null}
-                  {d.evaluation_status === "insufficient_data" ? <span className="text-xs text-[var(--warn)]"> · not enough data yet</span> : null}
+                  {!d.evaluation_status && (d.outcome as { status?: string } | null)?.status === "gathering_evidence" ? (
+                    <span className="text-xs text-[var(--warn)]">
+                      {" "}
+                      · {(d.outcome as { n_after?: number }).n_after ?? 0} answers since, not enough to judge
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

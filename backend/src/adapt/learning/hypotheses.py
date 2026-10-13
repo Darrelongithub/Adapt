@@ -81,6 +81,40 @@ TEMPLATES: dict[str, HypothesisTemplate] = {
     t.detector: t
     for t in [
         HypothesisTemplate(
+            # Which method this names is the finding, so the strategy is taken from the
+            # observation (``draft`` falls back to ``candidate_strategy`` when a template
+            # names none). The detector only attaches one when the method *beat* what its own
+            # questions predicted: "do more of the thing that is underperforming" is not a
+            # change worth asking a learner to approve, and that finding stays evidence.
+            detector="method_effect",
+            strategy="",
+            statement=(
+                "Questions taught as {method} landed at {value}, where the difficulty of those same "
+                "questions predicted {baseline} -- {points} points against expectation, over {n} answers"
+                "{pilot}, with the answer format held the same. One explanation that fits: this way of teaching "
+                "it is doing more for you than the questions alone suggest."
+            ),
+            mechanism=(
+                "Which way of teaching a concept works is a property of the learner and the material, not "
+                "of the method's reputation. Comparing what happened against what the same questions "
+                "predicted is what separates a teaching effect from an easy topic; using more of a method "
+                "that keeps beating expectation is a testable change rather than a preference."
+            ),
+            citations=(
+                "Hattie & Donoghue 2016 (learning strategies: effect sizes differ by method and stage)",
+                "Karpicke & Blunt 2011 (retrieval practice produced more learning than re-reading)",
+            ),
+            falsification=(
+                "If the next block of questions taught this way lands back at what its difficulty predicts, "
+                "the gap was a run of items rather than the teaching, and the change should be dropped."
+            ),
+            alternatives=(
+                "the questions served this way may have been easier or harder than the model predicted",
+                "a run of answers is not a trend: the count is printed with the finding",
+                "the format of the answer, not the teaching, may be doing the work",
+            ),
+        ),
+        HypothesisTemplate(
             detector="worked_example_need",
             strategy="worked_examples",
             statement=(
@@ -305,6 +339,17 @@ class _SafeMap(dict):
             seconds=obs.facts.get("median_seconds_before_first_input", 0),
             extra="too hard" if obs.facts.get("direction") == "too_hard" else "too easy",
             weak=", ".join(obs.facts.get("weak_prerequisites", [])[:2]) or "the prerequisite",
+            # A method finding names the teaching, and says the gap in points rather than in
+            # two percentages the reader has to subtract.
+            method=str(obs.facts.get("label") or obs.facts.get("method") or "this way of teaching it"),
+            points=f"{(obs.value - obs.baseline) * 100:+.0f}",
+            # Empty unless some of the answers behind the finding were seeded before a demo,
+            # in which case the sentence says how many and what they are.
+            pilot=(
+                f", {int(obs.facts['n_pilot'])} of them {obs.facts['pilot_label']}"
+                if obs.facts.get("n_pilot") and obs.facts.get("pilot_label")
+                else ""
+            ),
         )
 
     def __missing__(self, key: str) -> str:
@@ -320,6 +365,12 @@ def check_language(text: str) -> list[str]:
 def draft(obs: Observation, *, evidence_id: str | None = None) -> Draft | None:
     tpl = TEMPLATES.get(obs.detector)
     if tpl is None:
+        return None
+    strategy = tpl.strategy or str(getattr(obs, "candidate_strategy", "") or "")
+    if not strategy:
+        # A finding with no change attached is evidence, not a hypothesis: the sentence would
+        # ask the learner to approve something with no name. ``method_effect`` reaches here for
+        # any method that fell short of its own prediction.
         return None
     statement = tpl.render(obs)
     # Falsification text may reference the same placeholders -> render them too.
@@ -337,7 +388,7 @@ def draft(obs: Observation, *, evidence_id: str | None = None) -> Draft | None:
         citations=list(tpl.citations),
         falsification=falsification,
         alternatives=[tpl.alternatives] if isinstance(tpl.alternatives, str) else list(tpl.alternatives),
-        strategy=tpl.strategy,
+        strategy=strategy,
         confidence=confidence,
         evidence_ids=[evidence_id] if evidence_id else [],
         topic_ids=list(obs.topic_ids),

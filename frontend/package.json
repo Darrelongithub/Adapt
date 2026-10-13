@@ -13,6 +13,7 @@
     "probe": "node scripts-ui-probe.mjs",
     "probe:mock": "node scripts-ui-probe.mjs --mock",
     "test:engine": "node --test src/lib/engine/*.test.mjs",
+    "test:lib": "node --test src/lib/*.test.mjs",
     "test:server": "node --test server.test.mjs"
   },
   "dependencies": {

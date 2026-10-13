@@ -11,19 +11,67 @@ Personalize a proposal: what changes, why, what else could explain it, how it wi
 Learn     you answer it (yes / no / change it / later); the change is measured and reported
 ```
 
+**What is never recorded:** keystrokes, key timing, per-character edits, screenshots, screen
+content or other tabs — a fixed allowlist of event types with 48 forbidden payload keys, and an
+unlisted type is rejected rather than stored. Answers stay on the machine unless a model call is
+opted in, and the response says which one happened.
+
 “AI 1 cannot change your education by itself” is not a policy here, it is a property of the
 code: the only HTTP surface that can create a row in `approved_adaptations` is
 `POST /api/v1/adaptations/{proposal_id}/decision`, and it refuses to run without a recorded
 learner decision (`backend/src/adapt/services/adaptations.py`). Revocation is immediate and
 also audited.
 
+## The demo, in the order to say it
+
+Three minutes, and it is about the loop — nothing else. `docs/DEMO.md` is the script; this is
+the shape of it:
+
+1. **Placement** (`/diagnose`): eight unaided questions, adaptive, no hints. Say what it is for:
+   a band per topic, not a grade.
+2. **Practice** (`/learn`): one question, taught one way, and the teaching is visible before the
+   question — short steps with a check between them, a diagram, or a worked example. Say the
+   thing that is easy to miss: **the method is assigned per learner and per attempt, not baked
+   into the item**, so the same question can be taught two ways to two people.
+3. **A wrong answer → the loop closes live**: the reteach step checks the prerequisite and
+   fatigue first (so a bad night is not read as bad teaching), then re-teaches *in a different
+   method*, asks a matched question of the same format, and compares actual against expected.
+4. **Changes** (`/proposals`): what was observed, what it might mean, what else could explain it,
+   how it would be judged. Nothing applies until the learner answers — and "no" is recorded too.
+5. **Which teaching works** (`/progress`): actual minus expected per method, each row carrying
+   `n` and the words `early signal` under eight observations. If a number comes from the pre-demo
+   pilot it says **pilot data — not evidence of efficacy** next to it. Above it, every topic
+   estimate is drawn the way it was measured: position is the estimate, the width of the line
+   through it is the uncertainty the server computed, and the size of the circle is how many
+   answers it rests on — *a bigger circle is not a better score, it is a more confident one* — with
+   the exact figures in a table underneath, because a chart nobody can read as numbers is a chart
+   nobody can check.
+
+**Do not demo the plumbing.** Voice, the Numbas import/export, the encryption internals, the
+SQLCipher story and the resource providers are all real and all in `docs/` — showing them spends
+the room's attention on how it is stored instead of what it does. One privacy line is enough
+(the bolded paragraph above), and it is auditable at `/settings`.
+
+### Before you stand up
+
+```bash
+adapt pilot --student-id <the learner you will show> --seed   # label: pilot data
+node scripts/demo.mjs --as <that learner's email>             # rehearse the same path
+```
+
+The pilot exists because the honest answer to "did this help?" needs five scored attempts on each
+side of a change, and a live demo does not have them. The bar is not lowered for a demo; real
+rows are written beforehand and *labelled*, so the numbers on screen are numbers, and the label
+travels with them ("14 of 41 scored answers are pilot data"). See `docs/PILOT.md`.
+
 ## Run it
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e "./backend[dev]"          # fastapi, sqlalchemy, numpy, cryptography, argon2…
-cd backend && pytest -q                  # 483 tests, no network, no model call needed
+cd backend && pytest -q                  # 640 tests, no network, no model call needed
 adapt demo --turns 3                     # the whole loop, in a terminal, on a temp database
+adapt pilot --student-id <id> --seed     # the pre-demo pilot, written and labelled
 
 uvicorn adapt.api.app:app --port 8000    # the API (docs at /api, health at /healthz)
 cd ../frontend && npm ci && npm run dev  # the app at :3000, proxying /api and /ws to :8000
@@ -34,6 +82,7 @@ npm run lint        # the API/origin contract (scripts/check-contract.mjs) + tsc
 npm run test:engine # the engine's invariants, against the source that has to keep them
 npm run test:server # the launcher: offline refuses with a 503, and a LAN Host reaches the API
 npm run probe       # the real UI in jsdom: click, answer, reload, and read what the DB says
+../scripts/probe-fresh.sh all            # the whole probe on fresh servers (rate limits reset)
 npm run probe:mock  # the same screen on ?mock=1, with nothing but its own refusals asserted
 ```
 

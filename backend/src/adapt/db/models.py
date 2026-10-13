@@ -341,6 +341,10 @@ class Item(Base):
     n_attempts: Mapped[int] = mapped_column(Integer, default=0)
     n_correct: Mapped[int] = mapped_column(Integer, default=0)
     calibrated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    #: How this item's answer key was checked: ``authored`` (a person wrote it),
+    #: ``arithmetic`` (an expression was evaluated), ``quotable`` (the key's text is in
+    #: the source material) or ``unverified`` (neither — the item says so out loud).
+    verification: Mapped[str] = mapped_column(String(16), default="authored")
 
     topic: Mapped[Topic] = relationship(back_populates="items")
 
@@ -454,6 +458,22 @@ class Attempt(Base):
     intervention_ids: Mapped[list[str] | None] = mapped_column(JSON)  # active adaptations applied
     ai_feedback: Mapped[str | None] = mapped_column(EncryptedText(context="attempt.feedback"))
     teachback_score: Mapped[float | None] = mapped_column(Float)
+
+    # --- the method that was *assigned* for this attempt (learning/methods.py) ---- #
+    # These are decisions, recorded per attempt so the comparison can be read back
+    # across sessions: the method, the format of the question it was measured with
+    # (kept separate on purpose — a method comparison confounded with the answer
+    # format measures the format), the model's own prediction for the question
+    # (which is what makes "actual vs expected" possible), the arm when the
+    # worked-example question was randomly assigned, and whether the row is pilot data.
+    method: Mapped[str | None] = mapped_column(String(32), index=True)
+    question_kind: Mapped[str | None] = mapped_column(String(24))
+    expected_success: Mapped[float | None] = mapped_column(Float)
+    mapping_design: Mapped[str | None] = mapped_column(String(24))
+    method_arm: Mapped[str | None] = mapped_column(String(24))
+    #: The attempt this one is the reteach of, when the fail→reteach loop chose it.
+    reteach_of: Mapped[str | None] = mapped_column(String, index=True)
+    pilot: Mapped[bool] = mapped_column(Boolean, default=False)
 
     session: Mapped[LearningSession] = relationship(back_populates="attempts")
     item: Mapped[Item] = relationship()

@@ -266,11 +266,18 @@ def soft_delete(s: Session, student_id: str) -> dict[str, Any]:
 
 
 COURSE_TITLE = "Number and algebra foundations"
+# The counts are read from the bank rather than written down: a stale "20 topics, 49 items"
+# in the course description is the kind of sentence a reader checks and then stops trusting.
+_CATALOG = bank.topic_catalog()
+_ROWS = bank.as_rows()
 COURSE_BLURB = (
-    "The ADAPT reference course: 20 topics with an explicit prerequisite graph, 49 "
-    "parametric items, and a short set of course notes that AI 2 is allowed to teach "
-    "from. Seeded from the Python bank in adapt.assessment.bank so a fresh clone needs "
-    "no data files."
+    f"The ADAPT reference course: {len(_CATALOG)} topics with an explicit prerequisite graph, "
+    f"{len(_ROWS)} items ({sum(1 for _, i in _ROWS if i.get('stem_template'))} of them parametric, "
+    "so a fresh version of the question can be generated per learner), and course notes for every "
+    "topic that AI 2 is allowed to teach from. Mostly key-stage-3/4 mathematics, plus two prose "
+    "subjects -- history and biology -- which exist to prove the same loop runs on material with "
+    "no arithmetic in it. Seeded from the Python bank in adapt.assessment.bank so a fresh clone "
+    "needs no data files."
 )
 COURSE_LEVEL = "GCSE / foundation-to-higher bridging"
 
@@ -345,6 +352,7 @@ def ensure_curriculum(s: Session, *, settings: Settings | None = None, force: bo
             "numbas_ref": data.pop("numbas_ref", None),
             "source": data.pop("source", "bank"),
             "active": bool(data.pop("active", True)),
+            "verification": data.pop("verification", "authored"),
         }
         row = existing_items.get(item_id)
         if row is None:

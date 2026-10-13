@@ -225,7 +225,16 @@ def test_asking_an_interleaved_session_for_eleven_questions_returns_eleven():
 
     items = {
         "T0": [
-            {"id": f"i{j}", "topic_id": "T0", "kind": "numeric", "difficulty": 0.4 + j * 0.05, "active": True}
+            {
+                "id": f"i{j}",
+                "topic_id": "T0",
+                "kind": "numeric",
+                "difficulty": 0.4 + j * 0.05,
+                "active": True,
+                # An item the build cannot mark is not served at all now
+                # (selector.gradeable), so a fixture without a key would test nothing.
+                "answer_spec": {"value": j + 1},
+            }
             for j in range(12)
         ]
     }

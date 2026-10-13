@@ -423,6 +423,8 @@ class EducationalIntelligence:
         pool = items_by_topic
         if wanted:
             pool = {k: v for k, v in items_by_topic.items() if k in wanted or not wanted[0]}
+        with self.sf() as s:
+            teaching_text, titles = self._teaching_material(s)
         picks = SEL.next_items(
             items_by_topic=pool,
             mastery=mastery,
@@ -432,6 +434,8 @@ class EducationalIntelligence:
             directives=[d.as_dict() for d in prof.directives],
             count=count,
             seed=student_id,
+            teaching_text=teaching_text,
+            teaching_titles=titles,
         )
         from ..assessment.bank import render_item_for
 
@@ -569,22 +573,31 @@ class EducationalIntelligence:
         return stored
 
     async def review_teachback(self, student_id: str, item: dict[str, Any], text: str) -> dict[str, Any]:
-        """Score a teach-back: rubric coverage locally, plus an LLM comment if available."""
-        scored = LT.teachback_score(text, item.get("rubric"))
-        out = dict(scored)
-        out["method"] = scored.get("method")
+        """Score a teach-back against a fixed three-point checklist.
+
+        The rule grader decides. A model may read the same answer as a **second
+        opinion**, and its output is only used when it is structurally valid *and its
+        quotes are verbatim* (:func:`adapt.assessment.teachback.accept_model_grading`);
+        otherwise the rejection is recorded and the rule result stands. Two properties
+        matter more than the score itself:
+
+        * the learner's text is *data* — ``as_data`` strips instruction-shaped lines and
+          tags what is left, and the judge prompt says so;
+        * a point can only be met by a sentence the learner actually wrote, so listing
+          the rubric's words no longer passes and a good paraphrase no longer fails.
+        """
+        from ..assessment import teachback as TB
+
+        criteria = TB.checklist_from_rubric(item.get("rubric"))
+        scored = TB.grade_checklist(text, criteria)
+        out = dict(scored.as_dict())
+        out["method"] = "checklist_3_point"
+        out["matched"] = [p.statement for p in scored.points if p.met]
+        out["missing"] = [p.statement for p in scored.points if not p.met]
+        out["coverage"] = round(scored.score, 3)
         if self.llm is not None and getattr(self.llm, "configured", False):
-            system = AI2_SYSTEM + "\nScoring a teach-back. Judge coverage of the required ideas only."
-            user = json.dumps(
-                {
-                    "required": [c.get("concept") for c in ((item.get("rubric") or {}).get("required_concepts") or [])],
-                    "local_rubric_result": {k: scored[k] for k in ("score", "matched", "missing") if k in scored},
-                    "learner_explanation": text[:1800],
-                    "task": "Say what is right, name the single missing idea, ask one question that would expose it. "
-                    "Do not comment on grammar or length. Reply JSON with keys: verdict, right_first, missing, question.",
-                },
-                separators=(",", ":"),
-            )
+            system = AI2_SYSTEM + "\n" + TB.judge_prompt(criteria)
+            user = TB.as_data(text)
             safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
             res = await self.llm.complete(
                 system=system,
@@ -592,21 +605,48 @@ class EducationalIntelligence:
                 purpose="ai2_teachback",
                 role="ai2",
                 student_id=student_id,
-                temperature=0.2,
+                temperature=0.0,
                 max_output_tokens=420,
-                response_spec={"verdict": "str", "right_first": "str", "missing": "str", "question": "str"},
+                response_spec=TB.MODEL_SPEC,
             )
             await self._log_llm(
                 "ai2_teachback", "ai2", res, student_id, len(user), dropped, kinds=redacted_kinds
             )
+            points, reason = (None, "no_model_answer")
             if res.ok and res.data:
-                out["llm_comment"] = res.data
-                out["llm_status"] = res.status
-            else:
-                out["llm_status"] = res.status
+                points, reason = TB.accept_model_grading(res.data, text=text, criteria=criteria)
+            out["llm_status"] = res.status if res.ok else res.status
+            out["llm_checklist"] = reason
+            if points is not None:
+                merged = TB.merge_model_result(scored, points)
+                out.update(merged.as_dict())
+                out["method"] = "checklist_3_point+model"
+                out["matched"] = [p.statement for p in merged.points if p.met]
+                out["missing"] = [p.statement for p in merged.points if not p.met]
+                out["coverage"] = round(merged.score, 3)
         return out
 
-    def diagnostic_items(self, student_id: str, *, count: int = 12) -> list[dict[str, Any]]:
+    def _teaching_material(self, s) -> tuple[dict[str, str], dict[str, str]]:
+        """Topic id -> (material text, title), for the method payloads.
+
+        The teaching a method puts *before* the question comes from the learner's own
+        course material, never from the item's answer key: showing the solution to the
+        question you are about to be measured on is not teaching, it is marking. The
+        item's own steps stay behind the measured "open the worked example" endpoint.
+        """
+        text: dict[str, str] = {}
+        titles: dict[str, str] = {}
+        for topic in s.execute(select(Topic)).scalars().all():
+            titles[topic.id] = topic.title
+            text[topic.id] = topic.description or ""
+        for material in s.execute(select(LearningMaterial)).scalars().all():
+            if material.topic_id and material.body:
+                existing = text.get(material.topic_id) or ""
+                if not existing or len(material.body) > len(existing):
+                    text[material.topic_id] = material.body
+        return text, titles
+
+    def diagnostic_items(self, student_id: str, *, count: int = 8, session_id: str | None = None) -> list[dict[str, Any]]:
         """The initial assessment: broad coverage with delivery modes rotated."""
         with self.sf() as s:
             topics = s.execute(select(Topic).order_by(Topic.difficulty)).scalars().all()
@@ -637,11 +677,34 @@ class EducationalIntelligence:
                     }
                     for it in rows
                 ]
-        picks = SEL.diagnostic_plan(
+        with self.sf() as s:
+            teaching_text, titles = self._teaching_material(s)
+            answered: list[dict[str, Any]] = []
+            if session_id:
+                # Placement adapts to what this learner has already answered *in this
+                # session*. A client that re-plans after each answer therefore gets a
+                # genuinely adaptive sequence; one that asks once gets the sequence the
+                # evidence supports at that moment.
+                from ..db.models import Attempt
+
+                answered = [
+                    {"item_id": a.item_id, "topic_id": a.topic_id, "correct": a.correct}
+                    for a in s.execute(
+                        select(Attempt).where(
+                            Attempt.student_id == student_id,
+                            Attempt.session_id == session_id,
+                            Attempt.correct.is_not(None),
+                        )
+                    ).scalars().all()
+                ]
+        picks = SEL.placement_plan(
             topics=[{"id": t.id, "code": t.code, "title": t.title, "difficulty": t.difficulty} for t in topics],
             items_by_topic=items_by_topic,
             count=count,
             seed=student_id,
+            answered=answered,
+            teaching_text=teaching_text,
+            teaching_titles=titles,
         )
         from ..assessment.bank import render_item_for
 
@@ -652,6 +715,63 @@ class EducationalIntelligence:
             rendered = render_item_for(pick.item, seed=bank_seed(student_id, pick.item.get("id")))
             out.append({**pick.as_dict(), "item": public_item(rendered), "position": i + 1, "of": len(picks)})
         return out
+
+    def method_probe_items(self, student_id: str, *, count: int = 8) -> list[dict[str, Any]]:
+        """The second half of what the 12-item diagnostic used to do: compare methods.
+
+        Six to eight concepts, one method each, the answer format held fixed per
+        concept — so the difference between two of these questions is what was taught,
+        not how the answer had to be given.
+        """
+        with self.sf() as s:
+            topics = s.execute(select(Topic).order_by(Topic.difficulty)).scalars().all()
+            items_by_topic: dict[str, list[dict[str, Any]]] = {}
+            for t in topics:
+                rows = s.execute(
+                    select(Item).where(Item.topic_id == t.id, Item.active.is_(True)).order_by(Item.difficulty)
+                ).scalars().all()
+                if rows:
+                    items_by_topic[t.id] = [self._item_dict(it) for it in rows]
+            teaching_text, titles = self._teaching_material(s)
+        picks = SEL.method_probe_plan(
+            topics=[{"id": t.id, "code": t.code, "title": t.title, "difficulty": t.difficulty} for t in topics],
+            items_by_topic=items_by_topic,
+            learner_id=student_id,
+            count=max(6, min(8, count)),
+            teaching_text=teaching_text,
+            teaching_titles=titles,
+        )
+        from ..assessment.bank import render_item_for
+
+        out = []
+        for i, pick in enumerate(picks):
+            rendered = render_item_for(pick.item, seed=bank_seed(student_id, pick.item.get("id")))
+            out.append({**pick.as_dict(), "item": public_item(rendered), "position": i + 1, "of": len(picks)})
+        return out
+
+    @staticmethod
+    def _item_dict(it: Any) -> dict[str, Any]:
+        """One stored item as the plain dict the selector expects."""
+        return {
+            "id": it.id,
+            "topic_id": it.topic_id,
+            "kind": it.kind,
+            "stem": it.stem,
+            "stem_template": getattr(it, "stem_template", None),
+            "experience_mode": it.experience_mode,
+            "choices": it.choices,
+            "answer_spec": it.answer_spec,
+            "solution_steps": it.solution_steps,
+            "hints": it.hints,
+            "rubric": it.rubric,
+            "difficulty": it.difficulty,
+            "est_seconds": it.est_seconds,
+            "prompt_context": it.prompt_context,
+            "visual_spec": it.visual_spec,
+            "numbas_ref": it.numbas_ref,
+            "tags": it.tags,
+            "active": True,
+        }
 
     def next_items(self, student_id: str, *, topic_id: str | None = None, count: int = 5, used: Sequence[str] = ()) -> list[dict[str, Any]]:
         return [
@@ -691,6 +811,8 @@ class EducationalIntelligence:
                         }
                         for it in rows
                     ]
+        with self.sf() as s:
+            teaching_text, titles = self._teaching_material(s)
         mastery = {t.topic_id: t.p_know for t in prof.traces}
         counts: dict[str, int] = {}
         for u in used:
@@ -701,6 +823,8 @@ class EducationalIntelligence:
         picks = SEL.next_items(
             items_by_topic=items_by_topic,
             mastery=mastery,
+            teaching_text=teaching_text,
+            teaching_titles=titles,
             counts=counts,
             due_topics=[d["topic_id"] for d in (prof.retention or {}).get("due_now", [])],
             gap_topics=[g.get("topic_id") for g in prof.gaps if g.get("topic_id")],

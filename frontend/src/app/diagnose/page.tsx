@@ -19,7 +19,11 @@ export default function Diagnose() {
   const [i, setI] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [last, setLast] = useState<Receipt | null>(null);
+  // Marks are kept per item, not "the last one". `last` alone meant that pressing Back threw
+  // the mark away, which disabled Next: the learner could not get back to the question they
+  // had just answered without answering the old one again — and the old answer was gone from
+  // the box (`@/lib/drafts` now puts it back). A receipt is per item; keep it that way.
+  const [receipts, setReceipts] = useState<Record<number, Receipt>>({});
   const [report, setReport] = useState<AnalyzeSummary | null>(null);
   const [framing, setFraming] = useState<{ purpose?: string; how?: string; time?: string }>({});
   const [started, setStarted] = useState<number | null>(null);
@@ -65,7 +69,7 @@ export default function Diagnose() {
     // says which item and what was typed, which is the whole reason the flow lives in one
     // hook instead of being re-implemented per screen.
     const receipt = await flow.submit(itemId, answer, extra);
-    setLast(receipt);
+    setReceipts((r) => ({ ...r, [i]: receipt }));
     return receipt;
   }
 
@@ -146,6 +150,7 @@ export default function Diagnose() {
   if (error && items.length === 0) return <Err error={error} status={null} />;
 
   const entry = items[i];
+  const last = receipts[i] ?? null;
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] pb-3">
@@ -157,10 +162,7 @@ export default function Diagnose() {
         <div className="ml-auto flex gap-2">
           <Btn
             onClick={() => {
-              if (i > 0) {
-                setI(i - 1);
-                setLast(null);
-              }
+              if (i > 0) setI(i - 1);
             }}
             disabled={i === 0}
           >
@@ -179,10 +181,7 @@ export default function Diagnose() {
           ) : (
             <Btn
               kind="primary"
-              onClick={() => {
-                setI(i + 1);
-                setLast(null);
-              }}
+              onClick={() => setI(i + 1)}
               disabled={!last}
               title={last ? undefined : "answer this one first — the band needs a mark on every question it counts"}
             >
@@ -215,6 +214,7 @@ export default function Diagnose() {
           }}
           aidless
           attemptNo={i + 1}
+          submitted={receipts[i] ?? null}
           onSubmit={submit}
           onInteract={flow.onInteract}
           onChange={flow.onChange}

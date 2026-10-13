@@ -3,7 +3,9 @@
 /** The shared furniture. Everything here is deliberately dull: the only thing on a
  *  study screen that should compete for attention is the question being answered. */
 import Link from "next/link";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+
+import { pushEntry, readLedger, writeLedger } from "@/lib/ledger";
 
 type Loader = (path: string, init: { method: string; json: unknown }) => Promise<unknown>;
 
@@ -361,6 +363,44 @@ export function announce(msg: string) {
   if (typeof document === "undefined") return;
   const el = document.getElementById("adapt-live-region");
   if (el) el.textContent = msg;
+}
+
+/** What this browser decided or rated, newest first, surviving a navigation.
+ *  See `lib/ledger.ts` for why it is storage and not state: the heading says *this session*. */
+export function useSessionLedger(key: string) {
+  const [entries, setEntries] = useState<string[]>([]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setEntries(readLedger(window.sessionStorage, key));
+  }, [key]);
+  const add = useCallback(
+    (entry: string) => {
+      setEntries((prev) => {
+        const next = pushEntry(prev, entry);
+        if (typeof window !== "undefined") writeLedger(window.sessionStorage, key, next);
+        return next;
+      });
+    },
+    [key],
+  );
+  return { entries, add };
+}
+
+/** The session log itself. An announcement is said once and is gone; this stays on screen.
+ *  Not called `Ledger`: that name is the proposal cards above it, which is a different thing. */
+export function SessionLog({ title, entries, empty }: { title: string; entries: readonly string[]; empty: string }) {
+  return (
+    <div className="ledger-log">
+      <h5>{title}</h5>
+      <ul>
+        {entries.length ? (
+          entries.map((entry, i) => <li key={`${i}-${entry}`}>{entry}</li>)
+        ) : (
+          <li className="empty">{empty}</li>
+        )}
+      </ul>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */

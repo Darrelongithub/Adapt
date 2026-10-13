@@ -318,4 +318,12 @@ def set_db(db: Database | None) -> None:
 
 @contextmanager
 def session_scope() -> Iterator[Session]:
-    yield from get_db().session()
+    """A session on the shared engine: commits on success, rolls back on error.
+
+    ``Database.session`` is already a context manager, so this has to *enter* it.
+    ``yield from`` a ``_GeneratorContextManager`` raises ``TypeError`` the moment
+    anyone calls it -- and because it is exported in ``adapt.db.__all__`` while no
+    module inside the package used it, the suite passed with the function broken.
+    """
+    with get_db().session() as s:
+        yield s

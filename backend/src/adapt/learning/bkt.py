@@ -21,7 +21,10 @@ from dataclasses import dataclass
 from typing import Sequence
 
 EPS = 1e-9
-BANDS = ("new", "developing", "proficient", "mastered")
+#: The vocabulary ``band`` actually produces. It is exported so a caller (or a test)
+#: cannot invent a name that nothing emits -- "secure" and "some" were in one test's
+#: expected set and in no code path at all.
+BANDS = ("new", "gapped", "developing", "proficient", "mastered")
 #: How much evidence on *this learner and this topic* it takes before a low
 #: ``p_know`` may be called a gap rather than an absence of evidence. One wrong
 #: answer on a topic nobody has taught yet is not a gap; see ``band``.
@@ -457,4 +460,106 @@ def mastery_report(
         "uncertainty": round(entropy(p_now) / math.log(2), 4),  # bits
         "half_life_hours": round(half_life_hours, 2) if half_life_hours else None,
         "decay_factor": round(decay, 4),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# the parameters a *single answer* is allowed to move
+# --------------------------------------------------------------------------- #
+#
+# Two things were wrong with using one parameter set for every answer:
+#
+# 1. **The guess rate is a property of the question format, not of the learner.**
+#    A four-option multiple-choice question hands a non-knower 25% before they read
+#    it; a typed answer hands them about 2%. Using one number (0.20) for both made
+#    the model systematically over-credit multiple-choice answers and under-credit
+#    constructed ones. ``GUESS_BY_KIND`` sets it per format.
+# 2. **One answer could move mastery from 20% to 3%.** That is not a belief update,
+#    it is a verdict, and it was drawn from a single observation recorded during a
+#    demo — which makes any threshold built on top of it ("gapped", "needs
+#    remediation") fire on 3-4 answers. ``update_capped`` bounds how far one
+#    observation may move ``p_know``; the bound is a *statement the app can defend*:
+#    one answer is one piece of evidence, and evidence has a size.
+
+#: P(correct by guessing | the learner does not know), by question format.
+#: Multiple choice is measured against the number of options where the caller knows
+#: it (``guess_for_kind("mcq", choices=4)``), defaulting to four.
+GUESS_BY_KIND: dict[str, float] = {
+    "mcq": 0.25,
+    "choice": 0.25,
+    "numeric": 0.02,
+    "text": 0.02,
+    "typed_number": 0.02,
+    "typed_text": 0.02,
+    "teachback": 0.05,
+    "worked_example": 0.0,
+}
+#: Slip is "knew it, got it wrong anyway". The old default of 0.10 was a claim that a
+#: learner who knows a topic is wrong one time in ten and, combined with a low guess
+#: rate, is what made a single miss so damaging. 0.15 is the softened default used
+#: for constructed answers (which have no guessing to absorb the error).
+SLIP_SOFTENED = 0.15
+#: The most one scored observation may move ``p_know``. 0.12 takes a learner from 20%
+#: to 8% on one miss (not 3%) and needs several consistent answers to reach a band.
+MAX_STEP_PER_ANSWER = 0.12
+
+
+def guess_for_kind(kind: str | None, *, choices: int | None = None) -> float:
+    """The guess rate for a question format, optionally from its option count."""
+    key = str(kind or "").lower()
+    if key in ("mcq", "choice") and choices:
+        return max(0.02, min(0.5, 1.0 / max(1, int(choices))))
+    return GUESS_BY_KIND.get(key, 0.05)
+
+
+def params_for_kind(kind: str | None, *, choices: int | None = None, base: BKTParams | None = None) -> BKTParams:
+    """The same trace, with the guess/slip rates this format deserves.
+
+    ``p_learn`` and ``p_forget`` stay as the caller had them: those describe the
+    learner, and the format has no opinion about them.
+    """
+    base = base or BKTParams()
+    return BKTParams(
+        p_init=base.p_init,
+        p_learn=base.p_learn,
+        p_guess=guess_for_kind(kind, choices=choices),
+        p_slip=SLIP_SOFTENED if base.p_slip == BKTParams().p_slip else base.p_slip,
+        p_forget=base.p_forget,
+        prior_alpha=base.prior_alpha,
+        prior_beta=base.prior_beta,
+        n_observations=base.n_observations,
+    )
+
+
+def update_capped(
+    p_know: float,
+    correct: bool,
+    params: BKTParams,
+    *,
+    kind: str | None = None,
+    choices: int | None = None,
+    max_step: float = MAX_STEP_PER_ANSWER,
+    opportunity: bool = True,
+) -> tuple[float, dict[str, object]]:
+    """The online update, with the format's guess rate and a bound on one answer.
+
+    Returns ``(p_know, explanation)``. The explanation is recorded on the trace so
+    "why did my mastery drop?" has an answer a person can read; the cap is applied
+    to the *posterior plus transition*, so it bounds both directions.
+    """
+    before = clamp(p_know)
+    effective = params_for_kind(kind, choices=choices, base=params)
+    raw = update(before, correct, effective, opportunity=opportunity)
+    bounded = max(before - max_step, min(before + max_step, raw))
+    bounded = clamp(bounded)
+    return bounded, {
+        "from": round(before, 4),
+        "to": round(bounded, 4),
+        "unbounded": round(raw, 4),
+        "moved": round(bounded - before, 4),
+        "capped": abs(raw - before) > max_step + 1e-12,
+        "p_guess_used": round(effective.p_guess, 4),
+        "p_slip_used": round(effective.p_slip, 4),
+        "max_step": max_step,
+        "kind": kind or "",
     }

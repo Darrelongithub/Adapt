@@ -19,8 +19,9 @@ The retention half of the same question lives in :func:`retention_calibration`
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Any
 
 import numpy as np
 
@@ -45,6 +46,20 @@ class Effect:
     verdict: str  # supported | refuted | inconclusive | insufficient_evidence
     explanation: str
     pooled_sd: float | None = None
+    #: True when the rows behind this number came from the pre-demo pilot (see
+    #: ``learning.pilot``). The number is not hidden and not softened; it is *labelled*,
+    #: because a demo that quietly presents pilot data as a result is the one thing
+    #: worse than a demo that says "insufficient evidence".
+    pilot: bool = False
+
+    @property
+    def label(self) -> str | None:
+        """The word that has to sit next to this number. ``None`` when it is not pilot data."""
+        if not self.pilot:
+            return None
+        from .pilot import PILOT_LABEL
+
+        return PILOT_LABEL
 
     def as_dict(self) -> dict[str, object]:
         def r(x: float | None, k: int = 4) -> float | None:
@@ -62,7 +77,93 @@ class Effect:
             "pooled_sd": r(self.pooled_sd, 3),
             "verdict": self.verdict,
             "explanation": self.explanation,
+            "pilot": self.pilot,
+            "label": self.label,
         }
+
+
+#: The two words an active change can be in while it is being measured. ``measured`` means a
+#: verdict exists (supported / refuted / inconclusive); ``gathering_evidence`` means the window
+#: is not yet full -- which is a state, not a verdict, and deliberately does not go into
+#: ``AdaptationProposal.evaluation_status`` (an unfinished measurement must not be filed as one).
+EFFECT_MEASURED = "measured"
+EFFECT_GATHERING = "gathering_evidence"
+
+
+def effect_payload(
+    effect: Effect,
+    *,
+    n_before: int,
+    n_after: int,
+    verdict_words: str,
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """What gets stored when a change is measured, in the one shape every reader expects.
+
+    The numbers are the statistician's (``Effect.as_dict``); ``verdict_words`` is the sentence a
+    learner reads, stored *with* the measurement so no screen has to compose its own (F14); and
+    ``status`` says whether this is a verdict or a window still filling up.
+    """
+    payload: dict[str, Any] = {
+        "effect": effect.as_dict(),
+        "pilot": effect.pilot,
+        "label": effect.label,
+        "n_before": int(n_before),
+        "n_after": int(n_after),
+        "verdict_words": verdict_words,
+        "status": (
+            EFFECT_GATHERING if effect.verdict == "insufficient_evidence" else EFFECT_MEASURED
+        ),
+    }
+    if extra:
+        payload.update({k: v for k, v in extra.items() if k not in payload})
+    return payload
+
+
+def read_effect(payload: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The stored measurement, flattened for the screens that draw it.
+
+    ``active()`` and the proposal history hand this to a component whose type is
+    ``EffectSummary``: ``{baseline_n, after_n, baseline_mean, mean_delta, verdict, explanation…}``.
+    What is *stored* is nested (``{"effect": {...}, "verdict_words": …}``) because the raw payload
+    is also the audit record. Reading the nested payload with the flat type is how a measured
+    change came out on screen as "0 answers before and 0 after" -- the fields were there, one
+    level down. Returns ``None`` when nothing has been measured at all.
+    """
+    if not payload:
+        return None
+    inner = payload.get("effect")
+    flat: dict[str, Any] = dict(inner) if isinstance(inner, Mapping) else {}
+    verdict = str(flat.get("verdict") or payload.get("verdict") or "")
+    # the wrapper wins for everything it carries: it is the record, the inner dict is the maths
+    for key in (
+        "baseline_n",
+        "after_n",
+        "baseline_mean",
+        "after_mean",
+        "mean_delta",
+        "ci_low",
+        "ci_high",
+    ):
+        if key in payload:
+            flat[key] = payload[key]
+    flat.setdefault("baseline_n", payload.get("n_before"))
+    flat.setdefault("after_n", payload.get("n_after"))
+    flat["n_before"] = payload.get("n_before", flat.get("baseline_n"))
+    flat["n_after"] = payload.get("n_after", flat.get("after_n"))
+    flat["verdict"] = verdict or None
+    flat["verdict_words"] = payload.get("verdict_words") or payload.get("note") or None
+    flat["pilot"] = bool(payload.get("pilot") or flat.get("pilot"))
+    flat["label"] = payload.get("label") or flat.get("label")
+    if payload.get("status"):
+        flat["status"] = payload["status"]
+    elif verdict == "insufficient_evidence":
+        flat["status"] = EFFECT_GATHERING
+    elif verdict:
+        flat["status"] = EFFECT_MEASURED
+    else:
+        flat["status"] = "not_measured"
+    return flat
 
 
 def bootstrap_mean_diff(
@@ -103,8 +204,14 @@ def evaluate_change(
     rope_sd: float = ROPE_SD,
     min_n: int = MIN_GROUP_N,
     seed: int | None = None,
+    pilot: bool = False,
 ) -> Effect:
-    """Compare a pre-registered metric before/after an approved adaptation."""
+    """Compare a pre-registered metric before/after an approved adaptation.
+
+    ``min_n`` is *not* lowered for a pilot. A pilot does not make four answers
+    conclusive; it makes them four answers with a label on them, which is what
+    ``pilot=True`` adds to every shape this returns.
+    """
     A = [float(x) for x in baseline if x is not None and math.isfinite(float(x))]
     B = [float(x) for x in after if x is not None and math.isfinite(float(x))]
     bm = float(np.mean(A)) if A else None
@@ -125,6 +232,7 @@ def evaluate_change(
                 f"have {len(A)} baseline and {len(B)} after. Keeping the change under "
                 "observation rather than drawing a conclusion."
             ),
+            pilot=pilot,
         )
     delta = float(np.mean(B) - np.mean(A))
     lo, hi = bootstrap_mean_diff(A, B, seed=seed)
@@ -157,6 +265,7 @@ def evaluate_change(
             f"{why}."
         ),
         pooled_sd=pooled if math.isfinite(pooled) else None,
+        pilot=pilot,
     )
 
 

@@ -57,10 +57,10 @@ are implemented but *not* proven. Each item says what was done instead and how t
 * **Verified:** every item's answer key is reachable by the grader, the diagnostic covers one
   band range per topic, the exported Numbas package carries the correct answer for mcq, and
   the learner-facing payloads never contain one (asserted by a string scan in the tests).
-* **Not verified:** that the items are *good test questions*. ~90 items across 20 GCSE-maths
-  topics were authored here; `difficulty` is an author's prior, not a pilot-derived estimate,
-  and nothing has been checked against real cohort data, mark schemes or an exam board's
-  content limits. Placement bands are therefore usable for choosing what to practise next and
+* **Not verified:** that the items are *good test questions*. 63 items across 22 topics (20
+  GCSE-maths, plus one history and one biology concept) were authored here; `difficulty` is an
+  author's prior, not a pilot-derived estimate, and nothing has been checked against real
+  cohort data, mark schemes or an exam board's content limits. Placement bands are therefore usable for choosing what to practise next and
   **not** usable as a level to report to anyone.
 * **To check:** a pilot with ≥15 learners, then replace the priors with observed statistics
   (`docs/PILOT.md` step 5).
@@ -227,9 +227,18 @@ session is the expected result, not a bug.
   learner answered 14 items spread across topics while the detectors need 8 attempts on *one*
   topic, so the evidence the check claimed did not exist — it now concentrates its wrong answers.
   (c) The placement answer box was seen read back empty once, with the element still connected,
-  in a default-limits run; it has not reproduced in isolation (21/21 alone, 43/43 with its
-  predecessors) or in any rehearsal-ceiling run since. Treat (c) as a known unknown rather than a
-  repaired defect — what is known is that a heavily paced run can catch a screen mid-render.
+  in a default-limits run. **Closed in this pass, and it was a real defect.** The answer lived in
+  `Question`'s own `useState`, so it was tied to the lifetime of one React element: leaving a
+  question and coming back, or a parent re-render replacing the subtree, threw it away, and
+  `Back` also discarded the mark (so `Next` stayed disabled). It is now kept per item in
+  `frontend/src/lib/drafts.ts` (sessionStorage + an in-memory fallback) with the receipt held per
+  item by the page. The probe checks both directions — the answer survives a round trip, and the
+  way forward is not locked — and the check is **not vacuous**: with the draft store disabled
+  (`loadDraft` returning the empty draft, which is the pre-fix behaviour) the diagnose scenario
+  fails 2 of its 24 checks and prints the loss — `before=text:1/2 after=text:` and
+  `before=text:The denominator says… after=teachback:` — while passing 24/24 with it restored.
+  What remains unproven is only what jsdom cannot see: a real browser's input events at a real
+  frame rate.
 * **The 0002 collision is a real-world migration hazard for anyone who ran the pre-merge branch.**
   A database stamped `0002` by *this* branch before the merge (item calibration) cannot be told
   apart from one stamped `0002` by `main` (learning engine); the merged chain reads it as the
@@ -295,7 +304,48 @@ area. What changed, and what a phone still has to confirm:
   filmstrip pan on `/lesson`, no sideways scroll on `/settings` (audit table) and `/review`,
   the fixed status corner absent (footer copy present instead), and first paint being immediate
   with the right serif/mono faces even in airplane mode after the first visit.
+* **The progress chart is new and has not been seen on glass either.** `/progress` now draws the
+  estimate chart from the design snapshot (position = estimate, line width = the server's 90%
+  interval, circle size = answers behind it) with a table of the exact figures underneath. Its
+  styles had shipped in `globals.css` with nothing rendering them. The drawing scales by
+  `viewBox` and the table sits in the same `.table-scroll` box as the audit tables, so the
+  reasoning says a portrait phone gets a legible chart and no sideways page scroll — on glass,
+  check that the lane labels are still readable at 375px wide (they are clipped at 27 characters,
+  and the full title is in the table) and that the interval lines are distinguishable from the
+  estimate ticks without colour.
 * **To check (~5 minutes, same rehearsal as `adapt host`):** open the LAN address on a phone in
   portrait *and* landscape, walk Practise → answer → Check it (the button must respond on the
   first tap), open Settings and Review and try to scroll the page sideways (it must not), then
   reload with wifi off — the typefaces must still be the same ones.
+
+## Added by the 2026-10-12 pitch pass (15 defects)
+
+* **A real Gemini answer, still — and now provably not needed for the pitch to be honest.** No
+  key and no egress here, so the model half of AI 2 remains exactly as unverified as above. What
+  *is* verified is that the demo path never depends on it: `scripts/demo.mjs` prints
+  `provider=local grounded=true sent_to_model=false`, and `POST /api/v1/explain` with a
+  syntactically valid but unauthorised key answers from the local tutor and reports the failure in
+  `llm` (`backend/tests/test_llm_plumbing.py`). The one-line claim to make on stage is "no key, so
+  this is the local tutor — the same interface a model would answer through".
+* **The pre-demo pilot is seeded, not simulated in the stats.** `adapt pilot --student-id <id>
+  --seed` writes ordinary `Attempt` rows flagged `pilot`; `learning/effect.evaluate_change` still
+  refuses to conclude under five per group, and the method report still calls under eight
+  observations an early signal. The label travels: `pilot: true`, `n_pilot`, and the sentence
+  *"pilot data — not evidence of efficacy"* appear in the same payload as the number. Pinned by
+  `backend/tests/test_pilot_labelling.py` and asserted by the `probe`'s progress scenario.
+* **The subject-agnostic content path is exercised on prose, not on mathematics.** The
+  quotability check (an answer key has to occur in the source material) and the three versions
+  (text steps with a check each, a filled visual template, a worked example from the source's own
+  sentences) are pinned in `backend/tests/test_subject_agnostic_content.py` against a biology and
+  a history paragraph. The shipped catalogue now carries two prose concepts of its own —
+  `history_ww1` (why the First World War began) and `bio_photosynthesis` (how plants make their
+  food), each with course notes and four items — and
+  `backend/tests/test_shipped_catalogue_has_prose_subjects.py` runs the real grading and the real
+  concept-versions endpoint over them, so "any subject" is no longer only a fixture claim.
+  What is *still* not verified is a curriculum of that shape: two prose concepts demonstrate the
+  path, they are not a term's worth of imported material, and their notes were written here
+  rather than taken from a textbook, a syllabus or a mark scheme.
+* **The per-step check is not a mark, and the app says so.** The check between two teaching steps
+  is compared against the words the step is about, never posted, and cannot move a mastery
+  estimate. Its wording and its gate are asserted in the probe; how a *learner* reacts to being
+  asked to write a sentence before the next step is a pilot question, not a sandbox one.

@@ -10,12 +10,15 @@
  *   - the event queue (question shown, first interaction, changed answer, hint opened,
  *     submitted) -- the numbers AI 1 uses come from this log, so a page that forgets to
  *     push is a page that measures nothing;
- *   - attempt submission and its receipt.
+ *   - attempt submission and its receipt;
+ *   - the in-progress draft of each answer, which lives here rather than inside the question
+ *     card precisely so that re-rendering the card cannot lose it (`@/lib/drafts`).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EventQueue, useEventQueue } from "@/components/ui";
 import { api, get, post } from "@/lib/api";
+import { clearAllDrafts } from "@/lib/drafts";
 import type { PlanEntry, Receipt } from "@/lib/types";
 
 const SESSION_KEY = "adapt:session";
@@ -167,6 +170,10 @@ export function useFlow(mode: "practice" | "diagnostic") {
     try {
       const out = await post<Record<string, unknown>>(`sessions/${sessionId}/finish`, {});
       sessionStorage.removeItem(SESSION_KEY);
+      // Drafts live no longer than the session that produced them: finishing is the point at
+      // which the answers have been sent and there is no reason for anything of the learner's
+      // to still be sitting in this browser.
+      clearAllDrafts();
       setSessionId(null);
       return { ...out, session_id: used };
     } catch (err) {

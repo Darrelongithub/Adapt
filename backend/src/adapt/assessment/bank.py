@@ -47,9 +47,24 @@ TOPICS: list[dict[str, Any]] = [
     dict(code="area_perimeter", title="Area and perimeter", difficulty=0.35, est=85, prereqs=["order_of_operations"]),
     dict(code="unit_conversion", title="Converting units", difficulty=0.45, est=95, prereqs=["ratio", "decimals"]),
     dict(code="probability", title="Probability as a fraction", difficulty=0.5, est=110, prereqs=["fractions_intro", "percentages"]),
+    # ---- not mathematics: the same pipeline on prose. These two exist to keep the app
+    # honest about "any subject". Nothing in the teaching loop, the method rotation or the
+    # content path is arithmetic-specific, and a bank that contains only numbers cannot show
+    # that. Their answer keys are checked by quotability (the key has to occur in the source
+    # notes below) rather than by arithmetic, which is what `learning.content` does whenever
+    # the material is prose.
+    dict(code="history_ww1", title="Why the First World War began", difficulty=0.5, est=140, prereqs=[]),
+    dict(code="bio_photosynthesis", title="How plants make their food", difficulty=0.45, est=130, prereqs=[]),
 ]
 
 TOPIC_NOTES: dict[str, str] = {
+    "integer_ops": (
+        "In a chain like 12 - 5 - 4 the operations have equal rank, so they are done strictly left to "
+        "right: 12 - 5 = 7, then 7 - 4 = 3. Each minus sign belongs to the number after it, so nothing "
+        "is ever 'moved across'; if you get 12 - 1 you have added the 5 back by accident. Multiplying "
+        "and dividing come before adding and subtracting, so in 7 + 3 x 2 - 1 the 3 x 2 is worked out "
+        "first and the rest is then read left to right. Check a chain by running it backwards."
+    ),
     "fractions_intro": (
         "A fraction names a part of a whole. The denominator says how many equal parts the whole is cut "
         "into; the numerator says how many of those parts you are talking about. The parts must be equal or "
@@ -141,6 +156,28 @@ TOPIC_NOTES: dict[str, str] = {
         "Converting units is multiplying by 1 written as an equivalent pair, such as 100 cm over 1 m, so the "
         "unit you do not want cancels. Squared units need the factor squared; cubic units cubed. Estimate the "
         "answer first to catch a multiply-versus-divide slip."
+    ),
+    "history_ww1": (
+        "The First World War began in 1914, and no single cause explains it. Two armed camps had "
+        "formed in Europe before 1914: the Triple Alliance of Germany, Austria-Hungary and Italy, "
+        "and the Triple Entente of Britain, France and Russia. The trigger came on 28 June 1914, "
+        "when Archduke Franz Ferdinand, heir to the Austro-Hungarian throne, was assassinated in "
+        "Sarajevo. Austria-Hungary blamed Serbia and declared war on 28 July. Alliances then "
+        "pulled the larger powers in: Germany declared war on Russia on 1 August and on France on "
+        "3 August, and Britain declared war on Germany on 4 August after Germany invaded Belgium. "
+        "Historians weigh the causes differently: the alliance system turned a local quarrel into "
+        "a European war, militarism meant the plans were ready, and imperialism fed the rivalry."
+    ),
+    "bio_photosynthesis": (
+        "Photosynthesis is how a plant makes its own food. It happens in the chloroplasts, which "
+        "contain a green pigment called chlorophyll. The plant takes in carbon dioxide through "
+        "small openings in its leaves and water through its roots. Chlorophyll traps light energy, "
+        "and that energy is used to join the carbon dioxide and water into glucose, a sugar the "
+        "plant uses for growth and which it stores as starch. Oxygen is released as a waste "
+        "product of the reaction. The word equation is carbon dioxide plus water, in the presence "
+        "of light and chlorophyll, giving glucose plus oxygen. Respiration is the reverse process: "
+        "it releases the energy stored in glucose, and it happens in plants all the time, not only "
+        "in the dark."
     ),
     "probability": (
         "For equally likely outcomes, probability is favourable outcomes over total outcomes, which is a "
@@ -638,6 +675,64 @@ ITEMS: dict[str, list[dict[str, Any]]] = {
             [("1/2", "That is one toss."), ("1/4", "Independent events: 1/2 x 1/2."),
              ("1/3", "There are 4 equally likely outcomes, not 3."), ("1", "That would make it certain.")], 1,
             difficulty=0.55, mode="read"),
+    ],
+    "history_ww1": [
+        # Typed, not multiple choice: a date the learner has to produce, so a quarter of the
+        # answers cannot come out right by guessing (see the guess rates in `learning.bkt`).
+        text_q("In which year did the First World War begin?",
+               ["1914", "in 1914", "the year 1914"],
+               keywords=["1914"],
+               hints=["The Archduke was assassinated in the summer of that year."],
+               steps=["The war began in 1914 -- the year of the July Crisis."],
+               difficulty=0.35, est=60, prompt="Answer with the year."),
+        mcq("What was the immediate trigger of the First World War in 1914?",
+            [("The assassination of Archduke Franz Ferdinand in Sarajevo",
+              "The notes say the trigger came on 28 June 1914, when he was assassinated in Sarajevo."),
+             ("The German invasion of Belgium",
+              "That is what brought Britain in on 4 August -- it is a consequence, not the trigger."),
+             ("The formation of the Triple Alliance",
+              "The alliance was formed before 1914: it shaped the war rather than starting it."),
+             ("The sinking of a passenger ship",
+              "Nothing in the notes says that.")],
+            0, difficulty=0.45, mode="read",
+            hints=["It happened in Sarajevo on 28 June 1914."]),
+        teachback("why the First World War began",
+                  [("alliances", ["alliance system", "triple alliance", "triple entente", "allies"]),
+                   ("assassination", ["archduke", "franz ferdinand", "sarajevo", "shot", "killed"]),
+                   ("a larger cause", ["militarism", "imperialism", "arms race", "empires"])],
+                  difficulty=0.5, est=150),
+        example("How to answer 'why did the war begin?' without listing one cause",
+                ["Open with the distinction: the trigger and the causes are different things.",
+                 "Name the trigger and date it -- 28 June 1914, Sarajevo.",
+                 "Name the structures that turned it into a European war -- the two alliance blocs.",
+                 "Say how you are weighing them: 'the alliance system turned a local quarrel into a European war'."],
+                difficulty=0.4, est=90),
+    ],
+    "bio_photosynthesis": [
+        text_q("Name the green pigment in chloroplasts that traps light energy.",
+               ["chlorophyll", "the chlorophyll"],
+               keywords=["chlorophyll"],
+               hints=["It is what makes leaves green."],
+               steps=["Chlorophyll traps the light energy that drives the reaction."],
+               difficulty=0.3, est=50),
+        mcq("Which two substances does a plant take in for photosynthesis?",
+            [("Carbon dioxide and water", "The notes: carbon dioxide through the leaves, water through the roots."),
+             ("Oxygen and water", "Oxygen is released, not taken in."),
+             ("Glucose and oxygen", "Those are the products."),
+             ("Carbon dioxide and glucose", "Glucose is made, not absorbed.")],
+            0, difficulty=0.4, mode="read",
+            hints=["One comes in through the leaf, the other through the roots."]),
+        teachback("how a plant makes its food",
+                  [("light", ["light energy", "sunlight", "light"]),
+                   ("chlorophyll", ["chloroplast", "chlorophyll"]),
+                   ("the inputs and outputs", ["carbon dioxide", "water", "glucose", "oxygen"])],
+                  difficulty=0.45, est=150),
+        example("Writing the word equation from the description, not from memory",
+                ["Start from what goes in: carbon dioxide from the air, water from the roots.",
+                 "Name the condition: in the presence of light, and the pigment chlorophyll.",
+                 "Name what comes out: glucose (used for growth, stored as starch) and oxygen (released).",
+                 "Check it against the notes: the equation is carbon dioxide + water -> glucose + oxygen."],
+                difficulty=0.35, est=90),
     ],
 }
 

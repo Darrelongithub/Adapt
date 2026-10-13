@@ -14,11 +14,13 @@ rubric-scored teach-backs.
 from __future__ import annotations
 
 import re
+from fractions import Fraction
 from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Sequence
 
-from ..ai.local_tutor import eval_formula, teachback_score
+from ..ai.local_tutor import eval_formula
+from . import teachback as TB
 
 NUM_RE = re.compile(r"-?\d+(?:[.,/]\d+)?(?:\s*[a-z]{1,4})?\b", re.IGNORECASE)
 FRACTION_RE = re.compile(r"^\s*(-?\d+)\s*/\s*(-?\d+)\s*$")
@@ -41,6 +43,24 @@ class Grade:
             "detail": self.detail,
             "partial": self.partial,
         }
+
+
+def _show_number(value: float) -> str:
+    """A number a reader can act on, in the form this item actually accepts.
+
+    ``%g`` keeps six significant digits, so an item whose answer is 34/3 produced
+    ``expected 11.3333, got 11.3333`` — two identical strings either side of a mark
+    decided at the ninth decimal place. That is not a reason, and it is not
+    actionable. Show the exact fraction when there is one, full precision when
+    there is not, and the short form whenever the short form *is* the value.
+    """
+    short = f"{value:g}"
+    if to_float(short) == value:
+        return short
+    exact = Fraction(value).limit_denominator(10_000)
+    if exact.denominator > 1 and float(exact) == value:
+        return f"{exact.numerator}/{exact.denominator}"
+    return repr(value)
 
 
 def to_float(text: Any) -> float | None:
@@ -126,14 +146,23 @@ def grade(item: dict[str, Any], answer: Any, *, student_text: str | None = None)
                 False,
                 0.5,
                 "numeric",
-                f"value matches ({expected:g}) but the unit {wanted_unit!r} is missing",
+                f"value matches ({_show_number(float(expected))}) but the unit {wanted_unit!r} is missing",
                 {"expected": float(expected), "given": value, "tolerance": tol, "missing_unit": True},
+            )
+        shown_expected, shown_given = _show_number(float(expected)), _show_number(value)
+        detail = f"expected {shown_expected}, got {shown_given}"
+        if not ok and shown_expected == shown_given:
+            # The two numbers read the same, so the digits that decided this are the
+            # ones not on screen. Say what the mark scheme is, and what it accepts.
+            detail = (
+                f"expected {shown_expected} exactly: this item is marked to within {tol:g}, "
+                "so a rounded decimal is not close enough — the same value as a fraction is"
             )
         return Grade(
             ok,
             1.0 if ok else 0.0,
             "numeric",
-            f"expected {expected:g}, got {value:g}",
+            detail,
             {"expected": float(expected), "given": value, "tolerance": tol},
         )
 
@@ -182,17 +211,39 @@ def grade(item: dict[str, Any], answer: Any, *, student_text: str | None = None)
 
     if kind == "teachback":
         text = str(answer or student_text or "")
-        res = teachback_score(text, item.get("rubric"))
+        result = TB.grade_checklist(text, TB.checklist_from_rubric(item.get("rubric")))
         threshold = float((item.get("rubric") or {}).get("pass_fraction", 0.6))
+        partial = _checklist_payload(result)
         return Grade(
-            res["score"] >= threshold and len([w for w in re.split(r"\s+", text) if w]) >= 4,
-            round(float(res["score"]), 3),
-            "teachback_rubric",
-            res.get("followup") or "Covers the required ideas.",
-            res,
+            result.score >= threshold and len([w for w in re.split(r"\s+", text) if w]) >= TB.MIN_ANSWER_WORDS,
+            round(float(result.score), 3),
+            "teachback_checklist",
+            result.followup or "Covers the points on the checklist.",
+            partial,
         )
 
     return Grade(False, 0.0, "none", f"no grader for kind {kind!r}; needs the hosted Numbas runtime")
+
+
+def _checklist_payload(result: TB.ChecklistResult) -> dict[str, Any]:
+    """The checklist result in the shape the API, the trace and the UI already read.
+
+    ``matched``/``missing``/``coverage`` stay (they are what the progress screen and
+    the detectors read), but they now mean *points evidenced in the learner's own
+    words* rather than *keywords present*. ``points`` carries the strict form: what
+    each check was, whether it was met, and the quote that decided it.
+    """
+    return {
+        **result.as_dict(),
+        "method": "checklist_3_point",
+        "matched": [p.statement for p in result.points if p.met],
+        "missing": [p.statement for p in result.points if not p.met],
+        "coverage": round(result.score, 3),
+        "note": (
+            result.note
+            or "scored on the ideas, not on fluency, spelling or length"
+        ),
+    }
 
 
 def _norm(s: str) -> str:
