@@ -511,7 +511,9 @@ async function main() {
     await waitFor(() => !/Checking the session/.test(page.text()), { label: "the session check to finish" });
     check("home", "renders the product's own words, not a placeholder", /proposes what to change/.test(page.text()), page.text().slice(0, 120));
     const hrefs = page.find("a[href]").map((a) => a.getAttribute("href"));
-    check("home", "every link is a route inside the app", hrefs.length > 3 && hrefs.every((h) => h.startsWith("/")), hrefs.join(" "));
+    // In-page anchors (the "skip to content" link) are as inside the app as a route is;
+    // what this must never see is a link out to somewhere else.
+    check("home", "every link is a route inside the app", hrefs.length > 3 && hrefs.every((h) => h.startsWith("/") || h.startsWith("#")), hrefs.join(" "));
     check("home", "no uncaught error during hydration", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 200));
     check("home", "a signed-out visitor is offered both ways in", /guest/.test(page.text()) && /email \+ password/.test(page.text()), page.text().slice(0, 180));
     const emailTab = page.byText("email + password", "button");

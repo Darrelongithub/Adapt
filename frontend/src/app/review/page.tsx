@@ -200,24 +200,26 @@ export default function Review() {
               Brier score <strong>{cal.brier?.toFixed(3)}</strong> (lower is better; always-guessing-0.5 scores 0.25) ·
               expected calibration error <strong>{cal.ece?.toFixed(3)}</strong>
             </p>
-            <table className="mt-2 w-full text-sm">
-              <thead className="text-xs text-[var(--muted)]">
-                <tr>
-                  <th className="text-left">predicted</th>
-                  <th className="text-right">observed</th>
-                  <th className="text-right">n</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(cal.buckets ?? []).map((b, i) => (
-                  <tr key={i} className="border-t border-[var(--line)]">
-                    <td>{Math.round((b.predicted ?? 0) * 100)}%</td>
-                    <td className="text-right">{Math.round((b.observed ?? 0) * 100)}%</td>
-                    <td className="text-right text-[var(--muted)]">{b.n}</td>
+            <div className="table-scroll">
+              <table className="mt-2 w-full text-sm">
+                <thead className="text-xs text-[var(--muted)]">
+                  <tr>
+                    <th className="text-left">predicted</th>
+                    <th className="text-right">observed</th>
+                    <th className="text-right">n</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(cal.buckets ?? []).map((b, i) => (
+                    <tr key={i} className="border-t border-[var(--line)]">
+                      <td>{Math.round((b.predicted ?? 0) * 100)}%</td>
+                      <td className="text-right">{Math.round((b.observed ?? 0) * 100)}%</td>
+                      <td className="text-right text-[var(--muted)]">{b.n}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </Card>

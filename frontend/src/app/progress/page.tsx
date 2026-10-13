@@ -94,7 +94,7 @@ export default function Progress() {
             <ul className="space-y-2">
               {(d.mastery ?? []).map((m) => (
                 <li key={m.topic_id} className="flex flex-wrap items-center gap-2">
-                  <span className="w-44 shrink-0 text-sm">{m.title}</span>
+                  <span className="w-full shrink-0 text-sm sm:w-44">{m.title}</span>
                   <Band band={m.band ?? "unknown"} pKnow={m.p_know} />
                   <span className="text-xs text-[var(--muted)]">{m.observations ?? 0} obs</span>
                   {m.due_at ? <Tag tone="warn">review {new Date(m.due_at).toLocaleDateString()}</Tag> : null}

@@ -49,7 +49,8 @@ export function Btn({
   title?: string;
 }) {
   const base =
-    "inline-flex items-center gap-2 rounded-[2px] px-3 py-1.5 text-[12px] border transition-all disabled:opacity-35 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none";
+    // btn-ctl is a plain marker for the coarse-pointer tap-target rules in globals.css
+    "btn-ctl inline-flex items-center gap-2 rounded-[2px] px-3 py-1.5 text-[12px] border transition-all disabled:opacity-35 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none";
   const mono = "font-mono uppercase tracking-[0.06em]";
   const hover = "hover:translate-y-[-1px] hover:shadow-[0_3px_0_var(--line)]";
   const look =

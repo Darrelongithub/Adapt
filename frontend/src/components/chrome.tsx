@@ -24,7 +24,9 @@ export function MockBanner() {
   useEffect(() => setMock(isMock()), []);
   if (!mock) return null;
   return (
-    <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 px-4 py-2 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
+    // pl-28 clears the fixed § ADAPT index tab at the top-left corner, which used to sit on
+    // top of the banner's first line on phones.
+    <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 py-2 pl-28 pr-4 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
       <strong>DEMO DATA</strong> — this screen is running on fixtures (<code>?mock=1</code>). Nothing here was measured from a
       learner, and nothing was saved.{" "}
       <Link className="underline" href="/?mock=off">
@@ -113,19 +115,6 @@ export function Chrome({ children }: { children: ReactNode }) {
         § ADAPT
       </button>
 
-      {/* status corner - fixed bottom left per prototype */}
-      <div className="status-corner" aria-hidden="false">
-        <span>
-          <span className="d good" />
-          api
-        </span>
-        <span>
-          <span className="d good" />
-          llm
-        </span>
-        <StatusChip />
-      </div>
-
       {/* full-screen index overlay */}
       {open ? (
         <div
@@ -161,8 +150,9 @@ export function Chrome({ children }: { children: ReactNode }) {
         </div>
       ) : null}
 
-      {/* Fallback header for who/status when overlay not open - keep accessible */}
-      <div className="flex justify-end px-4 py-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
+      {/* Fallback header for who/status when overlay not open - keep accessible.
+          pl-28 keeps a long name or the sign-in link from running under the fixed index tab. */}
+      <div className="flex justify-end py-2 pl-28 pr-4 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
         <div className="flex items-center gap-3">
           <Who />
         </div>
@@ -172,6 +162,11 @@ export function Chrome({ children }: { children: ReactNode }) {
         {children}
       </main>
       <footer className="mx-auto max-w-5xl px-4 pb-10 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        {/* What the app is running on. In the footer's flow on phones (never covering the
+            content); the CSS lifts it to the fixed bottom-left corner on wide screens. */}
+        <div className="status-corner mb-3" aria-hidden="false">
+          <StatusChip />
+        </div>
         Estimates, not labels: nothing here is a fixed trait, and no lasting change is applied without you answering a
         question about it. <Link href="/settings" className="underline">
           what is recorded about you

@@ -290,28 +290,30 @@ export default function Settings() {
             answers — it is the log of the system acting, which is the thing worth auditing.
           </p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="text-xs text-[var(--muted)]">
-              <tr>
-                <th className="text-left">when</th>
-                <th className="text-left">action</th>
-                <th className="text-left">object</th>
-                <th className="text-right">outcome</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e, i) => (
-                <tr key={i} className="border-t border-[var(--line)]">
-                  <td className="py-1 text-xs text-[var(--muted)]">{e.created_at ? new Date(e.created_at).toLocaleString() : "—"}</td>
-                  <td>{e.action}</td>
-                  <td className="text-xs text-[var(--muted)]">{e.object ?? "—"}</td>
-                  <td className="text-right">
-                    <Tag tone={e.outcome === "ok" ? "good" : "bad"}>{e.outcome ?? "?"}</Tag>
-                  </td>
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-[var(--muted)]">
+                <tr>
+                  <th className="text-left">when</th>
+                  <th className="text-left">action</th>
+                  <th className="text-left">object</th>
+                  <th className="text-right">outcome</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {entries.map((e, i) => (
+                  <tr key={i} className="border-t border-[var(--line)]">
+                    <td className="whitespace-nowrap py-1 text-xs text-[var(--muted)]">{e.created_at ? new Date(e.created_at).toLocaleString() : "—"}</td>
+                    <td>{e.action}</td>
+                    <td className="text-xs text-[var(--muted)]">{e.object ?? "—"}</td>
+                    <td className="text-right">
+                      <Tag tone={e.outcome === "ok" ? "good" : "bad"}>{e.outcome ?? "?"}</Tag>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
