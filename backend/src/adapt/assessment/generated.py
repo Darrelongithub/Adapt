@@ -60,6 +60,11 @@ RETIRE_DRIFT = 0.35
 #: of the learner's time.
 RETIRE_AFTER_ATTEMPTS = 12
 
+#: Tag put on a stored item whose answer key this build could not check. The learner
+#: surface reads it and says so; nothing anywhere should treat such an item's marks
+#: as equal to a verified one.
+UNVERIFIED_TAG = "unverified_answer_key"
+
 MIN_STEM_CHARS = 12
 MAX_STEM_CHARS = 900
 MAX_CHOICES = 6
@@ -76,6 +81,18 @@ TOLERANCE_FLOOR = 0.005
 TOLERANCE_RELATIVE = 0.005
 
 KINDS = ("numeric", "mcq", "text")
+
+#: Answer keys that can only be *checked* rather than computed come in two kinds:
+#: arithmetic (verified by evaluating the expression, which works for maths and
+#: nothing else) and **quotable** (verified by finding the key in the source
+#: material, which is what a history or biology answer key actually is). A key that
+#: is neither is not rejected outright -- it is flagged ``unverified`` and carries a
+#: tag, because the honest failure mode for a model-written history question is
+#: "nobody can check this automatically", not "this is wrong".
+VERIFICATION_MODES = ("arithmetic", "quotable", "unverified")
+#: A quotable answer must appear in the source with at most this much whitespace and
+#: punctuation difference. Prose answers are normalised before comparing.
+_QUOTE_NORMALISE = re.compile(r"[^a-z0-9]+")
 
 _BINOPS = {
     ast.Add: operator.add,
@@ -116,6 +133,14 @@ class Validated:
 
     payload: dict[str, Any]
     checks: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def verification(self) -> str:
+        return str(self.payload.get("verification") or "unverified")
+
+    @property
+    def unverified(self) -> bool:
+        return self.verification == "unverified"
 
 
 def safe_arithmetic(expression: str) -> float:
@@ -196,6 +221,60 @@ def normalise_stem(stem: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (stem or "").lower()).strip()
 
 
+def normalise_quote(text: str) -> str:
+    """Letters and digits only, lowercased: the form in which a quote is quotable."""
+    return _QUOTE_NORMALISE.sub("", (text or "").lower())
+
+
+def quote_found(answer: str, source_text: str | None) -> bool:
+    """Is this answer (or a sentence saying it) present in the source material?"""
+    if not source_text:
+        return False
+    needle = normalise_quote(answer)
+    if len(needle) < 3:
+        return False
+    return needle in normalise_quote(source_text)
+
+
+def key_verification(kind: str, raw: Mapping[str, Any], *, source_text: str | None = None) -> tuple[str, str]:
+    """Which way this item's key was checked, and what that leaves open.
+
+    ``arithmetic``: the expression was evaluated (maths, physics, anything numeric).
+    ``quotable``: the key's text is in the source material, so a learner can be
+    shown the sentence it came from.
+    ``unverified``: neither, so the item says so rather than being shown as checked.
+    """
+    if kind == "numeric":
+        return ("arithmetic" if str(raw.get("check_expr") or "").strip() else "unverified", "")
+    values: list[str] = []
+    value = raw.get("answer_value")
+    if isinstance(value, list):
+        values = [str(v) for v in value if str(v or "").strip()]
+    elif value is not None and str(value).strip():
+        values = [str(value)]
+    if kind == "mcq":
+        choices = raw.get("choices") or []
+        index = _to_float(raw.get("correct_index"))
+        if isinstance(choices, list) and index is not None and 0 <= int(index) < len(choices):
+            chosen = choices[int(index)]
+            text = str((chosen or {}).get("text") if isinstance(chosen, Mapping) else chosen or "").strip()
+            if text:
+                values = [text, *values]
+    if not values:
+        return ("unverified", "no answer text to check")
+    if source_text:
+        if any(quote_found(v, source_text) for v in values):
+            return ("quotable", "")
+        return (
+            "unverified",
+            "the key is not found in the source material, so this build cannot show anyone the sentence it came from",
+        )
+    return (
+        "unverified",
+        "no source material was supplied, so the key is flagged rather than trusted",
+    )
+
+
 def _to_float(value: Any) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -244,12 +323,27 @@ def validate_generated(
     topic_id: str | None = None,
     topic_ids: Iterable[str] | None = None,
     existing_stems: Iterable[str] = (),
+    source_text: str | None = None,
+    require_source: bool = False,
 ) -> tuple[Validated | None, list[Rejection]]:
     """Check one candidate item. Returns ``(None, rejections)`` if it may not be shown.
 
     ``existing_stems`` is the set of stems already in the bank for this topic; a
     generated question that duplicates an authored one is refused rather than stored,
     because two rows with one question means the same question counted twice.
+
+    ``source_text`` is the material this question was written from. Every rule below
+    still applies, but for a non-arithmetic key the *only* available check is
+    quotability, so:
+
+    * with ``source_text`` and a key that cannot be found in it, the item is rejected
+      (``key_not_in_source``) -- a history answer key nobody can point at is exactly
+      the wrong-question class this module exists to stop;
+    * without ``source_text`` the item is accepted but *flagged*
+      ``verification="unverified"`` and tagged ``unverified_answer_key``, so the
+      learner-facing record can say the key was not checked rather than implying it
+      was. ``require_source=True`` (the content generator's mode) turns that flag into
+      a rejection instead.
     """
     bad: list[Rejection] = []
 
@@ -366,6 +460,18 @@ def validate_generated(
             checks.append("text_answer_present")
             answer_spec = {"values": accepted[:6], **({"keywords": keywords[:8]} if keywords else {})}
 
+    verification, verification_note = key_verification(kind, raw, source_text=source_text)
+    if verification != "arithmetic":
+        if verification == "unverified":
+            if require_source or source_text:
+                # With the material in hand and the key not in it, this is not a
+                # style question: the key is unchecked and cannot be checked here.
+                reject("key_not_in_source", verification_note)
+            else:
+                checks.append("key_unverified")
+        else:
+            checks.append("key_quotable_in_source")
+
     if bad:
         return None, bad
 
@@ -386,7 +492,15 @@ def validate_generated(
         "difficulty": round(float(difficulty), 4),
         "prior_difficulty": round(float(difficulty), 4),
         "est_seconds": est,
+        "verification": verification,
     }
+    tags = list(payload.get("tags") or []) if isinstance(payload.get("tags"), list) else []
+    if verification == "unverified":
+        tags.append("unverified_answer_key")
+    if verification == "quotable":
+        tags.append("key_quotable")
+    if tags:
+        payload["tags"] = tags
     payload["id"] = content_id(
         topic_id=resolved_topic, kind=kind, stem=stem, answer_spec=answer_spec
     )
@@ -476,6 +590,7 @@ ITEM_COLUMNS = (
     "n_attempts",
     "n_correct",
     "calibrated_at",
+    "verification",
 )
 
 

@@ -26,7 +26,10 @@ import pytest
 # so only exact keys mean anything.
 ANSWER_KEYS = {"answer_spec", "correct_index", "solution_steps", "hints", "rubric", "stem_template"}
 
-BANDS = {"new", "gapped", "developing", "some", "secure", "mastered"}
+# The real vocabulary (``adapt.learning.bkt.BANDS``), imported rather than retyped: the
+# hand-written set this replaced contained two names no code path produces, so it could
+# never have caught a wrong label.
+from adapt.learning.bkt import BANDS  # noqa: E402
 TONES = {"neutral", "good", "warn", "bad", "think", "ask", "muted"}
 
 
@@ -536,7 +539,7 @@ def test_answers_move_mastery_in_the_right_direction(client, learner, services, 
             body = r.json()
             assert body["correct"] is correct
             assert body["item_id"] == item_id and body["topic_id"] == topic_id
-            assert body["grading_method"] in {"mcq_index", "numeric", "text_match", "teachback_rubric"}
+            assert body["grading_method"] in {"mcq_index", "numeric", "text_match", "teachback_checklist", "expression"}
             assert body["attempt_id"].startswith("att_")
             last = body["mastery"]
         assert last is not None
@@ -577,6 +580,14 @@ def test_an_attempt_needs_a_session_and_a_real_item(client, learner, items, make
 
 
 def test_teachback_is_scored_on_content_and_says_what_was_missing(client, learner, services, session):
+    """Three points, evidence quoted — in the learner's words, not the rubric's.
+
+    What this replaced is the behaviour the old version of this test asserted: a list
+    of the rubric's own words scored 1.0, and a paraphrase that never used them scored
+    0. The checklist grader must accept the paraphrase and reject the list, and it must
+    say which point was missed and what would show it.
+    """
+    from adapt.assessment import teachback as TB
     from adapt.db.models import Item
 
     with services.scope() as s:
@@ -584,8 +595,9 @@ def test_teachback_is_scored_on_content_and_says_what_was_missing(client, learne
     if row is None:  # pragma: no cover - the bank ships teachbacks
         pytest.skip("no teachback item in the bank")
     item_id, rubric = row.id, dict(row.rubric or {})
-    concepts = [str(c.get("concept")) for c in (rubric.get("required_concepts") or [])]
-    assert concepts, "a teachback item has to carry the ideas it is listening for"
+    criteria = TB.checklist_from_rubric(rubric)
+    assert criteria, "a teachback item has to carry the ideas it is listening for"
+    assert len(criteria) <= 3, "the checklist is three points, not a score out of seven"
 
     r = client.post(
         "/api/v1/attempts",
@@ -594,27 +606,40 @@ def test_teachback_is_scored_on_content_and_says_what_was_missing(client, learne
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["grading_method"] == "teachback_rubric"
-    assert body["teachback"]["method"] == "rubric_concept_coverage"
+    assert body["grading_method"] == "teachback_checklist"
+    assert body["teachback"]["method"] == "checklist_3_point"
     assert body["teachback"]["score"] < 0.6 and not body["correct"]
-    assert set(body["teachback"]["missing"]) == set(concepts)
+    assert body["teachback"]["missing"], "the learner is told which point is missing"
     assert body["teachback"]["followup"], "the learner gets a next step, not a verdict"
     assert "not fluency" in body["teachback"]["note"], "spelling must not be the thing being measured"
     assert 0.0 <= body["score"] <= 1.0
 
-    # Say the ideas back in your own words and the score has to move, with the
-    # missing list shrinking -- this is a rubric, not a word count.
-    good = ". ".join(concepts) + ". You check it against one example afterwards, and if the check fails you go back to the definition."
+    # Naming the ideas is not explaining them: the rubric's own words, listed, must not
+    # pass (that was the self-listing failure the checklist exists to stop).
+    listed = ", ".join(c.idea for c in criteria)
+    listing = client.post(
+        "/api/v1/attempts",
+        json={"session_id": session, "item_id": item_id, "answer": listed, "teachback_text": listed, "attempt_no": 2},
+        headers=learner["headers"],
+    )
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["teachback"]["score"] < 0.6, listing.json()["teachback"]
+
+    # A paraphrase in the learner's own words has to pass, and the standalone endpoint
+    # has to agree with the one used during practice.
+    good = (
+        f"The idea is that {criteria[0].idea} matters, and you can see it by writing the same value "
+        "a different way. If that check fails you go back and rewrite it before adding anything."
+    )
     again = client.post(
         "/api/v1/attempts",
-        json={"session_id": session, "item_id": item_id, "answer": good, "teachback_text": good, "attempt_no": 2},
+        json={"session_id": session, "item_id": item_id, "answer": good, "teachback_text": good, "attempt_no": 3},
         headers=learner["headers"],
     )
     assert again.status_code == 200, again.text
     second = again.json()["teachback"]
-    assert second["score"] > body["teachback"]["score"]
-    assert second["matched"] == concepts and second["missing"] == []
-    assert second["coverage"] == 1.0 and second["followup"] is None
+    assert second["score"] > body["teachback"]["score"], (second, body["teachback"])
+    assert second["points"] and all(set(p) >= {"id", "met", "evidence"} for p in second["points"])
 
     standalone = client.post(f"/api/v1/items/{item_id}/teachback", json={"text": good}, headers=learner["headers"])
     assert standalone.status_code == 200, standalone.text
@@ -1322,6 +1347,21 @@ def test_an_approved_change_is_measured_and_the_learner_is_told_in_words(client,
     row = next(h for h in history if h["id"] == target["id"])
     assert row["status"] == "approved", "an insufficient sample must not be filed as a verdict"
     assert not row.get("evaluation_status"), row
+    assert row["outcome"]["status"] == "gathering_evidence", "the unfinished window is stored with a count"
+
+    # A window that is still filling up is a state, and the *screen* has to be able to say it.
+    # What the API hands a screen is flat (`EffectSummary`); what is stored is nested (the audit
+    # record). Reading one with the other's shape is how a measured change rendered as "0 answers
+    # before and 0 after", so both shapes are pinned here.
+    live = next(a for a in client.get("/api/v1/adaptations/active", headers=headers).json()["active"] if a["proposal_id"] == target["id"])
+    summary = live["effect_summary"]
+    assert isinstance(summary, dict) and summary["baseline_n"] > 0 and summary["after_n"] < 6, summary
+    assert summary["verdict"] == "insufficient_evidence" and summary["status"] == "gathering_evidence", summary
+    assert "not enough" in (summary["verdict_words"] or "").lower(), summary
+    assert live["effect_measured"] is False and live["effect_status"] == "gathering_evidence", live
+    assert live["effect_raw"]["status"] == "gathering_evidence", live["effect_raw"]
+    waiting = client.get("/api/v1/adaptations/active", headers=headers).json()["waiting_for_effect"]
+    assert any(a["proposal_id"] == target["id"] for a in waiting), waiting
 
     # enough answers, every one of them right where the before-window was all wrong
     later = client.post("/api/v1/sessions", json={"mode": "practice"}, headers=headers).json()["session_id"]
@@ -1345,12 +1385,29 @@ def test_an_approved_change_is_measured_and_the_learner_is_told_in_words(client,
     # the finding is kept where the learner looks: on the live change, in history, in the timeline
     live = next(a for a in client.get("/api/v1/adaptations/active", headers=headers).json()["active"] if a["proposal_id"] == target["id"])
     assert live["effect_summary"] and live["effect_summary"]["verdict_words"] == words, live["effect_summary"]
+    # the flat shape carries the numbers, not only the sentence: a screen that draws it has them
+    assert live["effect_summary"]["baseline_n"] == mine["effect"]["baseline_n"], live["effect_summary"]
+    assert live["effect_summary"]["after_n"] == int(mine["n_after"]), live["effect_summary"]
+    assert live["effect_summary"]["mean_delta"] == mine["effect"]["mean_delta"], live["effect_summary"]
+    assert live["effect_summary"]["verdict"] == "supported" and live["effect_status"] == "measured", live
+    assert live["effect_measured"] is True, live
+    waiting = client.get("/api/v1/adaptations/active", headers=headers).json()["waiting_for_effect"]
+    assert not any(a["proposal_id"] == target["id"] for a in waiting), waiting
     again = client.get("/api/v1/adaptations/history", headers=headers).json()["decisions"]
     row = next(h for h in again if h["id"] == target["id"])
     assert row["status"] == "evaluated" and row["evaluation_status"] == "supported", row
     assert row.get("outcome", {}).get("verdict_words") == words, row
     dash = client.get("/api/v1/dashboard", headers=headers).json()
     assert int(dash["measured_outcomes"]["evaluated"]) >= 1, dash["measured_outcomes"]
+    # The dashboard is a second reader of the same stored payload, and it used to hand out the
+    # nested form -- so the one screen that summarises everything showed a measured change with
+    # no numbers attached. Same flattening, same field names, one contract.
+    dash_live = next(a for a in dash["active_adaptations"] if a["strategy"] == target["strategy"])
+    assert dash_live["effect_status"] == "measured" and dash_live["effect_measured"] is True, dash_live
+    assert dash_live["effect_summary"]["baseline_n"] == mine["effect"]["baseline_n"], dash_live
+    assert dash_live["effect_summary"]["after_n"] == int(mine["n_after"]), dash_live
+    assert dash_live["effect_summary"]["verdict"] == "supported", dash_live
+    assert dash_live["effect_raw"]["status"] == "measured", dash_live["effect_raw"]
     milestones = [m for m in client.get("/api/v1/journey?days=7&limit=40", headers=headers).json()["milestones"] if m.get("type") == "adaptation_effect"]
     assert milestones and milestones[-1]["verdict_words"] == words, milestones[-1] if milestones else "no effect milestone on the timeline"
 

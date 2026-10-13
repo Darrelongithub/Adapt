@@ -51,7 +51,28 @@ const planEntry = {
   topic_id: item.topic_id,
   reason: "you have not been placed on this topic yet",
   utility: 0.62,
-  presentation: { max_words: 90, hints_allowed: 2, require_teachback: false, attach_worked_example: false },
+  presentation: {
+    max_words: 90,
+    hints_allowed: 2,
+    require_teachback: false,
+    attach_worked_example: false,
+    method: "explanation",
+    method_label: "Explanation first",
+    method_assignment: { method: "explanation", design: "randomised", arm: "explanation_first", assigned_by: "rotation", why: "method explanation for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)" },
+    // The teaching the assigned method produces: short steps, a check after each, nothing cut.
+    teaching: {
+      method: "explanation",
+      kind: "segments",
+      steps: [
+        { index: 1, text: "A fraction only names parts of one whole, so the parts have to be the same size before you can count them together.", words: 24, check: { question: "Without scrolling back: what does this step say about size?", kind: "recall", expect_any: ["size", "parts", "fraction"], hint: "One sentence is enough. The step is about size." } },
+        { index: 2, text: "One half and one third name different-sized parts, so 2/5 comes from adding tops and bottoms -- which changes what the fraction means.", words: 24, check: { question: "Without scrolling back: what does this step say about fraction?", kind: "recall", expect_any: ["fraction", "parts", "tops"], hint: "One sentence is enough. The step is about fraction." } },
+        { index: 3, text: "Rewrite both over a common denominator first, then add only the numerators and keep that denominator.", words: 17, check: { question: "Without scrolling back: what does this step say about denominator?", kind: "recall", expect_any: ["denominator", "numerators", "add"], hint: "One sentence is enough. The step is about denominator." } },
+      ],
+      dropped: [],
+      source_words: 65,
+      note: "",
+    },
+  },
   decision_trace: ["no trace for this topic yet", "chosen for information per attempt"],
   position: 1,
   of: 12,
@@ -67,6 +88,22 @@ const mastery = {
   ci: [0.31, 0.86],
   half_life_hours: 26.5,
   last_practice: "2026-10-10T18:04:11",
+  stale: false,
+};
+
+/** A second lane, so the progress chart in mock mode shows what it actually claims: one
+ *  estimate with enough answers behind it to be a number, and one that is still an early
+ *  signal with a wide interval. One row would render as a chart that cannot be wrong. */
+const masterySecond = {
+  topic_id: "top_mock_ratios",
+  title: "Ratios and proportional reasoning",
+  p_know: 0.29,
+  band: "new",
+  observations: 14,
+  correct: 4,
+  ci: [0.21, 0.38],
+  half_life_hours: 51.0,
+  last_practice: "2026-10-09T09:12:00",
   stale: false,
 };
 
@@ -1029,6 +1066,20 @@ const rows: Row[] = [
   { method: "GET", match: /^\/api\/v1\/sessions\/[^/]+\/events/, body: { events: [{ seq: 1, ts: "2026-10-11T09:00:04", type: "question_shown", item_id: item.id, payload: { stem_words: 9 } }] } },
   { method: "POST", match: /^\/api\/v1\/attempts/, body: receipt },
   { method: "GET", match: /^\/api\/v1\/practice/, body: { items: [planEntry], why: "two topics are due for a look, and one has a gap underneath it" } },
+  {
+    method: "GET",
+    match: /^\/api\/v1\/methods\/report/,
+    body: {
+      methods: [
+        { method: "worked_example", label: "Worked example first", n: 7, actual: 0.71, expected: 0.62, residual: 0.09, evidence: "early_signal", note: "early signal: too few observations to call this a finding; treat it as a hint" },
+        { method: "explanation", label: "Explanation first", n: 7, actual: 0.43, expected: 0.6, residual: -0.17, evidence: "early_signal", note: "early signal: too few observations to call this a finding; treat it as a hint" },
+      ],
+      n_scored: 14,
+      min_n_for_a_finding: 8,
+      labels: { unit: "actual minus expected success rate", expected: "the model's own prediction for the same items" },
+      note: "each method is judged on actual minus expected success, so a method that met harder material is not punished for it; under 8 observations is labelled an early signal",
+    },
+  },
   { method: "POST", match: /^\/api\/v1\/items\/[^/]+\/hint/, body: { hint: "Write the two fractions over the same denominator before you add anything.", hint_no: 1, max_hints: 2, level: "developing", hints_available: 2, exhausted: false, item_id: item.id } },
   { method: "GET", match: /^\/api\/v1\/items\/[^/]+\/worked-example/, body: { steps: [{ index: 1, text: "Make the denominators equal: 2 and 3 both divide 6.", why: "a fraction only names parts of one whole" }, { index: 2, text: "Scale both numerators: 1/2 = 3/6, 1/3 = 2/6.", why: "scaling both sides keeps the value" }], item_id: item.id, note: "worked examples are faded on purpose: we add steps back when you ask, and remove them when you no longer need them" } },
   { method: "POST", match: /^\/api\/v1\/items\/[^/]+\/worked-example/, body: { steps: [{ index: 1, text: "Make the denominators equal: 2 and 3 both divide 6.", why: "a fraction only names parts of one whole" }], item_id: item.id, note: "opening this is recorded, because the fading decision is measured on it" } },
@@ -1055,13 +1106,41 @@ const rows: Row[] = [
           ended_at: null,
           end_reason: null,
           proposal_id: proposal.id,
-          effect_summary: null,
+          // A change that has been live for a few answers and has not been judged: the server
+          // stores the count and the sentence with the measurement, so the screen can say what
+          // it is waiting for instead of saying nothing.
+          effect_summary: {
+            baseline_n: 5,
+            after_n: 3,
+            baseline_mean: 0.4,
+            after_mean: 0.67,
+            mean_delta: 0.27,
+            ci_low: -0.2,
+            ci_high: 0.73,
+            verdict: "insufficient_evidence",
+            explanation: "fewer than 5 scored answers in one of the windows",
+            verdict_words: "Not enough scored answers yet to judge this -- 3 so far, about 3 more to go.",
+            status: "gathering_evidence",
+            pilot: false,
+            label: null,
+          },
+          effect_raw: {},
+          effect_status: "gathering_evidence",
+          effect_measured: false,
           watch_metric: "accuracy_after_read",
           mechanism: "Answering before the explanation is open forces retrieval.",
           citations: ["Renkl 2014"],
         },
       ],
-      waiting_for_effect: [{ id: "act_mock_0001", strategy: proposal.strategy, effect_summary: null }],
+      waiting_for_effect: [
+        {
+          id: "act_mock_0001",
+          strategy: proposal.strategy,
+          effect_status: "gathering_evidence",
+          effect_measured: false,
+          effect_summary: null,
+        },
+      ],
     },
   },
   { method: "POST", match: /^\/api\/v1\/adaptations\/evaluate/, body: { evaluated: [], note: "small samples are labelled insufficient rather than smoothed over" } },
@@ -1072,7 +1151,7 @@ const rows: Row[] = [
   { method: "GET", match: /^\/api\/v1\/topics/, body: [({ id: item.topic_id, code: "fraction_add", title: mastery.title, difficulty: 0.5, items: 5, p_know: 0.62 } as unknown) as Row["body"]] },
   { method: "GET", match: /^\/api\/v1\/review\/due/, body: { due: [{ topic_id: item.topic_id, title: mastery.title, due_at: "2026-10-11T14:40:00", overdue: true, half_life_hours: 26.5, expected_recall_at_due: 0.85, reps: 3, lapses: 1 }], count: 1, rule: "scheduled at the point your own recall is projected to reach ~85%" } },
   { method: "POST", match: /^\/api\/v1\/review\/complete/, body: { lag_hours: 26.4, expected_recall: 0.84, correct: true, scheduled: { due_at: "2026-10-15T09:10:00", half_life_hours: 62.1, reps: 4, lapses: 1, expected_recall_at_due: 0.85 }, was_due_at: "2026-10-11T14:40:00" } },
-  { method: "GET", match: /^\/api\/v1\/dashboard/, body: { student_id: learner.student_id, generated_at: "2026-10-11T09:30:00", profile_taken_at: "2026-10-11T09:29:40", mastery: [mastery], band_summary: { developing: 1 }, weakest: [mastery], knowledge_gaps: [{ topic_id: item.topic_id, topic_title: mastery.title, blocking_prerequisite_title: "What a fraction means", severity: 0.42 }], hypotheses: [{ id: "hyp_mock_0001", statement: "You get there when the first step is visible.", status: "active", confidence: 0.61, disproof: "accuracy stays flat with examples shown" }], pending_proposals: [proposal], active_adaptations: [], decided_adaptations: [], reviews: { due_now: [{ topic_id: item.topic_id, title: mastery.title, due_at: "2026-10-11T14:40:00" }], checks_total: 2, checks_mean_score: 0.75 }, last_7_days: { attempts: 11, mean_score: 0.68, hints_used: 4, mean_seconds_on_question: 63 }, data_volume: { attempts: 11, events: 84, evidence: 3, retention_checks: 2 }, open_questions: [], measured_outcomes: { evaluated: 0, applied: 1 }, strategy_evidence: [], student_preferences: { goal: "GCSE maths" }, guardrails: { no_fixed_trait_labels: true, hypotheses_are_not_facts: true }, notes: [] } },
+  { method: "GET", match: /^\/api\/v1\/dashboard/, body: { student_id: learner.student_id, generated_at: "2026-10-11T09:30:00", profile_taken_at: "2026-10-11T09:29:40", mastery: [mastery, masterySecond], band_summary: { developing: 1, new: 1 }, weakest: [mastery], knowledge_gaps: [{ topic_id: item.topic_id, topic_title: mastery.title, blocking_prerequisite_title: "What a fraction means", severity: 0.42 }], hypotheses: [{ id: "hyp_mock_0001", statement: "You get there when the first step is visible.", status: "active", confidence: 0.61, disproof: "accuracy stays flat with examples shown" }], pending_proposals: [proposal], active_adaptations: [], decided_adaptations: [], reviews: { due_now: [{ topic_id: item.topic_id, title: mastery.title, due_at: "2026-10-11T14:40:00" }], checks_total: 2, checks_mean_score: 0.75 }, last_7_days: { attempts: 11, mean_score: 0.68, hints_used: 4, mean_seconds_on_question: 63 }, data_volume: { attempts: 11, events: 84, evidence: 3, retention_checks: 2 }, open_questions: [], measured_outcomes: { evaluated: 0, applied: 1 }, strategy_evidence: [], student_preferences: { goal: "GCSE maths" }, guardrails: { no_fixed_trait_labels: true, hypotheses_are_not_facts: true }, notes: [] } },
   { method: "GET", match: /^\/api\/v1\/journey/, body: { student_id: learner.student_id, generated_at: "2026-10-11T09:31:00", window_days: 90, nodes: [{ ts: "2026-10-11T09:12:44", kind: "proposal", tone: "ask", title: "Proposed change: worked examples (pending)", detail: proposal.change, meta: {} }, { ts: "2026-10-11T09:20:00", kind: "adaptation", tone: "good", title: "Now applying: worked example before the next attempt", detail: "you approved it", meta: {} }, { ts: "2026-10-10T18:04:11", kind: "attempt", tone: "good", title: "Answered correctly: Adding and subtracting fractions", detail: "63s, no hints", meta: {} }], counts: { attempt: 1, proposal: 1, adaptation: 1 }, phases: [{ name: "practise", from: "2026-10-10", to: "2026-10-11", nodes: 3 }], summary: "11 answers in the last 7 days, 4 of them after opening a hint.", milestones: [{ ts: "2026-10-11T09:20:00", title: "First adaptation approved", detail: "worked examples" }], stats: { sessions: 3, attempts: 11, mean_score: 0.68, events: 84 } } },
   { method: "GET", match: /^\/api\/v1\/strategies/, body: { strategies: [{ id: "worked_examples", label: "Worked example before the next attempt", family: "load_reduction", what: "Show a fully solved, step-labelled example of the same problem type immediately before the question.", mechanism: "Reduces intrinsic load on first exposure.", watch_metric: "accuracy", n: 0, p_helps: 0.5 }] } },
   { method: "GET", match: /^\/api\/v1\/voice\/capabilities/, body: { stt: { local_stt: false, detail: "faster-whisper not importable in this mock", fallback: "browser Web Speech API dictation (free, on-device)", model_size: "base" }, tts: { local_tts: false, detail: "kokoro not importable in this mock", fallback: "browser speechSynthesis with male/female voice selection", sample_rate: 24000 }, voices: { female: { a: "af_heart", b: "bf_violet" }, male: { a: "am_fenrir", b: "bm_ola" } }, barge_in: true, transport: "websocket /ws/voice (binary s16le frames + JSON control messages)", path: "/ws/voice", note: "transcription accuracy and teaching accuracy are measured separately" } },

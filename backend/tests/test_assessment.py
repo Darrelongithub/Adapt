@@ -70,6 +70,12 @@ def test_every_item_can_actually_be_graded_right_and_wrong():
     right = wrong = 0
     for _code, item in enumerate_items():
         spec = item.get("answer_spec") or {}
+        if item["kind"] not in ("mcq", "numeric", "text", "teachback"):
+            continue
+        if item["kind"] == "text" and not (spec.get("values") or spec.get("keywords") or spec.get("value") is not None or spec.get("formula")):
+            # A question with nothing to mark: it is not served any more
+            # (``selector.gradeable``), and this test is about items that can be served.
+            continue
         if item["kind"] == "mcq":
             idx = spec.get("correct_index", 0)
             assert grade(item, idx).correct, item["id"]
@@ -91,10 +97,18 @@ def test_every_item_can_actually_be_graded_right_and_wrong():
             assert grade(item, accepted[0]).correct, item["id"]
             right += 1
         elif item["kind"] == "teachback":
+            # A real explanation, in sentences: the checklist grades points evidenced by
+            # sentences, so a comma-separated list of the rubric's words scores 0 on
+            # purpose (that is the behaviour this test used to pin).
             concepts = (item.get("rubric") or {}).get("required_concepts") or []
-            text = ", ".join(str(c.get("concept")) for c in concepts) or "the denominator says how many parts"
-            score = grade(item, text).score
-            assert score is not None and score > 0, item["id"]
+            ideas = [str((c.get("synonyms") or [c.get("concept")])[0]) for c in concepts]
+            text = (
+                "The point is that "
+                + " and the reason it works is that ".join(ideas)
+                + " before you do anything else, and you can check it with one small example."
+            )
+            result = grade(item, text)
+            assert result.score is not None and result.score > 0, (item["id"], result.partial)
             right += 1
     assert right >= 30 and wrong >= 20
 
@@ -148,6 +162,38 @@ def test_numeric_units_are_opt_in_and_cost_half_a_mark_when_missing():
     assert grade({"kind": "numeric", "answer_spec": {"value": 36}}, "36").correct
 
 
+def test_a_mark_decided_below_the_printed_digits_names_the_form_it_accepts():
+    """`expected 11.3333, got 11.3333` is not a reason, and it is not actionable.
+
+    An item whose answer is 34/3, marked to 1e-09, rejects a rounded decimal — and the
+    detail it gave back printed both numbers at six significant digits, so the two
+    strings either side of the mark were identical. The exact form is named instead.
+    The same care applies to a *correct* mark, which must not be told it fell short.
+    """
+    from adapt.assessment.grading import grade
+
+    item = {
+        "kind": "numeric",
+        "answer_spec": {
+            "formula": "a*c/b",
+            "variables": {"a": 1, "b": 3, "c": 34},
+            "tolerance": 1e-09,
+        },
+    }
+    rounded = grade(item, "11.3333")
+    assert not rounded.correct
+    assert "11.3333, got 11.3333" not in rounded.detail, rounded.detail
+    assert "34/3" in rounded.detail, "the value the item accepts has to be the one on screen"
+
+    exact = grade(item, "34/3")
+    assert exact.correct, exact.detail
+    assert "not close enough" not in exact.detail, "a correct answer is not a rounded one"
+
+    # A number the short form carries exactly still reads as a plain number.
+    plain = grade({"kind": "numeric", "answer_spec": {"value": 10.4, "tolerance": 1e-09}}, "10.5")
+    assert not plain.correct and plain.detail == "expected 10.4, got 10.5"
+
+
 def test_tolerance_and_equivalent_expressions():
     from adapt.assessment.grading import grade
 
@@ -192,24 +238,39 @@ def test_worked_examples_are_never_scored():
 
 
 def test_teachback_rubric_needs_both_content_and_substance():
+    """A point needs a sentence that carries it, in the learner's own words.
+
+    The old rule matched the rubric's words — so "denominator, equal parts" passed and a
+    paraphrase failed. Both halves of that are asserted here, because the fix has two
+    directions and a test that only checked one would let the other come back.
+    """
     from adapt.assessment.grading import grade
 
     item = {
         "kind": "teachback",
         "rubric": {
             "required_concepts": [
-                {"concept": "denominator", "synonyms": ["denominator", "bottom number"]},
-                {"concept": "same size", "synonyms": ["same size", "equal parts"]},
+                {"concept": "denominator", "synonyms": ["denominator", "bottom number"], "idea": "the bottom number"},
+                {"concept": "same size", "synonyms": ["same size", "equal parts"], "idea": "equal parts"},
             ],
             "pass_fraction": 0.6,
         },
     }
-    good = grade(item, "first make the bottom number the same size, then you can add the top")
-    assert good.correct, good.detail
+    # A paraphrase that never uses the rubric's first word still makes the point.
+    good = grade(
+        item,
+        "First you rewrite both of them so that the bottom number is the same size, and then the tops can be added together.",
+    )
+    assert good.correct, (good.detail, good.partial)
+    # The rubric's words, listed, are not an explanation.
+    listed = grade(item, "denominator. same size.")
+    assert not listed.correct and listed.score < 0.6, listed.partial
     partial = grade(item, "just add them")
     assert not partial.correct and partial.score < 0.6, "one phrase is not an explanation"
     missing = (partial.partial or {}).get("missing") or []
-    assert any("denominator" in str(m) for m in missing), missing
+    assert len(missing) == 2, missing
+    points = (partial.partial or {}).get("points") or []
+    assert points and all(p["met"] is False for p in points)
 
 
 def test_ungradeable_kind_is_reported_not_silently_wrong():

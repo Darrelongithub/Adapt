@@ -24,30 +24,22 @@ which is exactly the visible loop the demo has to show.
 
 from __future__ import annotations
 
-import hashlib
+import logging
 import math
 import random
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
-from ..learning.bkt import BKTParams, information_gain
+from ..learning import content as CONTENT
+from ..learning import methods as M
+from ..learning.bkt import BKTParams, information_gain, params_for_kind, update
+from ..learning.seeds import stable_seed  # re-exported: callers import it from here
+
+log = logging.getLogger("adapt.selector")
 
 MODE_CYCLE = ("read", "visual", "example", "practice", "teachback")
-
-
-def stable_seed(*parts: str) -> int:
-    """An int derived from strings, identical in every process.
-
-    ``hash()`` on a ``str`` is salted per interpreter (PYTHONHASHSEED), so
-    ``random.Random(hash(seed))`` produced a *different* plan on every restart
-    even for the same learner: the diagnostic claimed to be "randomised per
-    learner, reproducible for the same learner" and was not reproducible at all.
-    BLAKE2b is stable across processes, platforms and versions, which is the
-    property this needs; it is not used for anything secret.
-    """
-    digest = hashlib.blake2b("\x1f".join(parts).encode("utf-8"), digest_size=8).digest()
-    return int.from_bytes(digest, "big")
 
 #: How far one point of item difficulty moves the log-odds of a correct answer.
 #: 1.0 means an item authored at difficulty 1.0 is ``e`` times harder (in odds)
@@ -55,6 +47,45 @@ def stable_seed(*parts: str) -> int:
 #: ``difficulty`` is an author's prior, not a calibrated parameter (see
 #: docs/UNVERIFIED.md), so it may nudge the target -- it must not dominate it.
 DIFFICULTY_LOG_ODDS = 1.0
+
+#: Kinds that are a *question*: something the learner answers and the build can mark.
+#: ``worked_example`` is teaching material and ``visual``-only items are diagrams; a
+#: plan that serves one has served a screen the learner cannot answer, and the attempt
+#: it records is not an observation of anything.
+QUESTION_KINDS = ("mcq", "numeric", "text", "teachback")
+
+
+def gradeable(item: Mapping[str, Any]) -> bool:
+    """Can this build actually mark an answer to this item, right or wrong?
+
+    The placement plan chose by information gain alone and put a ``worked_example``
+    first — a screen with no answer to give, recorded as a correct attempt, which is
+    the worst of both worlds: no measurement and a trace that says the learner knew
+    it. Anything served has to be answerable *and* markable, so the check lives here
+    and every plan applies it.
+    """
+    kind = str(item.get("kind") or "")
+    spec = item.get("answer_spec") or {}
+    if kind not in QUESTION_KINDS:
+        return False
+    if kind == "mcq":
+        choices = item.get("choices") or []
+        if not choices:
+            return False
+        return spec.get("correct_index") is not None or any(c.get("correct") for c in choices)
+    if kind == "numeric":
+        return spec.get("value") is not None or bool(spec.get("formula"))
+    if kind == "text":
+        return bool(spec.get("values") or spec.get("keywords") or spec.get("value") is not None or spec.get("formula"))
+    if kind == "teachback":
+        return bool(item.get("rubric"))
+    return False
+
+
+def servable(item: Mapping[str, Any]) -> bool:
+    """Answerable and markable, and not retired."""
+    return bool(item.get("active", True)) and gradeable(item)
+
 
 #: Never sent to a client that has not answered yet.
 PRIVATE_ITEM_KEYS = frozenset({"answer_spec", "solution_steps", "hints", "rubric", "stem_template"})
@@ -72,6 +103,12 @@ class Pick:
     require_teachback: bool = False
     hints_allowed: int | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+    # --- the assigned teaching method (see learning/methods.py) ---------------- #
+    # These are decisions made *now*, for this learner, not fields of the item. The
+    # item's own ``experience_mode`` is only kept for the record.
+    assignment: dict[str, Any] | None = None
+    teaching: dict[str, Any] | None = None
+    expected_success: float | None = None
 
     def as_dict(self, *, include_answer: bool = False) -> dict[str, Any]:
         """Client-shaped view of this pick.
@@ -86,21 +123,241 @@ class Pick:
             item = {k: v for k, v in self.item.items() if k not in PRIVATE_ITEM_KEYS}
             if isinstance(item.get("choices"), list):
                 item["choices"] = [{"index": i, "text": c.get("text")} for i, c in enumerate(self.item["choices"])]
+        assignment = self.assignment or {}
+        method = str(assignment.get("method") or self.item.get("experience_mode") or "read")
+        presentation: dict[str, Any] = {
+            "attach_worked_example": self.attach_worked_example,
+            "feedback_delay_s": self.feedback_delay_s,
+            "max_words": self.max_words,
+            "require_teachback": self.require_teachback,
+            "hints_allowed": self.hints_allowed,
+            # ``experience_mode`` now reports the method that was *assigned* for this
+            # attempt. It used to report the mode the item's author picked, which is
+            # why approving a change could not alter it.
+            "experience_mode": method,
+            "method": assignment.get("method"),
+            "method_label": assignment.get("method_label"),
+            "method_assignment": assignment or None,
+            "teaching": self.teaching,
+            "expected_success": None if self.expected_success is None else round(float(self.expected_success), 3),
+        }
         return {
             "item": item,
             "topic_id": self.topic_id,
             "reason": self.reason,
             "utility": round(self.utility, 4),
-            "presentation": {
-                "attach_worked_example": self.attach_worked_example,
-                "feedback_delay_s": self.feedback_delay_s,
-                "max_words": self.max_words,
-                "require_teachback": self.require_teachback,
-                "hints_allowed": self.hints_allowed,
-                "experience_mode": self.item.get("experience_mode", "read"),
-            },
+            "presentation": presentation,
             "decision_trace": self.meta,
         }
+
+
+def placement_plan(
+    *,
+    topics: Sequence[dict[str, Any]],
+    items_by_topic: dict[str, Sequence[dict[str, Any]]],
+    count: int = 8,
+    seed: str | None = None,
+    answered: Sequence[dict[str, Any]] = (),
+    params: BKTParams | None = None,
+    teaching_text: Mapping[str, str] | None = None,
+    teaching_titles: Mapping[str, str] | None = None,
+) -> list[Pick]:
+    """Placement: **adaptive**, and only about placement.
+
+    The 12-item diagnostic was doing two jobs at once (place the learner *and*
+    compare teaching methods) and did both badly: it was long, it was the same
+    sequence for every learner, and the method differences it measured were
+    confounded with topic and treatment order.
+
+    This is the placement half, and it is the adaptive one:
+
+    * beliefs start from the prior (or from ``answered``, the attempts this learner
+      has already recorded on this session — each call re-plans, so the *next*
+      request depends on the previous answer, which is what makes it adaptive);
+    * breadth first: one item per topic before a second from any topic, easiest
+      topic first, because an early success is both more informative and less
+      discouraging than an early failure on material never taught;
+    * the item chosen within a topic is the one with the highest **expected
+      information gain** under the current belief, not the next row in the table;
+    * a question that has already been used (or answered) is never repeated.
+    """
+    params = params or BKTParams()
+    teaching_text = teaching_text or {}
+    teaching_titles = teaching_titles or {}
+    rng = random.Random(stable_seed(seed or "placement"))
+    beliefs: dict[str, float] = defaultdict(lambda: params.p_init)
+    difficulty_by_key: dict[str, float] = {}
+    titles: dict[str, str] = {}
+    pool: dict[str, list[dict[str, Any]]] = {}
+    for topic in topics:
+        key = next(
+            (k for k in (topic.get("id"), topic.get("code")) if k and items_by_topic.get(k)),
+            None,
+        )
+        if key is None:
+            continue
+        difficulty_by_key[key] = float(topic.get("difficulty", 0.5) or 0.5)
+        titles[key] = str(topic.get("title") or key)
+        # Only questions the build can mark. A worked example in a placement plan is a
+        # screen with no answer, recorded as a correct attempt (see ``gradeable``).
+        pool[key] = [i for i in items_by_topic[key] if servable(i)]
+        if not pool[key]:
+            pool.pop(key)
+    for row in answered:
+        topic = str(row.get("topic_id") or "")
+        if topic in pool and row.get("correct") is not None:
+            beliefs[topic] = update(beliefs[topic], bool(row["correct"]), params)
+    if not pool:
+        return []
+    used: set[str] = {str(r.get("item_id") or "") for r in answered if r.get("item_id")}
+    order = sorted(pool, key=lambda key: (difficulty_by_key.get(key, 0.5), key))
+    picks: list[Pick] = []
+    counts: dict[str, int] = {k: 0 for k in pool}
+    while len(picks) < count:
+        candidates = [k for k in order if any(_key(i) not in used for i in pool[k])]
+        if not candidates:
+            break
+        # Fewest questions so far first: that is the breadth rule, and among equally
+        # covered topics the easier one goes first.
+        topic = min(candidates, key=lambda k: (counts[k], difficulty_by_key.get(k, 0.5)))
+        belief = beliefs[topic]
+        free = [i for i in pool[topic] if _key(i) not in used]
+        item = max(
+            free,
+            key=lambda i: (
+                information_gain(belief, _params_for_item(params, i)),
+                -abs(float(i.get("difficulty", 0.5)) - (1.0 - belief)),
+                -stable_seed(str(seed), _key(i)),
+            ),
+        )
+        used.add(_key(item))
+        counts[topic] += 1
+        gain = information_gain(belief, _params_for_item(params, item))
+        # Placement is measurement, so the method is assigned but *not* applied as a
+        # teaching intervention that would change what is measured: the plan records
+        # which method is being used so placement attempts are not counted as method
+        # evidence later (methods.rows_from_attempts keys on the method, and the probe
+        # is where a method comparison belongs).
+        assignment = M.assign_method(
+            learner_id=str(seed or ""),
+            item_id=_key(item),
+            topic_id=str(item.get("topic_id") or topic),
+            exposure=counts[topic],
+        )
+        picks.append(
+            Pick(
+                item=item,
+                topic_id=item.get("topic_id") or topic,
+                assignment={**assignment.as_dict(), "design": "placement", "assigned_by": "placement"},
+                teaching=_teaching_for(
+                    assignment,
+                    topic_id=str(item.get("topic_id") or topic),
+                    title=str(teaching_titles.get(topic) or topic),
+                    source_text=teaching_text.get(topic) or "",
+                    learner_id=str(seed or ""),
+                ),
+                reason=(
+                    f"placement: {titles.get(topic, topic)}, belief {belief:.2f}, "
+                    f"this question carries the most information about it"
+                ),
+                utility=float(gain),
+                feedback_delay_s=0,
+                meta={
+                    "phase": "placement",
+                    "belief_before": round(belief, 3),
+                    "information_gain": round(gain, 4),
+                    "rng": "seeded",
+                    "adaptive": True,
+                },
+            )
+        )
+    # A stable per-learner shuffle of the *tail* only: the first pass keeps its
+    # easiest-first order (that ordering is what an early success depends on).
+    if len(picks) > 3:
+        head, tail = picks[:3], picks[3:]
+        rng.shuffle(tail)
+        picks = head + tail
+    return picks
+
+
+def _params_for_item(params: BKTParams, item: Mapping[str, Any]) -> BKTParams:
+    """The item's format has a guess rate; the belief update should know it."""
+    kind = str(item.get("kind") or "")
+    return params_for_kind(kind, choices=len(item.get("choices") or []) or None, base=params)
+
+
+def method_probe_plan(
+    *,
+    topics: Sequence[dict[str, Any]],
+    items_by_topic: dict[str, Sequence[dict[str, Any]]],
+    seed: str | None = None,
+    learner_id: str | None = None,
+    count: int = 8,
+    teaching_text: Mapping[str, str] | None = None,
+    teaching_titles: Mapping[str, str] | None = None,
+) -> list[Pick]:
+    """The method probe: 6–8 concepts, one question each, methods balanced.
+
+    Separate from placement on purpose. Placement asks "what does this learner
+    know?" and is adaptive; the probe asks "which way of teaching this concept
+    worked better for them?" and must be *balanced* — same answer format for a
+    concept across the run, one method per concept, and never the same method twice
+    in a row for the same learner if the rotation can avoid it.
+    """
+    learner = learner_id or seed or "probe"
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    for topic in topics:
+        key = next((k for k in (topic.get("id"), topic.get("code")) if k and items_by_topic.get(k)), None)
+        if key is None:
+            continue
+        by_id[str(topic.get("id") or key)] = [
+            {**i, "topic_id": i.get("topic_id") or topic.get("id") or key}
+            for i in items_by_topic[key]
+            if i.get("active", True)
+        ]
+    teaching_text = teaching_text or {}
+    teaching_titles = teaching_titles or {}
+    concept_list = [{"id": str(t.get("id") or t.get("code")), "title": t.get("title")} for t in topics]
+    planned = M.balanced_probe(
+        concepts=[c for c in concept_list if by_id.get(c["id"])],
+        items_by_concept=by_id,
+        learner_id=learner,
+        count=max(6, min(8, count)),
+    )
+    out: list[Pick] = []
+    for entry in planned:
+        item = dict(entry["item"])
+        assignment: M.MethodAssignment = entry["assignment"]
+        concept_id = str(entry["concept"])
+        out.append(
+            Pick(
+                item=item,
+                topic_id=concept_id,
+                reason=entry["reason"],
+                utility=1.0,
+                assignment=assignment.as_dict(),
+                teaching=_teaching_for(
+                    assignment,
+                    topic_id=concept_id,
+                    title=str(teaching_titles.get(concept_id) or entry.get("concept_title") or concept_id),
+                    source_text=teaching_text.get(concept_id) or "",
+                    learner_id=learner,
+                ),
+                expected_success=None,
+                meta={
+                    "phase": "method_probe",
+                    "format": entry["format"],
+                    "method": assignment.method,
+                    "design": assignment.design,
+                    "arm": assignment.arm,
+                },
+            )
+        )
+    # One method per concept, and the run rotates: check the balance here rather than
+    # hoping, because an unbalanced probe is a probe that cannot answer its question.
+    if out and len({p.meta["method"] for p in out}) < min(3, len(out)):
+        log.warning("method probe used fewer than three distinct methods for %d concepts", len(out))
+    return out
 
 
 def diagnostic_plan(
@@ -110,7 +367,15 @@ def diagnostic_plan(
     count: int = 12,
     seed: str | None = None,
 ) -> list[Pick]:
-    """Cover breadth first, then vary the delivery mode deterministically per learner."""
+    """**Legacy** coverage-first plan, kept for callers that want a fixed sequence.
+
+    The app uses :func:`placement_plan` (adaptive) and :func:`method_probe_plan`
+    (balanced) instead: this one assigns the delivery mode by cycling the item's
+    authored ``experience_mode``, which is the coupling the method rotation exists to
+    remove. It is still here because it is the frozen behaviour several tests pin,
+    and because a fixed plan is the right thing when a caller genuinely needs the
+    same questions every time.
+    """
     rng = random.Random(stable_seed(seed or "diagnostic"))
     # Callers key items by topic id (the database identity). Codes are accepted as a
     # fallback because the bank is written in codes and a caller that has not seeded
@@ -189,11 +454,17 @@ def presentation_from_directives(directives: Sequence[dict[str, Any]]) -> dict[s
         "max_words": None,
         "require_teachback": False,
         "hints_allowed": None,
+        "visual_mode": False,
         "interleaving_ratio": 0.0,
         "ask_confidence": False,
         "target_success_rate": 0.78,
         "re_read_allowed": True,
         "voice_mode": False,
+        # The method an approved adaptation pins, if any (learning/methods.py reads
+        # this). Without it, approving "show the structure visually" moved a boolean
+        # that no serving path consulted.
+        "method": None,
+        "segments": False,
     }
     for d in directives or ():
         strat = d.get("strategy") or d.get("action")
@@ -220,6 +491,10 @@ def presentation_from_directives(directives: Sequence[dict[str, Any]]) -> dict[s
             out["ask_confidence"] = True
         elif strat == "voice_explanation":
             out["voice_mode"] = True
+        elif strat == "visual_representation":
+            out["visual_mode"] = True
+    out["method"] = M.method_for_directives(directives)
+    out["segments"] = out["method"] == "explanation" or bool(out.get("max_words"))
     return out
 
 
@@ -237,14 +512,26 @@ def next_items(
     params: BKTParams | None = None,
     seed: str | None = None,
     now: datetime | None = None,
+    teaching_text: Mapping[str, str] | None = None,
+    teaching_titles: Mapping[str, str] | None = None,
 ) -> list[Pick]:
-    """Score every candidate item and return the best ``count`` in a sensible order."""
+    """Score every candidate item and return the best ``count`` in a sensible order.
+
+    Each returned pick carries the **teaching method assigned for this learner at
+    this moment** (``learning.methods.assign_method``) plus the payload that method
+    puts on the screen, drawn from ``teaching_text`` (topic id -> source material).
+    The item's own ``experience_mode`` is not consulted: that is what made every
+    concept meetable in exactly one way.
+    """
     rng = random.Random(stable_seed(seed or "select"))
     pres = presentation_from_directives(directives)
+    teaching_text = teaching_text or {}
+    teaching_titles = teaching_titles or {}
     params = params or BKTParams()
     counts = counts or {}
     gap_severity = gap_severity or {}
     used = set(used_item_ids)
+    skipped_unmarkable: list[str] = []
     scored: list[Pick] = []
     for code, items in items_by_topic.items():
         p_know = float(mastery.get(code, 0.2))
@@ -253,6 +540,11 @@ def next_items(
         gap = code in set(gap_topics)
         for item in items:
             if not item.get("active", True) or _key(item) in used:
+                continue
+            if not gradeable(item):
+                # Not offered at all: an unmarkable item takes a slot in the session and
+                # teaches the model nothing about the learner.
+                skipped_unmarkable.append(_key(item))
                 continue
             topic_id = item.get("topic_id") or code  # the id is the identity; the dict key may be a code
             difficulty = float(item.get("difficulty", 0.5))
@@ -288,6 +580,25 @@ def next_items(
             if kind == "worked_example":
                 utility -= 0.4  # examples are shown alongside items, not chosen as items
                 meta["example_as_item_penalty"] = -0.4
+            assignment = M.assign_method(
+                learner_id=str(seed or ""),
+                item_id=_key(item),
+                topic_id=topic_id,
+                exposure=counts.get(code, 0),
+                directives=directives,
+            )
+            teaching = _teaching_for(
+                assignment,
+                topic_id=topic_id,
+                title=str(
+                    teaching_titles.get(topic_id)
+                    or teaching_titles.get(code)
+                    or item.get("topic_title")
+                    or topic_id
+                ),
+                source_text=teaching_text.get(topic_id) or teaching_text.get(code) or "",
+                learner_id=str(seed or ""),
+            )
             scored.append(
                 Pick(
                     item=item,
@@ -299,10 +610,22 @@ def next_items(
                     max_words=pres["max_words"],
                     require_teachback=bool(pres["require_teachback"]) and kind != "teachback",
                     hints_allowed=pres["hints_allowed"],
-                    meta={**meta, "p_know": round(p_know, 3)},
+                    assignment=assignment.as_dict(),
+                    teaching=teaching,
+                    expected_success=expected_success,
+                    meta={
+                        **meta,
+                        "p_know": round(p_know, 3),
+                        "method": assignment.method,
+                        "method_design": assignment.design,
+                        "arm": assignment.arm,
+                        "question_format": M.question_format(item),
+                    },
                 )
             )
     scored.sort(key=lambda p: p.utility, reverse=True)
+    if skipped_unmarkable:
+        log.info("selector skipped %d item(s) this build cannot mark: %s", len(skipped_unmarkable), skipped_unmarkable[:5])
     if pres["interleaving_ratio"] > 0:
         scored = _interleave(scored, ratio=pres["interleaving_ratio"])
     return scored[:count]
@@ -374,7 +697,7 @@ def review_queue(
     picks: list[Pick] = []
     for s in due[:count]:
         code = s["topic_id"]
-        candidates = [i for i in items_by_topic.get(code, []) if i.get("kind") in ("numeric", "mcq", "text")]
+        candidates = [i for i in items_by_topic.get(code, []) if servable(i)]
         if not candidates:
             continue
         item = candidates[int(s.get("reps", 0)) % len(candidates)]
@@ -397,10 +720,43 @@ def remediation_items(
     *, topic_id: str, items: Sequence[dict[str, Any]], count: int = 3, prefer_easy: bool = True
 ) -> list[Pick]:
     """Easiest items on the prerequisite topic, for the 'back up and fix it' step."""
-    ordered = sorted(items, key=lambda i: float(i.get("difficulty", 0.5)))
+    ordered = sorted([i for i in items if servable(i)], key=lambda i: float(i.get("difficulty", 0.5)))
     if not prefer_easy:
         ordered = ordered[::-1]
     return [
         Pick(item=i, topic_id=topic_id, reason="prerequisite remediation step", utility=1.0)
         for i in ordered[:count]
     ]
+
+
+def _teaching_for(
+    assignment: M.MethodAssignment,
+    *,
+    topic_id: str,
+    title: str,
+    source_text: str,
+    learner_id: str,
+) -> dict[str, Any]:
+    """The teaching payload for a method, or an honest note when there is no material.
+
+    Retrieval deliberately gets nothing: the attempt *is* the teaching. A concept
+    with no source material still gets its method recorded — the comparison needs it
+    — but the payload says so rather than showing an empty box.
+    """
+    if assignment.method == "retrieval":
+        return CONTENT.teaching_payload(
+            method="retrieval", topic_id=topic_id, title=title, source_text="", learner_id=learner_id
+        )
+    if not source_text:
+        return {
+            "method": assignment.method,
+            "kind": "no_material",
+            "text": "No course material is linked to this concept yet, so nothing is shown before the question.",
+        }
+    return CONTENT.teaching_payload(
+        method=assignment.method,
+        topic_id=topic_id,
+        title=title,
+        source_text=source_text,
+        learner_id=learner_id,
+    )

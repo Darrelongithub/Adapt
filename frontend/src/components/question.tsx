@@ -10,15 +10,19 @@
  * - hints are asked for from the server (`hints_used` counts up) and the button stops
  *   when the server says the ladder is exhausted -- the client never keeps asking and
  *   never shows a repeated sentence as if it were new;
- * - the answer is not stored anywhere but the POST body. No localStorage of responses,
- *   no "undo" that reads a cached answer key;
+ * - the answer goes to the server in the POST body and nowhere else; the *draft* (what is in
+ *   the box before it is submitted) is kept client-side so a re-render cannot eat it — see
+ *   `@/lib/drafts`. It is cleared when the session ends, and it never holds a correct answer,
+ *   because the client is never given one:
  * - worked examples are opened through the POST endpoint, because the *opening* is what
  *   the fading decision is measured on.
  */
 import { useMemo, useRef, useState } from "react";
 
 import { Band, Btn, Card, Field, Input, Notice, Receipt, Tag, Textarea, Trace, announce } from "./ui";
+import { TeachingPanel, type Teaching } from "./teaching";
 import { api, post } from "@/lib/api";
+import { loadDraft, saveDraft } from "@/lib/drafts";
 import type { ExplainReply, PlanEntry, Presentation, Receipt as ReceiptType } from "@/lib/types";
 import { useRovingTabIndex } from "@/lib/a11y/useRovingTabIndex";
 
@@ -32,25 +36,32 @@ type Props = {
   onHint: (item: PlanEntry["item"], hintNo: number) => void;
   onExample: (item: PlanEntry["item"]) => void;
   onExplanation: (item: PlanEntry["item"], chars: number) => void;
+  /** The receipt this item already has, when the learner has come back to it. Without this,
+   *  going back and forward again showed an answered question as if nothing had happened. */
+  submitted?: ReceiptType | null;
   /** Diagnostic mode: no hints, no examples -- placement has to measure what they can do
    *  unaided, and a hint here would corrupt the estimate the whole plan is built on. */
   aidless?: boolean;
   attemptNo?: number;
 };
 
-export function Question({ entry, presentation, onSubmit, onInteract, onChange, onHint, onExample, onExplanation, aidless, attemptNo = 1 }: Props) {
+export function Question({ entry, presentation, onSubmit, onInteract, onChange, onHint, onExample, onExplanation, submitted = null, aidless, attemptNo = 1 }: Props) {
   const item = entry.item;
   const pres = { ...(entry.presentation ?? {}), ...(presentation ?? {}) };
+  const teaching = (pres as { teaching?: Teaching }).teaching ?? null;
   const choices = item.choices ?? [];
   const isChoice = item.kind === "mcq" && choices.length > 0;
   const wantTeachback = item.kind === "teachback" || Boolean(pres.require_teachback);
 
-  const [picked, setPicked] = useState<number | null>(null);
-  const [typed, setTyped] = useState("");
-  const [teach, setTeach] = useState("");
+  // The learner's in-progress answer is loaded from the draft store, not invented here -- see
+  // `@/lib/drafts` for why it does not live in this component. `initial` is read once, on
+  // mount: re-reading it on every render would fight the keystrokes below.
+  const [picked, setPicked] = useState<number | null>(() => loadDraft(item.id).picked);
+  const [typed, setTyped] = useState(() => loadDraft(item.id).typed);
+  const [teach, setTeach] = useState(() => loadDraft(item.id).teach);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<ReceiptType | null>(null);
+  const [receipt, setReceipt] = useState<ReceiptType | null>(submitted);
   const [hints, setHints] = useState<{ no: number; text: string }[]>([]);
   const [hintState, setHintState] = useState<{ available: number; exhausted: boolean; max: number | null }>({ available: item.hint_count ?? 0, exhausted: false, max: null });
   const [example, setExample] = useState<{ index: number; text: string; why?: string | null }[] | null>(null);
@@ -61,17 +72,19 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
   const startedItemIdRef = useRef<string | null>(null);
   const roving = useRovingTabIndex(choices.length, "vertical");
 
-  // Deliberate fix: new-question answer state is cleared during render via React's derived-key
-  // state reset pattern, never in a passive useEffect (`numeric-state-reset` wiped fast input
-  // inside the commit→effect window) and without mutating refs during render.
+  // Deliberate fix: per-item state is reconciled synchronously during render via React's
+  // derived-key state reset pattern, never in a passive useEffect (`numeric-state-reset` wiped
+  // fast input inside the commit→effect window) and without mutating refs during render. The
+  // answer itself comes from `@/lib/drafts` so returning to an item restores what was typed.
   const itemKey = `${item.id}|${item.hint_count ?? 0}`;
   const [shownKey, setShownKey] = useState(itemKey);
   if (shownKey !== itemKey) {
+    const draft = loadDraft(item.id);
     setShownKey(itemKey);
-    setPicked(null);
-    setTyped("");
-    setTeach("");
-    setReceipt(null);
+    setPicked(draft.picked);
+    setTyped(draft.typed);
+    setTeach(draft.teach);
+    setReceipt(submitted);
     setHints([]);
     setHintState({ available: item.hint_count ?? 0, exhausted: false, max: null });
     setExample(null);
@@ -91,6 +104,12 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
 
   const canSubmit = isChoice ? picked !== null : item.kind === "worked_example" ? true : typed.trim().length > 0;
 
+  /** Mirror every edit into the draft store. Cheap (a synchronous write) and it is the
+   *  difference between "the box lost my answer" and "the box showed it again". */
+  const keep = (patch: Partial<{ picked: number | null; typed: string; teach: string }>) => {
+    saveDraft(item.id, patch);
+  };
+
   const touch = () => {
     if (startedItemIdRef.current === item.id) return;
     startedItemIdRef.current = item.id;
@@ -103,6 +122,10 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
     try {
       const out = await onSubmit(item.id, answer, wantTeachback ? { teachback_text: teach, attempt_no: attemptNo } : { attempt_no: attemptNo });
       setReceipt(out);
+      // The draft is *not* cleared here. Submitting sends the answer to the server, and the
+      // copy in the box is what makes returning to this question show the answer and the mark
+      // rather than an empty form (`adapt:draft:` entries go when the session ends -- see
+      // `useFlow.finish`).
       announce(out.correct ? "Answer recorded as correct." : "Answer recorded as incorrect.");
     } catch (err) {
       setError(errMessage(err));
@@ -174,6 +197,18 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
         {entry.position && entry.of ? `§ ${item.topic_id.slice(0, 8)} · question ${entry.position} of ${entry.of}` : `§ ${item.topic_id.slice(0, 8)} · practice`} · {item.kind}
       </div>
 
+      {/* The method that was assigned for *this* attempt, before the question it teaches.
+          Placement shows none of it: a hint during placement would measure the wrong thing. */}
+      {!aidless && teaching ? (
+        <div className="mb-5 max-w-[660px]">
+          <p className="mb-2 text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+            {(pres as { method_label?: string }).method_label ?? "before the question"}
+            {pres.max_words ? ` · ≤${pres.max_words} words a step` : ""}
+          </p>
+          <TeachingPanel teaching={teaching} />
+        </div>
+      ) : null}
+
       <h2 className="pz-q">{item.stem}</h2>
       <div className="pz-rule" aria-hidden="true" />
 
@@ -207,6 +242,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
                   touch();
                   onChange(item, picked, c.index);
                   setPicked(c.index);
+                  keep({ picked: c.index });
                   roving.setActiveIndex(idx);
                 }}
                 className={`pz-opt ${correctnessClass}`}
@@ -241,6 +277,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
                   touch();
                   onChange(item, typed, e.target.value);
                   setTyped(e.target.value);
+                  keep({ typed: e.target.value });
                 }}
               />
             )}
@@ -257,6 +294,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
               onChange={(e) => {
                 touch();
                 setTeach(e.target.value);
+                keep({ teach: e.target.value });
               }}
             />
           </Field>
@@ -273,6 +311,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
                 touch();
                 onChange(item, typed, e.target.value);
                 setTyped(e.target.value);
+                keep({ typed: e.target.value });
               }}
               placeholder="Start from what the denominator means…"
             />

@@ -17,7 +17,7 @@
  */
 import { useState } from "react";
 
-import { Btn, Card, Err, Notice, Tag, Textarea, announce } from "@/components/ui";
+import { Btn, Card, Err, Notice, SessionLog, Tag, Textarea, announce, useSessionLedger } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
 import type { ReviewComplete, ReviewDue } from "@/lib/types";
 
@@ -28,6 +28,10 @@ export default function Review() {
   const [log, setLog] = useState<Record<string, ReviewComplete>>({});
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  /** Reviews rated in this session, newest first. The live region says each one once and is
+   *  gone; the Changes screen keeps the same kind of ledger, and a self-report that leaves no
+   *  trace on screen is a self-report the learner cannot check. */
+  const ledger = useSessionLedger("adapt:ledger-reviews");
 
   const rows = due.data?.due ?? [];
   const cal = plan.data?.retention?.calibration;
@@ -44,7 +48,9 @@ export default function Review() {
         ...(note.trim() ? { note: note.trim() } : {}),
       });
       setLog((l) => ({ ...l, [topic.topic_id]: out }));
-      announce(`${topic.title} rated ${correct ? "recalled" : "forgotten"} — next ${out.scheduled ? when(out.scheduled.due_at) : "not rescheduled"}`);
+      const next = out.scheduled ? when(out.scheduled.due_at) : "not rescheduled";
+      announce(`${topic.title} rated ${correct ? "recalled" : "forgotten"} — next ${next}`);
+      ledger.add(`${new Date().toLocaleTimeString()} — ${topic.title} rated “${correct ? "recalled" : "forgotten"}” → next ${next}`);
       due.reload();
     } catch (err) {
       const e = err as { status?: number; shown?: string };
@@ -187,6 +193,8 @@ export default function Review() {
           </div>
         </div>
       )}
+
+      <SessionLog title="Reviews completed this session" entries={ledger.entries} empty="Nothing reviewed yet." />
 
       <Card title="How well your own predictions line up" tone="muted" right={<span>{cal?.n ?? 0} checks</span>}>
         {!cal || (cal.n ?? 0) < 3 ? (

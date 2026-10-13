@@ -49,6 +49,18 @@ class AttemptRow:
     experience_mode: str = "read"
     stem_words: int = 0
     attempt_no: int = 1
+    # --- the teaching method, and how it was chosen ---------------------------- #
+    # ``method`` is what was taught before this question; ``question_kind`` is the
+    # *format* it was measured with (kept separate: a method comparison that varies
+    # the answer format too is a format comparison); ``design`` is ``randomised`` when
+    # the serving path assigned the method and ``observational`` when the learner
+    # chose it; ``arm`` is which way round the worked-example question was put.
+    method: str = "unassigned"
+    question_kind: str = ""
+    design: str = "observational"
+    arm: str = ""
+    expected_success: float | None = None
+    pilot: bool = False
     teachback_score: float | None = None
     latency_z: float | None = None
     submitted_at: datetime | None = None
@@ -131,6 +143,12 @@ class EvidenceContext:
         return [a for a in self.attempts if a.ok is not None]
 
 
+#: A difference seen in fewer than this many observations on either side is a signal
+#: about where to look next, not a finding. Every detector states ``n``; every surface
+#: that shows an observation shows this label next to it.
+EARLY_SIGNAL_N = 8
+
+
 @dataclass
 class Observation:
     detector: str
@@ -145,6 +163,11 @@ class Observation:
     attempt_ids: list[str]
     candidate_strategy: str
     direction: str = "up"  # does the intervention target raising `value`?
+    #: ``randomised`` when the comparison came from an assigned condition,
+    #: ``observational`` when it came from what the learner chose to do.
+    design: str = "observational"
+    #: ``early_signal`` under ``EARLY_SIGNAL_N``, then ``signal``, then ``established``.
+    evidence: str = "early_signal"
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -160,6 +183,8 @@ class Observation:
             "attempt_ids": self.attempt_ids,
             "candidate_strategy": self.candidate_strategy,
             "direction": self.direction,
+            "design": self.design,
+            "evidence": self.evidence,
             "facts": self.facts,
         }
 
@@ -177,15 +202,34 @@ def _median(xs: Sequence[float]) -> float:
     return v[m] if len(v) % 2 else (v[m - 1] + v[m]) / 2
 
 
-def _strength(value: float, baseline: float, n_a: int, n_b: int, *, min_n: int) -> float:
-    """0..1 blend of effect size and evidence volume (interval-width aware)."""
+def _strength(value: float, baseline: float, n_a: int, n_b: int, *, min_n: int, design: str = "randomised") -> float:
+    """0..1 blend of effect size and evidence volume (interval-width aware).
+
+    ``design`` scales the result: a difference between two groups the *learner chose*
+    is weaker evidence than the same difference between two groups the app assigned,
+    because the reason they chose one is usually the reason they did better — that is
+    the self-selection that made "learners who opened an example improved" worthless.
+    """
     if min(n_a, n_b) < min_n:
         return 0.0
     delta = abs(value - baseline)
     lo_a, hi_a = proportion_ci(int(round(value * n_a)), n_a)
     width = max(0.02, (hi_a - lo_a))
     # effect relative to the uncertainty band around the effect
-    return max(0.0, min(1.0, (delta / max(0.05, width)) * min(1.0, (n_a + n_b) / 24)))
+    raw = max(0.0, min(1.0, (delta / max(0.05, width)) * min(1.0, (n_a + n_b) / 24)))
+    return raw if design == "randomised" else raw * 0.6
+
+
+def evidence_label(n_a: int, n_b: int, *, min_n: int = EARLY_SIGNAL_N) -> str:
+    """One vocabulary for sample size, used by every detector and every screen."""
+    n = min(n_a, n_b)
+    if n <= 0:
+        return "no_data"
+    if n < min_n:
+        return "early_signal"
+    if n < 3 * min_n:
+        return "signal"
+    return "established"
 
 
 def make(
@@ -200,15 +244,17 @@ def make(
     strategy: str,
     min_n: int,
     topics: Sequence[str] | None = None,
+    design: str = "randomised",
 ) -> Observation | None:
     if len(group) < min_n or len(other) < min_n:
         return None
     delta = value - baseline
     if abs(delta) < 0.12:
         return None
-    strength = _strength(value, baseline, len(group), len(other), min_n=min_n)
+    strength = _strength(value, baseline, len(group), len(other), min_n=min_n, design=design)
     if strength < 0.25:
         return None
+    label = evidence_label(len(group), len(other))
     return Observation(
         detector=detector,
         metric=metric,
@@ -216,12 +262,30 @@ def make(
         baseline=baseline,
         n=len(group),
         n_baseline=len(other),
-        facts={**facts, "delta": round(delta, 3)},
+        facts={
+            **facts,
+            "delta": round(delta, 3),
+            # The label and the counts travel with the observation, so a screen cannot
+            # show the interesting half (the effect) without the honest half (n, and
+            # whether the groups were assigned or chosen).
+            "evidence": label,
+            "n": len(group),
+            "n_baseline": len(other),
+            "design": design,
+            "note": (
+                "early signal: fewer than "
+                f"{EARLY_SIGNAL_N} observations on one side, so this says where to look rather than what is true"
+                if label == "early_signal"
+                else None
+            ),
+        },
         strength=round(strength, 3),
         topic_ids=sorted(set(topics or [a.topic_id for a in group] or [])),
         attempt_ids=[a.id for a in group][:40],
         candidate_strategy=strategy,
         direction="up" if delta > 0 else "down",
+        design=design,
+        evidence=label,
     )
 
 
@@ -231,12 +295,30 @@ def make(
 
 
 def detect_worked_example_need(ctx: EvidenceContext) -> list[Observation]:
-    """Accuracy after reading an explanation vs after seeing a worked example."""
+    """Does a worked example help this learner? Asked with an arm, not with a click.
+
+    The old version compared *learners who opened an example* with learners who did
+    not — self-selection, because the learner who opens an example is the learner who
+    is stuck. The first comparison here is therefore between the two **assigned** arms
+    (``example_first`` vs ``explanation_first``, randomly assigned per concept by
+    ``learning.methods``); the click-based comparison is still reported, but marked
+    ``observational`` and scaled down, so it can inform and cannot decide.
+    """
     rows = ctx.usable()
-    after_read = [a for a in rows if a.explanation_opened and a.examples_opened == 0 and a.hints_used == 0]
-    after_ex = [a for a in rows if a.examples_opened > 0]
+    assigned = [a for a in rows if a.design == "randomised" and a.arm in ("example_first", "explanation_first")]
+    after_ex = [a for a in assigned if a.arm == "example_first"] or [a for a in rows if a.examples_opened > 0]
+    after_read = [
+        a for a in assigned if a.arm == "explanation_first"
+    ] or [a for a in rows if a.explanation_opened and a.examples_opened == 0 and a.hints_used == 0]
     if len(after_read) < ctx.min_n or len(after_ex) < ctx.min_n:
         return []
+    # Both arms have to be assigned *and* big enough. One assigned side with the other side
+    # falling back to clicks is a mixed comparison, and a mixed comparison is not randomised --
+    # calling it one is exactly the mislabelling this detector was rewritten to stop.
+    randomised = (
+        len([a for a in assigned if a.arm == "example_first"]) >= ctx.min_n
+        and len([a for a in assigned if a.arm == "explanation_first"]) >= ctx.min_n
+    )
     v = _mean([a.ok or 0 for a in after_ex])
     b = _mean([a.ok or 0 for a in after_read])
     obs = make(
@@ -246,9 +328,11 @@ def detect_worked_example_need(ctx: EvidenceContext) -> list[Observation]:
         baseline=b,
         group=after_ex,
         other=after_read,
+        design="randomised" if randomised else "observational",
         facts={
-            "after": "worked example then answer",
-            "before": "long explanation then answer",
+            "after": "worked example then answer" if randomised else "an example was opened (self-selected)",
+            "before": "explanation then answer" if randomised else "no example was opened (self-selected)",
+            "comparison": "assigned arm" if randomised else "what the learner chose to do",
             "median_seconds_to_first_answer_after_read": round(
                 _median([a.time_to_first_ms or 0 for a in after_read]) / 1000, 1
             ),
@@ -260,6 +344,102 @@ def detect_worked_example_need(ctx: EvidenceContext) -> list[Observation]:
         min_n=ctx.min_n,
     )
     return [obs] if obs else []
+
+
+def method_comparison(ctx: EvidenceContext) -> list[Observation]:
+    """Actual vs expected per teaching method — the comparison that is *not* raw accuracy.
+
+    Raw accuracy across topics compares the difficulty of the topics and calls the
+    difference the quality of the teaching. Here each attempt is scored against the
+    model's own prediction for that item (``expected_success``, recorded when the
+    question was served), so a method that met harder material is not punished for it,
+    and only same-format attempts inside a method are used.
+
+    Takes the shared ``ctx`` like every other detector. It used to take a bare row list,
+    which is not what ``run_all`` passes — so this detector was dead code: it raised
+    ``TypeError`` on every analysis, ``run_all`` swallowed it by design, and the one
+    comparison the whole method story rests on was never computed. ``test_detectors.py``
+    now calls every registered detector with a real context so a signature cannot drift
+    again.
+
+    Nothing below the evidence bar is emitted (module contract: *nothing fires below*
+    ``min_n``). The rows under it are not hidden — ``method_report`` returns them with
+    ``n`` and the words "early signal" — they are simply not turned into findings.
+    """
+    from . import methods as M
+
+    rows = list(ctx.usable())
+    scored = [
+        {
+            "method": a.method,
+            "correct": bool(a.ok),
+            "expected_success": a.expected_success,
+            "design": a.design,
+            "question_kind": a.question_kind,
+            "topic_id": a.topic_id,
+            "attempt_id": a.id,
+            # Without this the report cannot count pilot rows, and a sentence quoted from
+            # seeded data would carry no label -- the one thing the label exists to prevent.
+            "pilot": bool(a.pilot),
+        }
+        for a in rows
+        if a.ok is not None and a.method and a.method != "unassigned" and a.expected_success is not None
+    ]
+    report = M.method_report(scored)
+    out: list[Observation] = []
+    for entry in report["methods"]:
+        method = str(entry["method"])
+        group = [a for a in rows if a.method == method]
+        if not group or len(group) < 2:
+            continue
+        if entry.get("evidence") == "early_signal":
+            # Under the bar this is a direction, not a finding: it stays in the method report,
+            # where the count is on screen, and out of the evidence list, where a proposal is made.
+            continue
+        residual = float(entry["residual"])
+        # A method that beat its own expectation is a candidate change ("do more of this"). A
+        # method that fell short is still recorded -- the report shows it with its n, and the
+        # reteach loop is what responds by teaching differently next time -- but it carries no
+        # candidate strategy, because "do more of the thing that is underperforming" is not a
+        # proposal worth asking a learner to approve. ``hypotheses.draft`` refuses a finding
+        # with nothing to propose, so this is evidence without a hypothesis attached.
+        strategy = M.METHODS[method].strategy if method in M.METHODS and residual > 0 else ""
+        out.append(
+            Observation(
+                detector="method_effect",
+                metric="actual_minus_expected",
+                value=float(entry["actual"]),
+                baseline=float(entry["expected"]),
+                n=int(entry["n"]),
+                n_baseline=int(entry["n"]),
+                facts={
+                    "method": method,
+                    "label": entry["label"],
+                    "residual": entry["residual"],
+                    "ci": entry["ci"],
+                    "evidence": entry["evidence"],
+                    "formats": sorted({a.question_kind for a in group if a.question_kind}),
+                    "n_randomised": entry.get("n_randomised"),
+                    "note": entry.get("note") or None,
+                    # The label travels with the numbers: a sentence quoted from seeded pilot
+                    # rows has to say so, wherever it ends up (see `docs/UNVERIFIED.md`).
+                    "n_pilot": entry.get("n_pilot") or 0,
+                    "pilot": bool(entry.get("pilot")),
+                    "pilot_label": entry.get("pilot_label"),
+                    "why_no_proposal": (
+                        None if strategy else "fell short of what these questions predicted: reported, not proposed"
+                    ),
+                },
+                strength=float(min(1.0, abs(residual) / 0.2)),
+                topic_ids=sorted({a.topic_id for a in group}),
+                attempt_ids=[a.id for a in group][:40],
+                candidate_strategy=strategy,
+                direction="up" if residual >= 0 else "down",
+                design="randomised" if int(entry.get("n_randomised") or 0) >= int(entry["n"]) // 2 else "observational",
+                evidence=str(entry["evidence"]),
+            )
+        )
+    return out
 
 
 def detect_hint_dependency(ctx: EvidenceContext) -> list[Observation]:
@@ -655,6 +835,7 @@ def detect_scene_prediction_gap(ctx: EvidenceContext) -> list[Observation]:
 
 DETECTORS: dict[str, Callable[[EvidenceContext], list[Observation]]] = {
     "worked_example_need": detect_worked_example_need,
+    "method_effect": method_comparison,
     "hint_dependency": detect_hint_dependency,
     "long_text_overload": detect_long_text_overload,
     "answer_oscillation": detect_answer_oscillation,
@@ -704,5 +885,6 @@ def catalog() -> list[dict[str, object]]:
             ("type_confusion", "errors concentrated on one neighbouring method"),
             ("difficulty_misalignment", "success rate far from the 65-92% band"),
             ("teachback_gain", "teach-back coverage vs later accuracy"),
+            ("method_effect", "actual vs expected success per teaching method, accumulated across sessions"),
         ]
     ]

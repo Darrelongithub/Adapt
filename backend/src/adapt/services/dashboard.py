@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..learning import effect as E
 from ..learning import strategies as ST
 
 from ..db.models import (
@@ -34,6 +35,25 @@ from ..db.models import (
     Topic,
     utcnow,
 )
+
+
+def _effect_fields(a) -> dict[str, Any]:
+    """One live change's measurement, in the flat shape every reader gets.
+
+    The stored payload nests its statistics under ``effect`` and keeps ``status`` and
+    ``verdict_words`` beside them, so a reader that took it as-is reported a measured change as
+    one with no numbers in it. ``effect.read_effect`` is the same helper
+    ``services.adaptations.active`` uses, and the three field names are the ones the screens and
+    ``lib/types.ts`` already declare.
+    """
+    flat = E.read_effect(a.effect_summary) or {}
+    status = str(flat.get("status") or "not_measured")
+    return {
+        "effect_summary": flat,
+        "effect_raw": a.effect_summary,
+        "effect_status": status,
+        "effect_measured": status == E.EFFECT_MEASURED,
+    }
 
 
 def overview(services: Any, student_id: str) -> dict[str, Any]:
@@ -131,7 +151,7 @@ def overview(services: Any, student_id: str) -> dict[str, Any]:
                     "source": a.source,
                     "since": a.started_at.isoformat() if a.started_at else None,
                     "ends_at": a.ends_at.isoformat() if a.ends_at else None,
-                    "effect_summary": a.effect_summary or {},
+                    **_effect_fields(a),
                 }
                 for a in acts
             ],

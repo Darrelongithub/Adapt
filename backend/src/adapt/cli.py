@@ -654,6 +654,50 @@ def demo(turns: int = typer.Option(3, "--turns", help="practice items to run thr
     typer.echo("\ndone.")
 
 
+@app.command("pilot")
+def pilot(
+    student_id: str = typer.Option(..., "--student-id", help="the learner the pilot rows belong to"),
+    seed: bool = typer.Option(False, "--seed", help="write the deterministic pre-demo rows (default: report only)"),
+    remove: bool = typer.Option(False, "--remove", help="delete the pilot rows again"),
+) -> None:
+    """Pre-demo pilot data: seeded on request, labelled everywhere it appears.
+
+    A live demo used to have two bad options: announce "insufficient evidence" (honest,
+    and useless on stage) or lower the bar until it did not (dishonest). The pilot is the
+    third: real rows, produced before the demo, flagged ``pilot`` so every number derived
+    from them carries the label. ``--seed`` writes them; ``--remove`` takes them back out.
+    """
+    from sqlalchemy import select
+
+    from .db.models import Attempt
+    from .learning import pilot as P
+    from .services import build
+    from .services import pilot as PS
+
+    svcs = build()
+    with svcs.scope() as s:
+        if remove:
+            _echo(PS.remove(s, student_id))
+            return
+        if seed:
+            _echo(PS.seed(s, student_id))
+            return
+        rows = (
+            s.execute(select(Attempt).where(Attempt.student_id == student_id, Attempt.pilot.is_(True)))
+            .scalars()
+            .all()
+        )
+        _echo(
+            {
+                "student_id": student_id,
+                "pilot_rows": len(rows),
+                "label": P.PILOT_LABEL,
+                "note": P.PILOT_NOTE,
+                "next": "adapt pilot --student-id <id> --seed   # write them before a demo",
+            }
+        )
+
+
 @app.command()
 def serve(
     host: str = typer.Option(None, "--host"),
