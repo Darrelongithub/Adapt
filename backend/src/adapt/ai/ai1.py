@@ -212,30 +212,46 @@ class LearningIntelligence:
     # tracing: BKT + retention, updated per attempt
     # ------------------------------------------------------------------ #
 
-    def params_for(self, student_id: str, topic_id: str, s) -> B.BKTParams:
-        """Learner-level params if learned, else cohort params, else priors."""
+    def params_for(self, student_id: str, topic_id: str, s, *, kind: str | None = None, choices: int | None = None) -> B.BKTParams:
+        """Learner-level params if learned, else cohort params, else priors.
+
+        ``kind`` is the *format* of the question being answered. The guess rate is a
+        property of the format — a four-option multiple choice hands a non-knower 25%
+        before they read it, a typed answer about 2% — so it is applied here rather
+        than stored per learner, while ``p_learn``/``p_forget`` stay the learner's.
+        The previous behaviour used one guess rate (0.20) for both, which over-credited
+        multiple-choice answers and under-credited constructed ones.
+        """
         row = s.get(BktParams, ("global", "*"))
         topic_row = s.get(BktParams, ("global", topic_id))
         src = topic_row or row
         state = s.get(BktState, (student_id, topic_id))
         if state is not None and state.n_obs > 0:
-            return B.BKTParams(
-                p_init=0.2,
-                p_learn=state.p_learn,
-                p_guess=state.p_guess,
-                p_slip=state.p_slip,
-                p_forget=state.p_forget,
+            return B.params_for_kind(
+                kind,
+                choices=choices,
+                base=B.BKTParams(
+                    p_init=0.2,
+                    p_learn=state.p_learn,
+                    p_guess=state.p_guess,
+                    p_slip=state.p_slip,
+                    p_forget=state.p_forget,
+                ),
             )
         if src is not None:
-            return B.BKTParams(
-                p_init=src.p_init,
-                p_learn=src.p_learn,
-                p_guess=src.p_guess,
-                p_slip=src.p_slip,
-                p_forget=src.p_forget,
-                n_observations=src.n_sequences,
+            return B.params_for_kind(
+                kind,
+                choices=choices,
+                base=B.BKTParams(
+                    p_init=src.p_init,
+                    p_learn=src.p_learn,
+                    p_guess=src.p_guess,
+                    p_slip=src.p_slip,
+                    p_forget=src.p_forget,
+                    n_observations=src.n_sequences,
+                ),
             )
-        return B.BKTParams()
+        return B.params_for_kind(kind, choices=choices)
 
     def record_attempt(
         self,
@@ -248,10 +264,18 @@ class LearningIntelligence:
         self_explain: float = 0.0,
         opportunity: bool = True,
         active_strategies: Sequence[str] = (),
+        kind: str | None = None,
+        choices: int | None = None,
     ) -> dict[str, Any]:
-        """One scored observation -> trace update + schedule update + strategy credit."""
+        """One scored observation -> trace update + schedule update + strategy credit.
+
+        The update is *bounded* (``MAX_STEP_PER_ANSWER``): one answer is one piece of
+        evidence, and before this a single wrong answer took mastery from 20% to 3% —
+        a verdict from a sample of one, which is what made every threshold downstream
+        fire on three or four observations.
+        """
         with self.sf() as s:
-            params = self.params_for(student_id, topic_id, s)
+            params = self.params_for(student_id, topic_id, s, kind=kind, choices=choices)
             state = s.get(BktState, (student_id, topic_id))
             first = state is None
             if state is None:
@@ -273,7 +297,9 @@ class LearningIntelligence:
             lag_hours = (utcnow() - state.last_practice_at).total_seconds() / 3600.0 if state.last_practice_at else None
             if lag_hours and state.half_life_hours:
                 state.p_know = clamp01(state.p_know * decay(state.p_know, lag_hours, state.half_life_hours))
-            new_p = B.update(state.p_know, correct, params, opportunity=opportunity)
+            new_p, update_note = B.update_capped(
+                state.p_know, correct, params, kind=kind, choices=choices, opportunity=opportunity
+            )
             delta = new_p - state.p_know
             state.p_know = new_p
             state.n_obs += 1
@@ -329,6 +355,10 @@ class LearningIntelligence:
                 "due_at": schedule.due_at.isoformat() if schedule and schedule.due_at else None,
                 "first_observation": first,
                 "params": params.as_dict(),
+                # Why it moved by that much, including whether the cap was what stopped
+                # it. A learner asking "why did my estimate drop?" gets a number and a
+                # reason rather than a black box.
+                "update": update_note,
             }
 
     def _update_schedule(
@@ -642,6 +672,18 @@ class LearningIntelligence:
                         change_count=a.change_count,
                         away_ms=a.away_ms,
                         experience_mode=a.experience_mode,
+                        # The method that was *assigned* for the attempt, the format it
+                        # was measured with, and whether the assignment was randomised
+                        # (see learning/methods.py). The detectors need all three: a
+                        # difference between methods is only a finding when the format
+                        # was held fixed, and a comparison of learners who chose their
+                        # own method is self-selection.
+                        method=getattr(a, "method", None) or "unassigned",
+                        question_kind=getattr(a, "question_kind", None) or "",
+                        design=getattr(a, "mapping_design", None) or "observational",
+                        arm=getattr(a, "method_arm", None) or "",
+                        expected_success=getattr(a, "expected_success", None),
+                        pilot=bool(getattr(a, "pilot", False)),
                         stem_words=len((item.stem or "").split()) if item else 0,
                         attempt_no=a.attempt_no,
                         teachback_score=a.teachback_score,
@@ -754,6 +796,13 @@ class LearningIntelligence:
                     topic_ids=obs["topic_ids"],
                     attempt_ids=obs["attempt_ids"],
                     candidate_strategy=obs["candidate_strategy"],
+                    # These three are part of the observation's own contract (``as_dict`` writes
+                    # them). Reconstructing without them silently reset every replayed finding to
+                    # "up / observational / early_signal", which is the opposite of what a
+                    # randomised, above-the-bar comparison is.
+                    direction=str(obs.get("direction") or "up"),
+                    design=str(obs.get("design") or "observational"),
+                    evidence=str(obs.get("evidence") or "early_signal"),
                 )
                 labels = self._topic_labels(s)
                 facts = dict(fake.facts or {})
@@ -1046,85 +1095,97 @@ class LearningIntelligence:
                 window = prop.review_window or {"min_items": 6, "max_items": 14}
                 base = self._window_stats(s, student_id, metric, before=prop.applied_at)
                 after = self._window_stats(s, student_id, metric, after=prop.applied_at)
-                effect = evaluate_change(base["values"], after["values"], metric=metric)
+                # Pilot rows count — they are real rows — and the result is labelled, so
+                # the number a demo shows is honest about being pilot data instead of the
+                # statistics being quietly loosened to produce one (learning/pilot.py).
+                pilot = bool(base.get("pilot") or after.get("pilot"))
+                effect = evaluate_change(base["values"], after["values"], metric=metric, pilot=pilot)
                 verdict = effect.verdict
-                payload: dict[str, Any] = {
-                    "effect": effect.as_dict(),
-                    "n_after": after["n"],
-                    "n_before": base["n"],
-                    # the learner-facing sentence, stored with the measurement rather than
-                    # composed by whichever screen happens to show it first
-                    "verdict_words": describe_effect(
+                # One shape for a stored measurement, written and read through
+                # `learning.effect.effect_payload`/`read_effect`: the number, the sentence a
+                # learner reads (stored with the measurement, not composed by whichever screen
+                # shows it first), and whether this is a verdict or a window still filling up.
+                payload: dict[str, Any] = E.effect_payload(
+                    effect,
+                    n_before=int(base["n"]),
+                    n_after=int(after["n"]),
+                    verdict_words=describe_effect(
                         effect.as_dict(),
                         metric=metric,
                         n_after=int(after["n"]),
                         min_items=int(window.get("min_items", 6)),
                     ),
-                }
+                )
                 retention = self._retention_delta(s, student_id, prop.id, prop.applied_at)
                 if retention:
                     payload["retention"] = retention
+                active = s.execute(
+                    select(ActiveAdaptation).where(
+                        ActiveAdaptation.proposal_id == prop.id, ActiveAdaptation.active.is_(True)
+                    )
+                ).scalars().all()
+                # The window is not full yet. That is a state and it is *stored*: the count so
+                # far, the sentence that says so, and the label, so the live change can say
+                # "2 of 6 answers, not enough to judge" instead of saying nothing at all. It is
+                # deliberately not filed into `evaluation_status` -- that column means "a verdict
+                # was reached", and an unfinished measurement is not one.
+                prop.outcome = payload
+                for a in active:
+                    a.effect_summary = payload
                 if after["n"] < int(window.get("min_items", 6)):
-                    payload["status"] = "gathering_evidence"
-                else:
-                    prop.evaluation_status = verdict
-                    prop.evaluated_at = utcnow()
-                    prop.outcome = payload
-                    prop.status = ProposalStatus.EVALUATED.value
-                    active = s.execute(
-                        select(ActiveAdaptation).where(
-                            ActiveAdaptation.proposal_id == prop.id, ActiveAdaptation.active.is_(True)
+                    out.append({"proposal_id": prop.id, "strategy": prop.strategy, **payload})
+                    continue
+                prop.evaluation_status = verdict
+                prop.evaluated_at = utcnow()
+                prop.status = ProposalStatus.EVALUATED.value
+                for a in active:
+                    if verdict == "refuted":
+                        a.active = False
+                        a.ended_at = utcnow()
+                        a.end_reason = "measured_worse"
+                hyp = s.get(Hypothesis, prop.hypothesis_id) if prop.hypothesis_id else None
+                if hyp is not None:
+                    if verdict == "supported":
+                        hyp.supports += 1
+                        hyp.status = HypothesisStatus.SUPPORTED.value
+                    elif verdict == "refuted":
+                        hyp.refutes += 1
+                        hyp.status = HypothesisStatus.REFUTED.value
+                    elif verdict == "inconclusive":
+                        hyp.status = HypothesisStatus.INCONCLUSIVE.value
+                    hyp.posterior = round(H.posterior(hyp.supports, hyp.refutes), 3)
+                # Events are append-only and belong to a session; the effect of
+                # an adaptation is recorded against the session it is being
+                # measured in, so the journey view can show it in order.
+                anchor = s.execute(
+                    select(LearningSession.id)
+                    .where(LearningSession.student_id == student_id)
+                    .order_by(LearningSession.started_at.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                if anchor is not None:
+                    next_seq = (
+                        s.execute(
+                            select(func.max(LearnerEvent.seq)).where(LearnerEvent.session_id == anchor)
+                        ).scalar_one_or_none()
+                        or 0
+                    ) + 1
+                    s.add(
+                        LearnerEvent(
+                            session_id=anchor,
+                            student_id=student_id,
+                            seq=next_seq,
+                            type="adaptation_effect",
+                            payload={
+                                "strategy": prop.strategy,
+                                "metric": metric,
+                                "verdict": verdict,
+                                "delta": payload["effect"].get("mean_delta"),
+                                "proposal_id": prop.id,
+                            },
                         )
-                    ).scalars().all()
-                    for a in active:
-                        a.effect_summary = payload
-                        if verdict == "refuted":
-                            a.active = False
-                            a.ended_at = utcnow()
-                            a.end_reason = "measured_worse"
-                    hyp = s.get(Hypothesis, prop.hypothesis_id) if prop.hypothesis_id else None
-                    if hyp is not None:
-                        if verdict == "supported":
-                            hyp.supports += 1
-                            hyp.status = HypothesisStatus.SUPPORTED.value
-                        elif verdict == "refuted":
-                            hyp.refutes += 1
-                            hyp.status = HypothesisStatus.REFUTED.value
-                        elif verdict == "inconclusive":
-                            hyp.status = HypothesisStatus.INCONCLUSIVE.value
-                        hyp.posterior = round(H.posterior(hyp.supports, hyp.refutes), 3)
-                    # Events are append-only and belong to a session; the effect of
-                    # an adaptation is recorded against the session it is being
-                    # measured in, so the journey view can show it in order.
-                    anchor = s.execute(
-                        select(LearningSession.id)
-                        .where(LearningSession.student_id == student_id)
-                        .order_by(LearningSession.started_at.desc())
-                        .limit(1)
-                    ).scalar_one_or_none()
-                    if anchor is not None:
-                        next_seq = (
-                            s.execute(
-                                select(func.max(LearnerEvent.seq)).where(LearnerEvent.session_id == anchor)
-                            ).scalar_one_or_none()
-                            or 0
-                        ) + 1
-                        s.add(
-                            LearnerEvent(
-                                session_id=anchor,
-                                student_id=student_id,
-                                seq=next_seq,
-                                type="adaptation_effect",
-                                payload={
-                                    "strategy": prop.strategy,
-                                    "metric": metric,
-                                    "verdict": verdict,
-                                    "delta": payload["effect"].get("mean_delta"),
-                                    "proposal_id": prop.id,
-                                },
-                            )
-                        )
-                    payload["status"] = "evaluated"
+                    )
+                payload["status"] = "evaluated"
                 out.append({"proposal_id": prop.id, "strategy": prop.strategy, **payload})
             if out:
                 s.commit()
@@ -1161,7 +1222,13 @@ class LearningIntelligence:
         else:
             for a in rows:
                 values.append(float(a.score if a.score is not None else (1.0 if a.correct else 0.0)))
-        return {"values": values, "n": len(values)}
+        return {
+            "values": values,
+            "n": len(values),
+            # Whether any of these rows is pilot data. The values are used unchanged;
+            # only the label changes, so a demo cannot present seeded rows as a result.
+            "pilot": any(bool(getattr(a, "pilot", False)) for a in rows),
+        }
 
     def _retention_delta(self, s, student_id: str, proposal_id: str, applied_at: datetime | None) -> dict[str, Any] | None:
         checks = s.execute(

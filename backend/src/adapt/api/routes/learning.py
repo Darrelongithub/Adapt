@@ -16,13 +16,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..deps import db_session, rate, require_csrf, student_from_request
 from ...assessment import bank
 from ...config import get_settings
-from ...db.models import BktState, LearningSession, Student, Topic
+from ...db.models import Attempt, BktState, LearningSession, Student, Topic
 from ...learning import strategies as ST
 from ...learning.telemetry import ALLOWED_EVENTS as TELEMETRY_EVENTS
 from ...services import attempts as A
@@ -53,6 +53,14 @@ class AttemptBody(BaseModel):
     teachback_text: str | None = Field(default=None, max_length=4000)
     attempt_no: int | None = None
     client_ts: str | None = None
+    # What the serving path told the client it was doing. These are *echoed*, not
+    # trusted: an unknown method is discarded and re-derived server-side, and the
+    # design/arm are only recorded when they name one of the real values.
+    method: str | None = Field(default=None, max_length=32)
+    method_design: str | None = Field(default=None, max_length=24)
+    method_arm: str | None = Field(default=None, max_length=24)
+    expected_success: float | None = None
+    reteach_of: str | None = Field(default=None, max_length=40)
 
 
 class RetentionBody(BaseModel):
@@ -128,12 +136,39 @@ def post_events(
 
 @router.get("/assessment/diagnostic")
 def diagnostic(
+    session_id: str | None = None,
+    count: int = 8,
     s: Session = Depends(db_session),
     student: Student = Depends(student_from_request),
 ) -> dict[str, Any]:
+    """**Placement only.** Adaptive, and nothing else.
+
+    It used to be one 12-item run doing two jobs (placing the learner *and* comparing
+    teaching methods), which is why it was long and why neither half was clean. The
+    method comparison now lives at ``GET /assessment/method-probe`` and runs for six to
+    eight concepts.
+
+    Pass ``session_id`` and the plan adapts to the answers already recorded in that
+    session: each request re-plans from the evidence, so a client that asks again after
+    every answer gets a real adaptive test rather than a fixed 12-item form.
+    """
     svcs = current()
-    items = svcs.ai2.diagnostic_items(student.id, count=12)
+    items = svcs.ai2.diagnostic_items(student.id, count=max(4, min(12, count)), session_id=session_id)
+    # Say what the plan was built *from*. The client may ask again after each answer, and
+    # "n answers went into this" is the difference between an adaptive test and a fixed
+    # form that happens to be re-requested.
+    answered = 0
+    if session_id:
+        answered = int(
+            s.execute(
+                select(func.count()).select_from(Attempt).where(Attempt.session_id == session_id, Attempt.correct.is_not(None))
+            ).scalar_one()
+            or 0
+        )
     return {
+        "phase": "placement",
+        "adaptive": True,
+        "plans_from": {"session_id": session_id, "answered": answered},
         "purpose": "place you on each topic with a confidence band, not to grade you",
         "items": items,
         "how_it_is_used": (
@@ -143,6 +178,50 @@ def diagnostic(
         ),
         "note_on_time": "If you need longer, say so - time spent is evidence about the interaction, not a score.",
     }
+
+
+@router.get("/assessment/method-probe")
+def method_probe(
+    count: int = 8,
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    """Six to eight concepts, one teaching method each, format held fixed.
+
+    This is the half of the old diagnostic that was about *teaching* rather than
+    placement. Every concept is measured with one question; the method rotates, so the
+    difference between two of these is what was taught, not which topic it was.
+    """
+    items = current().ai2.method_probe_items(student.id, count=max(6, min(8, count)))
+    return {
+        "phase": "method_probe",
+        "concepts": len(items),
+        "purpose": (
+            "find out which way of teaching works better for you on these concepts — "
+            "the same kind of question each time, taught a different way"
+        ),
+        "how_it_is_judged": (
+            "each answer is compared with what the model expected from you on that question, "
+            "so a method is not punished for meeting harder material; under 8 observations on "
+            "either side is reported as an early signal, not a finding"
+        ),
+        "items": items,
+    }
+
+
+@router.get("/methods/report")
+def methods_report(
+    s: Session = Depends(db_session),
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    """Actual vs expected per teaching method, accumulated over every session.
+
+    Raw accuracy is deliberately absent: the number per method is actual minus expected,
+    where "expected" is what the model predicted for that exact question before it was
+    served, so a method that met harder material is not punished for it. Every entry
+    carries ``n`` and an ``evidence`` label, and anything under eight observations says
+    ``early_signal`` rather than drawing a conclusion.
+    """
+    return A.method_report_for(s, student.id)
 
 
 @router.post("/attempts")
@@ -162,10 +241,37 @@ async def submit_attempt(
             teachback_text=body.teachback_text,
             attempt_no=body.attempt_no,
             client_ts=body.client_ts,
+            method=body.method,
+            method_design=body.method_design,
+            method_arm=body.method_arm,
+            expected_success_client=body.expected_success,
+            reteach_of=body.reteach_of,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return result.as_dict()
+
+
+@router.get("/concepts/{topic_id}/versions")
+def concept_versions(
+    topic_id: str,
+    s: Session = Depends(db_session),
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    """The three teaching versions of a concept, plus its matched question pair.
+
+    Subject-agnostic by construction: the text is segmented, the visual is a generic
+    template filled from the same material, the worked example is the material's own
+    sentences labelled by what they do, and the two questions are keyed to words that
+    are *in the source*. Nothing here is specific to mathematics, which is the point —
+    an arithmetic expression was the only answer key the old path could check.
+    """
+    from ...services import lessons as L
+
+    versions = L.concept_versions_for(s, topic_id, learner_id=student.id)
+    if versions is None:
+        raise HTTPException(status_code=404, detail="no such topic")
+    return versions
 
 
 @router.get("/practice")

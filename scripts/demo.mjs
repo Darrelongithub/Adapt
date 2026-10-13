@@ -19,6 +19,8 @@
  *   node scripts/demo.mjs --decide accept       # answer the first pending proposal
  *   node scripts/demo.mjs --wrong 4             # miss N answers so a pattern exists
  *   node scripts/demo.mjs --json                # machine-readable summary at the end
+ *   node scripts/demo.mjs --as you@example.test  # sign in as an existing learner (keeps its
+ *                                               # history, and the pilot seeded for it)
  */
 
 const API = (process.env.ADAPT_API ?? "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -31,6 +33,20 @@ const value = (flag, dflt) => {
 const OUT = { steps: [], warnings: [] };
 const verbose = !has("--quiet");
 
+/* What this script is *for*, in the order it says it.
+ *
+ * The pitch is the loop and one privacy sentence. Everything else it prints is evidence that
+ * the loop is real -- and the two things a demo is most tempted to overstate are printed with
+ * their sample size attached:
+ *
+ *   - the method comparison carries `n` and says "early signal" under eight observations;
+ *   - anything from the pre-demo pilot is labelled as pilot data, in the server's own words,
+ *     because seeded rows that look like results are how a demo stops being a demo.
+ *
+ * Voice, the Numbas export and the encryption internals are deliberately *not* walked here:
+ * they are real, they are in `docs/`, and a pitch that tries to show all three spends its
+ * minutes on plumbing instead of on the thing the product does.
+ */
 function say(title, body) {
   if (verbose) console.log(`\n\x1b[1m${title}\x1b[0m\n${body}`);
 }
@@ -124,12 +140,23 @@ async function main() {
   say("Backend", `mode ${health.mode} · ${health.learners} learner(s) · local_only=${health.local_only} · v${health.version}`);
   record("health", { mode: health.mode });
 
-  // 1. a learner of their own, so a rerun never collides with a previous one
+  // 1. a learner of their own, so a rerun never collides with a previous one -- unless one is
+  //    named. `--as <email>` signs in as an existing account instead, which is what a rehearsal
+  //    does: the pre-demo pilot is seeded against *that* learner (`adapt pilot --student-id <id>
+  //    --seed`), so a run that creates a fresh learner every time can never show the pilot rows
+  //    it just wrote. The named account keeps its history and its pilot between runs.
   const stamp = Date.now().toString(36).slice(-5);
-  const email = `demo+${stamp}@example.invalid`;
-  const created = await call("students", {
+  const asEmail = (() => {
+    const i = args.indexOf("--as");
+    return i >= 0 && args[i + 1] ? args[i + 1] : null;
+  })();
+  const email = asEmail ?? `demo+${stamp}@example.invalid`;
+  const password = process.env.ADAPT_DEMO_PASSWORD ?? "demo-passphrase-2026";
+  const created = await call(asEmail ? "login" : "students", {
     method: "POST",
-    json: { display_name: `Demo ${stamp}`, email, password: "demo-passphrase-2026", age_band: "16-18" },
+    json: asEmail
+      ? { email, password }
+      : { display_name: `Demo ${stamp}`, email, password, age_band: "16-18" },
   });
   if (created.csrf_token) csrf.token = created.csrf_token;
   say("Signed in", `${created.student_id} (guest-capable account, created=${created.created})\n  onboarding_complete=${created.onboarding_complete} · session cookie + CSRF token issued`);
@@ -284,7 +311,63 @@ async function main() {
     await call(`sessions/${practice.session_id}/finish`, { method: "POST", json: {} });
   }
 
-  // 6. what the learner can see about themselves
+  // 6. honest numbers: actual vs expected per method, with n and the words that qualify it
+  const methods = await call("/api/v1/methods/report");
+  if (!methods.methods?.length) {
+    say("Which teaching works (so far)", "  no method has enough scored answers to appear — and that is the honest state after one session.");
+  } else {
+    say(
+      "Which teaching works (so far)",
+      methods.methods
+        .map((m) => {
+          const label = m.evidence === "early_signal" ? "EARLY SIGNAL" : m.evidence;
+          const pilot = m.pilot ? ` · ${m.pilot_label ?? "pilot data"} (${m.n_pilot}/${m.n})` : "";
+          return `  ${(m.label ?? m.method).padEnd(24)} expected ${Math.round((m.expected ?? 0) * 100)}% · actual ${Math.round((m.actual ?? 0) * 100)}% · ${(m.residual >= 0 ? "+" : "") + Math.round((m.residual ?? 0) * 100)} points vs expected · n=${m.n} [${label}]${pilot}`;
+        })
+        .join("\n") +
+        `\n  unit: ${methods.labels.unit}; ${methods.labels.expected}${methods.n_pilot ? `\n  ${methods.n_pilot} of ${methods.n_scored} scored answers are pilot data — labelled, never smoothed` : ""}`,
+    );
+    if (methods.methods.some((m) => m.evidence === "early_signal")) {
+      say("Read it honestly", `  under ${methods.min_n_for_a_finding} observations is not a finding, and the API says so rather than ranking them.\n  Seed a pilot before a demo: adapt pilot --student-id <id> --seed`);
+    }
+  }
+  record("methods", { scored: methods.n_scored, pilot: methods.n_pilot ?? 0, rows: (methods.methods ?? []).length });
+
+  // 7. the same machinery on a subject with no arithmetic in it. "Any subject" is easy to say
+  //    over a maths bank, so this walks a prose concept end to end: three versions of it from
+  //    its own course notes, a matched pair of questions, and the answer keys checked by
+  //    quotability -- a key that does not occur in the notes is refused, not served.
+  const topics = await call("/api/v1/topics");
+  const prose =
+    topics.find((t) => t.code === "history_ww1") ?? topics.find((t) => t.code === "bio_photosynthesis");
+  if (!prose) {
+    warn("no prose concept in the catalogue: 'any subject' would be a claim about code, not about the app");
+  } else {
+    const versions = await call(`/api/v1/concepts/${prose.id}/versions`);
+    const v = versions.versions ?? {};
+    const drawn = v.visual?.nodes?.length ?? v.visual?.rows?.length ?? v.visual?.labels?.length ?? 0;
+    const pair = versions.questions?.pair ?? [];
+    say(
+      "Any subject, not only numbers",
+      [
+        `  ${prose.title} (${prose.code}) — ${versions.source_chars ?? 0} characters of course notes, no arithmetic in them`,
+        `  text: ${(v.text?.steps ?? []).length} short steps, ${versions.checks?.text_steps ?? 0} with a check between them`,
+        `  visual: ${v.visual?.kind ?? "none"} — ${drawn} parts drawn from the same notes`,
+        `  worked example: ${(v.worked_example?.steps ?? []).length} steps, quoted from the source rather than invented`,
+        `  matched pair: ${pair.length} question(s) [${pair.map((q) => q.kind).join(", ")}] out of the formats this concept is banked in (${(versions.question_formats_in_bank ?? []).join(", ")})`,
+        `  unverified: ${versions.unverified?.length ? versions.unverified.join(" | ") : "nothing — every answer key occurs in the notes"}`,
+      ].join("\n"),
+    );
+    record("prose_concept", {
+      code: prose.code,
+      versions: Object.keys(v),
+      text_steps: (v.text?.steps ?? []).length,
+      pair: pair.length,
+      unverified: (versions.unverified ?? []).length,
+    });
+  }
+
+  // 8. what the learner can see about themselves
   const review = await call("/api/v1/review/due");
   const journey = await call("/api/v1/journey?days=7&limit=40");
   const dash = await call("dashboard");
@@ -294,16 +377,18 @@ async function main() {
   );
   record("journey", { nodes: journey.nodes.length, due_reviews: review.count });
 
-  // 7. privacy surface, as the settings screen reads it
+  // 9. privacy surface, as the settings screen reads it
   const allow = await call("events/allowlist");
   const privacy = await call("privacy");
   const rejected = await call(`sessions/${session.session_id}/events`, {
     method: "POST",
     json: { session_id: session.session_id, events: [{ type: "keystroke_log", payload: { everything: true } }] },
   }).catch((err) => err.detail ?? err.message);
+  // One line is the pitch: what is never recorded, and where the data stays. The rest of the
+  // surface is printed underneath because a reviewer will look for it, not because a room needs it.
   say(
-    "Privacy",
-    `  allowed event types: ${Object.keys(allow.allowed).length} · forbidden payload keys: ${allow.forbidden_keys.length}\n  rule: ${short(allow.rule, 140)}\n  never recorded: ${(privacy.telemetry.never_recorded ?? []).slice(0, 5).map((n) => short(n, 40)).join(" | ")}\n  storage: ${JSON.stringify(privacy.storage).slice(0, 160)}\n  unlisted event type -> ${short(rejected, 120)}`,
+    "Privacy (one line, then the detail)",
+    `  ${(privacy.telemetry.never_recorded ?? []).slice(0, 2).map((n) => short(n, 70)).join(" · ")}; answers stay on this machine unless a model call is opted in.\n  allowed event types: ${Object.keys(allow.allowed).length} · forbidden payload keys: ${allow.forbidden_keys.length}\n  rule: ${short(allow.rule, 140)}\n  unlisted event type -> ${short(rejected, 120)}`,
   );
   record("privacy", { event_types: Object.keys(allow.allowed).length, forbidden_keys: allow.forbidden_keys.length });
 

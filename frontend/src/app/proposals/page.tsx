@@ -15,6 +15,7 @@
 import { useState } from "react";
 
 import { Btn, Card, Err, Field, humanize, Ledger, LedgerEntry, Notice, Tag, Textarea, When, announce, useSession } from "@/components/ui";
+import { EffectLine, type EffectSummary } from "@/components/evidence";
 import { post, useApi } from "@/lib/api";
 import type { ActiveAdaptation, DecisionReply, Proposal } from "@/lib/types";
 
@@ -341,11 +342,12 @@ export default function Proposals() {
                       </span>
                     </p>
                     {a.effect_summary ? (
-                      <p className="text-xs text-[var(--muted)]">
-                        {typeof a.effect_summary === "string" ? a.effect_summary : humanize(a.effect_summary)}
-                      </p>
+                      <EffectLine effect={a.effect_summary as unknown as EffectSummary} />
                     ) : (
-                      <p className="text-xs text-[var(--think)]">too few answers so far to say whether it is helping</p>
+                      <p className="text-xs text-[var(--think)]">
+                        applied {a.started_at ? relative(a.started_at) : "just now"} — nothing has been
+                        measured against it yet, and it will not be called a success until it is
+                      </p>
                     )}
                     {a.mechanism ? <p className="text-xs text-[var(--muted)]">{a.mechanism}</p> : null}
                     {a.citations?.length ? <p className="text-xs text-[var(--muted)]">evidence: {a.citations.join(" · ")}</p> : null}
@@ -370,7 +372,12 @@ export default function Proposals() {
                   {d.strategy_label ?? d.strategy}
                   {d.student_note ? <span className="text-xs text-[var(--muted)]"> — you said: {d.student_note}</span> : null}
                   {d.outcome ? <span className="text-xs text-[var(--muted)]"> · {humanize(d.outcome)}</span> : null}
-                  {d.evaluation_status === "insufficient_data" ? <span className="text-xs text-[var(--warn)]"> · not enough data yet</span> : null}
+                  {!d.evaluation_status && (d.outcome as { status?: string } | null)?.status === "gathering_evidence" ? (
+                    <span className="text-xs text-[var(--warn)]">
+                      {" "}
+                      · {(d.outcome as { n_after?: number }).n_after ?? 0} answers since, not enough to judge
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

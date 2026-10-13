@@ -9,6 +9,7 @@
  */
 import { useState } from "react";
 
+import { EvidenceBadge, MethodReport, type MethodRow } from "@/components/evidence";
 import { Band, Btn, Card, Err, humanize, Notice, Tag } from "@/components/ui";
 import { get, post, useApi } from "@/lib/api";
 import type { Journey } from "@/lib/types";
@@ -36,6 +37,8 @@ export default function Progress() {
   const [trainOut, setTrainOut] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  const methodReport = useApi<{ methods: MethodRow[]; min_n_for_a_finding?: number }>("methods/report");
+  const methods = { rows: methodReport.data?.methods ?? [], minN: methodReport.data?.min_n_for_a_finding ?? 8 };
   const d = dash.data ?? {};
   const nodes = (journey.data?.nodes ?? []).filter((n) => !kind || n.kind === kind);
   const counts = journey.data?.counts ?? {};
@@ -96,7 +99,9 @@ export default function Progress() {
                 <li key={m.topic_id} className="flex flex-wrap items-center gap-2">
                   <span className="w-full shrink-0 text-sm sm:w-44">{m.title}</span>
                   <Band band={m.band ?? "unknown"} pKnow={m.p_know} />
-                  <span className="text-xs text-[var(--muted)]">{m.observations ?? 0} obs</span>
+                  {/* The count and the caveat travel together: a band from two answers is a
+                      direction, and the screen has to say which one it is looking at. */}
+                  <EvidenceBadge n={m.observations ?? 0} />
                   {m.due_at ? <Tag tone="warn">review {new Date(m.due_at).toLocaleDateString()}</Tag> : null}
                 </li>
               ))}
@@ -111,6 +116,19 @@ export default function Progress() {
               ))}
             </div>
           ) : null}
+        </Card>
+
+        <Card
+          title="Which teaching is working for you"
+          tone="muted"
+          right={<span>actual vs expected, never raw marks</span>}
+        >
+          <MethodReport rows={methods.rows} minN={methods.minN} />
+          <p className="mt-3 text-xs text-[var(--muted)]">
+            Each method is compared with what the model expected from you on those very questions, so a method that met harder
+            material is not punished for it. Under {methods.minN} observations it is called an early signal, and it stays one until
+            there are enough to say otherwise.
+          </p>
         </Card>
 
         <Card title="Blocking prerequisites" tone={d.knowledge_gaps?.length ? "warn" : "muted"} right={<span>from the topic graph</span>}>

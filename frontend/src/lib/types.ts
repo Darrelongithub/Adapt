@@ -7,6 +7,7 @@
  * when there is nothing to say -- ``as_dict`` drops empty values on purpose.
  */
 
+import type { EffectSummary } from "@/components/evidence";
 export type Kind = "mcq" | "numeric" | "text" | "teachback" | "worked_example" | "visual";
 
 export type Item = {
@@ -149,7 +150,13 @@ export type ActiveAdaptation = {
   ended_at?: string | null;
   end_reason?: string | null;
   proposal_id?: string | null;
-  effect_summary?: string | Record<string, unknown> | null;
+  /** The measurement, flattened by the API (`EffectSummary`), or null when nothing has run. */
+  effect_summary?: string | EffectSummary | null;
+  /** The stored payload, untouched: the audit record. */
+  effect_raw?: Record<string, unknown> | null;
+  /** `measured` | `gathering_evidence` | `not_measured`. */
+  effect_status?: string | null;
+  effect_measured?: boolean;
   watch_metric?: string | null;
   mechanism?: string | null;
   citations?: string[];

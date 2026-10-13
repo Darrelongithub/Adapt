@@ -69,7 +69,10 @@ def history(s: Session = Depends(db_session), student: Student = Depends(student
 
 @router.get("/active")
 def active(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
-    return {"active": AD.active(s, student.id), "waiting_for_effect": [a for a in AD.active(s, student.id) if not a["effect_summary"]]}
+    live = AD.active(s, student.id)
+    # "not yet measured" means no verdict yet, which includes a change whose window is still
+    # filling up: it has a stored sentence and a count, and still nothing that ranks it.
+    return {"active": live, "waiting_for_effect": [a for a in live if not a["effect_measured"]]}
 
 
 @router.post("/{proposal_id}/decision")

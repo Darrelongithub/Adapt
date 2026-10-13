@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Sequence
 
-from ..ai.local_tutor import eval_formula, teachback_score
+from ..ai.local_tutor import eval_formula
+from . import teachback as TB
 
 NUM_RE = re.compile(r"-?\d+(?:[.,/]\d+)?(?:\s*[a-z]{1,4})?\b", re.IGNORECASE)
 FRACTION_RE = re.compile(r"^\s*(-?\d+)\s*/\s*(-?\d+)\s*$")
@@ -182,17 +183,39 @@ def grade(item: dict[str, Any], answer: Any, *, student_text: str | None = None)
 
     if kind == "teachback":
         text = str(answer or student_text or "")
-        res = teachback_score(text, item.get("rubric"))
+        result = TB.grade_checklist(text, TB.checklist_from_rubric(item.get("rubric")))
         threshold = float((item.get("rubric") or {}).get("pass_fraction", 0.6))
+        partial = _checklist_payload(result)
         return Grade(
-            res["score"] >= threshold and len([w for w in re.split(r"\s+", text) if w]) >= 4,
-            round(float(res["score"]), 3),
-            "teachback_rubric",
-            res.get("followup") or "Covers the required ideas.",
-            res,
+            result.score >= threshold and len([w for w in re.split(r"\s+", text) if w]) >= TB.MIN_ANSWER_WORDS,
+            round(float(result.score), 3),
+            "teachback_checklist",
+            result.followup or "Covers the points on the checklist.",
+            partial,
         )
 
     return Grade(False, 0.0, "none", f"no grader for kind {kind!r}; needs the hosted Numbas runtime")
+
+
+def _checklist_payload(result: TB.ChecklistResult) -> dict[str, Any]:
+    """The checklist result in the shape the API, the trace and the UI already read.
+
+    ``matched``/``missing``/``coverage`` stay (they are what the progress screen and
+    the detectors read), but they now mean *points evidenced in the learner's own
+    words* rather than *keywords present*. ``points`` carries the strict form: what
+    each check was, whether it was met, and the quote that decided it.
+    """
+    return {
+        **result.as_dict(),
+        "method": "checklist_3_point",
+        "matched": [p.statement for p in result.points if p.met],
+        "missing": [p.statement for p in result.points if not p.met],
+        "coverage": round(result.score, 3),
+        "note": (
+            result.note
+            or "scored on the ideas, not on fluency, spelling or length"
+        ),
+    }
 
 
 def _norm(s: str) -> str:

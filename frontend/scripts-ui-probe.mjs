@@ -148,6 +148,24 @@ function questionCounter(page) {
   return m ? { at: Number(m[1]), of: Number(m[2]) } : { at: 0, of: 0 };
 }
 
+
+/**
+ * What the current question is showing as the learner's answer, in one comparable string.
+ *
+ * Used to prove that an answer survives leaving the question and coming back. Reading the
+ * DOM (rather than asking React) is the point: the fault being tested for was precisely the
+ * DOM being emptied under the learner, with the element still in the document.
+ */
+function answerState(page) {
+  const radio = page.find('input[type="radio"]').find((r) => r.checked);
+  if (radio) return `choice:${radio.getAttribute("aria-label") ?? radio.name}`;
+  const box = page.find('input[placeholder^="e.g."]')[0];
+  if (box) return box.value ? `text:${box.value}` : "text:";
+  const ta = [...page.find("textarea")].find((x) => !x.disabled);
+  if (ta) return ta.value ? `teachback:${ta.value.slice(0, 40)}` : "teachback:";
+  return "none";
+}
+
 /**
  * Presses the submit control and reports how many presses it took for the request to
  * leave the page. A learner clicking once is the same event, so "needed a second click" is
@@ -511,9 +529,10 @@ async function main() {
     await waitFor(() => !/Checking the session/.test(page.text()), { label: "the session check to finish" });
     check("home", "renders the product's own words, not a placeholder", /proposes what to change/.test(page.text()), page.text().slice(0, 120));
     const hrefs = page.find("a[href]").map((a) => a.getAttribute("href"));
-    // In-page anchors (the "skip to content" link) are as inside the app as a route is;
-    // what this must never see is a link out to somewhere else.
-    check("home", "every link is a route inside the app", hrefs.length > 3 && hrefs.every((h) => h.startsWith("/") || h.startsWith("#")), hrefs.join(" "));
+    // A skip link points at `#main-content`, which is correct accessibility and not an external
+    // link; the rule this check exists for is that nothing sends the learner off the app.
+    const offsite = hrefs.filter((h) => !h.startsWith("/") && !h.startsWith("#"));
+    check("home", "every link is a route inside the app", hrefs.length > 3 && offsite.length === 0, `offsite: ${offsite.join(" ")} | all: ${hrefs.join(" ")}`);
     check("home", "no uncaught error during hydration", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 200));
     check("home", "a signed-out visitor is offered both ways in", /guest/.test(page.text()) && /email \+ password/.test(page.text()), page.text().slice(0, 180));
     const emailTab = page.byText("email + password", "button");
@@ -640,6 +659,9 @@ async function main() {
     check("diagnose", "the marking is shown in words, not just a colour", /correct|not yet|right|wrong|mark|check/i.test(page.text()), page.text().slice(-200));
     const events = await api(`/api/v1/sessions/${/lrs_[a-z0-9]+/i.exec(page.requests.concat().join(" "))?.[0] ?? ""}/events`, { headers: { cookie } });
     check("diagnose", "the attempt is on the session's own event log", page.requests.slice(before).some((r) => /\/events/.test(r)) && events.status !== 500, `requests: ${page.requests.slice(before).join(" ; ")}; events ${events.status}`);
+    // Read question 1's answer state while question 1 is still on screen: this is the value the
+    // round trip below has to bring back.
+    const q1State = unlocked ? answerState(page) : "none";
     if (unlocked) {
       await page.click(page.byText("Next", "button"));
       let moved = false;
@@ -653,6 +675,36 @@ async function main() {
       // regression: answering Q1 used to make the "Next" button run finish(), so placement
       // ended after one question and the band was built on a single answer.
       check("diagnose", "moving on does not quietly end placement early", !page.requests.some((r) => /POST \/api\/v1\/analyze/.test(r)) && /question 2 of \d+/.test(page.text()), `analyze fired: ${page.requests.filter((r) => /analyze/.test(r)).length}; ${page.text().slice(0, 60)}`);
+
+      // The answer-loss regression. Two faults used to live here: leaving a question and coming
+      // back emptied the box (the answer was React state on an element that had been replaced),
+      // and pressing Back threw away the mark that had just been earned, which disabled Next and
+      // stranded the learner on a question they had already answered.
+      await fillAnswer(page); // question 2, deliberately *not* submitted
+      const q2State = answerState(page);
+      const backBtn = page.byText("Back", "button");
+      if (backBtn) {
+        await page.click(backBtn);
+        let wentBack = false;
+        try {
+          await waitFor(() => /question 1 of/.test(page.text()), { timeout: 10_000, label: "the first question again" });
+          wentBack = true;
+        } catch { /* reported below */ }
+        check("diagnose", "coming back to a question shows the answer that was given", wentBack && answerState(page) === q1State, `before=${q1State} after=${answerState(page)}`);
+        const fwd = page.byText("Next", "button");
+        check("diagnose", "coming back does not lock the way forward", wentBack && !!fwd && !fwd.disabled, `next=${fwd ? (fwd.disabled ? "disabled" : "enabled") : "missing"}`);
+        if (wentBack && fwd && !fwd.disabled) {
+          await page.click(fwd);
+          let forward = false;
+          try {
+            await waitFor(() => /question 2 of/.test(page.text()), { timeout: 10_000, label: "question 2 again" });
+            forward = true;
+          } catch { /* reported below */ }
+          check("diagnose", "the answer typed on the other question is still there", forward && answerState(page) === q2State, `before=${q2State} after=${answerState(page)}`);
+        }
+      } else {
+        check("diagnose", "coming back to a question shows the answer that was given", false, "no Back control on placement");
+      }
     }
     // Walk the rest of the sequence through the UI. This is exactly the path the placement
     // bug broke: answering a question used to turn "Next" into "finish", so question 2 was
@@ -727,6 +779,68 @@ async function main() {
     if (answerControl(page)) {
       check("learn", "no raw template placeholders reach the screen", !/\{[a-z]+\}/.test(page.text()), page.text().slice(0, 200));
       check("learn", "unlike placement, help is offered here", !!page.byText("A hint", "button"), page.text().slice(0, 200));
+      // The teaching the assigned method produces has to be *on the screen*. Before this, the
+      // payload carried it and the card never rendered it: approving the visual strategy changed
+      // a field nobody could see. Two checks: the panel is there, and the step's own check gates
+      // the next step rather than being decoration.
+      // The teaching the assigned method produced has to be *on the screen*: before this, the
+      // payload carried it and the card never rendered it, which is why approving the visual
+      // strategy changed a field nobody could see. Which shape arrives depends on the method
+      // the rotation picked for this learner, so the check accepts any of the real ones rather
+      // than pinning the run to one method.
+      const text = page.text();
+      const shapes = {
+        segments: /step \d+ of \d+/.test(text) && /Without scrolling back|Check my sentence/.test(text),
+        visual: /why this shape:/.test(text),
+        worked_example: /read it, then close it/i.test(text),
+        attempt_first: /Answering before being told/i.test(text),
+      };
+      const shown = Object.entries(shapes).filter(([, v]) => v).map(([k]) => k);
+      check(
+        "learn",
+        "the assigned method's teaching is on screen, not just in the payload",
+        shown.length > 0,
+        `shapes on screen: ${shown.join(",") || "none"}`,
+      );
+      if (shapes.segments) {
+        // The step check is the reason segmenting beats a shorter paragraph, so it is walked the
+        // way a learner would: try a vague answer, be told what the step is about, answer *that*,
+        // and only then get the next step. The vague answer has to fail — a check that accepts
+        // anything is decoration.
+        const checkBox = page.find('input[placeholder^="One sentence"]')[0];
+        const nextStep = page.byText("Next step", "button");
+        const gatedBefore = !!nextStep && nextStep.disabled;
+        let vagueAdvice = "";
+        let vagueKeptLocked = false;
+        if (checkBox) {
+          page.type(checkBox, "I am not really sure about this one yet.");
+          await sleep(120);
+          const sayBtn = page.byText("Check my sentence", "button");
+          if (sayBtn && !sayBtn.disabled) await page.click(sayBtn);
+          await sleep(250);
+          const held = page.byText("Next step", "button");
+          vagueKeptLocked = !held || held.disabled;
+          vagueAdvice = (page.text().match(/Not quite\. ([^.]{0,120})/) ?? [])[1] ?? "";
+          const about = (page.text().match(/The step is about ([a-z0-9'\-]+)/i) ?? [])[1] ?? "";
+          page.type(checkBox, about ? `This step is about ${about}, and why that matters here.` : "It says the parts have to match before you count them.");
+          await sleep(120);
+          const again = page.byText("Check my sentence", "button");
+          if (again && !again.disabled) await page.click(again);
+          await sleep(250);
+        }
+        const after = page.byText("Next step", "button");
+        check(
+          "learn",
+          "the next step is behind the step check, and the check explains itself",
+          gatedBefore && !!checkBox && vagueKeptLocked && !!vagueAdvice && (!after || !after.disabled) && /not marked and is not sent anywhere/i.test(page.text()),
+          `gated before=${gatedBefore} box=${!!checkBox} vague held=${vagueKeptLocked} advice="${vagueAdvice.slice(0, 60)}" after=${after ? (after.disabled ? "locked" : "open") : "missing"}`,
+        );
+      } else {
+        // Not an explanation run for this learner: the segments gate is exercised by the mock
+        // walk below, so this is a skip rather than a pass pretending to be one.
+        check("learn", "the next step is behind the step check, and the check explains itself", true, `not served the segmented method this run (${shown.join(",") || "no teaching"})`);
+      }
+
       const hintBefore = page.requests.length;
       await page.click("A hint", "button");
       await waitFor(() => page.requests.slice(hintBefore).some((r) => /\/hint/.test(r)), { timeout: 12_000, label: "the hint request" });
@@ -809,6 +923,39 @@ async function main() {
         `errors ${page.appErrors().length - errsBefore} new; ${page.appErrors().slice(errsBefore, errsBefore + 2).join(" || ").slice(0, 300)}`,
       );
     }
+
+    // The segmented walkthrough, on a mock page: the mock serves an "explanation first" payload,
+    // so the step-by-step gate is checked exactly rather than whenever a rotation happens to hand
+    // this learner that method. `?mock=1` is a design-review mode the probe already treats as
+    // legitimate for the lesson screen; here it is the only way to pin the shape being tested.
+    const mockPage = await open("/learn?mock=1", "learn");
+    await waitFor(() => answerControl(mockPage) || /placement|no items/i.test(mockPage.text()), { timeout: 15_000, label: "the mock practice card" });
+    await sleep(400);
+    const mockText = mockPage.text();
+    check("learn", "the method's teaching arrives with the question (mock: explanation first)", /step \d+ of \d+/.test(mockText) && /Before the question/.test(mockText), mockText.slice(0, 240));
+    const gate = mockPage.byText("Next step", "button");
+    const box = mockPage.find('input[placeholder^="One sentence"]')[0];
+    check("learn", "the next step is locked until the step check is answered", !!gate && gate.disabled && !!box, `gate=${gate ? (gate.disabled ? "locked" : "open") : "missing"} box=${!!box}`);
+    if (box) {
+      mockPage.type(box, "It says the parts have to be the same size before you count them together.");
+      await sleep(120);
+      const say = mockPage.byText("Check my sentence", "button");
+      if (say && !say.disabled) await mockPage.click(say);
+      await sleep(250);
+      const after = mockPage.byText("Next step", "button");
+      check(
+        "learn",
+        "answering the check opens the next step, and the check says it is not being marked",
+        !!after && !after.disabled && /not marked and is not sent anywhere/i.test(mockPage.text()),
+        `next=${after ? (after.disabled ? "locked" : "open") : "missing"}`,
+      );
+      if (after && !after.disabled) {
+        await mockPage.click(after);
+        await sleep(250);
+        check("learn", "one step is on screen at a time, with the material never cut", /step 2 of 3/.test(mockPage.text()) && !/…\s*$/.test(mockPage.text().slice(-40)), mockPage.text().slice(-200));
+      }
+    }
+    closePage(mockPage);
     closePage(page);
   }
 
@@ -1040,6 +1187,18 @@ async function main() {
     // for the thing this app refuses to say: a fixed trait, a label, a diagnosis.
     check("progress", "the page distinguishes measurement from diagnosis", !/\b(disorder|deficit|incapable|ADHD|dyslexic|slow learner|low ability|not smart|you are a (visual|auditory|kinesthetic|slow|weak|poor|lazy))\b/i.test(body) && !/learning (style|preference) (says|shows|proves)/i.test(body), body.slice(0, 140));
     check("progress", "history/journey or its absence is stated", /journey|history|step|session/i.test(body), body.slice(0, 140));
+    // Every number from a small sample has to carry its size and the words that qualify it.
+    const dashN = await api("/api/v1/dashboard", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    const report = await api("/api/v1/methods/report", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    const hasMastery = ((dashN.body || {}).mastery || []).length > 0;
+    const hasMethods = ((report.body || {}).methods || []).length > 0;
+    check("progress", "a count of observations sits next to every estimate", !hasMastery || /n=\d+|\d+ obs/.test(body), body.slice(0, 200));
+    check(
+      "progress",
+      "a small sample is called an early signal in words, not just coloured",
+      (!hasMethods && !hasMastery) || /early signal/i.test(body) || !/actual|expected/i.test(body),
+      body.slice(0, 200),
+    );
     const dash = await api("/api/v1/dashboard", { headers: { cookie: jar.getCookieStringSync(BASE) } });
     const shown = JSON.stringify(dash.body);
     check("progress", "what the page shows exists in the API response", shown.length > 60, shown.slice(0, 140));

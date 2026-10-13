@@ -34,6 +34,7 @@ from ..db.models import (
     StudentPreference,
     utcnow,
 )
+from ..learning import effect as E
 from ..learning import strategies as ST
 from ..security.audit import record_audit
 
@@ -107,6 +108,7 @@ def active(s: Session, student_id: str, *, include_inactive: bool = False) -> li
     out = []
     for r in rows:
         strat = ST.CATALOG.get(r.strategy)
+        measured = E.read_effect(r.effect_summary)
         out.append(
             {
                 "id": r.id,
@@ -121,7 +123,16 @@ def active(s: Session, student_id: str, *, include_inactive: bool = False) -> li
                 "ended_at": r.ended_at.isoformat() if r.ended_at else None,
                 "end_reason": r.end_reason,
                 "proposal_id": r.proposal_id,
-                "effect_summary": r.effect_summary,
+                # The measurement, flattened into the shape the screens read (`EffectSummary`:
+                # baseline_n, after_n, mean_delta, verdict, verdict_words...). Emitted raw, a
+                # stored measurement drawn on screen as "0 answers before and 0 after" -- the
+                # numbers were present, one level down. `effect_raw` is the audit record; the
+                # status is `measured`, `gathering_evidence` (window not full: a state, not a
+                # verdict) or `not_measured` (nothing has run yet).
+                "effect_summary": measured,
+                "effect_raw": r.effect_summary,
+                "effect_status": (measured or {}).get("status", "not_measured"),
+                "effect_measured": bool((measured or {}).get("status") == E.EFFECT_MEASURED),
                 "watch_metric": strat.watch_metric if strat else None,
                 "mechanism": strat.mechanism if strat else None,
                 "citations": [c["ref"] for c in (strat.as_dict()["citations"] if strat else [])],

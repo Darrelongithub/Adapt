@@ -10,8 +10,9 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { EffectLine, type EffectSummary } from "@/components/evidence";
 import { Question } from "@/components/question";
-import { Btn, Card, Err, humanize, Notice, Tag } from "@/components/ui";
+import { Btn, Card, Err, Notice, Tag } from "@/components/ui";
 import { summarise, type AnalyzeRaw, type AnalyzeSummary } from "@/lib/analyze";
 import { useFlow } from "@/lib/flow";
 import { get, post } from "@/lib/api";
@@ -26,10 +27,14 @@ export default function Learn() {
   const [active, setActive] = useState<ActiveAdaptation[]>([]);
   const [due, setDue] = useState(0);
   const [report, setReport] = useState<AnalyzeSummary | null>(null);
+  // Per item, for the same reason as placement: paging back to a question should show the mark
+  // it already has instead of an unanswered form.
+  const [receipts, setReceipts] = useState<Record<number, Receipt>>({});
   const [finishing, setFinishing] = useState(false);
 
   const items = plan?.items ?? [];
   const entry = items[i];
+  const last = receipts[i] ?? null;
 
   // same hazard as /diagnose: `loading` blanks the practice card, and the card is where a typed or
   // ticked answer lives. Only an empty screen may be blanked.
@@ -72,6 +77,7 @@ export default function Learn() {
   const submit = useCallback(
     async (itemId: string, answer: unknown, extra: { teachback_text?: string; attempt_no?: number }) => {
       const receipt = await flow.submit(itemId, answer, { ...extra, attempt_no: extra.attempt_no ?? i + 1 });
+      setReceipts((r) => ({ ...r, [i]: receipt }));
       return receipt;
     },
     [flow, i],
@@ -154,15 +160,16 @@ export default function Learn() {
             {active.map((a) => (
               <li key={a.id} className="flex items-start gap-2">
                 <Tag tone="good">on</Tag>
-                <span>
+                <span className="min-w-0 flex-1">
                   <strong>{a.label ?? a.strategy}</strong>{" "}
                   {typeof a.effect_summary === "string" ? (
                     <span className="text-[var(--muted)]">{a.effect_summary}</span>
-                  ) : a.effect_summary ? (
-                    <span className="text-[var(--muted)]">{humanize(a.effect_summary)}</span>
-                  ) : (
+                  ) : a.effect_summary ? null : (
                     <span className="text-[var(--muted)]">being measured on {a.watch_metric ?? "the next few answers"}</span>
                   )}
+                  {a.effect_summary && typeof a.effect_summary !== "string" ? (
+                    <EffectLine effect={a.effect_summary as unknown as EffectSummary} />
+                  ) : null}
                 </span>
               </li>
             ))}
@@ -193,6 +200,7 @@ export default function Learn() {
           <Question
             key={entry.item.id}
             entry={entry}
+            submitted={last}
             onSubmit={submit}
             onInteract={flow.onInteract}
             onChange={flow.onChange}

@@ -864,3 +864,60 @@ __all__ = [
     "student_runs",
     "visible_scenes",
 ]
+
+
+def concept_versions_for(s: Session, topic_id: str, *, learner_id: str = "") -> dict[str, Any] | None:
+    """The three versions of a concept + its matched question pair, for any subject.
+
+    Reads the topic's own material (the longest body linked to it, or its description)
+    and hands it to :func:`adapt.learning.content.concept_versions`. The verification
+    line matters as much as the content: for a history or biology concept there is no
+    expression to evaluate, so the answer key is checked by *quotability* — the key has
+    to be findable in the material — and anything that could not be checked comes back
+    in ``unverified`` instead of being presented as if it had been.
+    """
+    from ..db.models import Item, LearningMaterial, Topic
+    from ..learning import content as CONTENT
+
+    topic = s.get(Topic, topic_id)
+    if topic is None:
+        return None
+    from ..assessment import bank as BANK
+
+    bodies = [
+        m.body
+        for m in s.execute(select(LearningMaterial).where(LearningMaterial.topic_id == topic_id)).scalars().all()
+        if m.body
+    ]
+    source = topic.description or ""
+    if bodies and len(max(bodies, key=len)) > len(source):
+        source = max(bodies, key=len)
+    if not source:
+        # Same corpus the method payloads teach from: the bank's own course notes, keyed by
+        # topic code. Without this, the first topic in the catalogue (which has no material
+        # row) would teach nothing at all — an empty version set is worse than a plain one.
+        notes = BANK.materials_for(str(topic.code or ""))
+        source = notes[0][1] if notes else ""
+    items = [
+        {"id": it.id, "kind": it.kind, "difficulty": it.difficulty, "stem": it.stem, "active": bool(it.active)}
+        for it in s.execute(select(Item).where(Item.topic_id == topic_id, Item.active.is_(True))).scalars().all()
+    ]
+    result = CONTENT.concept_versions(
+        topic_id=topic.id,
+        title=topic.title,
+        source_text=source,
+        learner_id=learner_id,
+    ).as_dict()
+    result["question_formats_in_bank"] = sorted({str(i["kind"]) for i in items})
+    result["source_chars"] = len(source)
+    if not source:
+        # A concept with no notes at all is a content gap, and saying so is the only honest
+        # output: three empty versions would render as a lesson that teaches nothing, and
+        # inventing prose from the answer keys would be teaching the answer.
+        result["checks"]["no_material"] = True
+        result["note"] = (
+            "this concept has no course notes yet, so there is nothing to segment, draw or work "
+            "through; add material for it and all three versions follow from the same source"
+        )
+        result.setdefault("unverified", []).append("no source material: nothing could be checked against it")
+    return result

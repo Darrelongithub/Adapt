@@ -396,3 +396,93 @@ mistaken for a sign-out, and the gate retries instead of blanking the screen.
 169 checks across eleven scenarios, including the approval-gate phases and the lesson engine. It
 still cannot see layout, focus order, `getUserMedia` prompts or paint — that limitation is recorded
 in `docs/UNVERIFIED.md`, not here.
+
+---
+
+## Third pass — the fifteen pitch defects (2026-10-12)
+
+Fifteen defects, fixed against the user's own specification of the fix. The table is the map:
+what was wrong, where the fix lives, and what fails if the fix is removed. Every test named here
+runs in the 625-test suite; the UI claims are checked by `scripts/probe-fresh.sh all` (181 checks).
+
+| # | Defect | Root cause | Fix (where) | Guard |
+|---|---|---|---|---|
+| 1 | Modes authored into items | how a concept *could* be taught was a property of the item — `experience_mode` and `kind` were written into the bank (`bank.visual()` returns `kind: "mcq" if choices else "text"`), so an item could only ever be taught the one way it was authored, and "which method works" was unanswerable | `learning/methods.py` + migration `0005`: the method is chosen at **serve time**, seeded per `(learner, concept, exposure)`, and the served row keeps `method`, `arm`, `design`, `expected_success` — so the same item teaches two people differently | `test_smoke_new_endpoints.py::test_an_attempt_remembers_the_method_it_was_served_under`, `test_the_loop_closes.py::test_the_worked_example_comparison_has_a_design_and_is_not_self_selection` |
+| 2 | Method confounded with format | The visual mode was authored as MCQ (`bank.visual()`, above) and the other modes were typed: a "method effect" was also a format effect | `methods.question_format` / `matched_question`: the reteach question is chosen **same-format**, and the format is carried in the comparison (`format_held_fixed`) | `test_the_loop_closes.py::test_the_reteach_teaches_a_different_method_and_asks_the_same_format` |
+| 3 | Raw accuracy compared across topics | accuracy is mostly the difficulty of the topic | actual **minus expected** per method, accumulated across sessions (`method_report`, `GET /methods/report`, and the `method_effect` detector) | `test_detectors.py::test_the_method_comparison_is_actual_against_expected_not_raw_accuracy` (two methods, identical accuracy, opposite readings) and `::test_a_method_that_beats_expectation_can_become_a_proposal`, `test_smoke_new_endpoints.py::test_method_report_shows_n_and_labels_early_signals` |
+| 4 | Worked-example check read a click | "opened an example" is chosen by the stuck learner: self-selection scored as a treatment | seeded arms (`example_first` / `explanation_first`) in `methods.assign_method`; the click-based comparison still reported but marked `observational` and scaled down | `test_detectors.py::test_a_half_assigned_comparison_is_not_called_randomised` (and the arm rotation in `test_the_loop_closes.py`) |
+| 5 | No live fail → diagnose → reteach → compare loop | the pieces existed and were never chained | `learning/reteach.py` (`prerequisite_check` → `fatigue_check` → different method → matched question → compare) wired into `services/attempts.submit`, with `blame` in the receipt | `test_the_loop_closes.py` (five tests, including "a missing prerequisite is not converted into a teaching failure") |
+| 6 | Visual strategy was not wired | approving it changed nothing, and only four hand-drawn diagrams existed | `learning/visuals.py`: four generic templates (flow, comparison table, timeline, labelled diagram) built from any source text, and the approval switches the learner onto them (`concept_versions_for`) | `test_subject_agnostic_content.py::test_all_four_visual_templates_can_be_filled_for_any_subject` and `::test_approving_the_visual_strategy_changes_what_is_served` |
+| 7 | "Segmented text" was truncation at N words | the key sentence could be dropped by a word count | `learning/segments.py` splits at sentence boundaries into short steps with a check question between them, and the next step stays locked until the check is answered | probe `learn` scenario ("the next step is behind the step check, and the check explains itself" — which asserts a vague answer *stays* locked and that the check "is not marked and is not sent anywhere") |
+| 8 | One paragraph per topic, maths only | the catalogue was a maths bank | `learning/content.py`: three versions per concept (text, visual, worked example) plus a matched question pair, generated through the existing rulebook (checked keys, content-hash identity); arithmetic checking is replaced by **quotability from the source** for prose subjects, and unverified items are flagged. The shipped bank then gained two prose concepts (`history_ww1`, `bio_photosynthesis`: notes + a typed question keyed to a word in the notes, a choice question, a teach-back and a worked example), so the claim is checkable in the running app and not only against a fixture | `test_subject_agnostic_content.py` (biology and history fixtures) and `test_shipped_catalogue_has_prose_subjects.py` (the shipped topics, graded through the real path) |
+| 9 | Teach-back looked keyword-based | required words + synonyms, text treated as a bag | `assessment/teachback.py`: a fixed three-point checklist with strict output, learner text handled as data, and everything scored on coverage of ideas rather than words | `test_assessment.py::test_teachback_rubric_needs_both_content_and_substance`, `test_api_learner_loop.py::test_teachback_is_scored_on_content_and_says_what_was_missing`, plus the strict-output contracts in `test_llm_plumbing.py` |
+| 10 | Mastery overconfident | one wrong answer took 20% → 3%, on default parameters | `bkt`: per-format guess rates (MCQ 1/options ≈ 25%, typed 2%), softened slip (0.15), and `update_capped` bounding any single answer to 0.12 with the arithmetic recorded | `test_the_loop_closes.py::test_one_wrong_answer_cannot_move_mastery_far…` |
+| 11 | Twelve unaided questions did two jobs | placement and method comparison on one run | split: placement stays adaptive (`information_gain`), the method probe is its own 6–8 concept run (`selector.method_probe_plan`, `GET /assessment/method-probe`) | `test_smoke_new_endpoints.py::test_placement_is_adaptive_and_not_a_method_probe` and `::test_method_probe_is_clamped_and_says_how_it_is_judged` |
+| 12 | Thresholds fired on 3–4 observations | no sample-size vocabulary | `methods.evidence_label` (`early_signal` < 8, `signal`, `established`) propagated to the API rows and the screens, which always print `n` | `test_smoke_new_endpoints.py::test_method_report_shows_n_and_labels_early_signals`, plus probe checks reading `n=` and "early signal" |
+| 13 | Effect checks needed 5 per group | a live demo cannot produce them honestly | `effect.MIN_GROUP_N` refused to conclude below it; `adapt pilot --student-id <id> --seed` writes real rows beforehand, flagged `pilot`, and every surface that shows a number derived from them also shows *"pilot data — not evidence of efficacy"* | `test_pilot_labelling.py`; `demo.mjs` prints the label next to the method rows |
+| 14 | Never run in a browser; a selected answer was sometimes lost; Gemini never called | jsdom was the only "browser"; the answer lived in one component's own `useState`; no key in the sandbox | `frontend/src/lib/drafts.ts` holds the in-progress answer per item (round trip and reload survive; `Back` keeps the mark); the UI probe walks every screen; `POST /explain` with no key answers from the local tutor and *says so* (`provider: local`, `fell_back_to`) | probe `diagnose` (24/24, and **2 of 24 fail with the draft store disabled** — the non-vacuousness check in `docs/UNVERIFIED.md`); `test_llm_plumbing.py` |
+| 15 | Too much to explain | the pitch was the plumbing | `docs/DEMO.md` + the README's "The demo, in the order to say it": the loop in five steps, one privacy line, and an explicit "do not demo" list (voice, Numbas export, encryption internals) | `docs/DEMO.md` rehearsal block; `scripts/demo.mjs` prints the same five sections |
+
+### Found while writing the guards
+
+Eight defects surfaced from the tests rather than from the list, which is the point of writing them
+this way — the first three while building the guards, the next three while making the guards run
+against a catalogue that is not only mathematics, one from a test that walks the whole chain instead
+of one function, and the last from re-running every gate before opening the pull request:
+
+* **A detector that never ran.** `patterns.method_comparison` — the one comparison the whole method
+  story rests on — took a bare row list while `run_all` passes the shared `EvidenceContext`. It
+  raised `TypeError` on **every** analysis; `run_all` swallowed it by design; the catalogue
+  advertised the detector and the log said `detector method_comparison failed`. Fixed, and
+  `test_detectors.py::test_every_detector_accepts_the_context` now calls every registered detector
+  with a real context and no safety net, so a signature cannot drift again.
+* **A mixed comparison labelled "randomised".** With one arm assigned and the other falling back to
+  learners' own clicks, the worked-example detector still called itself randomised. Both arms now
+  have to be assigned *and* big enough, and the fallback says "what the learner chose to do".
+* **A finding that was computed and then dropped.** Fixing the signature only got the comparison
+  running: `hypotheses.TEMPLATES` had no `method_effect` key, so `draft()` returned `None` and the
+  measurement never became a hypothesis or a change a learner could approve. The template now takes
+  its strategy *from the observation* — which method won is the finding — and the detector attaches
+  one only when the method **beat** what its own questions predicted. A method that fell short stays
+  on the record as evidence with the reason beside it (`why_no_proposal`), because "do more of the
+  thing that is underperforming" is not a change worth asking for. On the same path,
+  `ai1.update_hypotheses` rebuilt each observation from its stored dict without `direction`,
+  `design` or `evidence`, so every replayed finding came back as "up / observational / early_signal"
+  — the opposite of what a randomised, above-the-bar comparison is.
+  (`test_detectors.py::test_a_method_that_beats_expectation_can_become_a_proposal`,
+  `::test_a_method_that_fell_short_is_recorded_but_not_proposed`,
+  `::test_a_replayed_finding_arrives_with_its_design_and_evidence`.)
+* **A second reader of the same measurement.** `dashboard.overview` handed out the stored payload
+  nested while `/adaptations/active` handed out the flat one, so the screen that summarises
+  everything showed a measured change with no numbers attached. Both now flatten through
+  `read_effect` and emit the same four field names the screens and `lib/types.ts` declare
+  (pinned in `test_an_approved_change_is_measured_and_the_learner_is_told_in_words`).
+* **A test that passed by luck.** `test_approving_the_visual_strategy_changes_what_is_served`
+  required *every* served concept to be drawn from material. The test database is shared for the
+  whole session, another test creates a topic with none (`gen_contract`), and which concepts a
+  learner is served depends on their generated id — so it failed in some full-suite runs and passed
+  in others, and adding two topics to the bank is what surfaced it. The honest payload
+  (`no_material`: "no course material is linked to this concept yet") is now allowed and named, and
+  the test still fails if nothing at all was drawn from material.
+* **A pilot number that lost its label on the way to a proposal.** Once the comparison could
+  actually produce a hypothesis, the end-to-end test seeded nine pilot rows, read the proposal the
+  app files, and found the sentence quoting them with no label: the detector handed `method_report`
+  its own row dicts and left out `pilot`, so `n_pilot` counted 0 and the label never travelled.
+  Fixed by passing the flag — the row already carried it — and pinned by
+  `test_detectors.py::test_a_method_that_keeps_beating_expectation_reaches_the_learner_as_a_change`,
+  which asserts the label is *in the sentence the learner is asked to approve*.
+* **A measured change rendered as zeroes.** `active()` handed screens the stored payload nested
+  (`{"effect": {...}}`) while the component's type was flat (`EffectSummary`), so a judged change
+  read "0 answers before and 0 after". One writer and one reader now share the shape
+  (`effect_payload` / `read_effect`), the flat form is what screens get, the raw form stays as
+  `effect_raw` for the audit, and a window that is still filling up is **stored** with its count and
+  sentence (`gathering_evidence`) instead of vanishing — while `evaluation_status` stays empty,
+  because an unfinished measurement is not a verdict.
+* **A public helper that could not be called.** `adapt.db.session_scope` is exported in
+  `adapt.db.__all__` and did `yield from get_db().session()` — but `Database.session` is *already* a
+  context manager, so the first call raised `TypeError: '_GeneratorContextManager' object is not
+  iterable`. Every service holds its own session factory, so nothing inside the package ever called
+  it, and the whole suite passed with a public function that could not run. It now enters the scope
+  it delegates to, and `test_db_session_scope.py` calls it for real: reads through it, checks a
+  failure inside it still reaches the caller, and pins that it stays exported. The next caller of an
+  `__all__` name is a person rather than a test, which is why this one is guarded instead of deleted.
