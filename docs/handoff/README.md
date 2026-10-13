@@ -7,16 +7,17 @@ an agent never needs another file to start.
 
 | File | Workstream | When to start | Rough size |
 |---|---|---|---|
-| `agent-1-baseline.md` | Finish phase 2 + the baseline UI | **do not hand out** (see below) | 2-2.5 workstreams |
+| `agent-1-baseline.md` | Finish phase 2 + the baseline UI | **done** by the integrator session - do not hand out | 2-2.5 workstreams |
 | `agent-2-subjects.md` | Phase 3, the subject round | now (wave 1) | 3-4x, the largest |
 | `agent-3-content.md` | Phase 4, the content engine (AI 2) | now (wave 1) | 2.5-3.5x |
 | `agent-4-adapter.md` | Phase 5, AI 3 + the contrast demo | after 2 and 3 merge | 2-3x |
 | `agent-5-evidence.md` | Phase 6, evidence + the failure loop | after 4 merges | 2x |
 | `agent-6-security.md` | Phase 7, security + demo readiness | now (wave 1) | 2-3x |
 
-**Agent 1 is the one being run here.** The Arena session that owns this repo is executing it, so
-there is nothing for you to send: its file is documentation of that work and a fallback if the
-session dies. Hand out the other five.
+**Agent 1 is done, and it was run here.** The Arena session that owns this repo executed it (it had
+to land first: a green baseline suite is the floor the other workstreams stand on). The record is
+`agent-notes/1-baseline.md` and the phase 2 report in `docs/FUNCTIONALITY_ROUND.md`; its handoff file
+stays in the repo as documentation. Hand out the other five.
 
 ## How to run it
 
@@ -47,6 +48,6 @@ session dies. Hand out the other five.
 
 * `git clone` may be slow or the sandbox may have no network to PyPI; the pip install in the brief
   is the step to watch.
-* The suite takes about a minute and was **763 passed** when these were written. If an agent finds
+* The suite takes about a minute and was **765 passed** when these were written. If an agent finds
   it red before changing anything, its branch base is wrong -- have it re-fetch
   `origin/arena/06d446fc-adapt` rather than fix unrelated tests.

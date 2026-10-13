@@ -2,10 +2,11 @@
 
 > Paste this whole file into a fresh agent session. It is self-contained.
 
-**Do not hand this one out.** The integrator session is executing it right now (it is the phase
-that has to land first, because a green baseline suite is the floor everything else stands on). It
-is included here only so that the work is documented and can be finished by someone else if that
-session dies.
+**Do not hand this one out: it is done.** The integrator session (the one that owns
+`arena/06d446fc-adapt`) executed this workstream - it had to land first, because a green baseline
+suite is the floor every other workstream stands on. The record is `agent-notes/1-baseline.md` and
+the phase 2 report in `docs/FUNCTIONALITY_ROUND.md`. This file stays as documentation of the plan
+that was followed, and as a starting point if the phase ever needs redoing.
 
 ## Your mission
 
@@ -135,9 +136,10 @@ anything you deviated from. Not in `docs/FUNCTIONALITY_ROUND.md` -- that file ha
 
 ## Where it stands as of the tip
 
-The backend engine is **38/38 green** (`backend/tests/test_baseline.py`), and so is the rest of the
-suite. What is not done: **the baseline has no screens at all** -- `frontend/src/app/baseline/` does
-not exist.
+**Status when this plan was written:** the backend engine was green and the baseline had no
+screens. **Now:** the engine is 40/40 green, the whole suite is 765 passed, `/baseline` exists with
+every screen, and `scripts/probe-fresh.sh baseline` passes 25/25 checks in jsdom against the live
+API. The browser-level checks are pending in `docs/UNVERIFIED.md`.
 
 Two bugs were fixed on the way here and are worth understanding before you touch the flow, because
 they are the same bug twice:
