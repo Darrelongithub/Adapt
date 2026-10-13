@@ -33,8 +33,12 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "/tmp/adapt-next-offline-SxRmd0/types/**/*.ts",
+    "/tmp/adapt-next-offline-m5MCLF/types/**/*.ts",
+    "/tmp/adapt-next-offline-ohoYwt/types/**/*.ts",
+    "/tmp/adapt-next-proxy-5RdSUZ/types/**/*.ts",
+    "/tmp/adapt-next-proxy-YlHaaL/types/**/*.ts",
     "next-env.d.ts",
-    "/tmp/adapt-next-proxy-5RdSUZ/types/**/*.ts"
+    "/tmp/adapt-next-proxy-xE7EUb/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

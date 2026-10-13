@@ -453,7 +453,7 @@ export default function LessonPlayer() {
                       onKeyDown={(e) => filmRoving.onKeyDown(e, idx)}
                       onFocus={() => filmRoving.setActiveIndex(idx)}
                       onClick={() => dispatch({ type: "jump", index: idx })}
-                      className="frame"
+                      className="btn-ctl btn-secondary frame"
                       title={f.title ?? `frame ${idx + 1}`}
                     >
                       {String(idx + 1).padStart(2, "0")} {(f.title ?? f.kind ?? "frame").slice(0, 14)}
@@ -480,7 +480,7 @@ export default function LessonPlayer() {
                   you passed {owed.length} moment{owed.length === 1 ? "" : "s"} that asked you to say what happens next.
                   <button
                     type="button"
-                    className="ml-2 underline"
+                    className="btn-ctl btn-ghost ml-2"
                     onClick={() => dispatch({ type: "jump", index: owed[0] })}
                   >
                     go to the first one
@@ -632,16 +632,19 @@ function PredictionPanel({
           <div className="flex flex-wrap gap-2">
             {choices.map((c, ci) => {
               const chosen = answer === c;
-              const tone =
-                graded && chosen ? (graded.correct ? "border-[var(--good)] bg-[var(--good)]/15" : "border-[var(--bad)] bg-[var(--bad)]/10") : "border-[var(--line)]";
+              const tone = graded && chosen ? (graded.correct ? "correct" : "incorrect") : "";
               return (
                 <button
                   key={`${c}#${ci}`}
                   type="button"
+                  role="radio"
+                  aria-checked={chosen}
                   disabled={busy || !!graded}
                   onClick={() => onAnswer(c)}
-                  className={`rounded-md border px-3 py-1.5 text-left text-[13px] font-mono transition-colors hover:border-[var(--accent)] disabled:opacity-60 ${tone}`}
+                  className={`option-card ${tone}`}
+                  style={{ width: "auto" }}
                 >
+                  <span className="radio-dot" aria-hidden="true" />
                   {c}
                 </button>
               );

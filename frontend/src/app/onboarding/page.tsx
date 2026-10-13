@@ -34,8 +34,12 @@ export default function Onboarding() {
     encourage: "",
     avoid: "",
   });
-  const [consentAnalytics, setConsentAnalytics] = useState(true);
-  const [consentLlm, setConsentLlm] = useState(true);
+  // Unchecked until something says otherwise. The learner's own answer at the door arrives
+  // in the URL because this is the first screen with a session to store it on; without one,
+  // the boxes stay empty rather than being pre-ticked on their behalf.
+  const [consentAnalytics, setConsentAnalytics] = useState(false);
+  const [consentLlm, setConsentLlm] = useState(false);
+  const [carriedConsent, setCarriedConsent] = useState<string | null>(null);
   const [voiceGender, setVoiceGender] = useState("female");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
@@ -49,13 +53,18 @@ export default function Onboarding() {
   }, [prefs.data?.preferences && JSON.stringify(prefs.data?.preferences)]);
 
   useEffect(() => {
+    // What the door recorded, when the learner came through it. A decision they made is
+    // never flipped back to the row's default on the way in.
+    const carried = new URLSearchParams(window.location.search).get("consent");
+    setCarriedConsent(carried);
+    if (carried === "yes" || carried === "no") {
+      setConsentAnalytics(carried === "yes");
+    }
     get<Me>("me").then((r) => {
-      if (r.data) {
-        setConsentAnalytics(Boolean(r.data.consent_analytics));
-        setConsentLlm(Boolean(r.data.consent_share_with_ai));
-        setVoiceGender(r.data.voice_gender || "female");
-        void r.data;
-      }
+      if (!r.data) return;
+      if (carried !== "yes" && carried !== "no") setConsentAnalytics(Boolean(r.data.consent_analytics));
+      setConsentLlm(Boolean(r.data.consent_share_with_ai));
+      setVoiceGender(r.data.voice_gender || "female");
     });
   }, []);
 
@@ -168,6 +177,13 @@ export default function Onboarding() {
 
         <Card title="What may be measured" tone="warn">
           <div className="space-y-3">
+            {carriedConsent ? (
+              <p className="text-xs text-[var(--muted)]">
+                You answered this before your account existed, and this screen stores the answer:{" "}
+                {carriedConsent === "yes" ? "analytics consent given" : "analytics consent declined"}. Change it here if you
+                want to — the boxes are never set on your behalf.
+              </p>
+            ) : null}
             <Check
               label="Keep the interaction log"
               checked={consentAnalytics}

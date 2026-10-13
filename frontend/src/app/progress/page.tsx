@@ -209,7 +209,9 @@ export default function Progress() {
                 key={k}
                 type="button"
                 onClick={() => setKind(kind === k ? null : k)}
-                className={`rounded border px-1.5 text-xs ${kind === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--line)] text-[var(--muted)]"}`}
+                aria-pressed={kind === k}
+                className="btn-ctl btn-secondary"
+                style={{ padding: "6px 10px", fontSize: 10.5 }}
               >
                 {k} {n}
               </button>

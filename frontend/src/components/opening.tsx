@@ -81,7 +81,7 @@ export function Opening() {
           );
         })}
       </p>
-      <button className="opening-skip" onClick={(e) => { e.stopPropagation(); dismiss(); }}>
+      <button className="btn-ctl btn-ghost opening-skip" onClick={(e) => { e.stopPropagation(); dismiss(); }}>
         Skip →
       </button>
       <span className="sr-only">Press any key or click anywhere to continue.</span>

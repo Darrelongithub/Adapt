@@ -173,7 +173,10 @@ export default function Proposals() {
                       return (
                         <button
                           key={v.id}
-                          className={`stamp-btn ${v.id}`}
+                          /* Every decision is a real button with a boundary and, once
+                             answered, a filled selected state — the answer you gave is visible
+                             without hovering anything. */
+                          className={`btn-ctl btn-secondary${v.tone === "good" ? " good" : v.tone === "muted" ? " danger" : ""}`}
                           aria-pressed={isActive}
                           disabled={busy}
                           title={v.hint}
@@ -312,11 +315,9 @@ export default function Proposals() {
                       <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="two, not four — I lose the thread after that" />
                     </Field>
                     <button
-                      className="stamp-btn yes"
-                      aria-pressed="false"
+                      className="btn-ctl btn-primary"
                       disabled={busy}
                       onClick={() => current && void decide(current, "modify")}
-                      style={{ background: "var(--ink)", color: "var(--bg)" }}
                     >
                       {busy ? "…" : "Send it with those changes"}
                     </button>

@@ -1,35 +1,48 @@
 "use client";
 
-/** The door. Three ways in, because the pilot runs on a school laptop where nobody has
- *  an account yet: a guest learner (nothing to remember), email + password, or the demo
- *  passphrase if the operator set one.
+/** The door, and now the consent step that stands in front of it.
  *
- *  What is deliberately *not* here: any question about how you learn. The blueprint
- *  forbids the learning-styles inventory, and the onboarding screen explains that
- *  measurement happens during practice instead.
+ *  What is deliberately *not* here: any question about how you learn, and any navigation.
+ *  Home used to carry a word-field of section links; the permanent sidebar is the only
+ *  navigation surface now, so this screen is status plus one primary action for a learner
+ *  who is signed in, and the consent-then-account path for one who is not.
+ *
+ *  Consent is asked here because this is where account creation begins — including the
+ *  guest path, which also writes a student row (POST /students). Both boxes start
+ *  unchecked, they are separate questions, and the primary control stays closed until the
+ *  required one is ticked. See the note on the research box: it has no server field yet,
+ *  and the screen says so rather than pretending otherwise.
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Btn, Card, Err, Field, Input, Notice, Tag, useSession } from "@/components/ui";
-import { api, get, isMock, post, type Me } from "@/lib/api";
-import type { Health } from "@/lib/types";
+import { api, get, isMock, post, useApi, type Me } from "@/lib/api";
+import type { Health, Mastery } from "@/lib/types";
 
-const WORD_FIELD = [
-  { href: "/learn", label: "Practise", n: "01", size: "clamp(28px,4vw,52px)" },
-  { href: "/lesson", label: "Lessons", n: "02", size: "clamp(20px,2.6vw,34px)" },
-  { href: "/proposals", label: "Changes", n: "03", size: "clamp(22px,3vw,40px)" },
-  { href: "/review", label: "Review", n: "04", size: "clamp(18px,2.4vw,30px)" },
-  { href: "/progress", label: "Progress", n: "05", size: "clamp(24px,3.4vw,46px)" },
-  { href: "/voice", label: "Voice", n: "06", size: "clamp(16px,2vw,26px)" },
-  { href: "/settings", label: "Settings", n: "07", size: "clamp(14px,1.8vw,22px)" },
-];
+type Dash = {
+  mastery?: Mastery[];
+  reviews?: { due_now?: unknown[] };
+  pending_proposals?: unknown[];
+  data_volume?: { attempts?: number };
+  last_7_days?: { attempts?: number; mean_score?: number | null };
+};
+
+type ReviewDueLite = { count?: number; due?: unknown[] };
+
+type Privacy = {
+  telemetry?: { recorded?: string[]; never_recorded?: string[]; why?: string; note?: string };
+};
 
 export default function Home() {
   const { me, loading, refresh } = useSession();
   const router = useRouter();
-  const [mode, setMode] = useState<"guest" | "account">("guest");
+  const [step, setStep] = useState<"consent" | "auth">("consent");
+  const [consent, setConsent] = useState(false);
+  const [research, setResearch] = useState(false);
+  const [declined, setDeclined] = useState(false);
+  const [mode, setMode] = useState<"create" | "signin">("create");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,27 +53,49 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [mock, setMock] = useState(false);
+  // The server's own description of what it records, so the consent screen quotes the
+  // thing that enforces it rather than a paragraph written here that could drift.
+  const privacy = useApi<Privacy>("privacy");
 
   useEffect(() => {
     setMock(isMock());
     get<Health>("health").then((r) => setHealth(r.data));
   }, []);
 
-  async function go(payload: Record<string, unknown>) {
+  /** Create the account. The consent decision travels with the learner to /onboarding,
+   *  which is the screen that has a real endpoint to store it on (POST me/onboarding).
+   *  It is not kept anywhere the browser could later claim the learner agreed: if the
+   *  handoff is lost, the next screen asks again instead of assuming. */
+  async function go(payload: Record<string, unknown>, asGuest: boolean) {
     setBusy(true);
     setError(null);
     try {
       await api("students", {
         method: "POST",
-        json: payload,
+        json: { ...payload, ...(asGuest ? { as_guest: true } : {}) },
         headers: passphrase ? { "x-adapt-demo-passphrase": passphrase } : undefined,
       });
       refresh();
-      router.push(me?.onboarding_complete ? "/learn" : "/onboarding");
+      const carry = `consent=${consent ? "yes" : "no"}&research=${research ? "yes" : "no"}`;
+      router.push(me?.onboarding_complete ? `/learn` : `/onboarding?${carry}`);
     } catch (err) {
       const e = err as { status?: number; shown?: string; detail?: unknown };
       if (e?.status === 403 && JSON.stringify(e.detail ?? "").includes("demo_passphrase_required")) setNeedsPassphrase(true);
       setError(e?.shown ?? String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signIn() {
+    setBusy(true);
+    setError(null);
+    try {
+      await post("login", { email, password });
+      refresh();
+      router.push("/learn");
+    } catch (err) {
+      setError((err as { shown?: string }).shown ?? String(err));
     } finally {
       setBusy(false);
     }
@@ -85,16 +120,7 @@ export default function Home() {
         changes how you learn until you answer it.
       </p>
 
-      <nav className="word-field" aria-label="Jump to a section">
-        {WORD_FIELD.map((w) => (
-          <Link key={w.href} href={w.href} className="wf-item" style={{ fontSize: w.size }}>
-            <span className="n">{w.n}</span>
-            {w.label}
-          </Link>
-        ))}
-      </nav>
-
-      <div className="mt-8 flex flex-wrap gap-2 text-xs">
+      <div className="mt-6 flex flex-wrap gap-2 text-xs">
         <Tag tone="good">no learning-styles question</Tag>
         <Tag tone="think">hypotheses, not labels</Tag>
         <Tag tone="accent">keystrokes never recorded</Tag>
@@ -104,93 +130,135 @@ export default function Home() {
       {mock ? (
         <div className="mt-3 max-w-[640px]">
           <Notice>
-            You are looking at fixtures. <Link className="underline" href="/" onClick={() => window.sessionStorage.removeItem("adapt-mock")}>clear it</Link>{" "}
+            You are looking at fixtures. <Link className="link-inline" href="/" onClick={() => window.sessionStorage.removeItem("adapt-mock")}>clear it</Link>{" "}
             and the same screens read the real API.
           </Notice>
         </div>
       ) : null}
 
-      <div className="mt-10 grid gap-5 md:grid-cols-[1.15fr_1fr]">
-        <div className="space-y-4">
-          <Card title="The loop" tone="muted">
-            <ol className="list-decimal space-y-1 pl-5 text-sm">
-              <li>
-                <strong>Placement</strong> — twelve questions across the topics, no hints, one band estimate each.
-              </li>
-              <li>
-                <strong>Practise</strong> — answer, get feedback written from your own material, ask for a hint if you want.
-              </li>
-              <li>
-                <strong>Analysis</strong> — evidence, a hypothesis, and a proposal that says what it would change and what it
-                would watch.
-              </li>
-              <li>
-                <strong>You decide</strong> — yes, no, later, or change the numbers. A no is recorded and stops the same
-                question coming back tomorrow.
-              </li>
-              <li>
-                <strong>Review</strong> — topics come back at the point your own recall is projected to fall to ~85%, not on a
-                fixed schedule.
-              </li>
-            </ol>
+      {loading ? (
+        <div className="mt-8 max-w-[640px]">
+          <Card title="Checking the session" tone="muted">
+            <p className="text-sm text-[var(--muted)]">…</p>
           </Card>
         </div>
+      ) : me ? (
+        <SignedIn me={me as Me} />
+      ) : (
+        <div className="mt-8 max-w-[640px]">
+          {step === "consent" ? (
+            <Card title="Before you create an account" tone="ask">
+              <h2 className="text-[clamp(19px,2.6vw,26px)] font-medium leading-snug" style={{ fontFamily: "var(--font-serif)" }}>
+                Here is exactly what ADAPT records, and why.
+              </h2>
+              <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
+                {privacy.data?.telemetry?.note ??
+                  "ADAPT records your answers, how long you take, and the paths you take through lessons. That is what decides what you see next — nothing more, and nothing hidden."}
+              </p>
+              <ul className="mt-3 space-y-1 text-sm text-[var(--muted)]">
+                {(privacy.data?.telemetry?.recorded ?? [
+                  "the order of events: when a question appeared, when you first interacted, when you submitted",
+                  "timings between those events, and whether you opened a hint",
+                  "your first and final answer, when you change one",
+                ]).map((r) => (
+                  <li key={r}>· {r}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Never recorded:{" "}
+                {(privacy.data?.telemetry?.never_recorded ?? [
+                  "keystrokes, key timing or per-character edits",
+                  "screenshots, screen content, or anything from another tab",
+                ]).join("; ")}
+                .{" "}
+                <a className="link-inline" href="#what-is-recorded">
+                  Read what is recorded
+                </a>{" "}
+                — the list comes from the same endpoint the server enforces it with.
+              </p>
 
-        <div className="space-y-4">
-          {loading ? (
-            <Card title="Checking the session" tone="muted">
-              <p className="text-sm text-[var(--muted)]">…</p>
-            </Card>
-          ) : me ? (
-            <Card title={`Signed in as ${(me as Me).display_name || (me as Me).student_id}`} tone="good">
-              <div className="space-y-3 text-sm">
-                <p className="text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
-                  {(me as Me).sessions} session{(me as Me).sessions === 1 ? "" : "s"} so far ·{" "}
-                  {(me as Me).onboarding_complete ? "onboarding done" : "onboarding not finished"} ·{" "}
-                  {(me as Me).diagnostic_complete ? "placed" : "not placed yet"}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {(me as Me).onboarding_complete ? null : <Btn kind="primary" href="/onboarding">Finish setup</Btn>}
-                  <Btn kind={(me as Me).diagnostic_complete ? "quiet" : "primary"} href={(me as Me).diagnostic_complete ? "/learn" : "/diagnose"}>
-                    {(me as Me).diagnostic_complete ? "Practise" : "Start placement"}
-                  </Btn>
-                  <Btn href="/proposals">Changes waiting</Btn>
-                  <Btn href="/review">Review queue</Btn>
-                </div>
+              <div className="mt-4 flex flex-col gap-3">
+                <label className="check-row">
+                  <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                  <span className="ct">
+                    <b>Required</b>I understand my learning activity is recorded and used to adapt what I am shown.
+                  </span>
+                </label>
+                <label className="check-row">
+                  <input type="checkbox" checked={research} onChange={(e) => setResearch(e.target.checked)} />
+                  <span className="ct">
+                    <b>Optional — and separate</b>I am also willing to have my anonymised activity used for research to
+                    improve ADAPT for other learners.
+                  </span>
+                </label>
               </div>
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Not stored yet: this instance has no field for research consent, so nothing you choose in the optional box is
+                saved or sent anywhere. The required box is stored on your learner record as analytics consent. Both can be
+                changed later on the settings screen.
+              </p>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Btn kind="primary" onClick={() => setStep("auth")} disabled={!consent}>
+                  Agree &amp; continue
+                </Btn>
+                <Btn kind="ghost" onClick={() => setDeclined(true)}>
+                  Decline
+                </Btn>
+                <Btn kind="ghost" onClick={() => { setMode("signin"); setStep("auth"); }}>
+                  I already have an account
+                </Btn>
+              </div>
+              {declined ? (
+                <div className="mt-4" role="status">
+                  <Notice tone="warn">
+                    Without that consent ADAPT cannot record answers or adapt what you are shown: you would get the same
+                    question order as everyone else, with no estimates and no proposals. Nothing has been created and
+                    nothing has been sent. You can tick the box above to continue, or close this page.
+                  </Notice>
+                </div>
+              ) : null}
             </Card>
           ) : (
-            <Card title={mode === "guest" ? "Start as a guest" : "Sign in"} tone="ask">
-              <div className="mb-3 flex gap-2 text-xs">
+            <Card title={mode === "create" ? "Create your account" : "Sign in"} tone="ask">
+              <div className="auth-tabs" role="tablist" aria-label="Sign in or create an account">
                 <button
                   type="button"
-                  className={`rounded-[2px] border px-2 py-1 ${mode === "guest" ? "border-[var(--accent)]" : "border-[var(--line)] text-[var(--muted)]"}`}
-                  onClick={() => setMode("guest")}
-                  style={{ fontFamily: "var(--font-mono)" }}
+                  role="tab"
+                  aria-selected={mode === "create"}
+                  className="auth-tab btn-ctl"
+                  onClick={() => setMode("create")}
                 >
-                  guest
+                  Create account
                 </button>
                 <button
                   type="button"
-                  className={`rounded-[2px] border px-2 py-1 ${mode === "account" ? "border-[var(--accent)]" : "border-[var(--line)] text-[var(--muted)]"}`}
-                  onClick={() => setMode("account")}
-                  style={{ fontFamily: "var(--font-mono)" }}
+                  role="tab"
+                  aria-selected={mode === "signin"}
+                  className="auth-tab btn-ctl"
+                  onClick={() => setMode("signin")}
                 >
-                  email + password
+                  Sign in
                 </button>
               </div>
               <form
                 className="space-y-3"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  if (mode === "guest") void go({ display_name: name || "Guest learner", age_band: ageBand, as_guest: true });
-                  else void go({ display_name: name || email.split("@")[0], email, password });
+                  if (mode === "signin") void signIn();
+                  else void go({ display_name: name || email.split("@")[0] || "Guest learner", email, password, age_band: ageBand }, false);
                 }}
               >
-                {mode === "guest" ? (
+                {mode === "create" ? (
                   <>
-                    <Field label="A name" hint="Anything. A guest learner is stored the same way; you can add an email later.">
-                      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Rowan" />
+                    <Field label="A name" hint="Anything you want shown back to you. A guest learner is stored the same way; you can add an email later.">
+                      <Input type="text" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="Rowan" />
+                    </Field>
+                    <Field label="Email">
+                      <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required autoComplete="username" />
+                    </Field>
+                    <Field label="Password" hint="At least 10 characters. Argon2id, and the address itself is encrypted at rest.">
+                      <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required autoComplete="new-password" />
                     </Field>
                     <Field label="Age band" hint="Used only to keep the wording age-appropriate.">
                       <select
@@ -211,7 +279,7 @@ export default function Home() {
                     <Field label="Email">
                       <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required autoComplete="username" />
                     </Field>
-                    <Field label="Password" hint="At least 10 characters. Argon2id, and the address itself is encrypted at rest.">
+                    <Field label="Password">
                       <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required autoComplete="current-password" />
                     </Field>
                   </>
@@ -222,62 +290,189 @@ export default function Home() {
                   </Field>
                 ) : null}
                 <div className="flex flex-wrap items-center gap-3">
-                  <Btn kind="primary" type="submit" disabled={busy}>
-                    {busy ? "…" : mode === "guest" ? "Start learning" : name || email ? "Register" : "Sign in"}
+                  <Btn kind="primary" type="submit" disabled={busy || (mode === "signin" && (!email || !password))}>
+                    {busy ? "…" : mode === "create" ? "Create account" : "Sign in"}
                   </Btn>
-                  {mode === "account" ? (
-                    <span className="text-xs text-[var(--muted)]">
-                      already registered?{" "}
-                      <button
-                        type="button"
-                        className="underline"
-                        onClick={() => {
-                          setBusy(true);
-                          setError(null);
-                          post("login", { email, password })
-                            .then(() => {
-                              refresh();
-                              router.push("/learn");
-                            })
-                            .catch((err) => setError((err as Error).message))
-                            .finally(() => setBusy(false));
-                        }}
-                      >
-                        sign in
-                      </button>
-                    </span>
-                  ) : null}
+                  <Btn kind="ghost" onClick={() => void go({ display_name: name || "Guest learner", age_band: ageBand }, true)} disabled={busy}>
+                    Continue as guest
+                  </Btn>
                 </div>
                 {error ? <Err error={error} status={null} /> : null}
               </form>
               <p className="mt-3 text-xs text-[var(--muted)]">
                 A guest keeps the same data and the same rights as an account, including the delete button. Nothing is sent to a
                 model that you have not agreed to, and{" "}
-                <Link href="/settings" className="underline">
+                <Link href="/settings" className="link-inline">
                   the settings screen lists every field that is stored
                 </Link>
-                .
+                . Consent was recorded as: analytics {consent ? "yes" : "no"} · research (not stored yet){" "}
+                {research ? "yes" : "no"}.
               </p>
             </Card>
           )}
-          <Card title="If you are running this" tone="muted">
-            <ul className="space-y-1 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-              <li>
-                backend: <code>uvicorn adapt.api.app:app --port 8000</code>
-              </li>
-              <li>
-                one-command loop demo: <code>adapt demo</code>
-              </li>
-              <li>
-                health: <code>GET /api/v1/health</code> · routes: <code>GET /api</code>
-              </li>
-              <li>
-                add <code>?mock=1</code> to any URL to look at the screens with no backend.
-              </li>
-            </ul>
-          </Card>
         </div>
+      )}
+
+      <RecordedPanel privacy={privacy.data} loading={privacy.loading} />
+
+      <div className="mt-10 grid gap-5 md:grid-cols-[1.15fr_1fr]">
+        <Card title="The loop" tone="muted">
+          <ol className="list-decimal space-y-1 pl-5 text-sm">
+            <li>
+              <strong>Placement</strong> — a short adaptive sequence across the topics, no hints, one band estimate each.
+            </li>
+            <li>
+              <strong>Practise</strong> — answer, get feedback written from your own material, ask for a hint if you want.
+            </li>
+            <li>
+              <strong>Analysis</strong> — evidence, a hypothesis, and a proposal that says what it would change and what it
+              would watch.
+            </li>
+            <li>
+              <strong>You decide</strong> — yes, no, later, or change the numbers. A no is recorded and stops the same
+              question coming back tomorrow.
+            </li>
+            <li>
+              <strong>Review</strong> — topics come back at the point your own recall is projected to fall to ~85%, not on a
+              fixed schedule.
+            </li>
+          </ol>
+        </Card>
+        <Card title="If you are running this" tone="muted">
+          <ul className="space-y-1 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+            <li>
+              backend: <code>uvicorn adapt.api.app:app --port 8000</code>
+            </li>
+            <li>
+              one-command loop demo: <code>adapt demo</code>
+            </li>
+            <li>
+              health: <code>GET /api/v1/health</code> · routes: <code>GET /api</code>
+            </li>
+            <li>
+              add <code>?mock=1</code> to any URL to look at the screens with no backend.
+            </li>
+          </ul>
+        </Card>
       </div>
+    </div>
+  );
+}
+
+/** The signed-in home: status cards from real reads, and one primary action. It is not a
+ *  navigation surface — everything else lives in the sidebar. */
+function SignedIn({ me }: { me: Me }) {
+  const dash = useApi<Dash>("dashboard");
+  const due = useApi<ReviewDueLite>("review/due");
+  const pending = useApi<{ proposals?: unknown[] }>("adaptations/pending");
+
+  const mastery = dash.data?.mastery ?? [];
+  const placed = Boolean(me.diagnostic_complete);
+  const dueCount = typeof due.data?.count === "number" ? due.data.count : due.data?.due?.length ?? null;
+  const waiting = pending.data?.proposals?.length ?? null;
+  const attempts = dash.data?.data_volume?.attempts ?? dash.data?.last_7_days?.attempts ?? null;
+  const mean = dash.data?.last_7_days?.mean_score;
+  const weakest = mastery.length ? mastery.reduce((a, b) => (b.p_know < a.p_know ? b : a), mastery[0]) : null;
+
+  return (
+    <div className="mt-8 space-y-5">
+      <div className="home-cta-row">
+        <Btn kind="primary" href={placed ? "/learn" : "/diagnose"}>
+          {placed ? "Continue practising" : "Start learning"}
+        </Btn>
+        {waiting ? (
+          <Btn href="/proposals">
+            Review {waiting} pending change{waiting === 1 ? "" : "s"}
+          </Btn>
+        ) : null}
+        {dueCount ? <Btn href="/review">Review {dueCount} due</Btn> : null}
+        {!me.onboarding_complete ? <Btn kind="ghost" href="/onboarding">Finish setup</Btn> : null}
+      </div>
+
+      <div className="home-grid">
+        <Stat
+          label="Due for review"
+          value={dueCount === null ? "—" : dueCount > 0 ? String(dueCount) : "Nothing due yet"}
+          note={
+            due.error
+              ? "the queue could not be read"
+              : dueCount
+                ? "topics your own recall is projected to drop below ~85% on"
+                : "review appears once you have practised something"
+          }
+        />
+        <Stat
+          label="Changes awaiting your answer"
+          value={waiting === null ? "—" : waiting > 0 ? String(waiting) : "Nothing waiting"}
+          note={
+            pending.error
+              ? "the proposals could not be read"
+              : waiting
+                ? "nothing is applied until you answer"
+                : "they arrive once a pattern holds up in your evidence"
+          }
+        />
+        <Stat
+          label="Measured so far"
+          value={mastery.length ? `${mastery.length}` : "Not measured yet"}
+          note={
+            mastery.length
+              ? `topic${mastery.length === 1 ? "" : "s"} with an estimate · weakest: ${weakest?.title ?? weakest?.topic_id ?? "—"} (${weakest?.band ?? "—"})`
+              : placed
+                ? "answers build an estimate per topic as you practise"
+                : "your placement is the first thing that fills this in"
+          }
+        />
+        <Stat
+          label="Recorded practice"
+          value={attempts === null ? "—" : attempts ? String(attempts) : "No answers yet"}
+          note={
+            attempts && typeof mean === "number"
+              ? `answers logged · ${Math.round(mean * 100)}% of the last week's answers were right`
+              : "the event log is what the proposals are built from"
+          }
+        />
+      </div>
+      {dash.error ? <Err error={dash.error} status={dash.status} /> : null}
+    </div>
+  );
+}
+
+function Stat({ label, value, note }: { label: string; value: string; note: string }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      <p className="mt-1 text-xs text-[var(--muted)]">{note}</p>
+    </div>
+  );
+}
+
+/** What the server says it records, in the server's words, with the anchor the consent step
+ *  links to. It is the same endpoint `/settings` reads, so the two cannot disagree. */
+function RecordedPanel({ privacy, loading }: { privacy: Privacy | null; loading: boolean }) {
+  const recorded = privacy?.telemetry?.recorded ?? [];
+  const never = privacy?.telemetry?.never_recorded ?? [];
+  return (
+    <div id="what-is-recorded" className="mt-8 max-w-[720px]">
+      <Card title="What is recorded about you" tone="muted" right={<span>GET /privacy</span>}>
+        {loading ? <p className="text-sm text-[var(--muted)]">…</p> : null}
+        {recorded.length ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            {recorded.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-[var(--muted)]">The server owns this list, and could not be read just now.</p>
+        )}
+        {never.length ? (
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            Never recorded: {never.join("; ")}.
+          </p>
+        ) : null}
+        {privacy?.telemetry?.why ? <p className="mt-2 text-xs text-[var(--muted)]">{privacy.telemetry.why}</p> : null}
+      </Card>
     </div>
   );
 }
