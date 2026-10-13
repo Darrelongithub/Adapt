@@ -51,7 +51,7 @@ function check(scenario, label, ok, detail = "") {
 // Objects must not reach a learner as JSON. Several screens used to stringify a payload into
 // visible text -- a measured effect, the privacy statement, the voice capability list -- so the
 // tripwire runs on every screen that has ever done it, at the moment the page is inspected.
-const JSON_FREE = new Set(["/learn", "/lesson", "/proposals", "/settings", "/voice", "/progress"]);
+const JSON_FREE = new Set(["/learn", "/lesson", "/proposals", "/settings", "/voice", "/progress", "/baseline", "/baseline/snapshot"]);
 
 function visibleText(page) {
   const doc = page?.dom?.window?.document;
@@ -63,7 +63,7 @@ function visibleText(page) {
 
 function closePage(page) {
   const path = String(page?.path ?? "").split("?")[0];
-  if (path && JSON_FREE.has(path)) {
+  if (path && (JSON_FREE.has(path) || path.startsWith("/baseline/"))) {
     const blob = visibleText(page).match(/\{"[^"]+"\s*:[^}]{0,90}/)?.[0] ?? "";
     check(CURRENT || "probe", "no raw JSON object is shown to the learner on this screen", blob === "", blob);
   }
@@ -289,7 +289,8 @@ class Page {
     // httpOnly session cookie travels exactly as it does in the browser (jsdom has no fetch).
     const nativeFetch = globalThis.fetch;
     win.fetch = async (input, init = {}) => {
-      const href = new URL(typeof input === "string" ? input : input.url, BASE).toString();
+      const rawInput = typeof input === "string" ? input : (input?.url ?? input?.href ?? String(input));
+      const href = new URL(rawInput, BASE).toString();
       const headers = new Headers(init.headers ?? (typeof input === "object" ? input.headers : undefined));
       const cookie = jar.getCookieStringSync(href);
       if (cookie) headers.set("cookie", cookie);
@@ -1767,6 +1768,355 @@ async function main() {
     check("lesson", "no uncaught error during the whole lesson", hardErrors.length === 0, hardErrors.slice(0, 2).join(" | ").slice(0, 200));
     check("lesson", "no raw object reached the screen", !/[{\[]\s*"\w+":/.test(page.text()), page.text().slice(0, 160));
     closePage(page);
+  }
+
+  /* ------------------------------------------------ baseline_screen ---- */
+  // The "baseline" UI walk is registered as baseline_screen so it can run alone with
+  // `npm run probe -- --only baseline_screen`. It uses the real backend for generated tasks;
+  // frozen mock.ts intentionally has no baseline fixtures (the merge instructions are in
+  // agent-notes/1-baseline.md).
+  if (run("baseline_screen")) {
+    console.log("\n\x1b[1mbaseline_screen\x1b[0m");
+    const baselineCookie = jar.getCookieStringSync(BASE);
+    const baselineRequest = (method, suffix, body) => api(`/api/v1/baseline${suffix}`, {
+      method,
+      body,
+      cookie: baselineCookie,
+      headers: { "x-csrf-token": csrf },
+    });
+    const requireBaseline = (res, label) => {
+      if (res.status !== 200) throw new Error(`${label}: ${res.status} ${JSON.stringify(res.body).slice(0, 240)}`);
+      return res.body;
+    };
+    const baselinePages = new Set();
+    const closedBaselinePages = new Set();
+    const openBaseline = async (path, intercept) => {
+      const page = await open(path, "baseline_screen", intercept);
+      baselinePages.add(page);
+      return page;
+    };
+    const closeBaseline = (page) => {
+      if (!page || closedBaselinePages.has(page)) return;
+      closedBaselinePages.add(page);
+      closePage(page);
+    };
+    const verifyStop = (page, screen) => check(
+      "baseline_screen",
+      `stop-to-snapshot is available on ${screen}`,
+      Boolean(page?.byText("Stop here and see my snapshot", "button")),
+      page?.text().slice(0, 180) ?? "page did not open",
+    );
+    const taskResponse = (task) => {
+      if (task.game === "codewords_study") return { seconds_seen: 45 };
+      if (task.game === "codewords_cued") return { text: "" };
+      if (task.game === "quick" || task.game === "trap") return { value: task.options?.[0] ?? "" };
+      if (task.game === "vault") return { taps: [] };
+      if (task.game === "shopkeeper") return { items: [], distractors: {} };
+      if (task.game === "machine") return { action: "probe", value: 1 };
+      if (task.game === "locked_box") return { action: task.phase === "practice" ? "start" : "walk_away" };
+      if (task.game === "codewords_delayed" && task.action === "predict") return { value: 4 };
+      if (task.game === "codewords_delayed" && task.kind === "recognition") return { text: task.options?.[0] ?? "" };
+      if (task.game === "codewords_delayed") return { text: "" };
+      throw new Error(`no synthetic response for ${task.game}/${task.phase}`);
+    };
+    const advanceBaseline = async (runId, predicate, answers = {}) => {
+      const id = encodeURIComponent(runId);
+      let view = requireBaseline(await baselineRequest("GET", `/${id}`), "read baseline view");
+      for (let step = 0; step < 140; step += 1) {
+        if (predicate(view)) return view;
+        if (view.kind === "format") {
+          view = requireBaseline(await baselineRequest("POST", `/${id}/format`, { value: view.format_options?.[0]?.value ?? "diagram" }), "choose synthetic format");
+        } else if (view.kind === "questions") {
+          view = requireBaseline(await baselineRequest("POST", `/${id}/questions`, { answers }), "save synthetic context");
+        } else if (view.kind === "task" && view.task) {
+          view = requireBaseline(await baselineRequest("POST", `/${id}/trial`, {
+            task_id: view.task.id,
+            response: taskResponse(view.task),
+            latency_ms: 25,
+          }), `submit ${view.stage}/${view.task.phase}`);
+        } else {
+          break;
+        }
+      }
+      throw new Error(`baseline did not reach its requested screen (last=${view.kind}/${view.stage}/${view.task?.phase ?? "-"})`);
+    };
+
+    try {
+      // Start through the learner-facing flow; choose a format, leave context blank, and arrive
+      // at the timed study screen. Then load a second page and exercise the actual resume button.
+      const startReplies = [];
+      const startPage = await openBaseline("/baseline", (win) => {
+        const realFetch = win.fetch.bind(win);
+        win.fetch = async (input, init = {}) => {
+          const response = await realFetch(input, init);
+          const href = typeof input === "string" ? input : (input?.url ?? "");
+          if (init.method === "POST" && new URL(href, BASE).pathname === "/api/v1/baseline") {
+            try { startReplies.push(await response.clone().json()); } catch { startReplies.push({ unreadable: true }); }
+          }
+          return response;
+        };
+      });
+      await waitFor(() => !/Checking your saved progress/.test(startPage.text()) && /Start the mind check/.test(startPage.text()), {
+        timeout: 15_000, label: "the baseline start screen",
+      });
+      check("baseline_screen", "the landing screen says the check is optional, non-comparative, and can be stopped", /not a grade/i.test(startPage.text()) && /stop on any screen/i.test(startPage.text()) && /not measured yet/i.test(startPage.text()), startPage.text().slice(0, 240));
+      await startPage.click("Start the mind check", "button");
+      await waitFor(() => startReplies.length > 0, { timeout: 10_000, label: "the baseline start response" });
+      check("baseline_screen", "the start response contains a run id for the resume URL", typeof startReplies[0]?.run_id === "string" && startReplies[0].run_id.length > 0, JSON.stringify(startReplies[0]).slice(0, 220));
+      await sleep(500);
+      const startPath = `/baseline/${encodeURIComponent(startReplies[0]?.run_id ?? "")}`;
+      check("baseline_screen", "the UI requests the exact route for the returned run id", startPage.requests.includes(`GET ${startPath}`) && /Before the games/.test(startPage.text()), `${startPage.requests.slice(-8).join(" | ")} · ${startPage.appErrors().join(" | ")}`);
+      await waitFor(() => /Before the games/.test(startPage.text()), { timeout: 15_000, label: "the format choice screen" });
+      check("baseline_screen", "starting creates a saved run and shows an accessible format choice", startPage.requests.some((r) => /POST \/api\/v1\/baseline$/.test(r)) && startPage.find('input[name="baseline-format"]').length === 3 && /Choose a way to meet a new topic/.test(startPage.text()), startPage.requests.slice(-4).join(" | "));
+      check("baseline_screen", "the format is clearly a stated preference, not a measurement", /stated preference, not a measurement/i.test(startPage.text()), startPage.text().slice(120, 340));
+      check("baseline_screen", "the stop-to-snapshot control is present before the games begin", !!startPage.byText("Stop here and see my snapshot", "button"), startPage.text().slice(0, 200));
+      const formatChoice = startPage.find('input[name="baseline-format"]')[0];
+      if (formatChoice) startPage.checkInput(formatChoice);
+      await startPage.click("Continue", "button");
+      await waitFor(() => /A few questions about what suits you/.test(startPage.text()), { label: "the optional context questions" });
+      check("baseline_screen", "context answers are optional and distinguished from measurements", /Answer any you want to/i.test(startPage.text()) && /not measurements/i.test(startPage.text()) && /Skip these questions/.test(startPage.text()), startPage.text().slice(0, 260));
+      verifyStop(startPage, "optional context questions");
+      check("baseline_screen", "the preference screen does not ask for a learning-style label", !/learning styles?|visual learner|auditory learner|kinesthetic/i.test(startPage.text()), startPage.text().slice(0, 200));
+      await startPage.click("Save answers and start", "button");
+      await waitFor(() => /Learn these pairs/.test(startPage.text()), { timeout: 15_000, label: "the codeword study screen" });
+      check("baseline_screen", "the study screen shows all eight pairs and the 45-second window", startPage.find("dl div").length === 8 && /45 seconds/.test(startPage.text()) && /Study time remaining/.test(startPage.text()), startPage.text().slice(-240));
+      const ready = startPage.byText("Ready", "button");
+      check("baseline_screen", "the study cannot be submitted before its timer has elapsed", !!ready && ready.disabled, ready ? `disabled=${ready.disabled}` : startPage.text().slice(-140));
+      check("baseline_screen", "the study stage is not wager-eligible", startPage.find('input[name="baseline-wager"]').length === 0, startPage.text().slice(-120));
+      verifyStop(startPage, "codeword study");
+
+      const resumePage = await openBaseline("/baseline");
+      await waitFor(() => !!resumePage.byText("Continue where I left off", "button"), { timeout: 15_000, label: "the saved-run resume action" });
+      check("baseline_screen", "the landing screen identifies a saved run and offers resume", /Your check-in is saved/.test(resumePage.text()) && /in progress/.test(resumePage.text()) && /Continue from there/.test(resumePage.text()), resumePage.text().slice(0, 260));
+      await resumePage.click("Continue where I left off", "button");
+      await waitFor(() => /Learn these pairs/.test(resumePage.text()), { timeout: 15_000, label: "the same study task to resume" });
+      check("baseline_screen", "resume returns to the saved task, without restarting the format questions", /Learn these pairs/.test(resumePage.text()) && !/Before the games/.test(resumePage.text()) && resumePage.requests.some((r) => /POST \/api\/v1\/baseline$/.test(r)), resumePage.requests.slice(-5).join(" | "));
+      await resumePage.click("Stop here and see my snapshot", "button");
+      await waitFor(() => /What we have measured so far/.test(resumePage.text()), { timeout: 15_000, label: "the partial snapshot after stopping" });
+      const partialRunId = new URL(resumePage.dom.window.location.href).searchParams.get("run_id");
+      const partial = requireBaseline(await baselineRequest("GET", `/snapshot?run_id=${encodeURIComponent(partialRunId ?? "")}`), "read the partial snapshot");
+      const partialHonest = partial.state === "sealed" && partial.factors?.length === 8 && partial.factors.every((factor) => factor.state !== "measured" && factor.range === null && factor.n === 0) && partial.completion?.stages?.length >= 10;
+      check("baseline_screen", "stopping seals the run but keeps every unmeasured factor honest", partialHonest && /This is the snapshot saved when you stopped/.test(resumePage.text()) && /Not measured yet/.test(resumePage.text()), JSON.stringify({ state: partial.state, factor_count: partial.factors?.length, measured_factors: partial.factors?.filter((f) => f.state === "measured").length, stages: partial.completion?.stages?.length, factors: partial.factors?.map((f) => [f.key, f.state, f.n, f.range]) }).slice(0, 220));
+      check("baseline_screen", "the UI prints no invented zero-width range for this partial run", resumePage.find('section[aria-label="Baseline factors"] article').length === 8 && !/estimated range/.test(resumePage.text()), resumePage.text().slice(0, 240));
+      check("baseline_screen", "the stop action reached the backend finish endpoint", resumePage.requests.some((r) => /POST \/api\/v1\/baseline\/[^/]+\/finish/.test(r)), resumePage.requests.slice(-5).join(" | "));
+      const firstRunId = partial.run_id;
+      closeBaseline(startPage);
+      closeBaseline(resumePage);
+
+      // A second run is driven through every stage with deterministic, deliberately synthetic
+      // responses. This is a UI reachability and termination check, not evidence about a learner.
+      const second = requireBaseline(await baselineRequest("POST", "", {}), "start the synthetic play-through");
+      const runId = second.run_id;
+      check("baseline_screen", "a sealed run can be followed by a fresh run", Boolean(runId) && second.status === "in_progress", JSON.stringify({ firstRunId, runId, status: second.status }));
+
+      const cuePractice = await advanceBaseline(runId, (v) => v.stage === "codewords_cued" && v.task?.phase === "practice");
+      const cuePracticePage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => !!cuePracticePage.byText("Check answer", "button"), { label: "codeword practice" });
+      check("baseline_screen", "codeword practice is marked unmeasured and has no wager", cuePractice.task?.phase === "practice" && /practice · not measured/.test(cuePracticePage.text()) && cuePracticePage.find('input[name="baseline-wager"]').length === 0, cuePracticePage.text().slice(-180));
+      verifyStop(cuePracticePage, "codeword practice");
+      closeBaseline(cuePracticePage);
+
+      const cueView = await advanceBaseline(runId, (v) => v.stage === "codewords_cued" && v.task?.phase === "measure");
+      const wagerRequests = [];
+      const cuePage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`, (win) => {
+        const realFetch = win.fetch.bind(win);
+        win.fetch = async (input, init = {}) => {
+          const href = typeof input === "string" ? input : (input?.url ?? "");
+          if (href.includes(`/api/v1/baseline/${runId}/trial`)) wagerRequests.push({ body: init.body ?? "" });
+          return realFetch(input, init);
+        };
+      });
+      await waitFor(() => !!cuePage.byText("Check answer", "button"), { label: "the immediate codeword answer screen" });
+      await sleep(120); // the task's initial effects must not race the first controlled wager
+      verifyStop(cuePage, "measured codeword recall");
+      check("baseline_screen", "a measured codeword task offers the optional wager", cueView.timers_visible && cuePage.find('input[name="baseline-wager"]').length === 4 && /Confidence wager \(optional\)/.test(cuePage.text()), cuePage.text().slice(-240));
+      check("baseline_screen", "the codeword cue does not expose its answer key", !/\banswer\s*:/i.test(cuePage.text()) && /Which (place|code word) went with/.test(cuePage.text()), cuePage.text().slice(0, 180));
+      const cueWager = cuePage.find('input[name="baseline-wager"]').find((input) => input.value === "2");
+      if (cueWager) cuePage.checkInput(cueWager);
+      await sleep(100);
+      check("baseline_screen", "choosing a wager updates the controlled radio selection", cuePage.find('input[name="baseline-wager"]').find((input) => input.checked)?.value === "2", cuePage.find('input[name="baseline-wager"]').map((input) => `${input.value}:${input.checked}`).join(","));
+      const cueInput = cuePage.find("input").find((input) => input.type === "text");
+      if (cueInput) cuePage.type(cueInput, "harbour");
+      await cuePage.click("Check answer", "button");
+      await waitFor(() => wagerRequests.some((row) => Boolean(row.body)), { timeout: 10_000, label: "the wagered codeword answer to be sent" });
+      let sentCue = {};
+      try { sentCue = JSON.parse(wagerRequests.at(-1).body); } catch { /* reported below */ }
+      check("baseline_screen", "the chosen wager is submitted with the answer on an eligible task", sentCue.wager === 2 && sentCue.task_id === cueView.task.id, JSON.stringify(sentCue).slice(0, 180));
+      closeBaseline(cuePage);
+
+      const quickView = await advanceBaseline(runId, (v) => v.stage === "quick_a" && v.kind === "task");
+      const quickPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => /Quick taps/.test(quickPage.text()) && quickPage.find('input[type="radio"]').length >= (quickView.task?.options?.length ?? 1), { label: "the quick-tap choices" });
+      verifyStop(quickPage, "quick taps");
+      const quickChoices = quickPage.find('input[type="radio"]').filter((input) => input.name.startsWith("quick-"));
+      check("baseline_screen", "quick taps are a distinct choice screen with eligible optional wagers", quickView.task?.phase === "measure" && quickChoices.length === quickView.task?.options?.length && quickPage.find('input[name="baseline-wager"]').length === 4 && /Quick taps/.test(quickPage.text()), `${quickChoices.length} choices · ${quickPage.text().slice(0, 180)}`);
+      closeBaseline(quickPage);
+
+      const vaultPractice = await advanceBaseline(runId, (v) => v.stage === "vault" && v.task?.phase === "practice");
+      const vaultPracticePage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => vaultPracticePage.find('[role="group"][aria-label^="Nine-tile vault"]').length === 1, { label: "the vault practice grid" });
+      verifyStop(vaultPracticePage, "vault practice");
+      check("baseline_screen", "vault practice uses nine labeled, keyboard-operable tiles and is not wager-eligible", vaultPractice.task?.phase === "practice" && vaultPracticePage.find('button[aria-label^="Tile "]').length === 9 && /Use arrow keys to move and Enter to tap/.test(vaultPracticePage.find('[role="group"]')[0]?.getAttribute("aria-label") ?? "") && vaultPracticePage.find('input[name="baseline-wager"]').length === 0, vaultPracticePage.text().slice(-200));
+      closeBaseline(vaultPracticePage);
+      const vaultMeasure = await advanceBaseline(runId, (v) => v.stage === "vault" && v.task?.phase === "measure");
+      const vaultPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => vaultPage.find('button[aria-label^="Tile "]').length === 9 && vaultPage.find('button[aria-label^="Tile "]').every((tile) => !tile.disabled), { timeout: 12_000, label: "the vault sequence to finish before recall" });
+      verifyStop(vaultPage, "measured vault recall");
+      check("baseline_screen", "a measured vault task allows an eligible wager after the sequence", vaultMeasure.task?.phase === "measure" && vaultPage.find('input[name="baseline-wager"]').length === 4, `length=${vaultMeasure.task?.length}; ${vaultPage.text().slice(-180)}`);
+      const tileOne = vaultPage.find('button[aria-label^="Tile 1"]')[0];
+      tileOne?.focus();
+      tileOne?.dispatchEvent(new vaultPage.dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+      await waitFor(() => vaultPage.dom.window.document.activeElement?.getAttribute("aria-label")?.startsWith("Tile 2"), { label: "the right arrow to move the vault focus" });
+      const tileTwo = vaultPage.dom.window.document.activeElement;
+      tileTwo?.dispatchEvent(new vaultPage.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      await waitFor(() => tileTwo?.getAttribute("aria-pressed") === "true", { label: "Enter to tap the focused vault tile" });
+      check("baseline_screen", "arrow keys move focus and Enter records one vault tap", tileTwo?.getAttribute("aria-pressed") === "true" && /You have tapped 1/.test(vaultPage.text()), vaultPage.text().slice(-200));
+      closeBaseline(vaultPage);
+
+      const shopPractice = await advanceBaseline(runId, (v) => v.stage === "shopkeeper" && v.task?.phase === "practice");
+      const shopPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => /Remember these three items/.test(shopPage.text()), { label: "shopkeeper practice" });
+      verifyStop(shopPage, "shopkeeper practice");
+      check("baseline_screen", "shopkeeper practice shows three items and does not offer a wager", shopPractice.task?.items?.length === 3 && shopPage.find("ul li").length === 3 && shopPage.find('input[name="baseline-wager"]').length === 0, shopPage.text().slice(-200));
+      await shopPage.click("I have them — start questions", "button");
+      const firstTrue = await waitFor(() => shopPage.byText("True", "button"), { label: "the first shopkeeper true/false control" }).catch(() => null);
+      check("baseline_screen", "starting the shopkeeper questions opens the true/false controls", !!firstTrue && /Question 1 of 3/.test(shopPage.text()) && !!shopPage.byText("False", "button"), shopPage.text().slice(-220));
+      if (!firstTrue) throw new Error(`shopkeeper did not open its questions: ${shopPage.text().slice(-300)}`);
+      for (let i = 0; i < 3; i += 1) await shopPage.click("True", "button");
+      await waitFor(() => !!shopPage.byText("Check recall", "button"), { label: "shopkeeper recall input" });
+      check("baseline_screen", "the shopkeeper practice moves through three accessible true/false prompts to recall without exposing a wager", (!!shopPage.find("textarea")[0] || /Question 3 of 3/.test(shopPage.text())) && shopPage.find('input[name="baseline-wager"]').length === 0, shopPage.find("textarea")[0] ? "recall input is present; no wager is shown" : shopPage.text().slice(-180));
+      await shopPage.click("Check recall", "button");
+      await waitFor(() => /Remember these three items/.test(shopPage.text()), { label: "the first measured shopkeeper task" });
+      closeBaseline(shopPage);
+      const shopMeasure = await advanceBaseline(runId, (v) => v.stage === "shopkeeper" && v.task?.phase === "measure");
+      const shopMeasuredPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => /Remember these three items/.test(shopMeasuredPage.text()), { label: "the measured shopkeeper screen" });
+      verifyStop(shopMeasuredPage, "measured shopkeeper recall");
+      await shopMeasuredPage.click("I have them — start questions", "button");
+      for (let i = 0; i < 3; i += 1) await shopMeasuredPage.click(i % 2 ? "False" : "True", "button");
+      await waitFor(() => !!shopMeasuredPage.byText("Check recall", "button"), { label: "measured shopkeeper recall" });
+      check("baseline_screen", "shopkeeper wagers appear only on a measured recall, not while studying or answering distractors", shopMeasure.task?.phase === "measure" && shopMeasuredPage.find('input[name="baseline-wager"]').length === 4, shopMeasuredPage.text().slice(-200));
+      closeBaseline(shopMeasuredPage);
+
+      const machinePractice = await advanceBaseline(runId, (v) => v.stage === "machine" && v.task?.phase === "practice");
+      const machinePage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => !!machinePage.byText("Test input", "button"), { label: "machine practice controls" });
+      verifyStop(machinePage, "machine practice");
+      check("baseline_screen", "machine practice is a probe/guess screen without wagers", machinePractice.task?.phase === "practice" && !!machinePage.byText("Guess instead", "button") && machinePage.find('input[name="baseline-wager"]').length === 0, machinePage.text().slice(-200));
+      const machineNumber = machinePage.find('input[type="number"]')[0];
+      if (machineNumber) machinePage.type(machineNumber, "1");
+      await sleep(120); // let React commit the controlled numeric field before pressing its gated button
+      const testMachineButton = machinePage.byText("Test input", "button");
+      check("baseline_screen", "the machine accepts the probe number before enabling Test input", machineNumber?.value === "1" && Boolean(testMachineButton) && !testMachineButton.disabled, `value=${machineNumber?.value ?? "(missing)"}; disabled=${testMachineButton?.disabled}`);
+      await machinePage.click("Test input", "button");
+      await waitFor(() => !!machinePage.byText("Guess instead", "button") && machinePage.text().includes("Input"), { label: "the first machine probe to be recorded" });
+      verifyStop(machinePage, "measured machine probe");
+      check("baseline_screen", "the measured machine probe itself has no wager control", machinePage.find('input[name="baseline-wager"]').length === 0, machinePage.text().slice(-180));
+      await machinePage.click("Guess instead", "button");
+      await waitFor(() => !!machinePage.byText("Submit rule guess", "button"), { label: "the machine guess control" });
+      verifyStop(machinePage, "machine rule guess");
+      check("baseline_screen", "a measured machine probe still has no wager, but an eligible rule guess does", machinePage.find('input[name="baseline-wager"]').length === 4 && /Guess the rule/.test(machinePage.text()), machinePage.text().slice(-200));
+      const machineWager = machinePage.find('input[name="baseline-wager"]').find((input) => input.value === "1");
+      if (machineWager) machinePage.checkInput(machineWager);
+      const machineGuess = machinePage.find("input").find((input) => input.type === "text");
+      if (machineGuess) machinePage.type(machineGuess, "maybe add one");
+      await sleep(120);
+      await machinePage.click("Submit rule guess", "button");
+      await waitFor(() => machinePage.requests.some((r) => /POST \/api\/v1\/baseline\/[^/]+\/trial/.test(r)), { label: "the measured machine guess to be sent" });
+      closeBaseline(machinePage);
+
+      const locked = await advanceBaseline(runId, (v) => v.stage === "locked_box" && v.task?.phase === "practice");
+      const lockedPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => !!lockedPage.byText("Start the puzzle", "button"), { label: "the locked-box choice screen" });
+      verifyStop(lockedPage, "locked-box start choice");
+      check("baseline_screen", "the locked box lets the learner start or walk away, without showing the answer", locked.task?.phase === "practice" && !!lockedPage.byText("Walk away", "button") && !lockedPage.find('input[name="baseline-wager"]').length && !/expected\s*:/i.test(lockedPage.text()), lockedPage.text().slice(-220));
+      await lockedPage.click("Start the puzzle", "button");
+      await waitFor(() => /Hint shop/.test(lockedPage.text()), { label: "the measured locked-box puzzle" });
+      verifyStop(lockedPage, "measured locked-box puzzle");
+      check("baseline_screen", "the puzzle offers the sequence, three priced hints, an answer field, and a stop choice", lockedPage.find('button.btn-ctl').length >= 3 && /coin/.test(lockedPage.text()) && !!lockedPage.find('input[type="number"]')[0] && !!lockedPage.byText("Walk away", "button") && lockedPage.find('input[name="baseline-wager"]').length === 0, lockedPage.text().slice(-260));
+      await lockedPage.click("Walk away", "button");
+      closeBaseline(lockedPage);
+
+      const trapPractice = await advanceBaseline(runId, (v) => v.stage === "trap" && v.task?.phase === "practice");
+      const trapPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => trapPage.find('input[name^="trap-"]').length > 0, { label: "the thinking-question practice screen" });
+      verifyStop(trapPage, "reasoning practice");
+      check("baseline_screen", "the reasoning screen labels practice as unmeasured and offers no wager", trapPractice.task?.phase === "practice" && /practice · not measured/.test(trapPage.text()) && trapPage.find('input[name="baseline-wager"]').length === 0, trapPage.text().slice(-200));
+      const trapChoice = trapPage.find('input[name^="trap-"]')[0];
+      if (trapChoice) trapPage.checkInput(trapChoice);
+      await trapPage.click("Try it", "button");
+      await waitFor(() => !!trapPage.byText("Submit answer", "button"), { label: "the measured reasoning question" });
+      verifyStop(trapPage, "measured reasoning question");
+      check("baseline_screen", "a measured reasoning answer can use the optional wager", trapPage.find('input[name="baseline-wager"]').length === 4, trapPage.text().slice(-180));
+      const trapWager = trapPage.find('input[name="baseline-wager"]').find((input) => input.value === "1");
+      if (trapWager) trapPage.checkInput(trapWager);
+      const measuredTrapChoice = trapPage.find('input[name^="trap-"]')[0];
+      if (measuredTrapChoice) trapPage.checkInput(measuredTrapChoice);
+      await trapPage.click("Submit answer", "button");
+      closeBaseline(trapPage);
+
+      const delayed = await advanceBaseline(runId, (v) => v.stage === "codewords_delayed" && v.task?.action === "predict");
+      const delayedPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
+      await waitFor(() => !!delayedPage.byText("Save prediction", "button"), { label: "the delayed-recall prediction" });
+      verifyStop(delayedPage, "delayed-recall prediction");
+      check("baseline_screen", "the prediction is a distinct screen and cannot be wagered", delayed.task?.action === "predict" && delayedPage.find('input[name="baseline-wager"]').length === 0 && /out of 8/.test(delayedPage.text()), delayedPage.text().slice(-180));
+      const prediction = delayedPage.find('input[type="number"]')[0];
+      if (prediction) delayedPage.type(prediction, "4");
+      await delayedPage.click("Save prediction", "button");
+      await waitFor(() => !!delayedPage.byText("Check free recall", "button"), { label: "free recall after the prediction" });
+      verifyStop(delayedPage, "delayed free recall");
+      check("baseline_screen", "free recall uses a text area and separates the delayed task from the prediction", !!delayedPage.find("textarea")[0] && /Free recall/.test(delayedPage.text()), delayedPage.text().slice(-200));
+      await delayedPage.click("Check free recall", "button");
+      await waitFor(() => !!delayedPage.byText("Choose place", "button"), { label: "the codeword recognition choices" });
+      verifyStop(delayedPage, "delayed recognition");
+      check("baseline_screen", "recognition offers choices and an eligible wager", delayedPage.find('input[name="baseline-wager"]').length === 4 && delayedPage.find('input[type="radio"]').length >= 8, delayedPage.text().slice(-200));
+      const recognitionChoice = delayedPage.find('input[type="radio"]').find((input) => input.name.startsWith("recognition-"));
+      if (recognitionChoice) delayedPage.checkInput(recognitionChoice);
+      await delayedPage.click("Choose place", "button");
+      closeBaseline(delayedPage);
+
+      const completed = await advanceBaseline(runId, (v) => v.kind === "snapshot");
+      const completeSnapshot = requireBaseline(await baselineRequest("POST", `/${encodeURIComponent(runId)}/finish`, {}), "seal the synthetic play-through");
+      check("baseline_screen", "the synthetic play-through terminates at the snapshot stage", completed.kind === "snapshot" && completeSnapshot.state === "sealed" && completeSnapshot.factors?.length === 8, JSON.stringify({ kind: completed.kind, state: completeSnapshot.state, measured_factors: completeSnapshot.factors?.filter((f) => f.state === "measured").length, factor_count: completeSnapshot.factors?.length }));
+      const rangeHonest = completeSnapshot.factors?.length === 8 && completeSnapshot.factors.every((factor) => {
+        if (typeof factor.n !== "number" || !factor.statement?.trim()) return false;
+        if (factor.state === "measured") return Array.isArray(factor.range) && factor.range.length === 2 && factor.range.every(Number.isFinite) && factor.n > 0;
+        return factor.range === null;
+      });
+      check("baseline_screen", "each synthetic snapshot range has a sample count and plain-language statement, or remains not measured", rangeHonest, JSON.stringify(completeSnapshot.factors?.map((f) => [f.key, f.state, f.n, f.range, Boolean(f.statement)])).slice(0, 220));
+      const completedPage = await openBaseline(`/baseline/snapshot?run_id=${encodeURIComponent(runId)}`);
+      await waitFor(() => /What we have measured so far/.test(completedPage.text()) && completedPage.find('section[aria-label="Baseline factors"] article').length === 8, { label: "the completed snapshot screen" });
+      const factorCards = completedPage.find('section[aria-label="Baseline factors"] article').map((card) => (card.textContent ?? "").replace(/\s+/g, " ").trim());
+      const cardsHonest = completeSnapshot.factors?.every((factor, index) => {
+        const text = factorCards[index] ?? "";
+        if (factor.state === "measured") {
+          const count = `based on ${factor.n} ${factor.n === 1 ? "answer" : "answers"}`;
+          return factor.n > 0 && Array.isArray(factor.range) && text.includes("estimated range") && text.includes(count) && text.includes(factor.statement);
+        }
+        const needed = factor.detail?.needed;
+        const count = typeof needed === "number" ? `${factor.n} of ${needed} needed so far` : `${factor.n} task`;
+        return factor.range === null && text.includes("Not measured yet") && text.includes(count) && text.includes(factor.statement);
+      });
+      check("baseline_screen", "each snapshot card renders its own honest range/sample count or not-measured state and plain-language statement", factorCards.length === 8 && cardsHonest, JSON.stringify(completeSnapshot.factors?.map((f, i) => [f.key, factorCards[i]?.slice(0, 130)])).slice(0, 240));
+      closeBaseline(completedPage);
+
+      // A separate timer-hidden run makes sure the same eligible game offers no clock or wager
+      // when the learner said timers are stressful. Stop it cleanly instead of leaving a fixture.
+      const hiddenRun = requireBaseline(await baselineRequest("POST", "", {}), "start the timer-hidden check");
+      const hiddenView = await advanceBaseline(hiddenRun.run_id, (v) => v.stage === "codewords_cued" && v.task?.phase === "measure", { timers_help: "timers stress me" });
+      const hiddenPage = await openBaseline(`/baseline/${encodeURIComponent(hiddenRun.run_id)}`);
+      await waitFor(() => !!hiddenPage.byText("Check answer", "button"), { label: "the timer-hidden codeword task" });
+      verifyStop(hiddenPage, "timer-hidden task");
+      check("baseline_screen", "a stated no-timer preference hides the clock and all wagers without removing the task", hiddenView.timers_visible === false && !/Time so far|Study time remaining/.test(hiddenPage.text()) && hiddenPage.find('input[name="baseline-wager"]').length === 0, hiddenPage.text().slice(-220));
+      await hiddenPage.click("Stop here and see my snapshot", "button");
+      await waitFor(() => /What we have measured so far/.test(hiddenPage.text()), { label: "the timer-hidden run to stop cleanly" });
+      closeBaseline(hiddenPage);
+      check("baseline_screen", "the baseline scenario reached every tested stage, resume, stop, and snapshot", true, "synthetic responses are probe data, not learner findings");
+    } catch (err) {
+      check("baseline_screen", "the UI probe can drive the baseline screens without a harness or API crash", false, err.stack?.split("\n").slice(0, 4).join("\n") ?? String(err));
+    } finally {
+      for (const page of baselinePages) closeBaseline(page);
+    }
   }
 
   /* ------------------------------------------------------- failure paths ---- */

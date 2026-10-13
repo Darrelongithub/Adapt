@@ -29,12 +29,19 @@ from adapt.baseline.games import (
     LOCKED_BOX_HINTS,
     Trial,
     calibration,
+    codewords_delayed,
     codewords_pairs,
     is_falsifying,
+    machine_next,
+    machine_respond,
     machine_rule,
     seed_of,
+    shopkeeper_next,
+    trap_practice_task,
     trap_task,
+    trial_action,
     vault_next,
+    wager_allowed,
 )
 
 # --------------------------------------------------------------------------- #
@@ -54,7 +61,7 @@ def _pick_format(client, learner, run_id: str, value: str = "diagram") -> dict:
     return response.json()
 
 
-def _answer_questions(client, learner, run_id: str) -> dict:
+def _answer_questions(client, learner, run_id: str, *, timers_help: bool = False) -> dict:
     answers = {
         "goal": "just curious",
         "session_minutes": 20,
@@ -67,7 +74,7 @@ def _answer_questions(client, learner, run_id: str) -> dict:
         "when_stuck": "ask someone",
         "device_context": ["phone"],
         "language": "Kiswahili",
-        "timers_help": "timers stress me",
+        "timers_help": "timers help" if timers_help else "timers stress me",
         "anything_else": "I get distracted easily.",
     }
     response = client.post(
@@ -88,40 +95,77 @@ def _submit(client, learner, run_id: str, task: dict, response: dict, *, latency
     return out.json()
 
 
-def _correct_response(task: dict) -> dict:
-    """The right answer for any task, from the task itself (never from the server's internals)."""
+def _correct_response(task: dict, seed: int) -> dict:
+    """A synthetic answer from the deterministic stimulus, not from the public answer key."""
+    from adapt.baseline.games import _distractors, codewords_pairs, locked_box_task, quick_trial, trap_practice_task, trap_task
+
     game = task.get("game")
+    if game == "codewords_study":
+        return {"seconds_seen": 45}
     if game == "vault":
         seq = list(task["sequence"])
         return {"taps": list(reversed(seq)) if task.get("answer_direction") == "backward" else seq}
     if game == "shopkeeper":
+        round_no = 0 if task["id"] == "vault_shop_practice" else int(str(task["id"]).rsplit("_", 1)[-1])
+        distractors = _distractors(seed, round_no, len(task.get("distractors") or []))
         return {
             "items": list(task["items"]),
-            "distractors": {d["id"]: d["answer"] for d in task["distractors"]},
+            "distractors": {d["id"]: d["answer"] for d in distractors},
         }
     if game in ("codewords_cued", "codewords_next_day"):
-        return {"text": task["answer"]}
+        pair = next(p for p in codewords_pairs(seed) if task.get("cue") in (p["code"], p["place"]))
+        answer = pair["place"] if task.get("cue") == pair["code"] else pair["code"]
+        return {"text": answer}
     if game == "codewords_delayed":
         if task.get("action") == "predict":
-            return {"value": 6}
+            return {"action": "predict", "value": 6}
         if task.get("kind") == "recognition":
-            return {"text": task["answer"]}
-        return {"text": ", ".join(p["code"] for p in task.get("_pairs") or [])}
-    if game in ("quick", "trap"):
-        return {"value": task["answer"]}
+            pair = next(p for p in codewords_pairs(seed) if p["code"] == task.get("cue"))
+            return {"text": pair["place"]}
+        return {"text": ", ".join(p["code"] for p in codewords_pairs(seed))}
+    if game == "quick":
+        index = int(str(task["id"]).rsplit("_", 1)[-1])
+        return {"value": quick_trial(index)["answer"]}
+    if game == "trap":
+        answer_key = trap_practice_task()["answer"] if task["id"] == "trap_practice" else next(t["answer"] for t in (trap_task(0), trap_task(1)) if t["id"] == task["id"])
+        return {"value": answer_key}
     if game == "machine":
-        return {"action": "guess", "text": "double the number"}
+        return {"action": "probe", "value": 0}
     if game == "locked_box":
-        return {"action": "attempt", "value": task["answer"]}
+        if task.get("phase") == "practice":
+            return {"action": "start"}
+        return {"action": "attempt", "value": locked_box_task(seed)["answer"]}
     return {}
 
 
-def _play_until(client, learner, run_id: str, *, stop_stage: str | None = None, max_trials: int = 200) -> list[dict]:
-    """Answer everything correctly until the flow reaches ``stop_stage`` (or the snapshot).
+def _run_seed(run_id: str) -> int:
+    from adapt.db.models import BaselineRun
+    from adapt.services import current
 
-    Deliberately dumb: it asks the server what is on offer and answers it, which is how the flow's
-    own cursor is exercised rather than a test's idea of the order.
+    services = current()
+    with services.baseline._sess() as s:
+        run = s.get(BaselineRun, run_id)
+        assert run is not None
+        return int(run.seed or 0)
+
+
+def _play_until(
+    client,
+    learner,
+    run_id: str,
+    *,
+    stop_stage: str | None = None,
+    max_trials: int = 200,
+    timers_help: bool = False,
+) -> list[dict]:
+    """Answer everything until ``stop_stage`` (or the snapshot), using only offered stimuli.
+
+    The synthetic player asks the same flow what is on offer as the real page. Its answer-key
+    helper re-derives the seeded task privately; the HTTP payload itself must not carry answers.
     """
+    from adapt.baseline.games import wager_allowed
+
+    seed = _run_seed(run_id)
     played: list[dict] = []
     view = client.get(f"/api/v1/baseline/{run_id}", headers=learner["headers"]).json()
     for _ in range(max_trials):
@@ -129,21 +173,17 @@ def _play_until(client, learner, run_id: str, *, stop_stage: str | None = None, 
             view = _pick_format(client, learner, run_id)
             continue
         if view["kind"] == "questions":
-            view = _answer_questions(client, learner, run_id)
+            view = _answer_questions(client, learner, run_id, timers_help=timers_help)
             continue
         if view["kind"] != "task":
             break
         if stop_stage and view["stage"] == stop_stage:
             break
         task = view["task"]
-        if task.get("game") == "codewords_delayed" and task.get("kind") == "free":
-            # Free recall needs the words actually shown this run: read them from the study screen
-            # the learner saw (the server re-derives them from the seed, so this is not a guess).
-            task = {**task, "_pairs": _studied_pairs(client, learner, run_id)}
-        response = _correct_response(task)
-        if task.get("game") == "locked_box":
-            response = {"action": "attempt", "value": task["answer"]}
-        out = _submit(client, learner, run_id, task, response, wager=2)
+        response = _correct_response(task, seed)
+        action = response.get("action") or task.get("action")
+        wager = 2 if timers_help and view.get("timers_visible") and wager_allowed(task, action=action) else None
+        out = _submit(client, learner, run_id, task, response, wager=wager)
         played.append(out)
         view = out
     return played
@@ -195,6 +235,30 @@ def test_starting_twice_resumes_the_same_run(client, learner):
     first = _start(client, learner)
     second = _start(client, learner)
     assert first["run_id"] == second["run_id"]
+    assert first["resumed"] is False
+    assert second["resumed"] is True
+
+
+def test_a_wager_is_refused_when_the_learner_hid_timers(client, learner):
+    view = _start(client, learner)
+    run_id = view["run_id"]
+    seed = _run_seed(run_id)
+    _pick_format(client, learner, run_id)
+    view = _answer_questions(client, learner, run_id, timers_help=False)
+    assert view["timers_visible"] is False
+    for _ in range(2):
+        task = view["task"]
+        assert task is not None
+        response = _correct_response(task, seed)
+        view = _submit(client, learner, run_id, task, response)
+    assert view["task"]["game"] == "codewords_cued" and view["task"]["phase"] == "measure"
+    rejected = client.post(
+        f"/api/v1/baseline/{run_id}/trial",
+        headers=learner["headers"],
+        json={"task_id": view["task"]["id"], "response": {"text": "harbour"}, "wager": 1},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["error"] == "baseline_refused"
 
 
 def test_the_format_pick_is_a_stated_preference_and_reaches_the_settings_table(client, learner, services):
@@ -244,15 +308,16 @@ def test_the_stage_order_is_the_order_the_brief_asks_for(client, learner):
     view = _start(client, learner)
     _pick_format(client, learner, view["run_id"])
     _answer_questions(client, learner, view["run_id"])
+    seed = _run_seed(view["run_id"])
     seen: list[str] = []
-    for _ in range(60):
+    for _ in range(120):
         view = client.get(f"/api/v1/baseline/{view['run_id']}", headers=learner["headers"]).json()
         if view["kind"] != "task":
             break
         task = view["task"]
         if not seen or seen[-1] != view["stage"]:
             seen.append(view["stage"])
-        response = _correct_response(task)
+        response = _correct_response(task, seed)
         if task.get("game") == "codewords_delayed" and task.get("kind") == "free":
             break
         out = _submit(client, learner, view["run_id"], task, response)
@@ -264,24 +329,31 @@ def test_the_stage_order_is_the_order_the_brief_asks_for(client, learner):
     assert order.index("machine") < order.index("locked_box")
 
 
-def test_every_game_opens_with_an_unscored_practice_trial(client, learner):
+def test_practice_trials_are_unscored_and_public_tasks_hide_answer_keys(client, learner):
     view = _start(client, learner)
-    _pick_format(client, learner, view["run_id"])
-    _answer_questions(client, learner, view["run_id"])
-    for _ in range(12):
-        view = client.get(f"/api/v1/baseline/{view['run_id']}", headers=learner["headers"]).json()
+    run_id = view["run_id"]
+    seed = _run_seed(run_id)
+    _pick_format(client, learner, run_id)
+    _answer_questions(client, learner, run_id)
+    found: set[str] = set()
+    for _ in range(120):
+        view = client.get(f"/api/v1/baseline/{run_id}", headers=learner["headers"]).json()
         if view["kind"] != "task":
             break
         task = view["task"]
-        if task.get("game") in ("vault", "codewords_cued", "machine", "shopkeeper"):
-            scored = _submit(client, learner, view["run_id"], task, _correct_response(task))
-            assert not scored.get("scored", {}).get("correct"), (
-                f"a practice trial was scored as correct in {task['game']}: {scored['scored']}"
+        if task.get("game") in ("vault", "codewords_cued", "machine", "shopkeeper", "locked_box", "trap") and task.get("phase") == "practice":
+            assert "answer" not in task, f"{task['game']} leaked its answer key"
+            out = _submit(client, learner, run_id, task, _correct_response(task, seed))
+            assert out.get("scored", {}).get("correct") is None, (
+                f"a practice trial was exposed as scored in {task['game']}: {out.get('scored')}"
             )
-            if task["game"] == "vault":
-                assert task["phase"] == "practice"
-            break
-        _submit(client, learner, view["run_id"], task, _correct_response(task))
+            found.add(task["game"])
+            # The flow serves the first requested practice only; keep walking so each game intro
+            # is exercised and so the delayed codeword sequence remains reachable.
+            view = out
+            continue
+        _submit(client, learner, run_id, task, _correct_response(task, seed))
+    assert {"vault", "codewords_cued", "machine", "shopkeeper", "locked_box", "trap"} <= found
 
 
 # --------------------------------------------------------------------------- #
@@ -346,6 +418,87 @@ def test_the_machine_rule_switches_only_in_round_three_and_to_a_different_family
     assert second is not None and switch_at == 3
     assert first.family != second.family, "a switch the learner cannot notice is not a test of noticing"
     assert second.apply(4) != first.apply(4)
+
+
+def test_machine_progress_uses_response_actions_and_terminates_at_five_probes():
+    seed = seed_of("machine-response-action")
+    trials: list[Trial] = []
+    practice = machine_next(seed, trials, 1)
+    assert practice and practice["phase"] == "practice"
+    trials.append(Trial(practice["id"], "machine", 0, "practice", None, response={"action": "probe"}, task=practice))
+    for attempt in range(5):
+        task = machine_next(seed, trials, 1)
+        assert task is not None and task["phase"] == "measure"
+        response = {"action": "probe", "value": attempt + 1}
+        scored = machine_respond(seed, 1, task, response, trials)
+        trials.append(Trial(task["id"], "machine", len(trials), "measure", scored["correct"], response={**response, "scored": scored}, task=task))
+    assert machine_next(seed, trials, 1) is None
+    assert sum(trial_action(t) == "probe" for t in trials) == 6  # one demonstration plus five measured probes
+
+
+def test_machine_guess_actions_in_responses_end_on_solution_or_two_wrong_guesses():
+    seed = seed_of("machine-guess-action")
+    practice = machine_next(seed, [], 1)
+    assert practice is not None
+    trials = [Trial(practice["id"], "machine", 0, "practice", None, response={"action": "probe"}, task=practice)]
+    first = machine_next(seed, trials, 1)
+    assert first is not None
+    wrong = {"action": "guess", "text": "not a rule we accept"}
+    scored = machine_respond(seed, 1, first, wrong, trials)
+    trials.append(Trial(first["id"], "machine", 1, "measure", scored["correct"], response={**wrong, "scored": scored}, task=first))
+    second = machine_next(seed, trials, 1)
+    assert second is not None, "one wrong guess should not finish the round"
+    scored = machine_respond(seed, 1, second, wrong, trials)
+    trials.append(Trial(second["id"], "machine", 2, "measure", scored["correct"], response={**wrong, "scored": scored}, task=second))
+    assert machine_next(seed, trials, 1) is None, "two wrong guesses should finish the round"
+
+
+def test_shopkeeper_progress_is_scoped_to_its_own_game():
+    seed = seed_of("shopkeeper-isolation")
+    unrelated = [Trial(f"quick_{i}", "quick", i, "measure", True, task={"stage": "quick_a"}) for i in range(8)]
+    task = shopkeeper_next(seed, unrelated)
+    assert task is not None
+    assert task["game"] == "shopkeeper"
+    assert task["phase"] == "practice"
+
+
+def test_delayed_codeword_flow_is_prediction_then_free_recall_then_recognition():
+    seed = seed_of("delayed-order")
+    noise = [Trial("quick_0", "quick", 0, "measure", True, task={"stage": "quick_a"})]
+    prediction = flow.next_task_for("codewords_delayed", seed=seed, trials=noise)
+    assert prediction and prediction["action"] == "predict"
+    predicted_trial = Trial(prediction["id"], prediction["game"], 1, "measure", None, response={"action": "predict", "value": 4}, task=prediction)
+    free = flow.next_task_for("codewords_delayed", seed=seed, trials=[*noise, predicted_trial])
+    assert free and free["kind"] == "free"
+    free_trial = Trial(free["id"], free["game"], 2, "measure", False, response={"scored": {"hits": 2}}, task=free)
+    recognition = flow.next_task_for("codewords_delayed", seed=seed, trials=[*noise, predicted_trial, free_trial])
+    assert recognition and recognition["kind"] == "recognition" and recognition["id"] == "codewords_recog_0"
+    recognised = Trial(recognition["id"], recognition["game"], 3, "measure", True, task=recognition)
+    next_recognition = flow.next_task_for("codewords_delayed", seed=seed, trials=[*noise, predicted_trial, free_trial, recognised])
+    assert next_recognition and next_recognition["id"] == "codewords_recog_1"
+
+
+def test_trap_stage_contains_two_measured_questions_after_practice():
+    seed = seed_of("trap-stage")
+    practice = flow.next_task_for("trap", seed=seed, trials=[])
+    assert practice and practice["id"] == "trap_practice" and practice["phase"] == "practice"
+    practice_trial = Trial(practice["id"], "trap", 0, "practice", None, task=practice)
+    first = flow.next_task_for("trap", seed=seed, trials=[practice_trial])
+    assert first and first["id"] == "trap_bat_ball" and first["phase"] == "measure"
+    first_trial = Trial(first["id"], "trap", 1, "measure", False, task=first)
+    second = flow.next_task_for("trap", seed=seed, trials=[practice_trial, first_trial])
+    assert second and second["id"] == "trap_lily" and second["phase"] == "measure"
+    second_trial = Trial(second["id"], "trap", 2, "measure", True, task=second)
+    assert flow.next_task_for("trap", seed=seed, trials=[practice_trial, first_trial, second_trial]) is None
+
+
+def test_wagers_are_only_allowed_for_eligible_measured_questions():
+    quick = {"game": "quick", "phase": "measure"}
+    assert wager_allowed(quick)
+    assert not wager_allowed({**quick, "phase": "practice"})
+    assert not wager_allowed({"game": "machine", "phase": "measure"}, action="probe")
+    assert wager_allowed({"game": "machine", "phase": "measure"}, action="guess")
+    assert not wager_allowed({"game": "codewords_delayed", "phase": "measure", "action": "predict"}, action="predict")
 
 
 def test_the_locked_box_hints_cost_coins_and_escalate():
@@ -415,7 +568,7 @@ def test_the_snapshot_levers_exist_and_each_names_its_evidence(client, learner):
 def test_a_wager_records_confidence_and_an_overconfident_answer_shows_up(client, learner, services):
     view = _start(client, learner)
     run_id = view["run_id"]
-    _play_until(client, learner, run_id)
+    _play_until(client, learner, run_id, timers_help=True)
     trials = services.baseline.trials_of(run_id)
     wagered = [t for t in trials if t.wager is not None]
     assert wagered, "no trial recorded a wager"
@@ -461,8 +614,9 @@ def test_the_same_task_cannot_be_measured_twice(client, learner, services):
     _answer_questions(client, learner, run_id)
     before = len(services.baseline.trials_of(run_id))
     task = client.get(f"/api/v1/baseline/{run_id}", headers=learner["headers"]).json()["task"]
-    first = _submit(client, learner, run_id, task, _correct_response(task))
-    again = _submit(client, learner, run_id, task, _correct_response(task))
+    response = _correct_response(task, _run_seed(run_id))
+    first = _submit(client, learner, run_id, task, response)
+    again = _submit(client, learner, run_id, task, response)
     assert again["duplicate"] is True
     assert again["scored"] == first["scored"]
     assert len(services.baseline.trials_of(run_id)) == before + 1
@@ -552,6 +706,24 @@ def test_the_working_memory_statement_says_what_the_app_will_do_differently():
     assert factor.actions, "a measured factor with no consequence for the next lesson"
 
 
+def test_shopkeeper_memory_uses_the_nested_score_record():
+    trials = [
+        _trial(game="vault", correct=True, task={"length": 4, "direction": "forward"}),
+        _trial(game="vault", correct=True, task={"length": 3, "direction": "backward"}),
+        _trial(game="vault", correct=False, task={"length": 4, "direction": "backward"}),
+        _trial(
+            game="shopkeeper",
+            correct=False,
+            task={"items": ["a blue pen", "two batteries", "a loaf of bread"]},
+            response={"scored": {"hits": 2, "distractor_accuracy": 2 / 3}},
+        ),
+    ]
+    factor = F.build_factors(trials)["working_memory"]
+    assert factor.state == "measured"
+    assert factor.detail["recall_under_distraction"] == round(2 / 3, 3)
+    assert factor.detail["distractor_accuracy"] == round(2 / 3, 3)
+
+
 def test_slow_but_accurate_is_not_reported_as_a_problem():
     """Pace is reported with its accuracy beside it; the app must not read slowness as trouble."""
     trials = [
@@ -577,20 +749,20 @@ def test_the_trap_pause_is_recorded_even_when_the_intuitive_answer_wins():
     assert factor.state == "measured"
     assert factor.detail["traps_intuitive"] == 1
     assert factor.detail["traps_correct"] == 1
-    assert factor.detail["median_pause_ms"] == 31_000
+    assert factor.detail["median_pause_ms"] == 26_500
 
 
 def test_the_machine_factor_reports_the_falsifying_rate():
     trials = [
-        _trial(game="machine", correct=None, task={"action": "probe"}, response={"falsifying": True}),
-        _trial(game="machine", correct=None, task={"action": "probe"}, response={"falsifying": False}),
+        _trial(game="machine", correct=None, task={"action": "probe"}, response={"scored": {"falsifying": True}}),
+        _trial(game="machine", correct=None, task={"action": "probe"}, response={"scored": {"falsifying": False}}),
         _trial(game="machine", correct=True, task={"action": "guess"}),
     ]
     factor = F.build_factors(trials)["reasoning"]
     assert factor.state == "measured"
     assert factor.detail["falsifying_rate"] == 0.5
     assert factor.detail["first_guess_correct"] is True
-    assert "prove you wrong" in factor.statement
+    assert "proved you wrong" in factor.statement
 
 
 def test_calibration_needs_eight_wagers_before_it_reports_an_index():
@@ -607,6 +779,20 @@ def test_calibration_needs_eight_wagers_before_it_reports_an_index():
     assert 0 <= cal["range"][0] <= cal["range"][1] <= 1
 
 
+def test_prediction_is_compared_with_free_recall_hits_not_the_number_of_tasks():
+    trials = [
+        _trial(game="quick", correct=True, wager=2, task={"stage": "quick_a"})
+        for _ in range(8)
+    ]
+    trials.extend([
+        _trial(game="codewords_delayed", correct=None, task={"action": "predict"}, response={"value": 6}),
+        _trial(game="codewords_delayed", correct=False, task={"kind": "free"}, response={"scored": {"hits": 4}}),
+    ])
+    factor = F.build_factors(trials)["metacognition"]
+    comparison = factor.detail["predicted_vs_actual"]
+    assert comparison == {"predicted": 6.0, "actual": 4.0, "of": 8, "n": 8, "gap": 2.0}
+
+
 def test_overconfidence_is_named_as_overconfidence():
     trials = [_trial(game="trap", correct=False, wager=3, task={}) for _ in range(8)]
     factor = F.build_factors(trials)["metacognition"]
@@ -619,7 +805,7 @@ def test_long_term_memory_reports_the_recall_vs_recognition_gap():
     trials = [
         _trial(game="codewords_cued", correct=True, task={}),
         _trial(game="codewords_cued", correct=True, task={}),
-        _trial(game="codewords_delayed", correct=None, task={"kind": "free"}, response={"hits": 2}, phase="measure"),
+        _trial(game="codewords_delayed", correct=None, task={"kind": "free"}, response={"scored": {"hits": 2}}, phase="measure"),
         _trial(game="codewords_delayed", correct=True, task={"kind": "recognition"}),
         _trial(game="codewords_delayed", correct=True, task={"kind": "recognition"}),
     ]
@@ -632,16 +818,19 @@ def test_long_term_memory_reports_the_recall_vs_recognition_gap():
 
 def test_hint_behaviour_produces_a_hint_policy_with_a_reason():
     trials = [
-        _trial(game="locked_box", correct=None, task={"action": "start"}, latency_ms=0),
-        _trial(game="locked_box", correct=False, task={"action": "attempt"}, latency_ms=60_000),
-        _trial(game="locked_box", correct=None, task={"action": "hint"}, latency_ms=20_000, response={"cost": 1}),
-        _trial(game="locked_box", correct=None, task={"action": "walk_away"}, latency_ms=90_000),
+        _trial(game="locked_box", index=0, correct=None, task={"action": "start"}, latency_ms=0, response={"action": "start"}),
+        _trial(game="locked_box", index=1, correct=False, task={}, latency_ms=10_000, response={"action": "attempt", "scored": {"action": "attempt", "correct": False}}),
+        _trial(game="locked_box", index=2, correct=None, task={}, latency_ms=20_000, response={"action": "hint", "hint_id": "hint_nudge", "scored": {"action": "hint", "cost": 1}}),
+        _trial(game="locked_box", index=3, correct=None, task={}, latency_ms=90_000, response={"action": "walk_away", "scored": {"action": "walk_away"}}),
     ]
     factors = F.build_factors(trials)
     factor = factors["persistence_help_seeking"]
     assert factor.state == "measured"
     assert factor.detail["hints_used"] == 1
+    assert factor.detail["hint_cost"] == 1
+    assert factor.detail["time_to_first_hint_ms"] == 20_000
     assert factor.detail["walked_away"] is True
+    assert factor.detail["minutes_on_puzzle"] == 1.5
     levers = F.levers(factors, preferences={})
     assert levers["hint_policy"]["value"] == "offer early"
     assert "asked for help after" in levers["hint_policy"]["why"]
@@ -688,14 +877,18 @@ def test_no_factor_carries_a_score_out_of_a_hundred_or_a_rank():
 # --------------------------------------------------------------------------- #
 def test_the_next_day_check_asks_about_the_pairs_this_run_taught(client, learner):
     view = _start(client, learner)
-    _play_until(client, learner, view["run_id"], stop_stage="vault", max_trials=30)
+    run_id = view["run_id"]
+    _play_until(client, learner, run_id, stop_stage="vault", max_trials=30)
     body = client.get("/api/v1/baseline/next-day", headers=learner["headers"]).json()
     assert body["tasks"], "no next-day check was offered"
-    asked = {t["cue"] for t in body["tasks"]}
-    codes = {p["code"] for p in codewords_pairs(_run_seed(learner))} if False else None
-    assert asked, "a next-day check with no cues"
-    assert all(t["game"] == "codewords_next_day" for t in body["tasks"])
-    assert codes is None  # the seed is per-run and is not re-derived here on purpose
+    seed = _run_seed(run_id)
+    learned_codes = {pair["code"] for pair in codewords_pairs(seed)}
+    asked = {task["cue"] for task in body["tasks"]}
+    assert body["studied"] is True
+    assert len(body["tasks"]) == 3
+    assert asked and asked <= learned_codes, "the return check asked about code words this run did not teach"
+    assert all(task["game"] == "codewords_next_day" for task in body["tasks"])
+    assert all("answer" not in task for task in body["tasks"]), "the return check leaked its answer key"
 
 
 def test_the_stage_report_names_what_was_not_played(client, learner):

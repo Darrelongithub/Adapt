@@ -28,7 +28,9 @@ from .games import (
     machine_next,
     quick_trial,
     shopkeeper_next,
+    trap_practice_task,
     trap_task,
+    trial_action,
     vault_next,
 )
 
@@ -113,19 +115,28 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
                 return task
         return None
     if stage == "locked_box":
-        if any(t.game == "locked_box" for t in trials):
-            # One puzzle per sitting. The measurement is the *first* attempt at something hard;
-            # replaying it after seeing the answer would measure something else.
-            already = [t for t in trials if t.game == "locked_box"]
-            started = any(t.task.get("action") == "start" for t in already)
-            finished = any(t.task.get("action") in ("walk_away", "solve") for t in already)
-            if finished or (started and len(already) >= 6):
-                return None
-            if any(t.task.get("action") == "attempt" for t in already):
-                return None
-        task = locked_box_task(seed)
-        if any(t.game == "locked_box" for t in trials):
+        already = [t for t in trials if t.game == "locked_box"]
+        if not already:
+            # The start screen is deliberately unscored; it gives the learner a chance to leave
+            # before the hard puzzle itself begins and gives the persistence measure a real start.
+            task = locked_box_task(seed)
+            return {
+                "id": "locked_box_start",
+                "game": "locked_box",
+                "phase": "practice",
+                "action": "start",
+                "prompt": task["prompt"],
+                "max_latency_ms": 30_000,
+            }
+        actions = [trial_action(t) for t in already]
+        if "walk_away" in actions or any(
+            trial_action(t) == "attempt" and t.correct is True for t in already
+        ):
             return None
+        # Each choice is its own idempotent task. A hint, a wrong attempt or a changed strategy
+        # can therefore be recorded without replaying the same task id or ending the game.
+        task = locked_box_task(seed)
+        task["id"] = f"locked_box_{len(already)}"
         return task
     if stage in QUICK_BUDGET:
         used = quick_index(trials, stage)
@@ -137,24 +148,28 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
         return task
     if stage == "trap":
         done = [t for t in trials if t.game == "trap"]
-        return None if done else trap_task(0)
+        if not done:
+            return trap_practice_task()
+        measured_done = len([t for t in done if t.measured])
+        return trap_task(measured_done) if measured_done < 2 else None
     if stage == "codewords_delayed":
-        free = codewords_delayed(seed, [t for t in trials if t.task.get("kind") == "free"], kind="free")
+        delayed = [t for t in trials if t.game == "codewords_delayed"]
+        free = codewords_delayed(seed, delayed, kind="free")
         if free is not None:
             # Pausing to say how well you think you will do, before a delayed recall: this is the
             # predicted-score half of "bet your coins" (brief §5.2).
-            if not any(t.task.get("action") == "predict" for t in trials):
+            if not any(t.task.get("action") == "predict" for t in delayed):
                 return {
                     "id": "codewords_predict",
                     "game": "codewords_delayed",
                     "phase": "measure",
                     "action": "predict",
-                    "prompt": "Before we check: how many of the eight pairs do you think you will remember, out of 8?",
+                    "prompt": "Before we check: how many of the eight code words do you think you will remember, out of 8?",
                     "max_value": 8,
                     "max_latency_ms": 30000,
                 }
             return free
-        return codewords_delayed(seed, [t for t in trials if t.task.get("kind") == "recognition"], kind="recognition")
+        return codewords_delayed(seed, delayed, kind="recognition")
     return None
 
 

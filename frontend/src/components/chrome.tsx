@@ -10,6 +10,7 @@ import type { Health, Status } from "@/lib/types";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 
 export const NAV = [
+  { href: "/baseline", label: "Mind check" },
   { href: "/learn", label: "Practise" },
   { href: "/lesson", label: "Lessons" },
   { href: "/contrast", label: "Compare lessons" },
