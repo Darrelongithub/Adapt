@@ -398,3 +398,17 @@ def test_a_reconnect_starts_a_clean_conversation(client, learner):
             if frame["t"] == "status":
                 assert frame["turns"] == 0 and not frame["last_turn"], frame
                 break
+
+
+def test_voice_speak_returns_wav_bytes_when_tts_synthesizes(client, learner, monkeypatch):
+    from adapt.voice import tts as tts_mod
+    from adapt.voice.audio import encode_wav
+
+    sample_wav = encode_wav(_tone(100), sample_rate=24_000)
+    monkeypatch.setattr(tts_mod, "synthesize_or_none", lambda settings, text, gender="female": (sample_wav, 24_000))
+    res = client.post("/api/v1/voice/speak", json={"text": "hello learner", "gender": "female"}, headers=learner["headers"])
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("audio/wav")
+    assert res.headers["x-tts-sample-rate"] == "24000"
+    assert res.content.startswith(b"RIFF") and len(res.content) == len(sample_wav)
+
