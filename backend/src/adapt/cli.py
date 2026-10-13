@@ -874,7 +874,7 @@ def voice_selftest(seconds: float = 2.0) -> None:
     rng = np.random.default_rng(0)
     burst = tone(300, sample_rate=16000, seconds=0.45).astype(np.float32) * 0.3 + rng.normal(0, 0.02, 7200).astype(np.float32)
     frames = np.concatenate([silence(0.2, sample_rate=16000), burst, silence(seconds, sample_rate=16000)])
-    decisions = vad.feed(frames, sample_rate=16000) if hasattr(vad, "feed") else vad.accept(np.array_split(frames, 24))
+    decisions = vad.feed(frames, sample_rate=16000) if hasattr(vad, "feed") else vad.accept(frames)
     summary = segment_summary(decisions)
     _echo({"frames_in": int(frames.size / 320), **{k: v for k, v in summary.items()}})
 

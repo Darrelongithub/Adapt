@@ -412,3 +412,16 @@ def test_voice_speak_returns_wav_bytes_when_tts_synthesizes(client, learner, mon
     assert res.headers["x-tts-sample-rate"] == "24000"
     assert res.content.startswith(b"RIFF") and len(res.content) == len(sample_wav)
 
+
+def test_cli_voice_selftest_completes_and_reports_speech_segments():
+    from typer.testing import CliRunner
+
+    from adapt.cli import app
+
+    res = CliRunner().invoke(app, ["voice", "selftest"])
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.stdout)
+    assert data["frames_in"] == 132
+    assert data["speech_ms"] > 0 and data["segments"] >= 1
+
+
