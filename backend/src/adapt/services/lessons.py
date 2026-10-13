@@ -22,7 +22,6 @@ Telemetry gets the *sequence* (that is what AI 1 reasons over); ``LessonRun`` ge
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -839,29 +838,20 @@ def _frames_of(s: Session, scene: LessonScene) -> list[dict[str, Any]]:
         return []
 
 
-def as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, (list, tuple)) else ([] if value is None else [value])
-
-
-def json_safe(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
-
-
 __all__ = [
     "ACTIONS",
     "Explanation",
     "Opened",
     "active_run",
-    "as_list",
     "cache_key",
     "cache_stats",
     "change_variables",
+    "concept_versions_for",
     "ensure_scenes",
     "evidence_summary",
     "explain",
     "finish",
     "get_scene",
-    "json_safe",
     "kinds_table",
     "open_run",
     "predict",

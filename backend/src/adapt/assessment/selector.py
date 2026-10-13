@@ -154,7 +154,7 @@ class Pick:
 def placement_plan(
     *,
     topics: Sequence[dict[str, Any]],
-    items_by_topic: dict[str, Sequence[dict[str, Any]]],
+    items_by_topic: Mapping[str, Sequence[dict[str, Any]]],
     count: int = 8,
     seed: str | None = None,
     answered: Sequence[dict[str, Any]] = (),
@@ -289,7 +289,7 @@ def _params_for_item(params: BKTParams, item: Mapping[str, Any]) -> BKTParams:
 def method_probe_plan(
     *,
     topics: Sequence[dict[str, Any]],
-    items_by_topic: dict[str, Sequence[dict[str, Any]]],
+    items_by_topic: Mapping[str, Sequence[dict[str, Any]]],
     seed: str | None = None,
     learner_id: str | None = None,
     count: int = 8,
@@ -363,7 +363,7 @@ def method_probe_plan(
 def diagnostic_plan(
     *,
     topics: Sequence[dict[str, Any]],
-    items_by_topic: dict[str, Sequence[dict[str, Any]]],
+    items_by_topic: Mapping[str, Sequence[dict[str, Any]]],
     count: int = 12,
     seed: str | None = None,
 ) -> list[Pick]:
@@ -500,7 +500,7 @@ def presentation_from_directives(directives: Sequence[dict[str, Any]]) -> dict[s
 
 def next_items(
     *,
-    items_by_topic: dict[str, Sequence[dict[str, Any]]],
+    items_by_topic: Mapping[str, Sequence[dict[str, Any]]],
     mastery: dict[str, float],
     counts: dict[str, int] | None = None,
     due_topics: Sequence[str] = (),
@@ -687,7 +687,7 @@ def review_queue(
     *,
     schedules: Sequence[dict[str, Any]],
     mastery: dict[str, float],
-    items_by_topic: dict[str, Sequence[dict[str, Any]]],
+    items_by_topic: Mapping[str, Sequence[dict[str, Any]]],
     now: datetime,
     count: int = 4,
 ) -> list[Pick]:

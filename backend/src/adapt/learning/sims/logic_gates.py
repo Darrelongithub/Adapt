@@ -86,11 +86,6 @@ def _rows(arity: int) -> list[tuple[int, int]]:
     return [(a, b) for b in (0, 1) for a in (0, 1)]
 
 
-def _inputs(p: dict[str, Any], a: int, b: int) -> int:
-    rule = GATES[p["gate"]][1]
-    return int(rule(a, b)) if p["arity"] == 2 else int(rule(a))
-
-
 def run(params: dict[str, Any]) -> list[dict[str, Any]]:
     p = normalize(params)
     gate = p["gate"]
