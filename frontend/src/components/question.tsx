@@ -485,7 +485,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
               <p>{reply.answer}</p>
               {reply.next_action ? <p className="text-[var(--accent)]">Next: {reply.next_action}</p> : null}
               <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-                {reply.provider === "local" ? "from your course material, no model call" : `model: ${reply.provider}`}
+                {reply.served_by ?? "from your course material"}
                 {reply.meta?.grounded ? " · grounded" : " · not grounded in your material"} ·{" "}
                 {reply.privacy?.sent_to_model ? "your question was sent to the model" : "nothing left this machine"}
               </p>

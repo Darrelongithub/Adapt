@@ -200,8 +200,8 @@ def test_every_encryption_claim_matches_the_schema():
 
 def test_preference_note_is_admitted_as_unencrypted(client, learner):
     """Preferences are stored as readable JSON, and the report says so."""
-    report = client.get("/api/v1/status").json()["encryption"]
-    assert any("preference" in line.lower() for line in report["not_encrypted"]), (
+    report = client.get("/api/v1/status").json()["data_protection"]
+    assert any("preference" in line.lower() for line in report["not_protected"]), (
         "the report must not imply that learner-written free text is encrypted"
     )
 
@@ -431,10 +431,13 @@ def test_doctor_reports_a_database_the_policy_cannot_open(settings, tmp_path):
 def test_status_endpoint_names_the_real_driver(client, learner):
     response = client.get("/api/v1/status", headers=learner["headers"])
     assert response.status_code == 200
-    report = response.json()["encryption"]
-    assert report["requested"] in {"auto", "sqlcipher", "field-only", "off"}
-    assert report["driver"]
-    assert report["fields_encrypted"] and report["not_encrypted"], (
+    # The learner-safe report (§3 keeps deployment configuration off HTTP). The honesty property
+    # is unchanged and is the point of the test: the answer must name what actually protects the
+    # file, and must say what is *not* protected rather than implying everything is.
+    report = response.json()["data_protection"]
+    assert report["file_encrypted"] in (True, False)
+    assert "sqlite" in report["underlying_engine"].lower()
+    assert report["protected"] and report["not_protected"], (
         "the report must say what is *not* protected, not only what is"
     )
 

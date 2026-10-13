@@ -37,11 +37,9 @@ def health() -> dict[str, Any]:
     svcs = current()
     db_ok = True
     db_error: str | None = None
-    learners = 0
     try:
         with svcs.db.session() as s:
             s.execute(text("select 1"))
-            learners = svcs.db.student_count()
     except Exception as exc:  # never let a probe take the app down with it -- but name the cause
         # A health endpoint that answers {"ok": false} and nothing else cannot be acted on: a
         # missing column, a locked file and a wrong key all look identical, and this is the one
@@ -53,22 +51,103 @@ def health() -> dict[str, Any]:
     return {
         "ok": bool(db_ok),
         "version": __version__,
-        "mode": st.mode,
+        "lessons": lessons_state(),
         "database_reachable": bool(db_ok),
         **({"database_error": db_error} if db_error else {}),
-        "learners": learners,
-        "local_only": not bool(st.gemini_api_key),
+    }
+
+
+def lessons_state() -> dict[str, Any]:
+    """How lessons are being produced right now, in the learner's own words (brief §3).
+
+    "ready" means a configured model is answering; "simple mode" means the deterministic tutor is
+    doing all of it -- honest about being lower quality, and never pretending otherwise. The
+    learner gets this sentence; the service's identity and its budget stay behind the console.
+    """
+    ready = False
+    try:
+        svcs = current()
+        configured = bool(getattr(getattr(svcs, "settings", None), "gemini_api_key", None))
+        engine = getattr(getattr(svcs, "ai1", None), "llm", None) if configured else None
+        if engine is not None:
+            ready = bool(engine.available().get("configured"))
+    except Exception:
+        # A health probe may run against a half-built container (the database-unreachable test
+        # does exactly that). Claiming a model is answering when the service object cannot even be
+        # inspected would be the one dishonest answer this endpoint can give.
+        ready = False
+    if ready:
+        return {
+            "state": "ready",
+            "says": "Lessons: ready",
+            "note": "answers and questions can be written for you when your own material does not cover something",
+        }
+    return {
+        "state": "simple mode",
+        "says": "Lessons: simple mode",
+        "note": (
+            "every explanation here is assembled from your own course material by the built-in tutor: "
+            "correct and specific, but plainer than a written-for-you lesson. Nothing is sent anywhere."
+        ),
     }
 
 
 @router.get("/status")
 def status(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
+    """What a learner may know about the running system (brief §3).
+
+    The operator's view -- mode, paths, driver, provider state, budgets, limiter buckets -- is
+    console-only (`adapt status`), and it is a different surface on purpose: this one cannot leak
+    what it never receives.
+    """
     svcs = current()
-    out = svcs.status()
-    out["version"] = __version__
-    out["mode"] = svcs.settings.mode
-    out["encryption"] = encryption_report()
-    return out
+    return {
+        "ok": True,
+        "version": __version__,
+        "lessons": lessons_state(),
+        "demo_mode": svcs.settings.mode == "demo",
+        "data_protection": data_protection(),
+    }
+
+
+def data_protection() -> dict[str, Any]:
+    """What is actually protecting learner data, in sentences a learner can act on.
+
+    The same facts as the operator's report minus the deployment details (file paths, driver
+    names, key sources), because those describe the machine, not the learner's data.
+    """
+    db = current().db
+    file_encrypted = bool(db.file_encrypted())
+    driver = getattr(db, "driver", None)
+    return {
+        "file_encrypted": file_encrypted,
+        # The engine is not a secret and the claim depends on it: saying "encrypted" while only
+        # columns are ciphertext would be the kind of unearned assurance this report exists to
+        # prevent. What is dropped is the deployment detail around it (paths, key source, config).
+        "underlying_engine": f"{(driver.name if driver else 'sqlite')} + field-level encryption",
+        "file_level": (
+            "the whole database file is encrypted"
+            if file_encrypted
+            else "the file itself is not encrypted; the answers and notes listed below are"
+        ),
+        "protected": [
+            "learner answers + feedback",
+            "event payloads",
+            "hypotheses/evidence facts",
+            "chat + voice transcripts",
+            "profile snapshots",
+            "display name + email",
+        ],
+        "not_protected": [
+            "study preferences (goal, minutes per week, word limits)",
+            "table names and numeric foreign keys (needed to query at all)",
+            "topic ids and timestamps (used for scheduling)",
+        ],
+        "note": (
+            "The database format has no encryption of its own, so this says exactly which fields "
+            "are protected and which are not instead of implying all of it is."
+        ),
+    }
 
 
 def encryption_report() -> dict[str, Any]:
@@ -111,31 +190,33 @@ def encryption_report() -> dict[str, Any]:
     }
 
 
+#: The app's own request pacing, in learner-safe words. Provider-scoped buckets (the upstream
+#: services' rate limits) are operator detail and are not listed here; the budgets they exist to
+#: protect are console-only (brief §3).
+_PACING_NAMES = {
+    "ip": "requests",
+    "mutation": "writes",
+    "llm": "lesson_requests",
+    "guest_create": "new_accounts",
+    "voice_frame": "voice_frames",
+    "numbas_export": "exports",
+    "auth_fail": "sign_in_attempts",
+}
+
+
 @router.get("/quotas")
 def quotas(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
-    svcs = current()
-    out = svcs.quotas()
     from ...security.ratelimit import effective_limits
 
     st = get_settings()
-    out["buckets"] = effective_limits(st.rate_limit_multiplier)
-    out["rate_limit_multiplier"] = st.rate_limit_multiplier
-    out["free_tiers"] = {
-        "gemini": {
-            "model_ai1": svcs.settings.gemini_model_ai1,
-            "model_ai2": svcs.settings.gemini_model_ai2,
-            "daily_call_budget": svcs.settings.gemini_daily_call_budget,
-            "daily_token_budget": svcs.settings.gemini_daily_token_budget,
-            "on_exhaustion": "fall back to the local tutor; the app keeps working, with a visible note",
-        },
-        "openalex": {"limit": "10 req/s, 100k/day (polite pool with mailto)", "our_limit_per_min": 50, "on_exhaustion": "serve cache, mark results as cached"},
-        "arxiv": {"limit": "1 request / 3 s courtesy", "our_limit_per_min": 20, "on_exhaustion": "cache + skip, no retry storm"},
-        "openlibrary": {"limit": "no published quota; treated as best effort", "on_exhaustion": "skip with a note"},
-        "youtube": {"limit": "10,000 units/day; search.list costs 100 units", "keys_configured": bool(svcs.settings.youtube_api_key), "on_exhaustion": "skip the provider and say so - nothing else is free of quota limits for search"},
-        "numbas": {"limit": "free, self hosted or hosted editor; we only exchange files", "on_exhaustion": "the bank built into the app is used instead"},
+    limits = effective_limits(st.rate_limit_multiplier)
+    return {
+        "pacing": {name: limits[scope] for scope, name in _PACING_NAMES.items() if scope in limits},
+        "note": (
+            "How often the app will accept a request. Being asked to wait is pacing, not a limit on "
+            "what you are allowed to learn: nothing here stops a lesson."
+        ),
     }
-    out["rate_limiter"] = svcs.limiter.snapshot()
-    return out
 
 
 @router.get("/privacy")
@@ -143,11 +224,11 @@ def privacy(s: Session = Depends(db_session), student: Student = Depends(student
     st = get_settings()
     return {
         "telemetry": TEL.privacy_summary(),
-        "sent_to_gemini": {
-            "when": "only when a key is configured and the learner consented to sharing a summary",
+        "sent_to_model": {
+            "when": "only when a model is configured and the learner consented to sharing a summary",
             "identity": "a keyed pseudonym, never the name or email",
             "redaction": "emails, phone numbers, URLs, addresses and anything shaped like an ID are stripped before sending",
-            "budget": f"{st.gemini_daily_call_budget} calls/day, then local fallback",
+            "on_refusal": "if any of that cannot be honoured, the answer is written locally instead and the reply says so",
         },
         "voice": {
             "stt": "local faster-whisper running in the server process; audio is decoded in memory and discarded",
@@ -155,7 +236,7 @@ def privacy(s: Session = Depends(db_session), student: Student = Depends(student
             "stored": "transcript text for the turns the learner chose to record, plus latency and interruption flags",
             "off_means": "voice off = no microphone access at all; the keyboard path is identical",
         },
-        "storage": encryption_report(),
+        "storage": data_protection(),
         "learner_controls": [
             "answer or refuse every adaptation proposal",
             "revoke an applied adaptation at any time",

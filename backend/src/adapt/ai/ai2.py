@@ -380,8 +380,10 @@ class EducationalIntelligence:
     async def turn(self, text: str, *, student_id: str, session_id: str | None = None, **kw: Any) -> tuple[str, dict[str, Any]]:
         """Adapter used by the voice pipeline: (reply_text, meta)."""
         reply = await self.explain(student_id, text, session_id=session_id, want_spoken=True, **kw)
+        # The voice frame says where the words came from in the learner's own terms, never the
+        # service's name or its spend (brief §3, and the canary test walks this frame).
         meta = {
-            "provider": reply.provider,
+            "served_by": "your own material" if reply.provider != "gemini" else "written for you",
             "intent": reply.intent,
             "level": reply.level,
             "adaptations": reply.adaptations_applied,

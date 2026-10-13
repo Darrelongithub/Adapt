@@ -26,6 +26,7 @@ from ...learning import scenespec, sims
 from ...services import current
 from ...services import lessons as L
 from ...db.models import Student
+from ...security import secrecy
 from ..deps import db_session, rate, student_from_request
 
 router = APIRouter(prefix="/api/v1/lessons", tags=["lessons"])
@@ -310,7 +311,13 @@ async def explain_frame(
     first = L.explain(s, scene=scene, frame_index=body.frame_index, question=body.question)
     if not first.needs_model:
         await _note_explained(s, run, frame_index=first.frame, source=first.source, cached=first.cached)
-        return {"ok": True, "tried_model": False, **first.as_dict()}
+        # Both branches go through the same mapping so the player never has to guess which way
+        # the answer came from: `served_by` says "your own material" here and "written for you"
+        # on the model branch, and `asked_for_extra_help` is the learner's name for what the
+        # service calls "tried the model" -- the tutor looked beyond the material. §3 keeps the
+        # word model off the wire; it is dropped mechanically if a route ever puts it back.
+        out = secrecy.public_payload(first.as_public_dict(), served_locally=True)
+        return {"ok": True, "asked_for_extra_help": False, **out}
     svcs = current()
     answer = await svcs.ai3.why(
         spec=dict(scene.spec or {}),
@@ -335,7 +342,9 @@ async def explain_frame(
             tokens_out=answer.tokens_out,
         )
     await _note_explained(s, run, frame_index=body.frame_index, source=answer.source, cached=False)
-    out = answer.as_dict()
+    # `answer` is ai3's Answer, not the deterministic Explanation above: it carries the model
+    # name and token counts for the operator, so it goes through the same public mapping.
+    out = secrecy.public_payload(answer.as_dict(), served_locally=answer.source != "llm")
     # the same keys as the deterministic branch, so the player never has to guess which way
     # the answer came from to know where the sentence is
     out.pop("answer", None)
@@ -343,8 +352,8 @@ async def explain_frame(
         "ok": answer.ok,
         **out,
         "cached": False,
-        "needs_model": False,
-        "tried_model": True,
+        "needs_extra_help": False,
+        "asked_for_extra_help": True,
         "question": body.question,
     }
 

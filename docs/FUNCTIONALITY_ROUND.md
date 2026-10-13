@@ -85,12 +85,15 @@ and `scripts/teaching_quality_eval.py` writing `QUALITY_REPORT.md`.
 - [ ] Phase 1.4.2 BKT calibration
 - [x] Phase 1.4.3 shared state, orchestrator, `adapt rebuild-model`
 - [x] Phase 2 baseline (backend + screens; browser checks pending, see `docs/UNVERIFIED.md`)
-- [ ] Phase 3 subject round
-- [ ] Phase 4 content engine + `QUALITY_REPORT.md`
-- [ ] Phase 5 adaptation layer + contrast demo
-- [ ] Phase 6 evidence + failure loop
-- [ ] Phase 7 security/demo readiness
+- [ ] Phase 3 subject round (agent 2 - handoff is `docs/handoff/agent-2-subjects.md`)
+- [ ] Phase 4 content engine + `QUALITY_REPORT.md` (agent 3 landed; integration below)
+- [ ] Phase 5 adaptation layer + contrast demo (agent 4)
+- [ ] Phase 6 evidence + failure loop (agent 5 landed)
+- [ ] Phase 7 security/demo readiness (agent 6 landed; integrated and green - see the integration report)
 - [ ] Final report
+
+Everything below the line "## Integration report 1" was landed by the agent workstreams on their own
+PRs and merged here (`docs/AGENT_BRIEFS.md` says how the merge is run).
 
 ## 0.5 Phase reports
 
@@ -405,3 +408,96 @@ traps, delayed codewords, snapshot.
 
 The browser checks in `docs/UNVERIFIED.md` (flash on a real device, 45-second clock, 360px layout),
 and screenshots into `docs/screens/` - both need a browser, which cannot be installed here.
+
+---
+
+## Integration report 1 - the landed agent PRs, and §3 on the wire
+
+*Integrator session, 2026-10-13. PRs #9 (evidence/calibration), #10 + #14 (phase 7 security) and #12
+(master prompts) merged into `arena/06d446fc-adapt`; #11 and #13 landed on `main` and are reconciled
+at the final merge. Agent 2 (phase 3) has not landed. The working note with the defect analysis is
+`agent-notes/7-integration.md`; what follows is the report.*
+
+### What was merged, and what was actually wrong
+
+The merges themselves were clean. What was not clean was the interaction between the phase-7 secrecy
+boundary and the routes the other phases had added. `secrecy.py` drops any response key whose
+normalised name contains `provider`, `llm`, `model`, `token`, `budget`, `quota` or `headroom` - and
+that silently ate learner-safe fields: `voices`, `model_version`, `needs_model`, `provider_note`, the
+lesson explain payload, `/status`, `/quotas`, `/health` and the resource search. Ten tests failed at
+the merged tip for this one reason.
+
+The fix direction matters and is now a rule in the code: **the boundary stays strict and the routes
+change**. Re-allowing a banned word so a payload survives is wrong - the canary route walk in
+`tests/test_config_secrecy.py` and the metadata test at :439 assert those words are *absent*, and
+those tests are the authority. So the routes now publish learner vocabulary instead:
+
+* `served_by` ("your own material" / "written for you") replaces `provider` and `provider_note` on
+  `/explain`, `/analyze`, `/tutor/message` and the WebSocket reply metadata.
+* `/health` and `/status` carry `lessons{state, says, note}` - "Lessons: ready" / "Lessons: simple
+  mode" - and `data_protection`, which is the same encryption facts as the operator's report minus
+  paths, key source and driver configuration (the engine stays: "the file is encrypted" is not
+  checkable without it, and an encryption engine is not a model provider).
+* `/quotas` reports `pacing` in learner words (`lesson_requests`, `voice_frames`, `exports`).
+* `/profile.shared_state.learner_model` is the learner's own model of themself; the bare `model` key
+  is reserved for runtime model identifiers and is gone from every public payload.
+* Lesson explains carry `needs_extra_help` and `asked_for_extra_help`; `tried_model` and
+  `needs_model` are operator vocabulary and are stripped if they reach the wire.
+
+The operator's view still exists - it is `adapt status` on the console, which prints exactly what
+the HTTP surface may not.
+
+### Files changed
+
+* `backend/src/adapt/security/secrecy.py` - `_MODEL_WORD_ALLOWED` reduced to the learner-safe keys;
+  new `_PRIVATE_PAYLOAD_KEYS` and `public_payload(data, *, served_locally)`.
+* `backend/src/adapt/api/routes/system.py` - `/health`, `/status`, `/quotas`, `/privacy`,
+  `lessons_state()`, `data_protection()`.
+* `backend/src/adapt/api/routes/tutor.py`, `learning.py`, `lessons.py` - the public shapes above;
+  `lessons.py` explain returns the same key set whichever branch answers.
+* `backend/src/adapt/ai/ai2.py`, `services/lessons.py` (`as_public_dict`).
+* `backend/src/adapt/voice/stt.py`, `tts.py` - engine capability sentences are learner-safe; the
+  install hint goes to the log (`docs/VOICE.md` has the commands).
+* `frontend/src/lib/types.ts`, `mock.ts`, `engine/types.ts`, `components/chrome.tsx`,
+  `components/question.tsx`, `app/page.tsx`, `app/settings/page.tsx`, `app/voice/page.tsx`,
+  `frontend/scripts-ui-probe.mjs`.
+
+### Test expectations corrected (each carries a §3 comment saying why)
+
+`tests/test_api_learner_loop.py` (health, analyze, explain, WebSocket meta, the status/quotas/privacy
+block rewritten with absence checks, resource sources), `tests/test_crypto_and_encryption.py` (the
+two encryption-honesty tests read `data_protection` and still assert what is *not* protected),
+`tests/test_lessons_api.py` (public explain key set), `tests/test_state_foundation.py` (component
+names asserted against `current().status()`, `learner_model` in the shared snapshot).
+`tests/test_config_secrecy.py` and `tests/test_prompt_injection.py` were **not** touched.
+
+One test-only defect was fixed because it was order-dependent rather than app-dependent:
+`test_private_routes_refuse_anonymous_callers` used the session-scoped client, whose cookie jar holds
+whatever an earlier test signed in - so `/dashboard` answered 200 to a supposedly anonymous caller
+whenever a valid cookie happened to be present, and 401 otherwise. It now clears the jar and restores
+the exact cookie objects around the check.
+
+### Commands run, with results
+
+| Command | Result |
+|---|---|
+| `pytest -q` (backend) | **887 passed**, 74.7 s |
+| `npm run lint` (contract + `tsc --noEmit`) | contract ok - 88 routes, 78 calls |
+| `npm run build` | compiled successfully |
+| `npm run test:engine` / `test:lib` / `test:server` | 15 / 18 / 2 passed |
+| `scripts/probe-fresh.sh all` | **234/234 checks passed**, exit 0 |
+| bundle scan of `frontend/.next/static` | no provider/model name (only Next's own `Googlebot` regex) |
+
+### Found by scanning the built bundle, not the source
+
+Two §3 violations lived only in shipped client code: `/voice` printed
+`pip install faster-whisper kokoro` with both engine names in tags and fallbacks, and the mock's
+capability strings named them too. Both are gone; the commands are in `docs/VOICE.md`. The same scan
+found the *backend* capability sentences naming their package on an authenticated HTTP surface -
+also fixed, and the probe now asserts the payload names no engine.
+
+### Still open
+
+* Agent 2's phase 3 (the subject round) has not landed.
+* `main`'s #11 and #13 wait for the final merge.
+* Anything only a real browser or a live model key can settle is in `docs/UNVERIFIED.md`.

@@ -10,12 +10,16 @@ are implemented but *not* proven. Each item says what was done instead and how t
   and id-like fields are stripped before anything is sent), the pseudonym used in place of a
   name, the daily call/token budget and its accounting, the per-purpose call log, the retry
   and backoff rules, and — most importantly — that every consumer has a **local fallback**
-  whose response says `provider: "local"` and `grounded: true|false`.
-* **Not verified:** whether a real Gemini answer is *good*. No call has ever been made from
+  whose response says `served_by: "your own material"` (a model-written reply says
+  `"written for you"`) with `grounded: true|false`.
+* **Not verified:** whether a real model answer is *good*. No call has ever been made from
   this build. Prompt changes must be judged by the pilot's own outcomes
   (`docs/PILOT.md`), not by how the prompt reads.
 * **To check:** `ADAPT_GEMINI_API_KEY=… uvicorn adapt.api.app:app`, then
-  `POST /api/v1/explain` and look at `llm`, `model_ms` and `privacy.what_was_sent`.
+  `POST /api/v1/explain` and read `served_by`, `grounded` and `privacy.what_was_sent` in the
+  reply. The provider, model name, token counts and budget are **not on HTTP any more** (brief
+  §3): read them on the console — `adapt status`, `adapt config status` — or in the `llm_calls`
+  audit rows.
 
 ## Speech (STT and TTS)
 
@@ -457,3 +461,30 @@ To check on a machine with a browser (any of these that fails is a bug worth rep
    and confirm the resume line names the stage and does not restart the games.
 7. **The snapshot screen reads correctly at 360px wide**, and no factor row overflows its card.
 8. **Audio/latency claims**: none are made - the baseline is silent.
+
+## Round: the §3 boundary, after the agent PRs merged - 2026-10-13
+
+Verified here: the merged tip passes the full backend suite (887 tests, including the canary walk
+that sets a canary key and asserts no provider or model name appears in any response body, header,
+WebSocket frame, log record or export), `npm run build`, the contract linter, the engine/lib/server
+node tests and `scripts/probe-fresh.sh all` (234 checks, 226 API calls). The built bundle was
+scanned by hand as well: `frontend/.next/static` contains no `gemini`, `openalex`, `arxiv`,
+`youtube`, `faster-whisper`, `kokoro` or `model_name`.
+
+**Not verified here, and worth a look on a real browser session:**
+
+1. **The learner-safe copy reads well on the screens.** The status chip (chrome), the privacy block
+   in `/settings`, the provenance line under a tutor answer and the `/voice` capability panel were
+   all reworded for §3. jsdom proves the elements render and the words are there; it cannot tell you
+   whether "Lessons: simple mode · answers and notes encrypted" is *pleasant*. Read them at 1280px
+   and at 360px.
+2. **The encryption claim in `/settings`.** `data_protection` deliberately names the storage engine
+   (`sqlite + field-level encryption`) so the "the file is encrypted" claim can be checked; confirm
+   that reads as a claim about the file and not as a product advertisement.
+3. **`Googlebot` is in the bundle.** Next.js ships its own bot-detection regex in framework code
+   (`chunks/255-*.js`, `main-*.js`). It is not configuration and cannot be removed without patching
+   the framework; the scan above is described as clean *of provider and model configuration*, which
+   is the §3 rule, but the word itself is present. Anyone auditing the bundle should expect it.
+4. **Console commands still print the operator's truth.** `adapt status` and `adapt config status`
+   are where the provider, model, key-presence and budget live now; nothing in the automated suite
+   asserts their wording, only their exit codes and JSON keys.

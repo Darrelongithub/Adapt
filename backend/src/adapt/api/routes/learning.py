@@ -35,6 +35,7 @@ from ...services import telemetry as TEL
 from ...services import sessions as S
 from ...services import current
 from ...services.evidence import remember_offers
+from ...security import secrecy
 
 router = APIRouter(prefix="/api/v1", tags=["learning"])
 
@@ -413,7 +414,10 @@ async def analyze(
         if sess is None or sess.student_id != student.id:
             raise HTTPException(status_code=404, detail="unknown session")
     res = await svcs.ai1.analyze(student.id, session_id=session_id, use_llm=use_llm and bool(get_settings().gemini_api_key))
-    d = res.as_dict()
+    # The analysis says where its prose came from, in the learner's terms: the service's identity
+    # and its spend stay behind the console (brief §3). ``public_payload`` drops the runtime
+    # fields and adds ``served_by``.
+    d = secrecy.public_payload(res.as_dict(), served_locally=getattr(res, "provider", "local") != "gemini")
     d["loop"] = _loop_shape(d)
     return d
 
@@ -436,7 +440,13 @@ def profile(s: Session = Depends(db_session), student: Student = Depends(student
     # teaching memory, built once from the log. It is additive — ``mastery`` above is the profile
     # AI 1 has always reported — and it is what the screens use to say *which* version of a learner
     # they are looking at. One call, one immutable snapshot.
-    out["shared_state"] = current().state.get_snapshot(student.id).as_dict()
+    shared = current().state.get_snapshot(student.id).as_dict()
+    # The store calls this "model" (it *is* the learner model). On the public boundary that key is
+    # reserved for a runtime model identifier and is stripped, so the snapshot travels under a
+    # name that says whose model it is. Same object, same version, nothing lost.
+    if "model" in shared:
+        shared["learner_model"] = shared.pop("model")
+    out["shared_state"] = shared
     return out
 
 

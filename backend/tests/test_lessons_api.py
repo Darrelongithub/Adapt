@@ -536,11 +536,16 @@ def test_both_ways_an_ask_is_answered_return_the_same_keys(client, learner, serv
     stuck = _post(
         client, learner, f"/api/v1/lessons/run/{opened['run_id']}/explain", {"frame_index": asked["i"], "question": "does this remind you of anything?"}
     ).json()
-    assert settled["needs_model"] is False and stuck["needs_model"] is False
-    assert stuck["tried_model"] is True and settled["tried_model"] is False
+    # `needs_model` is the operator's name for this; the learner-facing key is `needs_extra_help`
+    # ("the built-in tutor could not settle this from your material"). §3 keeps the model's name
+    # and its token accounting off the wire, so those keys are asserted *absent* here.
+    assert settled["needs_extra_help"] is False and stuck["needs_extra_help"] is False
+    assert stuck["asked_for_extra_help"] is True and settled["asked_for_extra_help"] is False
     assert set(settled) == set(stuck), (sorted(settled), sorted(stuck))
-    for key in ("ok", "text", "source", "frame", "citations", "model", "tokens_in", "tokens_out", "question"):
+    for key in ("ok", "text", "source", "frame", "citations", "question"):
         assert key in stuck, key
+    for leaked in ("model", "tokens_in", "tokens_out", "provider", "llm"):
+        assert leaked not in stuck, f"{leaked} reached the learner"
     assert "answer" not in stuck and "answer" not in settled, "the old name leaked back in"
     assert stuck["text"], stuck
 

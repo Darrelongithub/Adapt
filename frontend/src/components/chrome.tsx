@@ -59,25 +59,30 @@ export function StatusChip() {
       alive = false;
     };
   }, []);
-  const llm = status ? (status.llm?.configured ? `model ${status.llm.provider ?? ""}`.trim() : "local tutor") : "tutor: not reported";
+  // §3: this chip is on every page, so it says only what a learner may know -- how lessons are
+  // being produced right now and what protects the file. The service, its model and its budget
+  // live in the console (`adapt status`), not here.
+  const lessons = status?.lessons ?? health?.lessons;
+  const tutor = !status && !health ? "tutor: not reported" : (lessons?.says ?? "tutor: not reported");
+  const protection = status?.data_protection;
   const enc = !status
-    ? "encryption: not reported"
-    : status.encryption?.file_encrypted
-      ? "db encrypted at rest"
-      : status.encryption?.field_level_encryption
-        ? "columns encrypted"
-        : "no encryption at rest";
+    ? "protection: not reported"
+    : protection?.file_encrypted
+      ? "whole file encrypted"
+      : protection?.protected?.length
+        ? "answers and notes encrypted"
+        : "protection: not reported";
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
       {error ? (
         <span className="text-[var(--bad)]">the API is unreachable</span>
       ) : (
         <>
-          <span title={`mode=${health?.mode ?? "not read yet"}`}>
-            {health == null ? "checking the API…" : health.ok ? "API up" : "API down"} · {llm} · {enc}
+          <span title={lessons?.note ?? "the API did not report yet"}>
+            {health == null ? "checking the API…" : health.ok ? "API up" : "API down"} · {tutor} · {enc}
           </span>
           {status?.version ? <span>v{status.version}</span> : null}
-          {status?.mode === "demo" ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
+          {status?.demo_mode ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
         </>
       )}
     </div>

@@ -330,13 +330,13 @@ export default function VoicePage() {
             {caps.error ? <Err error={caps.error} status={caps.status} /> : null}
             <ul className="space-y-2 text-sm">
               <li>
-                <Tag tone={c?.stt?.local_stt ? "good" : "warn"}>listening: {c?.stt?.local_stt ? "local whisper" : "browser dictation"}</Tag>
-                {c?.stt?.local_stt ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.stt?.detail ?? "faster-whisper not installed here"}. {c?.stt?.fallback}</p>}
+                <Tag tone={c?.stt?.local_stt ? "good" : "warn"}>listening: {c?.stt?.local_stt ? "on this machine" : "browser dictation"}</Tag>
+                {c?.stt?.local_stt ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.stt?.detail ?? "local transcription is not installed here"}. {c?.stt?.fallback}</p>}
                 {c?.stt?.local_stt ? <p className="mt-1 text-xs text-[var(--muted)]">model {c.stt.model_size} · {c.stt.detail}</p> : null}
               </li>
               <li>
-                <Tag tone={c?.tts?.local_tts ? "good" : "warn"}>speaking: {c?.tts?.local_tts ? "local Kokoro" : "browser speechSynthesis"}</Tag>
-                {c?.tts?.local_tts ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.tts?.detail ?? "kokoro not installed here"}. {c?.tts?.fallback}</p>}
+                <Tag tone={c?.tts?.local_tts ? "good" : "warn"}>speaking: {c?.tts?.local_tts ? "on this machine" : "browser speechSynthesis"}</Tag>
+                {c?.tts?.local_tts ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.tts?.detail ?? "the local voice engine is not installed here"}. {c?.tts?.fallback}</p>}
                 {c?.tts?.local_tts ? (
                   <p className="mt-1 text-xs text-[var(--muted)]">
                     voices: {humanize(c.tts.voices ?? {}) || "none reported"} · {c.tts.sample_rate} Hz · {c.tts.interruption ?? "chunked"}
@@ -383,18 +383,13 @@ export default function VoicePage() {
             </Card>
           ) : null}
 
-          <Card title="Installing the local engines" tone="muted">
-            <Notice>
-              <p className="mb-1">The voice screens work without them. To get off the browser voices:</p>
-              <pre className="overflow-x-auto text-xs">{`pip install faster-whisper kokoro
-apt-get install espeak-ng   # kokoro's phonemiser
-# weights are fetched once from Hugging Face, then cached in ~/.cache`}</pre>
-              <p className="mt-1">
-                This sandbox has no network access to Hugging Face, so neither engine could be installed or heard here —
-                see <code>docs/UNVERIFIED.md</code>. Everything above the audio boundary (taking turns, cutting in, latency accounting, the
-                fallbacks) is exercised by the test suite.
-              </p>
-            </Notice>
+          <Card title="The local engines are optional" tone="muted">
+            <p className="text-xs text-[var(--muted)]">
+              Voice works without them: your browser dictates and speaks, and nothing is uploaded.
+              An operator who wants the on-machine engines installs them once at the console -
+              the steps are in <code>docs/VOICE.md</code>, and this page always reports which path
+              is actually in use above.
+            </p>
           </Card>
         </div>
       </div>

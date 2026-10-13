@@ -1088,14 +1088,19 @@ async function main() {
         await waitFor(() => page.requests.slice(askBefore).some((r) => /POST \/api\/v1\/explain/.test(r)), { timeout: 12_000, label: "the explain request" });
         let replied = true;
         try {
-          await waitFor(() => /reciprocal|denominator|invert|multiply|bottom|out loud|no local model|not connected|ask your tutor later|course material|model:/i.test(tutorBlock(page)), { timeout: 20_000, label: "a tutor reply" });
+          // The provenance line under the answer is what proves a reply arrived rather than a
+          // hanging box, so the words it may use belong to brief §3: "your own material" (the
+          // built-in tutor, nothing left the machine) and "written for you" (a model wrote it).
+          // The old list looked for "course material" and "no local model", which is the
+          // pre-§3 copy -- the panel no longer names a model at all.
+          await waitFor(() => /reciprocal|denominator|invert|multiply|bottom|out loud|not connected|ask your tutor later|your own material|written for you/i.test(tutorBlock(page)), { timeout: 20_000, label: "a tutor reply" });
         } catch (err) {
           replied = false;
           check("learn", "asking the tutor produces an answer instead of a hanging box", false, `requests: ${page.requests.slice(askBefore).join(" ; ")} | box: ${tutorBlock(page).slice(0, 400)}`);
         }
         const reply = tutorBlock(page);
         if (replied) {
-          check("learn", "asking the tutor in plain words gets an answer on screen", /flip|denominator|fraction|multiply|reciprocal|bottom|invert|course material|model:/i.test(reply), reply.slice(0, 240));
+          check("learn", "asking the tutor in plain words gets an answer on screen", /flip|denominator|fraction|multiply|reciprocal|bottom|invert|your own material|written for you/i.test(reply), reply.slice(0, 240));
           // the reply used to quote the item's template ("1. {a} - {b} = {ab}") straight at
           // the learner; this is the check that would have caught it from the browser side
           check("learn", "the tutor reply contains no unrendered item template", !/\{[a-zA-Z_][a-zA-Z0-9_]*\}/.test(reply), reply.slice(0, 240));
@@ -1583,10 +1588,22 @@ async function main() {
     const page = await open("/voice", "voice");
     await sleep(700);
     const body = page.text();
-    check("voice", "voice page states what is and is not installed", /whisper|kokoro|speech|voice|microphone|model/i.test(body), body.slice(0, 180));
+    // §3: the page no longer names the engines at all (they were "whisper" and "kokoro" here
+    // until the boundary reshape), so the check looks for the learner-facing wording instead.
+    check("voice", "voice page states what is and is not installed", /on this machine|browser dictation|speechSynthesis|microphone|voice/i.test(body), body.slice(0, 180));
     check("voice", "the engine status is honest, not 'ready' with no engine", !/\bready\b/i.test(body) || /not installed|unavailable|browser/i.test(body), body.slice(0, 200));
     const cap = await api("/api/v1/voice/capabilities", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    check("voice", "capabilities endpoint answers and names the backends", cap.status === 200 && JSON.stringify(cap.body).length > 40, JSON.stringify(cap.body).slice(0, 180));
+    // §3: the capabilities payload says what is available on this machine, never which product
+    // provides it. This is the same rule the backend canary test enforces from the inside.
+    const capText = JSON.stringify(cap.body).toLowerCase();
+    check(
+      "voice",
+      "capabilities answers, and names no engine to a signed-in learner",
+      cap.status === 200 &&
+        capText.length > 40 &&
+        !/faster-whisper|whisper|kokoro|gemini|openalex|arxiv|youtube|google/.test(capText),
+      JSON.stringify(cap.body).slice(0, 180),
+    );
     const mic = page.byText(/mic|speak|listen|talk/i, "button");
     if (mic) {
       await page.click(mic);
@@ -1784,16 +1801,16 @@ async function main() {
     closePage(notFound);
     const missing = await api("/api/v1/does-not-exist", { headers: { cookie } });
     check("failures", "an unknown API path 404s rather than 500ing", missing.status === 404, String(missing.status));
-    // the rate limiter, surfaced the way a learner would see it. `llm` is the tightest bucket
-    // a learner can spend by ordinary use, and /tutor/explain sits in it, so asking the same
-    // question repeatedly must eventually answer 429 with a wait time.
+    // the rate limiter, surfaced the way a learner would see it. `lesson_requests` is the
+    // tightest pacing budget a learner can spend by ordinary use (/explain sits in it); §3
+    // renamed the wire field from the operator's bucket name to this one.
     //
     // How many calls that takes is the server's business, not this file's. A suite walked back
     // to back is started with ADAPT_RATE_LIMIT_MULTIPLIER (the probe's own advice in the summary
     // below), which widens every bucket; a hardcoded 16 then reports the limiter as broken for
     // doing exactly what it was configured to do. So ask the server how wide the bucket is.
     const quotas = await api("/api/v1/quotas", { headers: { cookie, "x-csrf-token": csrf } });
-    const burst = Number(quotas.body?.buckets?.llm?.[1] ?? 12) || 12;
+    const burst = Number(quotas.body?.pacing?.lesson_requests?.[1] ?? 12) || 12;
     const ceiling = Math.min(400, Math.ceil(burst) + 6);
     let limited = 0;
     let limitedBody = null;
@@ -1807,7 +1824,7 @@ async function main() {
       }
       if (r.status === 429) { limited = i; limitedBody = r.body; limitedHeader = r.headers.get("retry-after"); break; }
     }
-    check("failures", "a flooded learner is told to wait, with a number", limited > 0 && limitedBody?.detail?.error === "rate_limited" && Number(limitedBody?.detail?.retry_after_s) > 0, limited ? `429 after ${limited} calls (bucket ${burst}/run, flooded up to ${ceiling}): ${JSON.stringify(limitedBody.detail)} (retry-after header: ${limitedHeader})` : `no 429 in ${ceiling} calls -- the server reported an llm burst of ${burst} and refused none of them`);
+    check("failures", "a flooded learner is told to wait, with a number", limited > 0 && limitedBody?.detail?.error === "rate_limited" && Number(limitedBody?.detail?.retry_after_s) > 0, limited ? `429 after ${limited} calls (bucket ${burst}/run, flooded up to ${ceiling}): ${JSON.stringify(limitedBody.detail)} (retry-after header: ${limitedHeader})` : `no 429 in ${ceiling} calls -- the server reported a lesson-request burst of ${burst} and refused none of them`);
     // the throttle above is the app refusing; this is the app *misreading* the refusal. A 429
     // on the one read that answers "who am I" used to render the sign-in wall and tell the
     // learner to start again - which is how a half-finished placement gets thrown away.

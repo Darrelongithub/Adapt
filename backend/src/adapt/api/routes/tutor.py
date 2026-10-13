@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..deps import db_session, llm_guard, rate, require_csrf, shared_bank_write, student_from_request
+from ...security import secrecy
 from ...security.middleware import BodySizeGuard
 from ...assessment import bank
 from ...assessment import worked as W
@@ -124,13 +125,9 @@ async def explain(
             topic_id=body.topic_id,
         )
         s.commit()
+    body = secrecy.public_payload(reply.as_dict(), served_locally=reply.provider != "gemini")
     return {
-        **reply.as_dict(),
-        "provider_note": (
-            "answer written by Gemini using your own material as the source"
-            if reply.provider == "gemini"
-            else "answer extracted from your course material (no model call needed)"
-        ),
+        **body,
         "privacy": {
             "sent_to_model": bool(reply.llm.get("prompt_chars")),
             "redacted_fields": int(reply.llm.get("redacted_fields") or 0),
@@ -306,6 +303,35 @@ async def practice(
     return {"items": items}
 
 
+#: What kind of source each upstream search looks for, in learner-safe words. The service's own
+#: name never reaches the learner (brief §3: no provider names on any public surface, and the
+#: canary walk asserts it), but *what was tried and what came back* has to -- an empty result list
+#: with no explanation is the thing this mapping exists to prevent.
+_SOURCE_KINDS = {
+    "openalex": "papers and citations",
+    "arxiv": "papers and preprints",
+    "openlibrary": "books",
+    "youtube": "video",
+}
+
+
+def _public_sources(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per-source outcome, named by kind of source rather than by the service behind it."""
+    out = []
+    for row in rows:
+        name = str(row.get("provider") or row.get("name") or "")
+        out.append(
+            {
+                "kind": _SOURCE_KINDS.get(name, "other sources"),
+                "ok": bool(row.get("ok") or row.get("enabled")),
+                "source": row.get("source") or ("configured" if row.get("configured") else "off"),
+                "note": row.get("note") or row.get("quota_note") or "",
+                "count": row.get("count"),
+            }
+        )
+    return out
+
+
 @router.post("/resources/search")
 async def search_resources(
     body: ResourceBody,
@@ -320,7 +346,19 @@ async def search_resources(
     # TypeError straight through the route, so every resource search was a 500 -- and since
     # nothing in the app called this endpoint yet, nothing noticed.
     resp = await svcs.resources.search(body.query, limit_per_provider=body.limit, providers=body.providers)
-    data = resp.as_dict() if hasattr(resp, "as_dict") else dict(resp)
+    raw = resp.as_dict() if hasattr(resp, "as_dict") else dict(resp)
+    data = {
+        key: value
+        for key, value in raw.items()
+        if key not in {"providers", "results"}
+    }
+    # Results carry the upstream service's name inside each row; the kind label is what the
+    # learner sees, and the URL is kept because a citation without a way to open it is not one.
+    data["results"] = [
+        {**{k: v for k, v in row.items() if k != "provider"}, "kind": _SOURCE_KINDS.get(str(row.get("provider") or ""), "other sources")}
+        for row in (raw.get("results") or [])
+    ]
+    data["sources"] = _public_sources(list(raw.get("providers") or []))
     data["retrieval_note"] = (
         "These were found by a search; that is not a claim that they are correct for you. "
         "Check against your own course notes before you trust a source."
@@ -335,16 +373,20 @@ async def search_resources(
     )
     data["picks"] = curated["picks"]
     data["picks_source"] = curated["picks_source"]
-    for key in ("note", "llm_status", "llm_picks"):
-        if curated.get(key):
-            data[f"picks_{key}"] = curated[key]
+    # Only the sentence travels: "how the picks were made" in runtime terms is console detail.
+    if curated.get("note"):
+        data["picks_note"] = curated["note"]
     return data
 
 
 @router.get("/resources/status")
 def resources_status(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
     svcs = current()
-    return {"providers": svcs.resources.status() if svcs.resources else [], "settings": {"cache_ttl_hours": get_settings().resource_cache_ttl_hours}}
+    return {
+        "sources": _public_sources(svcs.resources.status() if svcs.resources else []),
+        "cache_days": max(1, get_settings().resource_cache_ttl_hours // 24),
+        "note": "Search results are cached for a few days, so a source seen once is still there when the network is not.",
+    }
 
 
 @router.get("/syllabus")

@@ -19,6 +19,19 @@ to land first: a green baseline suite is the floor the other workstreams stand o
 `agent-notes/1-baseline.md` and the phase 2 report in `docs/FUNCTIONALITY_ROUND.md`; its handoff file
 stays in the repo as documentation. Hand out the other five.
 
+## Status (updated by the integrator session, 2026-10-13)
+
+Agents 3, 5 and 6 have landed (#9, #10, #12, #14) and their work is merged into
+`arena/06d446fc-adapt`; the merged tree is green (887 backend tests, 234 probe checks) after the
+integration described in `agent-notes/7-integration.md` and the integration report in
+`docs/FUNCTIONALITY_ROUND.md`. **Agent 2 (phase 3) is the one still outstanding** - hand that file
+out. PRs #11 and #13 landed on `main` rather than on the arena branch and are reconciled at the
+final merge, so hand agents the *arena* branch as their base, as the files say.
+
+If you are starting agent 4 or 5 now: the merged tip includes the §3 boundary and the route
+vocabulary it produced (see the integration note), so name it in the brief you paste - an adapter
+that publishes a provider name will fail the canary test.
+
 ## How to run it
 
 1. Open a fresh agent session per file (own checkout, own branch). Paste the file's contents as the

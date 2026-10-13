@@ -53,6 +53,14 @@ def _normal_key(key: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(key).lower())
 
 
+#: Keys that merely contain the word "model" without naming an AI model or its configuration.
+#: `model` is the learner model that §2A requires on `/profile`'s shared snapshot;
+#: `model_version` is its version; `sent_to_model` is the provider-neutral honesty flag §3 asks
+#: for; `model_calls_saved` counts lessons answered without a model call. `model_name`,
+#: `model_id`, `ai2_model` and the rest stay banned: those name a deployed model.
+_MODEL_WORD_ALLOWED = frozenset({"senttomodel", "modelversion", "modelcallssaved"})
+
+
 # The public protocol has no need for operational AI/quota metadata.  Dropping the
 # whole metadata object is safer than trying to preserve every future nested shape.
 _DROP_KEYS = frozenset(
@@ -71,13 +79,11 @@ _DROP_KEYS = frozenset(
         "authorization",
         "ai1provider",
         "ai2provider",
-        "model",
         "models",
         "modelid",
         "modelname",
         "modelms",
         "modelsize",
-        "modelversion",
         "modelconfig",
         "modelconfiguration",
         "modelpath",
@@ -91,8 +97,6 @@ _DROP_KEYS = frozenset(
         "sttmodel",
         "ttsmodel",
         "ttsengine",
-        "voiceid",
-        "voices",
         "llm",
         "llmmeta",
         "llmstatus",
@@ -184,7 +188,7 @@ def _is_private_public_key(key: object, settings: Any | None) -> bool:
         return True
     if (
         "model" in normalized
-        and normalized != "senttomodel"
+        and normalized not in _MODEL_WORD_ALLOWED
         and not any(
             context in normalized
             for context in ("learner", "learning", "mathematical", "conceptual")
@@ -216,6 +220,40 @@ def _scrub_value(value: Any, settings: Any | None) -> Any:
     if isinstance(value, (list, tuple)):
         return [_scrub_value(child, settings) for child in value]
     return value
+
+
+#: Keys that name the runtime service behind an answer, or account for what it spent. A learner
+#: gets the *effect* (was this written for me, or taken from my own material) and never the
+#: service's identity or its spend -- brief 3, "applies to everything".
+_PRIVATE_PAYLOAD_KEYS = frozenset(
+    {
+        "provider",
+        "providernote",
+        "providername",
+        "providers",
+        "llm",
+        "llmmeta",
+        "llmstatus",
+        "model",
+        "modelname",
+        "modelms",
+        "modelsize",
+        "tokensin",
+        "tokensout",
+    }
+)
+
+
+def public_payload(data: Mapping[str, Any], *, served_locally: bool) -> dict[str, Any]:
+    """A reply body with the service identity replaced by the one fact the learner needs.
+
+    ``served_by`` is the honest, provider-neutral marker: ``"your own material"`` when the answer
+    was assembled locally, ``"written for you"`` when a model wrote it (which is also how the
+    product already talks about generated content: "written for you, not from your notes").
+    """
+    out = {k: v for k, v in data.items() if _normal_key(k) not in _PRIVATE_PAYLOAD_KEYS}
+    out["served_by"] = "your own material" if served_locally else "written for you"
+    return out
 
 
 def scrub_public_payload(value: Any, settings: Any | None = None) -> Any:
