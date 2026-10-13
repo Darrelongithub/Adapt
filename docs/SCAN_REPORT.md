@@ -272,7 +272,7 @@ cd /home/user/Adapt/backend
 ../.venv/bin/python -m adapt.cli demo --turns 3                     # exit 0 (whole loop, temp DB)
 
 cd /home/user/Adapt/frontend
-npm run lint        # contract ok: 74 routes / 49 calls, tsc clean
+npm run lint        # contract ok: 75 routes / 49 calls, tsc clean
 npm run build       # built (static pages)
 cd .. && node scripts/demo.mjs --json          # warnings: []
 
