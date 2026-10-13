@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from sqlalchemy import select
 
 from .config import get_settings
 
@@ -335,6 +336,85 @@ def doctor(as_json: bool = typer.Option(False, "--json")) -> None:
 # --------------------------------------------------------------------------- #
 # the learning loop
 # --------------------------------------------------------------------------- #
+
+
+@app.command("rebuild-model")
+def rebuild_model(
+    student_id: str | None = typer.Option(None, "--for", help="learner id (or use --all)"),
+    all_learners: bool = typer.Option(False, "--all", help="rebuild every learner with evidence"),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="recompute and report the comparison, but leave the stored model alone",
+    ),
+) -> None:
+    """Recompute a learner's model from the evidence log, and say whether it changed.
+
+    This is the check the brief asks for made usable: ``equal: true`` means the stored model is
+    exactly what a from-scratch fold of the log produces, which is what makes rebuilding safe to
+    run after a bug fix, a parameter change or a restored backup. It is also the only thing that
+    would *notice* a model that drifted from its own log.
+
+    ``--dry-run`` reports the diff without storing the rebuilt model, for the case where the answer
+    is "yes it drifted" and somebody wants to look before the version pointer moves.
+    """
+    from .services import build
+
+    if not all_learners and not student_id:
+        _echo({"error": "give --for <learner id>, or --all to rebuild every learner with evidence"})
+        raise typer.Exit(code=2)
+    svcs = build()
+    store = svcs.state
+    ids = [student_id] if not all_learners and student_id else []
+    if all_learners:
+        from .db.models import StateEvidence
+
+        with svcs.db.session() as s:
+            ids = sorted({row for (row,) in s.execute(select(StateEvidence.student_id)).all()})
+    if not ids:
+        _echo({"learners": [], "note": "nothing to rebuild: no evidence rows and no --for given"})
+        raise typer.Exit(code=0)
+    out: list[dict[str, Any]] = []
+    for sid in ids:
+        titles = store.title_map()
+        if dry_run:
+            from .state.model import build_model
+
+            rows = store.evidence_rows(sid)
+            rebuilt = build_model(rows, titles=titles)
+            current = store.latest_version_row(sid)
+            same = bool(current is not None and current.model == rebuilt)
+            out.append(
+                {
+                    "learner_id": sid,
+                    "version": None if current is None else current.version,
+                    "evidence_count": len(rows),
+                    "equal": same or current is None,
+                    "note": (
+                        "the stored model already equals a rebuild"
+                        if same or current is None
+                        else "the stored model differs from a rebuild; re-run without --dry-run to store the rebuild"
+                    ),
+                }
+            )
+        else:
+            out.append(store.rebuild_model(sid, titles=titles))
+    _echo({"learners": out})
+
+
+@app.command("matrix")
+def matrix_cmd() -> None:
+    """Print the write-permission matrix: which module may write which domain.
+
+    Printed rather than only asserted in tests because the matrix is the brief's "the AI proposes,
+    code decides" rule as data, and an operator asking "could this component have written that row?"
+    should be able to answer it from a shell without reading the source.
+    """
+    from .state.permissions import DOMAINS, MODULES, matrix, violations
+
+    # Not a hard-coded list: the same generated grid the tests assert over, plus every (module,
+    # domain) pair the matrix refuses, so the output cannot disagree with the enforcement.
+    _echo({"matrix": matrix(), "refused": violations((m, d) for m in MODULES for d in DOMAINS)})
 
 
 @app.command()

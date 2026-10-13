@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from ..assessment import generated as GEN
 from ..assessment.grading import grade as grade_answer
 from ..assessment.selector import expected_success_rate
+from ..state import EvidenceEvent
 from ..db.models import (
     ActiveAdaptation,
     Attempt,
@@ -401,6 +402,63 @@ async def submit(
             kind="scheduled",
         )
         retention["was_due"] = True
+    # ---- the shared store (round brief 2A) --------------------------------- #
+    # The evidence log is the one place a scored observation is written, and it is written *here*
+    # because only the code layer may write it. Everything downstream (the versioned model, the
+    # failure loop, a rebuild) reads this log rather than the tables the app happens to keep.
+    #
+    # It is additive: the trace above still lands in ``bkt_states`` and the tests that read that row
+    # keep working. What the store adds is that the *same* fact is now addressed by an event id, so
+    # re-ingesting it cannot double-count, and carries the weight its source deserves.
+    try:
+        store = getattr(services, "state", None)
+        if store is not None:
+            store.ingest(
+                student_id,
+                EvidenceEvent(
+                    event_id=f"att_{attempt_id}",
+                    kind="attempt",
+                    source_type="controlled",
+                    topic_id=item["topic_id"],
+                    item_id=item_id,
+                    correct=bool(correct) if correct is not None else None,
+                    score=float(score) if score is not None else None,
+                    session_id=session_id,
+                    payload={
+                        "method": effective.method,
+                        "attempt_no": attempt_no,
+                        "hints_used": int(m.get("hints_used") or 0),
+                        "grading_method": graded.method,
+                        "kind_seen": item.get("kind"),
+                    },
+                ),
+            )
+            # The model is a pure fold of the log, so advancing it here is safe and idempotent: an
+            # unchanged log produces an identical payload and no new version.
+            store.advance_model(student_id, module="ai1", reason="ingest", titles=store.title_map())
+            # Step 5 of the turn cycle: record what the learner saw, against the plan that served it.
+            state = store.session_state(student_id, session_id) if session_id else {}
+            plan_id = state.get("plan_id")
+            store.record_delivery(
+                student_id,
+                block=f"item:{item_id}",
+                plan_id=str(plan_id) if plan_id else None,
+                seen={
+                    "item_id": item_id,
+                    "topic_id": item["topic_id"],
+                    "kind": item.get("kind"),
+                    "answer": graded.method,
+                },
+                why={
+                    "correct": bool(correct) if correct is not None else None,
+                    "model_version": store.latest_version(student_id),
+                    "reason": "the learner answered this item",
+                },
+                session_id=session_id,
+            )
+    except Exception:  # pragma: no cover - the store must never be able to lose an answer
+        log.exception("attempts: the state store could not record this attempt (the answer is still stored)")
+
     # ---- phase 5: the loop. Fail -> diagnose -> reteach -> matched -> compare ---- #
     next_step, compare = _reteach_step(
         services,

@@ -83,7 +83,7 @@ and `scripts/teaching_quality_eval.py` writing `QUALITY_REPORT.md`.
 - [x] Phase 1.1 browser-answer defect — root cause found: the `Opening` overlay (`position: fixed; inset: 0; z-index: 200`, rendered from `app/layout.tsx` on **every** route) swallows the first click on `/diagnose`; the same component concatenates its words (`.opening-word { display: inline-block }` trims the trailing space) and the placement intro starts mid-sentence because the backend string does
 - [ ] Phase 1.1–1.10 fixes, with tests
 - [ ] Phase 1.4.2 BKT calibration
-- [ ] Phase 1.4.3 shared state, orchestrator, `adapt rebuild-model`
+- [x] Phase 1.4.3 shared state, orchestrator, `adapt rebuild-model`
 - [ ] Phase 2 baseline
 - [ ] Phase 3 subject round
 - [ ] Phase 4 content engine + `QUALITY_REPORT.md`
@@ -101,8 +101,10 @@ unverified).
 
 ## Phase 1 report — make the existing loop work, and fix the known teaching defects
 
-Status: **§4.1 complete, §4.2 complete, §4.3 not started** — so the Phase 1 gate (which includes
-4.3) is **not** passed yet. Everything below is measured; anything I could not run says so.
+Status: **§4.1 complete, §4.2 complete, §4.3 complete** (see the §4.3 report below). The Phase 1
+gate is passed on everything that can be executed in this environment: the suite is green, the live
+app was driven over HTTP against its real encrypted database, and the two things that cannot run
+here (Playwright/Chromium, an actual model provider key) are listed in `docs/UNVERIFIED.md`.
 
 ### Files changed in this phase
 
@@ -214,8 +216,106 @@ Status: **§4.1 complete, §4.2 complete, §4.3 not started** — so the Phase 1
 
 ### Still open in this phase
 
-* §4.3 (shared state, Orchestrator, `adapt rebuild-model`) — not started. It gates Phase 2.
 * The Playwright script exists but has never been executed here; until it runs on a machine with
-  browsers, no browser-level claim in this round is verified.
-* `npm run lint` (the repo's contract checker + tsc) has not been run since the frontend edits; only
-  `tsc --noEmit` has.
+  browsers, no browser-level claim in this round is verified (`docs/UNVERIFIED.md`).
+* `npm run lint` was re-run after the last frontend edit and passes (see the §4.3 report).
+* §4.3 migrations to the *old* paths are partial by design: the evidence log, plans, deliveries and
+  the learner model are written by the live app, while AI 1's own analysis path (`ai1.analyze`,
+  `bkt_states`, hypotheses, proposals) still writes its own tables. Both are updated from the same
+  attempts; the store is additive rather than a rewrite of phase-4 machinery. What remains is for
+  AI 1's analysis to *read its inputs from the store*; that is listed in `docs/UNVERIFIED.md`.
+
+---
+
+## 1.3 Phase 1 — §4.3 report: the shared learner state, and the Orchestrator
+
+**What §2A asked for, and what was built.** One store, one turn cycle, one snapshot per read.
+
+| §2A requirement | Where it lives now | How it is proved |
+|---|---|---|
+| One source of truth, typed service layer | `backend/src/adapt/state/store.py` (`LearnerState`) | `tests/test_state_foundation.py` (52 tests) |
+| Immutable snapshot per read | `state/snapshot.py` (`LearnerSnapshot`, `MappingProxyType` + tuples), `LearnerState.get_snapshot` | `test_a_snapshot_cannot_be_edited`, `test_thaw_gives_back_a_mutable_copy` |
+| Append-only evidence log, idempotent ingestion | `state_evidence` table (unique `(student_id, event_id)`), `LearnerState.ingest` / `ingest_many` | `test_a_duplicate_event_id_is_counted_once`, `test_two_writers_racing_on_the_same_event_produce_one_row` |
+| Weighted sources (controlled 1.0, observational ≈0.4) | `WEIGHT_CONTROLLED` / `WEIGHT_OBSERVATIONAL` in `state/store.py`, applied in `state/model.py` | `test_an_observational_event_moves_the_estimate_less_than_a_controlled_one` |
+| Derived, versioned learner model | `model_versions` table (PK `(student_id, version)`, rows never updated), `state/model.py` fold | `test_a_model_version_row_is_immutable_in_practice`, `test_a_learner_with_nothing_measured_has_no_version_row` |
+| Rebuildable from the log (`adapt rebuild-model`) | `LearnerState.rebuild_model`, `adapt rebuild-model [--for X | --all | --dry-run]` | `test_rebuild_equals_incremental`, `test_rebuild_equals_incremental_after_a_real_lesson`, `test_the_cli_can_rebuild_a_model_and_reports_equality` |
+| Write-permission matrix, enforced and tested | `state/permissions.py`; every write goes through `PERM.check_write` | `test_the_matrix_is_the_table_in_the_brief`, `test_a_module_cannot_write_another_modules_domain`, `test_no_module_writes_outside_its_row` |
+| No AI module imports another | architecture test, static scan of `adapt/ai/*.py` | `test_no_ai_module_imports_another`, `test_the_state_package_imports_no_ai_module` |
+| Content registry, hashed ids, validation status | `content_packs` (PK = `cpk_sha256…`), `put_content` / `content_for` / `set_validation`, `Orchestrator.ensure_content` | `test_a_content_id_is_the_hash_of_its_content`, `test_ensure_content_reuses_an_existing_pack_without_calling_the_generator` |
+| Teaching memory | `teaching_memory` table (unique `(student, session, kind, ref)`), `remember` / `memory`, carried in the snapshot | `test_teaching_memory_survives_a_re_plan_and_a_new_session`, `test_the_snapshot_carries_what_was_already_asked` |
+| Lesson plans, deliveries, `why` provenance | `lesson_plans` / `deliveries` tables, `Orchestrator.plan` / `deliver` | `test_a_delivery_records_what_was_shown_and_why`, `test_answering_an_item_records_a_delivery_with_its_why` |
+| Session state (topic, block, pace, fatigue) | `session_states` (optimistic `version`, `ModelConflict` on a stale expect) | `test_a_stale_expect_version_is_refused`, `test_replan_mid_lesson_keeps_the_block_and_the_teaching_memory` |
+| Deterministic turn cycle 1–5 | `state/orchestrator.py` (`cycle`, `ingest`, `advance_model`, `ensure_content`, `plan`, `deliver`) | `test_the_cycle_does_not_replan_when_the_model_has_not_moved`, `test_the_cycle_ingests_events_it_is_handed` |
+| Re-plan mid-lesson without a restart | `Orchestrator.replan` (supersedes the plan, leaves block and memory alone) | `test_replan_mid_lesson_keeps_the_block_and_the_teaching_memory`, `test_a_wrong_answer_moves_the_plan_without_restarting_the_lesson` |
+| "AI 1/2/3" out of learner-facing copy | placement intro rewritten; tutor/resource/status notes rewritten; frontend mock strings cleaned | `test_learner_facing_copy_has_no_internal_component_names` |
+| `ai/ai3.py` renamed — it is a scene narrator, not AI 3 | `ai/scene_narrator.py` (`SceneNarrator`), `SCENE_NARRATOR_SYSTEM` | `test_the_scene_narrator_is_not_called_ai3_anywhere` |
+| Console-only configuration hooks | `adapt matrix` added; `rebuild-model` added | `test_the_cli_prints_the_write_matrix` |
+
+**Files changed in §4.3.**
+
+* new: `backend/src/adapt/state/{__init__,permissions,snapshot,model,store,orchestrator}.py`
+* new: `backend/migrations/versions/0007_learner_state_store.py` (the same seven tables, for an
+  existing database — `create_all` cannot alter tables, and `alembic check` fails a model change
+  with no revision)
+* new: `backend/tests/test_state_foundation.py` (52 tests, listed above)
+* `backend/src/adapt/db/models.py` — seven new tables
+* `backend/src/adapt/services/__init__.py` — `AppServices.state`, `AppServices.orchestrator`, AI 2
+  gets the store; the narration component is named in the status payload
+* `backend/src/adapt/services/attempts.py` — every scored attempt is appended to the evidence log
+  and recorded as a delivery, and the model is advanced from the log (idempotently)
+* `backend/src/adapt/api/routes/learning.py` — starting a lesson records its plan; serving the
+  practice queue records the delivery; `/profile` additionally returns `shared_state`
+* `backend/src/adapt/ai/ai2.py` — AI 2's context carries the store snapshot and its
+  `model_version` instead of assembling a private view
+* `backend/src/adapt/ai/ai3.py` → `ai/scene_narrator.py`, `ai/prompts.py` (constant renamed,
+  old name kept as an alias for one release), `services/lessons.py`, `api/routes/lessons.py`
+* `backend/src/adapt/cli.py` — `adapt rebuild-model`, `adapt matrix`
+* `frontend/src/lib/mock.ts`, `frontend/src/app/proposals/page.tsx` — learner-facing strings
+
+**Commands run, and what they returned.**
+
+| Command | Result |
+|---|---|
+| `pytest -q` | **725 passed**, 1 warning, 52.4 s (673 before §4.3) |
+| `pytest -q tests/test_state_foundation.py` | **52 passed** |
+| `pytest -q tests/test_migrations.py` | 10 passed (the new revision is picked up; `alembic check` is clean) |
+| `npm run lint` | contract ok — 75 backend routes vs 52 frontend calls, scene kinds agree, tsc clean |
+| `npm run probe` (frontend, jsdom + live API) | **209/210** on a freshly restarted API. The single failure (`a flooded learner is told to wait, with a number`) **reproduces at baseline `39849f8`**: the flood loop requires the refusal to arrive *after* at least one success, and by that point in the run the suite's own LLM calls have drained the bucket, so the first flood call is the refused one (`limited = 0`, check wants `> 0`). The server did refuse with `{"error": "rate_limited", "retry_after_s": …}` and a `retry-after` header — measured directly: 12 successes then a 429 on the 13th call. It is a probe artefact of bucket state, not a regression, and the check is left as it is. |
+| `python -m adapt.cli matrix` | prints the matrix and the 21 refused `(module, domain)` pairs |
+| `ADAPT_DATA_DIR=.data_dev python -m adapt.cli rebuild-model --all` | `{"learner_id": "stu_…", "version": 2, "previous_version": 2, "equal": true, "evidence_count": 1}` |
+| live API on :8000 (`uvicorn`), driven over HTTP with a cookie jar | guest student → session → diagnostic (8 items) → one deliberately wrong attempt → `/profile`: `shared_state.model_version = 2`, `evidence_count = 1`, `Integer operations p=0.08 n=1 ci=[0.001, 0.437] band=new`; `/practice?count=3` returned 3 items and recorded a delivery |
+
+**The dev database upgrade is real, not assumed.** `.data_dev/adapt.db` was created *before* these
+tables existed. Restarting the app against it added all seven tables at startup (verified by
+inspecting the schema with the app's own `Database`), which is the path a returning operator takes.
+
+**Two things worth recording, because they cost time and would cost it again:**
+
+* Opening the SQLCipher file with a *plain* `sqlite3` client while the server was running left a
+  zero-byte `-wal` behind, and every new SQLCipher connection then failed with `disk I/O error`
+  ("file is not a database" from the plain client was the first clue). Nothing was lost — a clean
+  shutdown checkpointed the WAL away and the data was intact (65 students, 76 attempts) — but the
+  lesson is: probe that database with the app's own `Database`, never with `sqlite3`.
+* A test caught a real defect in the first cut of the attempt-path wiring: the store call used a
+  variable (`hints_used`) that does not exist in that scope, and because the store call is wrapped
+  so that it can never lose an answer, the failure was silent apart from a log line. That is the
+  argument for the "an attempt lands in the log" test existing at all.
+
+### Deviations in §4.3 (and why)
+
+1. **`code` may write `content`, AI 2 cannot set its own validation verdict.** The brief's table
+   gives content to AI 2 and "the AI proposes, code decides" needs the code layer able to reject a
+   pack. The narrowing is enforced both ways: `put_content(module="code")` raises (the deterministic
+   layer cannot author content) and `set_validation(module="ai2")` raises (an author cannot certify
+   itself). Both directions are tested.
+2. **`code` also holds `approvals`, `preferences` and `session_state`.** The brief lists "evidence
+   log, scores"; the other three are the learner's own decisions and the app's own state, which no
+   AI may write. This is a superset for the code layer, not a relaxation for an AI: AI 1, AI 2 and
+   AI 3 write exactly the sets the brief gives them.
+3. **Seven new tables instead of columns on existing ones.** `create_all` cannot `ALTER TABLE`, so a
+   column-based design would exist only on a fresh database. The store is therefore additive, and
+   revision `0007` makes the same tables exist for an upgraded database.
+4. **The old phase-4 path still runs.** Attempts are written to `learner_events`, `bkt_states`,
+   `evidence` *and* to the new log. Removing the old writes would break the phase-4 tests that
+   read them; the brief says not to weaken tests, so the migration is additive and the remaining
+   work (AI 1's analysis reading its inputs from the store) is recorded rather than half-done.

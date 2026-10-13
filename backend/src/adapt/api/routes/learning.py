@@ -12,7 +12,10 @@ the codebase allowed to create those rows.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+log = logging.getLogger("adapt.routes.learning")
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -85,6 +88,17 @@ def start_session(
         course_id=body.course_id,
         device_hint=body.device_hint,
     )
+    # The lesson now has a plan with a model version on it (brief 2A, step 4). It is recorded here,
+    # at the moment the lesson starts, so every later "why does this lesson look like this?" panel
+    # has a version to point at — including the mid-lesson re-plan that replaces it.
+    try:
+        current().orchestrator.cycle(
+            student.id,
+            session_id=sess.id,
+            blocks=[{"kind": body.mode, "topic_id": None, "note": "opening block chosen by the plan"}],
+        )
+    except Exception:  # pragma: no cover - a store hiccup must not stop the learner starting
+        log.exception("sessions: could not record the opening plan (the session still started)")
     return {
         "session_id": sess.id,
         "mode": sess.mode,
@@ -173,10 +187,13 @@ def diagnostic(
         # placement screen and used to print the bare clause, so the page began mid-sentence.
         "purpose": "This placement puts you on each topic with a confidence band — not to grade you.",
         "items": items,
+        # "AI 1" used to be printed here. The learner is not told about the app's internal
+        # component names: what they need to know is what is recorded, what is done with it, and
+        # who decides. Brief section 2A: the names are internal only.
         "how_it_is_used": (
-            "Answers, timings, hint use and answer changes are recorded as events. AI 1 turns them into "
-            "mastery estimates and possible explanations; it proposes a change only if the pattern is "
-            "consistent, and nothing is applied until you answer."
+            "Answers, timings, hint use and answer changes are recorded as events. They are turned "
+            "into mastery estimates and possible explanations; a change is only proposed when the "
+            "pattern is consistent, and nothing is applied until you agree to it."
         ),
         "note_on_time": "If you need longer, say so - time spent is evidence about the interaction, not a score.",
     }
@@ -296,7 +313,19 @@ def practice(
 ) -> dict[str, Any]:
     svcs = current()
     picks = svcs.ai2.next_items(student.id, topic_id=topic_id, count=max(1, min(12, count)))
-    return {"items": picks, "why": "selected for expected information gain, review due date and gap utility"}
+    why = "selected for expected information gain, review due date and gap utility"
+    # "What the learner actually saw, and why" (brief 2A, step 5). The queue is the delivery; the
+    # store keeps the item ids and the reason, with the model version that produced it.
+    try:
+        svcs.orchestrator.deliver(
+            student.id,
+            block="practice_queue",
+            seen={"items": [p.get("item_id") or p.get("id") for p in picks], "topic_id": topic_id},
+            why={"reason": why},
+        )
+    except Exception:  # pragma: no cover - recording a delivery must never withhold the queue
+        log.exception("practice: could not record the delivery (the queue is still served)")
+    return {"items": picks, "why": why}
 
 
 @router.post("/review/complete")
@@ -368,7 +397,13 @@ def _loop_shape(d: dict[str, Any]) -> list[dict[str, str]]:
 @router.get("/profile")
 def profile(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
     with current().db.session() as inner:
-        return current().ai1.snapshot(inner, student.id)
+        out = current().ai1.snapshot(inner, student.id)
+    # ``shared_state`` is the Learner State Store's own view (brief 2A): the versioned model plus
+    # teaching memory, built once from the log. It is additive — ``mastery`` above is the profile
+    # AI 1 has always reported — and it is what the screens use to say *which* version of a learner
+    # they are looking at. One call, one immutable snapshot.
+    out["shared_state"] = current().state.get_snapshot(student.id).as_dict()
+    return out
 
 
 @router.get("/dashboard")

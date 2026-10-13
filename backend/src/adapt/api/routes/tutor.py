@@ -371,7 +371,7 @@ def materials(topic_id: str | None = None, s: Session = Depends(db_session), stu
             }
             for m in rows
         ],
-        "note": "AI 2 answers from these; that is why a wrong answer here is our fault, not the model's",
+        "note": "these are what the tutor answers from; that is why a wrong answer here is our fault, not a model's",
     }
 
 

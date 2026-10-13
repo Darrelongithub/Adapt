@@ -137,7 +137,7 @@ export default function Proposals() {
                 setBusy(false);
               }
             }}
-            title="asks AI 1 whether the approved changes are measurably helping"
+            title="asks whether the approved changes are measurably helping"
           >
             Check the effect
           </Btn>

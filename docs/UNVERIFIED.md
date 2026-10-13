@@ -397,3 +397,32 @@ area. What changed, and what a phone still has to confirm:
   reachable and visibly focused; create an account and confirm `/onboarding` shows the consent
   answer carried from the door; then open `/progress` and confirm the chart, its
   table and the marked sidebar item are all visible together at 1280px and at 375px.
+
+## Round: functionality (Phase 1, §4.3 shared learner state) — 2026-10-13
+
+* **Not verified — anything in a browser.** Chromium cannot be installed in this environment
+  (`npx playwright install` ends in `ECONNRESET`), so `frontend/tests-e2e/placement.mjs` still has
+  never been executed and no screenshot has been taken. Every claim in the §4.3 report is from
+  `pytest`, the CLI, or HTTP calls against a running server — none of them is a rendering claim.
+* **Not verified — the §4.3 store under genuine multi-process concurrency.** The race test uses two
+  threads against one database file; two *processes* on the same SQLCipher file (the way a second
+  uvicorn worker would) are not exercised. The unique index and the optimistic `expect_version`
+  checks are the mechanism either way, but "two processes" is an assertion, not a measurement.
+* **Not verified — a *migration* of an existing encrypted database with real learner history.**
+  The seven tables were added to `.data_dev/adapt.db` by `create_all` at startup and the data was
+  intact (65 students, 76 attempts), but that is one database, on this machine, upgraded by
+  `create_all` rather than by `alembic upgrade head`. The Alembic path is covered by
+  `tests/test_migrations.py` on scratch databases only.
+* **Not verified — model-version history growing without bound.** Every advance writes a row and
+  nothing prunes them. For a demo-scale database that is a feature (the history is what
+  `rebuild-model` checks against); at scale it would need a retention policy, which does not exist.
+* **Known partial migration, deliberately.** AI 1's analysis path (`ai1.analyze`, `bkt_states`,
+  hypotheses, proposals) still writes its own tables and reads its own rows; the store is updated
+  alongside it from the same attempts. AI 2 now reads the learner's level from the store snapshot
+  (`ai2.context()["snapshot"]`, `model_version`), and the serving path writes plans and deliveries
+  through the Orchestrator. So "no AI reaches into another's tables" is true for the parts that were
+  moved and not yet true for AI 1's analysis internals.
+* **Not verified — the encrypted database after an abrupt kill.** The `disk I/O error` seen during
+  this phase was caused by a *plain* `sqlite3` client touching the SQLCipher file while the server
+  held it open; a clean shutdown cleared it and the data was intact. What an operator sees after a
+  hard kill (SIGKILL, power loss) with a WAL left behind has not been tested.

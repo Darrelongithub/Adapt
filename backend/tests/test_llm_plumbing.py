@@ -116,7 +116,7 @@ async def test_a_scene_is_authored_and_narrated_with_a_model_configured(services
     line without a key. The contract asserted is the one the learner sees: with a model that
     answers nothing useful, the lesson still plays and says why, rather than 500ing.
     """
-    from adapt.ai.ai3 import Answer
+    from adapt.ai.scene_narrator import Answer
 
     services.ai2.llm = _StubLLM({})
     authored = await services.ai2.author_scene(

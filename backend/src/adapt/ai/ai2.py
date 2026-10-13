@@ -167,12 +167,17 @@ class EducationalIntelligence:
         settings: Settings | None = None,
         llm: Any = None,
         resources: Any = None,
+        state: Any = None,
     ) -> None:
         self.sf = session_factory
         self.ai1 = ai1
         self.settings = settings or get_settings()
         self.llm = llm
         self.resources = resources
+        #: The shared Learner State Store (round brief 2A). This is how AI 2 reads the learner's
+        #: level: one immutable snapshot that says which ``model_version`` it came from, instead of
+        #: assembling a private view of the database. ``None`` in tests that build AI 2 on its own.
+        self.state = state
 
     # ------------------------------------------------------------------ #
     # context assembly
@@ -227,9 +232,15 @@ class EducationalIntelligence:
                     .order_by(Attempt.submitted_at.desc())
                 ).scalars().first()
                 last_attempt_correct = None if row is None else bool(row.correct)
+            # The store's view, built once, immutable, and stamped with its version. A caller that
+            # wants "what did the tutor know when it taught this?" reads this rather than the
+            # profile above, which is a live query and can move under it.
+            snapshot = self.state.get_snapshot(student_id) if self.state is not None else None
             return {
                 "profile": profile,
                 "profile_dict": profile.as_dict(),
+                "snapshot": snapshot,
+                "model_version": (snapshot.model_version if snapshot is not None else None),
                 "topic": topic,
                 "last_attempt_correct": last_attempt_correct,
                 "p_know": p_know,
