@@ -24,9 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
-
-from .seeds import stable_seed
+from typing import Any
 
 TEMPLATES: tuple[str, ...] = ("flow", "comparison_table", "timeline", "labelled_diagram")
 
@@ -115,10 +113,6 @@ def build_visual(
     if chosen not in TEMPLATES or not sentences:
         chosen = "flow"
         why = (why + "; falling back to flow") if sentences else "no usable sentences in the material"
-    if kind is None and seed and chosen == pick_template(text)[0] and len(sentences) > 2:
-        # A concept with no dominant shape gets a stable per-learner choice among
-        # the templates that do fit, so the same learner sees the same picture.
-        pass
     if chosen == "flow":
         nodes = [
             {"index": i + 1, "label": f"Step {i + 1}", "text": _short(s, 180), "decision": bool(re.search(r"\bif\b|\bwhen\b|\bunless\b", s, re.I))}
@@ -186,39 +180,3 @@ def _two_sides(sentence: str) -> tuple[str, str]:
     if not m:
         return (sentence, "")
     return (sentence[: m.start()], sentence[m.end() :])
-
-
-def render_text(visual: Mapping[str, Any] | None) -> str:
-    """A plain-text rendering, for anywhere that cannot draw (a TTS voice, a test).
-
-    The same content: a diagram the learner cannot see must not silently become no
-    diagram at all.
-    """
-    if not visual:
-        return ""
-    kind = str(visual.get("kind") or "")
-    title = str(visual.get("title") or "")
-    if kind == "comparison_table":
-        lines = [f"{title}"]
-        for row in visual.get("rows") or []:
-            lines.append(f"- {row.get('aspect')}: {row.get('left')} | {row.get('right')}")
-        return "\n".join(lines)
-    if kind == "labelled_diagram":
-        return "\n".join(
-            [title] + [f"- {row.get('label') or 'unlabelled'}: {row.get('text')}" for row in visual.get("labels") or []]
-        )
-    if kind == "timeline":
-        return "\n".join([title] + [f"- {n.get('when') or '—'}: {n.get('text')}" for n in visual.get("nodes") or []])
-    return "\n".join([title] + [f"{n.get('index')}. {n.get('text')}" for n in visual.get("nodes") or []])
-
-
-def visual_for_concept(*, title: str, text: str, learner_id: str = "", kind: str | None = None) -> dict[str, Any]:
-    """The dict a ``Pick.presentation`` carries. Seeded per learner when it matters."""
-    visual = build_visual(title=title, text=text, kind=kind, seed=str(stable_seed(learner_id, title)))
-    return visual.as_dict()
-
-
-def template_choice_is_stable(text: str, *, learner_id: str = "", runs: Sequence[int] = (1, 2, 3)) -> bool:
-    """Small helper used by the tests: the same learner, the same picture."""
-    first = build_visual(title="t", text=text, seed=learner_id).as_dict()
-    return all(build_visual(title="t", text=text, seed=learner_id).as_dict() == first for _ in runs)

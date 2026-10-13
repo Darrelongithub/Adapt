@@ -284,7 +284,6 @@ def grade_checklist(text: str, criteria: Sequence[Criterion], *, graded_by: str 
     # score. The learner's answer is data, on every path.
     graded_text = _INSTRUCTION_SHAPED.sub("", raw)
     spans = _spans(graded_text)
-    used: set[int] = set()
     listing_flags = 0
     keyword_only = 0
     for criterion in criteria:
@@ -299,7 +298,6 @@ def grade_checklist(text: str, criteria: Sequence[Criterion], *, graded_by: str 
             # the learner for being concise. What stops a list paying for everything is
             # ``_span_supports``: a span has to be a sentence, and it has to carry the
             # idea, not merely contain the word.
-            used.add(best[1])
             result.points.append(Point(criterion.id, criterion.statement, True, spans[best[1]], "evidence quoted from your answer"))
             continue
         # Why it failed: every idea word present but never in a sentence that makes
