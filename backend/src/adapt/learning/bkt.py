@@ -439,6 +439,134 @@ def _learn_rate_from_transitions(sequences: Sequence[Sequence[int]]) -> float:
     return num / den if den else 0.2
 
 
+def credible_interval(
+    p_know: float,
+    n_obs: int,
+    n_correct: int,
+    *,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+) -> tuple[float, float]:
+    """An interval for ``p_know``, from the evidence that actually exists.
+
+    The brief (4.2) asks for a range rather than a point estimate, and the reason is visible in
+    the product: "mastery 0.42" from three answers reads as a measurement, and it is not one.
+
+    The shape is a Beta posterior over the learner's *observed success rate* — the quantity the
+    answers are actually draws from — seeded with the model's own reading of the same answers:
+
+    * ``Beta(alpha + correct, beta + (n - correct))``, its 10th and 90th percentiles, moved
+      towards ``p_know`` by the weight the evidence supports (``n / (n + 6)``), so the interval
+      narrows as answers accumulate and stays wide when they do not;
+    * at ``n = 0`` the interval is the whole unit range: nothing measured, nothing claimed.
+
+    This is an interval on the observed success rate, **not** a posterior over the hidden
+    knowledge state (that would need the full forward-backward machinery and would be wider —
+    the hidden state is only ever seen through guess and slip). It is reported as "the range the
+    evidence supports", which is what it is.
+    """
+    n = max(0, int(n_obs))
+    k = max(0, min(n, int(n_correct)))
+    if n == 0:
+        return (0.0, 1.0)
+    a = max(0.5, alpha + k)
+    b = max(0.5, beta + (n - k))
+    lo = _beta_quantile(a, b, 0.10)
+    hi = _beta_quantile(a, b, 0.90)
+    centre = (lo + hi) / 2
+    half = (hi - lo) / 2
+    pull = min(1.0, n / (n + 6.0))
+    moved = (1 - pull) * (float(p_know) - centre)
+    return (clamp(centre + moved - half), clamp(centre + moved + half))
+
+
+def _beta_quantile(a: float, b: float, q: float, *, steps: int = 80) -> float:
+    """A quantile of Beta(a, b) by bisection.
+
+    80 bisections of the unit interval is far past the precision any surface prints (the
+    interval is shown as a percentage pair), and it costs microseconds.
+    """
+    lo, hi = 0.0, 1.0
+    for _ in range(steps):
+        mid = (lo + hi) / 2
+        if _beta_cdf(mid, a, b) < q:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def _beta_cdf(x: float, a: float, b: float) -> float:
+    """Regularised incomplete beta, I_x(a, b) — continued fraction (Lentz), NR §6.4."""
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    lbeta = math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
+    front = math.exp(a * math.log(x) + b * math.log(1 - x) - lbeta) / a
+    f, c, d = 1.0, 1.0, 0.0
+    for i in range(0, 300):
+        m = i // 2
+        if i == 0:
+            numerator = 1.0
+        elif i % 2 == 0:
+            numerator = (m * (b - m) * x) / ((a + 2 * m - 1) * (a + 2 * m))
+        else:
+            numerator = -((a + m) * (a + b + m) * x) / ((a + 2 * m) * (a + 2 * m + 1))
+        d = 1.0 + numerator * d
+        d = 1e-30 if abs(d) < 1e-30 else d
+        d = 1.0 / d
+        c = 1.0 + numerator / c
+        c = 1e-30 if abs(c) < 1e-30 else c
+        f *= c * d
+        if abs(1 - c * d) < 1e-12:
+            break
+    frac = front * (f - 1.0)
+    # The continued fraction converges quickly on one side of the mean only; the other side is
+    # the symmetry relation I_x(a, b) = 1 - I_{1-x}(b, a).
+    if x < (a + 1) / (a + b + 2):
+        return clamp(frac, 0.0, 1.0)
+    return clamp(1.0 - _beta_cdf_sym(1 - x, b, a, lbeta), 0.0, 1.0)
+
+
+def _beta_cdf_sym(x: float, a: float, b: float, lbeta: float) -> float:
+    """I_x(a, b) on the low side, for the reflected call above."""
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    front = math.exp(a * math.log(x) + b * math.log(1 - x) - lbeta) / a
+    f, c, d = 1.0, 1.0, 0.0
+    for i in range(0, 300):
+        m = i // 2
+        if i == 0:
+            numerator = 1.0
+        elif i % 2 == 0:
+            numerator = (m * (b - m) * x) / ((a + 2 * m - 1) * (a + 2 * m))
+        else:
+            numerator = -((a + m) * (a + b + m) * x) / ((a + 2 * m) * (a + 2 * m + 1))
+        d = 1.0 + numerator * d
+        d = 1e-30 if abs(d) < 1e-30 else d
+        d = 1.0 / d
+        c = 1.0 + numerator / c
+        c = 1e-30 if abs(c) < 1e-30 else c
+        f *= c * d
+        if abs(1 - c * d) < 1e-12:
+            break
+    return clamp(front * (f - 1.0), 0.0, 1.0)
+
+
+#: Below this many observations an estimate is labelled "early signal" wherever it is shown,
+#: with the count. Eight is where the interval below stops spanning most of the unit range:
+#: the label and the interval are two views of the same fact, so they share the number.
+EARLY_SIGNAL_N = 8
+
+
+def evidence_label(n_obs: int, *, min_n: int = EARLY_SIGNAL_N) -> str:
+    """How much to trust an estimate, in one word a screen can print."""
+    return "early signal" if int(n_obs) < min_n else "measured"
+
+
 def mastery_report(
     p_know: float,
     params: BKTParams,
@@ -488,9 +616,11 @@ GUESS_BY_KIND: dict[str, float] = {
     "mcq": 0.25,
     "choice": 0.25,
     "numeric": 0.02,
-    "text": 0.02,
+    # Short text: the brief's number (4.2). A typed sentence can be right by luck a little more
+    # often than a typed number can — there are more plausible sentences than plausible values.
+    "text": 0.05,
     "typed_number": 0.02,
-    "typed_text": 0.02,
+    "typed_text": 0.05,
     "teachback": 0.05,
     "worked_example": 0.0,
 }

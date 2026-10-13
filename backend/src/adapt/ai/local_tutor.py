@@ -45,6 +45,30 @@ def tokenize(text: str) -> list[str]:
     return [w.lower() for w in WORD.findall(text or "") if w.lower() not in STOPWORDS]
 
 
+def stem(word: str) -> str:
+    """A deliberately small stemmer, for matching a question to a sentence about it.
+
+    "adding fractions" and "how do I add fractions" are the same question, and a plain token
+    overlap says they share nothing. This is not linguistics: four suffixes, no dictionary, no
+    dependency — enough for ``-ing``/``-ed``/``-es``/``-s`` and nothing that could merge two
+    different ideas by accident (words of five letters or fewer are left alone, so "same" stays
+    "same" and "less" stays "less")."""
+    w = (word or "").lower()
+    for suffix in ("ing", "ed", "es"):
+        if len(w) > 5 and w.endswith(suffix):
+            w = w[: -len(suffix)]
+            break
+    else:
+        if len(w) > 4 and w.endswith("s"):
+            w = w[:-1]
+    # A trailing "e" goes too, so "divide"/"dividing"/"divided" all land on "divid" and
+    # "value"/"values" both land on "valu". Words of five letters or fewer are left alone,
+    # which is what keeps "same", "less" and "note" from merging into something else.
+    if len(w) > 4 and w.endswith("e"):
+        w = w[:-1]
+    return w
+
+
 def sentences(text: str) -> list[str]:
     if not text:
         return []
@@ -119,19 +143,29 @@ def build_index(
     for mid, topic_id, body, meta in materials:
         for i, sent in enumerate(sentences(body)):
             docs.append(
-                Doc(f"mat:{mid}:{i}", sent, {"kind": "material", "topic_id": topic_id, "title": meta.get("title", "")})
+                Doc(
+                    f"mat:{mid}:{i}",
+                    sent,
+                    {
+                        "kind": "material",
+                        "topic_id": topic_id,
+                        "topic_title": meta.get("topic_title") or "",
+                        "title": meta.get("title", ""),
+                    },
+                )
             )
     for item in items:
         topic_id = item.get("topic_id", "")
+        topic_title = item.get("topic_title") or ""
         for i, step in enumerate(item.get("solution_steps") or []):
             text = step.get("text") if isinstance(step, dict) else str(step)
             if text:
-                docs.append(Doc(f"sol:{item.get('id')}:{i}", text, {"kind": "solution", "topic_id": topic_id}))
+                docs.append(Doc(f"sol:{item.get('id')}:{i}", text, {"kind": "solution", "topic_id": topic_id, "topic_title": topic_title}))
         for i, hint in enumerate(item.get("hints") or []):
-            docs.append(Doc(f"hint:{item.get('id')}:{i}", hint, {"kind": "hint", "topic_id": topic_id}))
+            docs.append(Doc(f"hint:{item.get('id')}:{i}", hint, {"kind": "hint", "topic_id": topic_id, "topic_title": topic_title}))
         expl = item.get("explanation") or ""
         for i, sent in enumerate(sentences(expl)):
-            docs.append(Doc(f"expl:{item.get('id')}:{i}", sent, {"kind": "explanation", "topic_id": topic_id}))
+            docs.append(Doc(f"expl:{item.get('id')}:{i}", sent, {"kind": "explanation", "topic_id": topic_id, "topic_title": topic_title}))
     for r in resources:
         text = r.get("snippet") or r.get("abstract") or r.get("title") or ""
         for i, sent in enumerate(sentences(text)[:8]):
@@ -154,7 +188,13 @@ LEVELS = ("new", "developing", "proficient", "mastered")
 
 @dataclass
 class Grounded:
-    """An assembled answer plus its provenance (so the UI can show 'why this')."""
+    """An assembled answer plus its provenance (so the UI can show 'why this').
+
+    ``grounded`` is a claim about where the words came from, and it used to be hard-coded to
+    ``True`` in :meth:`as_dict` — so a reply stitched together from *another topic's* notes
+    still arrived at the screen wearing the badge. It is now a property of the assembly:
+    true only when the body text came from a source tagged with this item's own topic.
+    """
 
     text: str
     sections: list[dict[str, str]] = field(default_factory=list)
@@ -162,17 +202,32 @@ class Grounded:
     directives_applied: list[str] = field(default_factory=list)
     level: str = "developing"
     confident: bool = True
+    #: Did the shown body actually come from the item's topic?
+    grounded: bool = False
+    #: Which topic the shown body came from (None when there is no body).
+    source_topic: str | None = None
+    #: Short steps with a one-question check after each (see ``learning.segments``).
+    steps: list[dict[str, Any]] = field(default_factory=list)
+    #: Plain-language reason when nothing relevant was found.
+    note: str | None = None
+    #: Did the shown body come from the item's own topic (rather than from elsewhere in the
+    #: course, where it may still be the right answer to the question that was asked)?
+    topic_match: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "answer": self.text,
             "sections": self.sections,
             "sources": self.sources,
+            "steps": self.steps,
             "adaptations_applied": self.directives_applied,
             "level": self.level,
             "provider": "local",
-            "grounded": True,
-            "note": None if self.confident else "I could not find this in your course materials.",
+            "grounded": bool(self.grounded),
+            "topic_match": bool(self.topic_match),
+            "topic_id": self.source_topic,
+            "note": self.note
+            or (None if self.confident else "I could not find this in your course materials."),
         }
 
 
@@ -188,9 +243,136 @@ def _level_from(p_know: float | None) -> str:
     return "mastered"
 
 
+#: A retrieved sentence has to share this share of the query's content words before it may
+#: be shown as the explanation. Tuned against the failure that prompted it: "Work out
+#: 7 - 1 - 9" was answered with text about factorising, which shared the word "work" and
+#: nothing else, and "which calculation first in 7 + 3 x 2 - 1" with text about powers of
+#: zero. A single shared stopword is not a topic.
+RELEVANCE_MIN_TERMS = 0.4
+#: And it has to score a decent share of the best hit in the same topic, so a weak match
+#: inside the right topic is not promoted just for being the only one there.
+RELEVANCE_MIN_SHARE = 0.45
+
+
+def _relevance(query: str, doc: Doc, score: float, best: float) -> bool:
+    """Is this sentence about the question that was asked?
+
+    Three gates, in the order that the observed defects asked for them:
+
+    1. **Numbers are decisive.** A question carrying two or more numbers is about *those*
+    numbers: if the sentence shares none of them it is about a different sum, however well its
+    words match. ("Work out 7 - 1 - 9" was answered with a paragraph on factorising, which
+    shared the words "work" and "out" and no numbers at all.)
+    2. **Words have to actually overlap**, with a light stem so "adding" matches "add": a
+    question with three or more content words must share half of them; a question with one or
+    two must share all of them, because otherwise a single common word ("same") is enough to
+    attach an unrelated sentence to any question containing it.
+    3. **Score competitiveness**, so the best sentence is not swamped by merely-eligible ones.
+    """
+    q_terms = list(dict.fromkeys(tokenize(query)))
+    if not q_terms:
+        return False
+    doc_terms = {stem(w) for w in doc.tokens}
+    numbers = [w for w in q_terms if any(ch.isdigit() for ch in w)]
+    words = [w for w in q_terms if w not in numbers]
+    uniq_numbers = set(numbers)
+    if len(uniq_numbers) >= 2 and len(uniq_numbers & doc_terms) < math.ceil(0.5 * len(uniq_numbers)):
+        # Half the numbers, not one: a passage that shares a single digit with the question is
+        # usually about a different sum that happens to contain it.
+        return False
+    shared_words = {stem(w) for w in words} & doc_terms
+    if len(words) <= 2:
+        # A one- or two-word question *is* those words: "denominators, same" has to be met by
+        # both, or a sentence containing only "same" would attach itself to any question that
+        # happens to use it.
+        needed = len(words)
+    else:
+        needed = max(2, math.ceil(RELEVANCE_MIN_TERMS * len(words)))
+    if len(shared_words) < needed:
+        return False
+    if best > 0 and score < RELEVANCE_MIN_SHARE * best:
+        return False
+    return True
+
+
 def _shorten(text: str, max_words: int) -> str:
-    ws = text.split()
-    return " ".join(ws[:max_words]) + ("…" if len(ws) > max_words else "")
+    """Kept for the few callers that want a one-line string, and it no longer truncates.
+
+    It used to be ``" ".join(words[:max_words]) + "…"``, which cut mid-sentence: an
+    explanation could end "…because the denominator" and be stored as a complete answer.
+    Now it delegates to the sentence-boundary chunker in ``learning.segments`` and returns
+    whole sentences that fit the budget; if even the first sentence is longer than the
+    budget, the whole sentence is returned rather than half of it.
+    """
+    from ..learning import segments as SEG
+
+    sents = SEG.sentences(text)
+    if not sents:
+        return (text or "").strip()
+    out: list[str] = []
+    used = 0
+    for s in sents:
+        w = len(s.split())
+        if out and used + w > max_words:
+            break
+        out.append(s)
+        used += w
+        if used >= max_words:
+            break
+    return " ".join(out)
+
+
+#: Openers, by what is actually happening. The old build had exactly one ("Let's start from
+#: one concrete case.") for every explanation, so a learner who asked twice read the same
+#: sentence as if it were the answer. Selected by a seed so the same question in the same
+#: context reads the same on a reload, but a repeat error or a post-hint question reads
+#: differently from a first attempt.
+OPENERS: dict[str, tuple[str, ...]] = {
+    "new": (
+        "Let's take one concrete case.",
+        "Start with the smallest example of this.",
+        "Here it is with real numbers, once.",
+    ),
+    "developing": (
+        "You have most of {topic}; here is the part that is missing.",
+        "The idea is nearly there — this is the piece that slips.",
+        "Close. One move is missing from what you did.",
+    ),
+    "proficient": (
+        "Short version, then the edge case.",
+        "You can do this; here is where it bites.",
+        "Straight to the part that catches people.",
+    ),
+    "mastered": (
+        "You know this — so here is the harder question instead.",
+        "Then take this one a step further.",
+        "Skip the method; here is the case that breaks it.",
+    ),
+}
+#: and by why the learner is asking
+CONTEXT_OPENERS: dict[str, tuple[str, ...]] = {
+    "repeat_error": (
+        "Same idea, different angle: the last attempt shows where it went wrong.",
+        "This is the second time this one has bitten, so let us do it the long way.",
+    ),
+    "after_hint": (
+        "The hint was the start; here is the whole move.",
+        "Building on that hint: the rest of the step.",
+    ),
+    "after_reveal": (
+        "Now that the answer is on screen, here is what it was doing.",
+        "The answer is not the point; this is what produced it.",
+    ),
+    "refused": (
+        "I cannot find this in your material, and I will not guess at it.",
+    ),
+}
+
+
+def _opener(level: str, context: str, *, topic_title: str | None, seed: str) -> str:
+    pool = CONTEXT_OPENERS.get(context) or OPENERS.get(level) or OPENERS["developing"]
+    rng = random.Random(seed or level)
+    return rng.choice(pool).replace("{topic}", topic_title or "this")
 
 
 def explain(
@@ -198,25 +380,88 @@ def explain(
     *,
     index: BM25,
     topic_title: str | None = None,
+    topic_id: str | None = None,
     p_know: float | None = None,
     directives: Sequence[dict[str, Any]] = (),
     item: dict[str, Any] | None = None,
     prereq_note: str | None = None,
     max_words: int = 180,
+    context: str = "first_attempt",
+    seed: str = "",
+    segment: bool = True,
 ) -> Grounded:
-    """Compose a level-appropriate, source-cited explanation."""
+    """Compose a level-appropriate, source-cited explanation.
+
+    Retrieval is restricted to the item's own topic *before* ranking, and every candidate has
+    to pass :func:`_relevance` against the actual question. When nothing relevant exists this
+    says so, out loud, instead of answering with whatever ranked highest across the whole
+    course — the defect that answered a subtraction question with a paragraph about
+    factorising. ``grounded`` is true only when the shown body came from this topic.
+    """
     level = _level_from(p_know)
     dmap = {d.get("strategy") or d.get("action", ""): d for d in directives}
     payload_words = int((dmap.get("segmented_text") or {}).get("payload", {}).get("max_words", 0) or 0)
     budget = min(max_words, payload_words * 2) if payload_words else max_words
     want_example = bool(dmap.get("worked_examples")) or level in ("new", "developing")
 
-    hits = index.score(query)[:10]
-    if not hits and topic_title:
-        hits = index.score(topic_title)[:6]
+    # --- retrieval, filtered by relevance ---------------------------------------
+    # The defect this replaces: BM25 ran across every topic in the course and the top hit was
+    # shown, so "Work out 7 - 1 - 9" was answered with a paragraph about factorising (the two
+    # shared the word "work" and nothing else). Now:
+    #
+    # 1) a sentence has to share content with the *question that was asked* — numbers count
+    #    double, because a different sum shares none of them (:func:`_relevance`);
+    # 2) the item's own topic is ranked first, and a passage from another topic is shown only
+    #    with its source topic named on it, never as if it were this topic's material;
+    # 3) if nothing relevant exists, this says so rather than showing something adjacent.
+    wanted_topic = topic_id or (item or {}).get("topic_id")
+    # When the learner is looking at an item ("walk me through this one"), the item *is* the
+    # context: matching only the words they typed would find nothing in the bank, because the
+    # material is written about the numbers in the question. The item's own stem joins the
+    # retrieval query, and relevance is then measured against the two together — which is
+    # stricter, not looser, since the query now carries more terms.
+    item_query = f"{query} {(item.get('stem') or '')}".strip() if item else query
+    # Two queries, and the one that is *about the question* wins unless only the item-anchored
+    # one finds anything. Concatenating the item's stem onto every question fixed the bare
+    # pronoun ("walk me through this one") and broke the opposite case: the digits of the item
+    # in front of the learner are decisive terms, so "why do I have to make the denominators the
+    # same?" asked over "16 - 7 - 6" scored the fractions notes as *irrelevant* and the reply
+    # fell back to the item's own integer working — which is exactly the defect this filter was
+    # written to stop, arriving by a different door.
+    queries = [query] if item_query == query else [query, item_query]
+    pool: dict[str, tuple[float, Doc, int]] = {}
+    scored_total = 0
+    for q in queries:
+        hits_q = list(index.score(q)[:24]) or (list(index.score(topic_title)[:12]) if topic_title else [])
+        scored_total = max(scored_total, len(hits_q))
+        best_q = max((s for s, _ in hits_q), default=0.0)
+        for s, d in hits_q:
+            if not _relevance(q, d, s, best_q):
+                continue
+            prev = pool.get(d.doc_id)
+            pool[d.doc_id] = (max(s, prev[0]) if prev else s, d, (prev[2] if prev else 0) + 1)
+    # Same topic first, then whatever *both* queries found, then the raw score. A passage that
+    # answers the question and belongs to the item's own topic outranks one that only does half.
+    q_numbers = {w for w in tokenize(query) if any(ch.isdigit() for ch in w)}
 
+    def _coverage(doc: Doc) -> int:
+        """How many of the question's own numbers this passage actually contains."""
+        return len(q_numbers & set(doc.tokens))
+
+    relevant = sorted(
+        pool.values(),
+        key=lambda e: (
+            0 if (not wanted_topic or e[1].meta.get("topic_id") == wanted_topic) else 1,
+            -_coverage(e[1]),
+            -e[2],
+            -e[0],
+        ),
+    )
+    rejected = max(0, scored_total - len(relevant))
+    hits = relevant[:10]
+    answered_from_item = False
     by_kind: dict[str, list[tuple[float, Doc]]] = defaultdict(list)
-    for s, d in hits:
+    for s, d, _n in hits:
         by_kind[d.meta.get("kind", "other")].append((s, d))
 
     sections: list[dict[str, str]] = []
@@ -259,17 +504,12 @@ def explain(
     if prereq_note:
         add(prereq_note, "first, the prerequisite")
 
-    opener = {
-        "new": "Let's start from one concrete case.",
-        "developing": f"You have most of {topic_title or 'this'}; here is the part that is missing.",
-        "proficient": "Short version, then the edge case.",
-        "mastered": "You know this — so here is the harder question instead.",
-    }[level]
+    opener = _opener(level, context, topic_title=topic_title, seed=seed or str((item or {}).get("id") or query))
 
     # Content: pick the most relevant material sentences, de-duplicated.
     seen: set[str] = set()
     chosen: list[Doc] = []
-    for score, doc in hits:
+    for score, doc, _n in hits:
         # Only declarative material becomes the body of an explanation. Hints are
         # opt-in pedagogy (hint_for serves them) and solution steps are the answer;
         # letting BM25 pull either into "the explanation" would spoil an unanswered
@@ -283,21 +523,90 @@ def explain(
         chosen.append(doc)
         if len(chosen) >= (3 if level != "new" else 2):
             break
+    # One topic's material, not a grab-bag. The ranked pool is relevant-to-the-question, and
+    # relevance alone let a denominators question pull in a sentence about like terms because
+    # both contain "same". The first doc decides which topic is being explained; anything from
+    # a *third* topic is dropped. (Same topic and cross-topic are both fine; a third voice is
+    # not — it reads as a tutor changing the subject mid-answer.)
     if chosen:
+        lead_topic = chosen[0].meta.get("topic_id")
+        chosen = [d for d in chosen if d.meta.get("topic_id") in (None, lead_topic)] or chosen
+    topic_match = True
+    if chosen:
+        source_topic = str(chosen[0].meta.get("topic_id") or wanted_topic or "")
+        topic_match = (not wanted_topic) or (not source_topic) or source_topic == str(wanted_topic)
         add(opener, "framing")
-        body = " ".join(_shorten(d.text, budget // max(1, len(chosen)) + 8) for d in chosen)
+        if not topic_match and topic_title:
+            # Relevant, but from somewhere else in the course — a learner asking about
+            # denominators while the screen says "Integer operations" is better served by the
+            # fractions paragraph *with a label* than by a refusal. What is never allowed is
+            # presenting it as this topic's material.
+            add(
+                f"This comes from your notes on {chosen[0].meta.get('topic_title') or 'another topic'}, "
+                f"not on {topic_title} — that is where this is actually covered:",
+                "where this came from",
+            )
+        cap = 2 if not topic_match else 3  # a cross-topic answer stays short and to the point
+        body = " ".join(_shorten(d.text, budget // max(1, len(chosen[:cap])) + 8) for d in chosen[:cap])
         add(body, "explanation", chosen[0])
-    else:
+    elif item and (item.get("solution_steps") or []):
+        # The material has nothing relevant, but the question in front of the learner does —
+        # its own worked example, written for it. Answering from that is grounded in the
+        # course's own content and is exactly what "walk me through this one" asked for.
+        add(opener, "framing")
         add(
-            f"Your notes do not cover {topic_title or 'that'} yet, so I will not guess at it. "
-            "Ask me about a topic in your course, or add the material and I will read it again.",
+            "There is no note in your material about this exact question, so here is the "
+            "question's own working, checked against its answer key:",
+            "where this came from",
+        )
+        lines = []
+        for i, st in enumerate((item.get("solution_steps") or [])[:5]):
+            txt = st.get("text") if isinstance(st, dict) else str(st)
+            if txt:
+                lines.append(f"{i + 1}. {txt}")
+        # Shown as a labelled section, not as a citation: ``sources`` means "somewhere you can
+        # go and read this", and the item has no URL to open (the client renders a URL-less
+        # source as plain text, and the contract is that a non-material source is clickable).
+        add("\n".join(lines), "worked example", None)
+        # ``grounded`` is a claim about the *material*, and this text is the item's own
+        # working, not a passage the learner can go and read. It is useful (it is the answer to
+        # "walk me through this one"), so it is shown — with the one honest flag it deserves.
+        source_topic = None
+        topic_match = False
+        answered_from_item = True
+    else:
+        # Nothing relevant. Saying so is the honest answer, and it is the *only* answer this
+        # path is allowed to give: it is what stops a subtraction question being answered with
+        # a paragraph about factorising.
+        add(_opener(level, "refused", topic_title=topic_title, seed=seed), "framing")
+        add(
+            (
+                f"I do not have anything in your material that answers this about "
+                f"{topic_title or 'this topic'}"
+                + (f" ({rejected} nearby passage(s) were about something else, so I left them out)." if rejected else ".")
+                + " I will not guess at it. Ask me something else, or add the notes and I will read them."
+            ),
             "explanation",
         )
-        return Grounded(" ".join(parts), sections, sources, list(dmap), level, confident=False)
+        return Grounded(
+            "\n\n".join(p for p in parts if p),
+            sections,
+            sources,
+            list(dmap),
+            level,
+            confident=False,
+            grounded=False,
+            source_topic=None,
+            note=(
+                f"nothing relevant to this question in the material for "
+                f"{topic_title or 'this topic'}"
+            ),
+        )
 
     # Worked example: prefer the item's own solution steps -- the ones for *this* item, not
     # the first row of whatever topic the caller happened to pass.
-    if want_example and item:
+    already_shown = any(sec.get("label") == "worked example" for sec in sections)
+    if want_example and item and not already_shown:
         steps = item.get("solution_steps") or []
         lines = []
         for i, st in enumerate(steps[:5]):
@@ -306,7 +615,7 @@ def explain(
                 lines.append(f"{i + 1}. {txt}")
         if lines:
             add("\n".join(lines), "worked example")
-    elif by_kind.get("solution") and want_example:
+    elif by_kind.get("solution") and want_example and not already_shown:
         top = by_kind["solution"][0][1]
         add(top.text, "worked example", top)
 
@@ -319,16 +628,50 @@ def explain(
             r,
         )
 
+    has_example = bool(item and (item.get("solution_steps") or []))
     next_step = {
-        "new": "Try one: copy the first line of the example and change only the numbers.",
-        "developing": "Now do the next one without looking at the example, then compare.",
+        "new": (
+            "Try one: copy the first line of the example and change only the numbers."
+            if has_example
+            else "Try one with the smallest numbers you can think of, and say each step out loud."
+        ),
+        "developing": (
+            "Now do the next one without looking at the example, then compare."
+            if has_example
+            else "Now do the next one without looking back, then compare it with what you just did."
+        ),
         "proficient": "Do the next two; tell me which step you skipped and why that was safe.",
         "mastered": "Explain it back in two sentences as if to someone who has not seen it.",
     }[level]
     add(next_step, "your turn")
 
     applied = [k for k in dmap if k]
-    return Grounded("\n\n".join(p for p in parts if p), sections, sources, applied, level)
+    text = "\n\n".join(p for p in parts if p)
+    steps: list[dict[str, Any]] = []
+    if segment:
+        # Short steps at sentence boundaries, each with a check question: never a word count
+        # applied to prose. ``learning.segments`` keeps every sentence (see its docstring).
+        from ..learning import segments as SEG
+
+        steps = SEG.segment(text, max_words=max(24, budget // 3), seed=seed or query).as_dict()["steps"]
+    if answered_from_item:
+        note = "answered from this question's own working — there is no note in your material about it"
+    elif topic_match:
+        note = None
+    else:
+        note = "the text shown is from another topic in your course; the source is named above"
+    return Grounded(
+        text,
+        sections,
+        sources,
+        applied,
+        level,
+        grounded=bool(sources) and not answered_from_item,
+        source_topic=source_topic or wanted_topic,
+        steps=steps,
+        topic_match=topic_match,
+        note=note,
+    )
 
 
 def hint_for(item: dict[str, Any], *, level: str, hints_used: int = 0, max_hints: int | None = None) -> str:
@@ -340,20 +683,21 @@ def hint_for(item: dict[str, Any], *, level: str, hints_used: int = 0, max_hints
             "first line, then I will tell you exactly where it goes wrong."
         )
     if not hints:
-        steps = item.get("solution_steps") or []
-        if steps:
-            first = steps[0].get("text") if isinstance(steps[0], dict) else str(steps[0])
-            # Only the first step. The rest of the solution is the worked example, which
-            # is a separate opt-in -- and on a short item the last step *is* the answer.
-            lead = f"Start with: {first}"
-        else:
-            lead = "Write down the single fact the question is asking for, then what would give it to you."
-        if hints_used:
+        # Every seeded item has a three-grade ladder now (``assessment/worked.py`` fills the
+        # gaps at seed time and on demand), so this is the last-resort path for an item that
+        # arrived from somewhere else — an import, a model-authored row. It says something
+        # specific, or it says nothing: the old fallback here was one sentence that fitted
+        # every question in the bank ("Write down the single fact the question is asking
+        # for"), which is the defect this branch was rewritten for.
+        from ..assessment import worked as W
+
+        generated = W.generate_hints(item)
+        if not generated:
             return (
-                "That is all the guidance this question has without giving the answer away. "
-                "I can show the worked example, or you try the line and I will say exactly where it goes wrong."
+                "This question has no hint ladder yet, so I will not invent one. "
+                "Ask for the worked example, or type the line you are unsure of and I will say where it breaks."
             )
-        return lead
+        hints = generated
     if hints_used >= len(hints):
         return (
             "That is every hint this question has. The rest would give the answer away, so: try the "

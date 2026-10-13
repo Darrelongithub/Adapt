@@ -146,7 +146,10 @@ def test_the_guess_rate_belongs_to_the_question_format():
     assert bkt.guess_for_kind("mcq", choices=4) == pytest.approx(0.25)
     assert bkt.guess_for_kind("mcq", choices=2) == pytest.approx(0.5)
     assert bkt.guess_for_kind("numeric") == pytest.approx(0.02)
-    assert bkt.guess_for_kind("text") == pytest.approx(0.02)
+    # 0.02 here until the functionality round; brief 4.2 specifies "short text ≈ 0.05" and the
+    # constant follows the brief. The assertion stays a pinned value rather than a range, so the
+    # next change to it has to be deliberate.
+    assert bkt.guess_for_kind("text") == pytest.approx(0.05)
     # a five-option question is less guessable than a four-option one, monotonically
     assert bkt.guess_for_kind("mcq", choices=5) < bkt.guess_for_kind("mcq", choices=4)
 

@@ -198,8 +198,12 @@ export default function Diagnose() {
         <div className="h-full bg-[var(--accent)] transition-all" style={{ width: `${(i / Math.max(items.length, 1)) * 100}%` }} />
       </div>
       {flow.error ? <Notice tone="warn">session: {flow.error}</Notice> : null}
+      {/* Each of these is the server's own sentence, rendered as its own sentence. The old
+          version glued " — and no hints…" onto whatever `purpose` said, which read as
+          "…place you on each topic… — and no hints": a sentence that started mid-clause. */}
       <div className="space-y-1 text-xs text-[var(--muted)]">
-        {framing.purpose ? <p>{framing.purpose} — and no hints or examples while it happens, because a placed band has to measure what you can do unaided.</p> : null}
+        {framing.purpose ? <p>{framing.purpose}</p> : null}
+        <p>No hints and no worked examples while it happens — placement has to measure what you can do unaided.</p>
         {framing.how ? <p>{framing.how}</p> : null}
         {framing.time ? <p>{framing.time}</p> : null}
       </div>

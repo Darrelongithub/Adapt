@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from ..deps import db_session, llm_guard, rate, require_csrf, shared_bank_write, student_from_request
 from ...security.middleware import BodySizeGuard
 from ...assessment import bank
+from ...assessment import worked as W
 from ...config import get_settings
 from ...db.models import Item, Student, Topic
 from ...services import attempts as A
@@ -228,10 +229,31 @@ def _worked_example(s: Session, student: Student, item_id: str) -> dict[str, Any
     if payload is None:
         raise HTTPException(status_code=404, detail="unknown item")
     rendered = bank.render_item_for(payload, seed=bank.variant_seed(student.id, item_id))
-    steps = rendered.get("solution_steps") or []
+    steps = W.normalize_steps(rendered.get("solution_steps") or [])
+    verified = W.verify_example(rendered, steps).ok if steps else False
+    if not steps or not verified:
+        # Two defects met here: 24 of the 63 shipped items returned `steps: []` (and the
+        # explanation went on to tell the learner to "copy the first line of the example"),
+        # and an item whose stored steps disagreed with its own key would have been shown
+        # anyway. Now every item has an example, derived from its own key when nobody wrote
+        # one, and the check runs on the *rendered* variant — one concrete draw — so a
+        # parametric item is checked on the numbers the learner actually has.
+        derived = W.ensure_example(
+            payload,
+            render=lambda pl: bank.render_item_for(pl, seed=bank.variant_seed(student.id, item_id)),
+        )
+        drawn = bank.render_item_for({**payload, "solution_steps": derived}, seed=bank.variant_seed(student.id, item_id))
+        steps = W.normalize_steps(drawn.get("solution_steps") or [])
+        # Persist it (idempotent, keyed by content): the next learner gets it without the
+        # work, and a stored example cannot drift away from the item's key.
+        row = s.get(Item, item_id)
+        if row is not None and [st.get("text") for st in (row.solution_steps or [])] != [st.get("text") for st in derived]:
+            row.solution_steps = derived
+            s.commit()
     return {
-        "steps": [{"index": i + 1, "text": (st.get("text") if isinstance(st, dict) else str(st)), "why": (st.get("why") if isinstance(st, dict) else None)} for i, st in enumerate(steps)],
+        "steps": steps,
         "item_id": item_id,
+        "verified": W.verify_example(rendered, steps).ok if steps else False,
         "note": "worked examples are faded on purpose: we add steps back when you ask, and remove them when you no longer need them",
     }
 

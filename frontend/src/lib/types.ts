@@ -13,6 +13,8 @@ export type Kind = "mcq" | "numeric" | "text" | "teachback" | "worked_example" |
 export type Item = {
   id: string;
   topic_id: string;
+  /** Human-readable topic name. The id is internal and is never rendered. */
+  topic_title?: string | null;
   kind: Kind;
   stem: string;
   prompt_context?: string | null;
@@ -47,7 +49,10 @@ export type DecisionTrace = string[] | { chosen?: string[]; skipped?: { id: stri
 export type PlanEntry = {
   item: Item;
   topic_id: string;
+  /** The engineer's decision string. Kept for the console; never shown on a screen. */
   reason?: string;
+  /** The same decision in words a learner can use (see `selector.Pick.plain_reason`). */
+  reason_plain?: string;
   utility?: number;
   presentation?: Presentation;
   decision_trace?: DecisionTrace;
@@ -60,9 +65,15 @@ export type Mastery = {
   title?: string;
   p_know: number;
   band: string;
+  /** How many scored answers this estimate rests on. Always shown with the estimate. */
   observations: number;
   correct?: number;
-  ci?: [number, number];
+  /** The range the evidence supports, from the server (`learning/bkt.credible_interval`). */
+  ci?: [number, number] | null;
+  /** `early signal` under `EARLY_SIGNAL_N` observations, `measured` after that. */
+  evidence?: string;
+  /** The same count under its second name; both are sent so older screens keep working. */
+  n?: number;
   half_life_hours?: number | null;
   last_practice?: string | null;
   stale?: boolean;
@@ -78,6 +89,10 @@ export type Receipt = {
   feedback: string;
   mastery: {
     topic_id: string;
+    /** The range the evidence supports, per `learning/bkt.credible_interval` (brief 4.2). */
+    ci?: [number, number] | null;
+    /** `early signal` under eight observations, `measured` after that. */
+    evidence?: string;
     p_know_before?: number;
     p_know: number;
     delta?: number;
@@ -274,6 +289,7 @@ export type DiagnosticResponse = {
     item: Item;
     topic_id: string;
     reason?: string;
+    reason_plain?: string;
     presentation?: Presentation;
     answer_key?: never;
   }[];

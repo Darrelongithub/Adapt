@@ -169,7 +169,9 @@ def diagnostic(
         "phase": "placement",
         "adaptive": True,
         "plans_from": {"session_id": session_id, "answered": answered},
-        "purpose": "place you on each topic with a confidence band, not to grade you",
+        # A full sentence, capital and all: the client renders this as the opening line of the
+        # placement screen and used to print the bare clause, so the page began mid-sentence.
+        "purpose": "This placement puts you on each topic with a confidence band — not to grade you.",
         "items": items,
         "how_it_is_used": (
             "Answers, timings, hint use and answer changes are recorded as events. AI 1 turns them into "

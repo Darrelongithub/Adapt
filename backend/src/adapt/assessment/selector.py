@@ -87,6 +87,26 @@ def servable(item: Mapping[str, Any]) -> bool:
     return bool(item.get("active", True)) and gradeable(item)
 
 
+#: The band a practice session aims at. Below it, success is rare enough that the learner is
+#: practising failure; above it, the question is decoration. This is the *enforced* band —
+#: see :func:`enforce_target_band`.
+TARGET_BAND = (0.70, 0.85)
+#: The centre the shipped build aims at. A learner who approves a recalibration moves the
+#: centre; :func:`band_for` keeps the band the same width around whatever centre is in force.
+DEFAULT_TARGET_SUCCESS = 0.78
+
+
+def band_for(target: float = DEFAULT_TARGET_SUCCESS) -> tuple[float, float]:
+    """The 70–85% band, or the same width of band around an approved target."""
+    t = max(0.05, min(0.95, float(target)))
+    half = ((TARGET_BAND[1] - TARGET_BAND[0]) / 2) or 0.075
+    return (max(0.05, t - half), min(0.98, t + half))
+
+
+#: Below this predicted success, an item is not served at all unless it is a scaffolded
+#: remediation step (a worked example attached, so the learner is not simply stuck).
+MIN_EXPECTED_SUCCESS = 0.45
+
 #: Never sent to a client that has not answered yet.
 PRIVATE_ITEM_KEYS = frozenset({"answer_spec", "solution_steps", "hints", "rubric", "stem_template"})
 
@@ -109,6 +129,42 @@ class Pick:
     assignment: dict[str, Any] | None = None
     teaching: dict[str, Any] | None = None
     expected_success: float | None = None
+
+    def plain_reason(self) -> str:
+        """The same decision, in words a learner can use.
+
+        ``reason`` is written for an engineer ("belief 0.20, this question carries the most
+        information about it") and was printed on the question screen verbatim. This is the
+        sentence that screen shows instead: it says what the app is doing and why, without
+        an internal id, a probability or a metric name. It is derived from the same facts as
+        ``reason`` -- it is a translation, not a second opinion, and it never claims more
+        than the code actually did.
+        """
+        meta = self.meta or {}
+        title = str(self.item.get("topic_title") or "").strip()
+        where = f" on {title}" if title else ""
+        phase = str(meta.get("phase") or "")
+        reason = self.reason or ""
+        if phase == "placement" or reason.startswith("placement:"):
+            return f"Checking where you are{where} — the answer here tells us the most."
+        if "prerequisite" in reason or meta.get("gap_topic_id"):
+            return (
+                f"Something underneath{where} looks shaky, so this is that earlier step. "
+                "Securing it is what makes the next one land."
+            )
+        if meta.get("due_review") or "due" in reason:
+            return f"This one is due to come back — it is around the point where recall starts to fade."
+        if "remediation" in reason:
+            return f"A shorter step in{where}, with the worked example open, because the last attempt did not land."
+        expected = self.expected_success
+        if expected is not None:
+            band = (
+                "comfortably in the range where practice helps most"
+                if 0.70 <= float(expected) <= 0.85
+                else "on the easier side" if float(expected) > 0.85 else "stretching you"
+            )
+            return f"Picked{where} because it should be {band} for you right now."
+        return f"Picked{where} from what has helped so far."
 
     def as_dict(self, *, include_answer: bool = False) -> dict[str, Any]:
         """Client-shaped view of this pick.
@@ -144,7 +200,10 @@ class Pick:
         return {
             "item": item,
             "topic_id": self.topic_id,
+            # ``reason`` is the engineer's string (kept: the console, the journey and the
+            # tests read it). ``reason_plain`` is what a screen may show a learner.
             "reason": self.reason,
+            "reason_plain": self.plain_reason(),
             "utility": round(self.utility, 4),
             "presentation": presentation,
             "decision_trace": self.meta,
@@ -506,6 +565,7 @@ def next_items(
     due_topics: Sequence[str] = (),
     gap_topics: Sequence[str] = (),
     gap_severity: dict[str, float] | None = None,
+    gap_prerequisites: Mapping[str, Sequence[str]] | None = None,
     directives: Sequence[dict[str, Any]] = (),
     used_item_ids: Iterable[str] = (),
     count: int = 5,
@@ -628,7 +688,114 @@ def next_items(
         log.info("selector skipped %d item(s) this build cannot mark: %s", len(skipped_unmarkable), skipped_unmarkable[:5])
     if pres["interleaving_ratio"] > 0:
         scored = _interleave(scored, ratio=pres["interleaving_ratio"])
-    return scored[:count]
+    ordered = enforce_target_band(
+        scored,
+        count=count,
+        gap_topics=tuple(gap_topics),
+        gap_prerequisites=gap_prerequisites or {},
+        target_band=band_for(float(pres.get("target_success_rate") or DEFAULT_TARGET_SUCCESS)),
+    )
+    return ordered[:count]
+
+
+def enforce_target_band(
+    picks: Sequence[Pick],
+    *,
+    count: int,
+    gap_topics: Sequence[str] = (),
+    gap_prerequisites: Mapping[str, Sequence[str]] | None = None,
+    target_band: tuple[float, float] = TARGET_BAND,
+    min_expected: float = MIN_EXPECTED_SUCCESS,
+) -> list[Pick]:
+    """Serve the session the learner was promised: the right difficulty, prerequisites first.
+
+    The defect this fixes was found by answering wrongly, repeatedly, and reading what came
+    back: the queue served items with about **32%** predicted success against a stated 78%
+    target, while the reason string on those same items said *"prerequisite gap flagged
+    first"* — and the queue contained no prerequisite items at all. Two separate claims were
+    being made about numbers that were not true of the items being served.
+
+    The rules, in order:
+
+    1. **Prerequisite items lead** when a gap is flagged, and the flag is only allowed to say
+       so if a specific prerequisite topic was named (``gap_prerequisites``). A gap with no
+       named prerequisite is not allowed to jump the queue on that basis.
+    2. **The target band is a filter, not a nudge.** Items predicted inside ``target_band``
+       come next; then items above it (too easy is a weaker fault than too hard); then
+       anything at or above ``min_expected``.
+    3. **Nothing below ``min_expected`` is served** unless it is scaffolded — a remediation
+       step with its worked example attached — because "practice" at a third predicted
+       success is practice at failing.
+
+    A pick that is dropped is not silently deleted from the plan: the session is filled from
+    the remaining pool, and if there is not enough material the caller is told by the shorter
+    list (``services.attempts`` records how many items a session actually served).
+    """
+    prereqs = {t for ids in (gap_prerequisites or {}).values() for t in ids}
+    for g in (gap_topics or ()):
+        if g in (gap_prerequisites or {}):
+            prereqs.update(gap_prerequisites[g])
+    gaps = set(gap_topics or ())
+
+    def bucket(p: Pick) -> int:
+        expected = p.expected_success if p.expected_success is not None else 0.5
+        if p.topic_id in prereqs or (p.topic_id in gaps and p.topic_id in prereqs):
+            return 0  # an actual prerequisite of a flagged gap
+        if p.topic_id in gaps and not prereqs:
+            # A gap with no named prerequisite: the topic itself leads, which is what the old
+            # reason string claimed while the queue did nothing of the kind.
+            return 1
+        if target_band[0] <= expected <= target_band[1]:
+            return 2
+        if expected > target_band[1]:
+            return 3
+        if expected >= min_expected:
+            return 4
+        return 5 if (p.attach_worked_example or p.meta.get("scaffolded")) else 6
+
+    def sort_key(p: Pick) -> tuple[int, float]:
+        return (bucket(p), -float(p.utility))
+
+    ordered = sorted(picks, key=sort_key)
+    served: list[Pick] = []
+    deferred: list[Pick] = []
+    # Every pick is annotated, not just the ones that fit: an item that was held back or
+    # scaffolded has to say so on its own record, because the plan is what the console and
+    # the journey show — and "the queue was filled differently from the plan" is exactly the
+    # class of bug this function exists to fix.
+    for p in ordered:
+        expected = p.expected_success if p.expected_success is not None else 0.5
+        b = bucket(p)
+        if b == 0:
+            p.reason = "; ".join([p.reason, f"prerequisite of a flagged gap (expected success {expected:.0%})"])
+        elif b == 5:
+            p.meta["scaffolded"] = "below the success floor: the worked example is attached"
+            p.attach_worked_example = True
+            p.reason = "; ".join(p.reason.split("; ") + ["scaffolded: worked example attached"])
+        elif b == 6:
+            p.meta["withheld"] = "predicted success below the floor for an unscaffolded item"
+            deferred.append(p)
+            continue
+        served.append(p)
+    kept = served[:count]
+    if len(kept) < count and deferred:
+        # Not enough material above the floor — a cold start, a thin topic, or a session
+        # longer than the bank. A session that is too short to be what was asked for is
+        # worse than a hard question the learner is shown *properly*: so the below-floor
+        # items are served with their worked example open, which is the one form the brief
+        # allows them in. Each one says so in its own reason, and stops saying it was
+        # withheld.
+        for p in deferred:
+            if len(kept) >= count:
+                break
+            p.meta["scaffolded"] = "below the success floor: the worked example is attached"
+            p.meta.pop("withheld", None)
+            p.attach_worked_example = True
+            p.reason = "; ".join(
+                p.reason.split("; ") + ["hard for you right now, so the worked example is open"]
+            )
+            kept.append(p)
+    return kept
 
 
 def expected_success_rate(p_know: float, difficulty: float, params: BKTParams) -> float:
