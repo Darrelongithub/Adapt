@@ -1156,6 +1156,36 @@ const rows: Row[] = [
       note: "each method is judged on actual minus expected success, so a method that met harder material is not punished for it; under 8 observations is labelled an early signal",
     },
   },
+  {
+    method: "GET",
+    match: /^\/api\/v1\/evidence\/methods/,
+    body: {
+      topic_id: null,
+      scope: "all topics",
+      methods: [
+        { method: "visual", label: "Structure shown visually", n: 8, n_controlled: 8, n_observational: 0, effective_n: 8, actual: 0.75, expected: 0.5, residual: 0.25, evidence: "signal", source: "assigned at serve time (controlled)", weights: { controlled: 1, observational: 0.4 }, note: "DEMO DATA" },
+        { method: "explanation", label: "Explanation first", n: 8, n_controlled: 8, n_observational: 0, effective_n: 8, actual: 0.25, expected: 0.5, residual: -0.25, evidence: "signal", source: "assigned at serve time (controlled)", weights: { controlled: 1, observational: 0.4 }, note: "DEMO DATA" },
+      ],
+      strategies: {
+        strategies: [
+          { strategy: "visual_representation", posterior_mean: 0.78, p_helps: 0.78, ci: [0.52, 0.93], n: 8, band: "promising" },
+          { strategy: "segmented_text", posterior_mean: 0.31, p_helps: 0.31, ci: [0.12, 0.58], n: 8, band: "uncertain" },
+        ],
+        thompson_sample: { strategy: "visual_representation", seed: 20260101, note: "the draw the model would act on next; seeded, so this demo can be re-run and get the same draw" },
+        note: "Thompson sampling chooses behind the scenes; what is shown is the posterior mean with its interval and n, never the draw alone",
+      },
+      detectors: [
+        { detector: "opened_example", label: "Opened a worked example before answering", design: "observational", source: "self-selected: the learner chose to do this", weight: 0.4, is_proof: false, status: "measured", n: 8, n_baseline: 8, value: 0.75, baseline: 0.38, range: [0.41, 0.93], note: "not proof: learners who open help are usually the ones who were stuck, so this can inform and cannot decide" },
+      ],
+      preference_vs_performance: { available: true, stated: "diagram", measured: [{ format: "diagram", n: 8, accuracy: 0.75 }, { format: "text", n: 8, accuracy: 0.25 }], sentence: "You picked diagram; after diagram you did best, 75% right over 8 questions.", note: "this compares formats the app has actually shown you, not a test of learning styles" },
+      note: "actual minus expected per method: expected is what the model predicted for that exact question before it was served, so harder material does not punish a method. Assigned evidence weighs 1.0; self-selected observations weigh 0.4 and are labelled observational wherever they appear.",
+    },
+  },
+  {
+    method: "GET",
+    match: /^\/api\/v1\/evidence\/preference-vs-performance/,
+    body: { available: true, stated: "diagram", measured: [{ format: "diagram", n: 8, accuracy: 0.75 }, { format: "text", n: 8, accuracy: 0.25 }], sentence: "You picked diagram; after diagram you did best, 75% right over 8 questions.", note: "this compares formats the app has actually shown you, not a test of learning styles" },
+  },
   { method: "POST", match: /^\/api\/v1\/items\/[^/]+\/hint/, body: { hint: "Write the two fractions over the same denominator before you add anything.", hint_no: 1, max_hints: 2, level: "developing", hints_available: 2, exhausted: false, item_id: item.id } },
   { method: "GET", match: /^\/api\/v1\/items\/[^/]+\/worked-example/, body: { steps: [{ index: 1, text: "Make the denominators equal: 2 and 3 both divide 6.", why: "a fraction only names parts of one whole" }, { index: 2, text: "Scale both numerators: 1/2 = 3/6, 1/3 = 2/6.", why: "scaling both sides keeps the value" }], item_id: item.id, note: "worked examples are faded on purpose: we add steps back when you ask, and remove them when you no longer need them" } },
   { method: "POST", match: /^\/api\/v1\/items\/[^/]+\/worked-example/, body: { steps: [{ index: 1, text: "Make the denominators equal: 2 and 3 both divide 6.", why: "a fraction only names parts of one whole" }], item_id: item.id, note: "opening this is recorded, because the fading decision is measured on it" } },
