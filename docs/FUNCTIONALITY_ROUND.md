@@ -87,7 +87,7 @@ and `scripts/teaching_quality_eval.py` writing `QUALITY_REPORT.md`.
 - [x] Phase 2 baseline (backend + screens; browser checks pending, see `docs/UNVERIFIED.md`)
 - [ ] Phase 3 subject round (agent 2 - handoff is `docs/handoff/agent-2-subjects.md`)
 - [ ] Phase 4 content engine + `QUALITY_REPORT.md` (agent 3 landed; integration below)
-- [ ] Phase 5 adaptation layer + contrast demo (agent 4)
+- [x] Phase 5 adaptation layer + contrast demo (agent 4) - ported in from `main`, see the addendum
 - [ ] Phase 6 evidence + failure loop (agent 5 landed)
 - [ ] Phase 7 security/demo readiness (agent 6 landed; integrated and green - see the integration report)
 - [ ] Final report
@@ -501,3 +501,22 @@ also fixed, and the probe now asserts the payload names no engine.
 * Agent 2's phase 3 (the subject round) has not landed.
 * `main`'s #11 and #13 wait for the final merge.
 * Anything only a real browser or a live model key can settle is in `docs/UNVERIFIED.md`.
+
+### Integration report 1, addendum - phase 5 ported from `main`
+
+`main` (`a1edc69`) turned out to be a single-commit snapshot with **no common ancestor** to this
+branch, so it cannot be merged - it has to be read and ported. It carried phase 5 (agent 4's
+adaptation layer): `ai/adapter.py`, `lesson/templates.py`, `api/routes/lesson_plan.py` and 594 lines
+of tests. Ported here, with only one line needed in a frozen file (the router tuple in `api/app.py`),
+those 83 tests pass unchanged against this tree, and the contrast screen plus the seven visual
+templates came with it (`components/visual/*`, `app/contrast`), now reachable from the nav as
+"Compare lessons" - it was an orphan route before. A new probe scenario covers it (8 checks),
+including the `?mock=1` path.
+
+`main` also carries a *second* implementation of the phase-2 baseline screens (another agent-1 run,
+`app/baseline/[runId]`, `app/baseline/snapshot`, a different `lib/baseline.ts`). The baseline on this
+branch is the one verified here (the engine's 40 tests, the 25-check probe walk, the phase 2 report
+above); the other one is left where it is and the choice is flagged for the final merge. `UI file.txt`
+and the prompts zip on `main` are not carried.
+
+Backend after the port: **970 passed**. Probe: **242 checks** (234 + the 8 new contrast checks).

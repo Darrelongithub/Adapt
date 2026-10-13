@@ -4,6 +4,21 @@ Written by the integrator session (the one that owns `arena/06d446fc-adapt`). Th
 merging the finished agents' PRs and making the merged tree green against brief §3. It is a working
 note like the others in `agent-notes/`; the phase-level report is in `docs/FUNCTIONALITY_ROUND.md`.
 
+## Second wave: phase 5, from `main`
+
+`main` (`a1edc69`) is a **single-commit snapshot with no common ancestor** to this branch - it is not
+mergeable with `git merge`, so the reconciliation is a content merge. What it carries that this
+branch did not:
+
+| Path | What | Decision |
+|---|---|---|
+| `ai/adapter.py` (1 280 lines), `lesson/{__init__,templates}.py`, `api/routes/lesson_plan.py`, `tests/test_adapter.py` (594 lines), `agent-notes/4-adaptation.md` | phase 5, the adaptation layer (agent 4) | **ported in**: 83/83 tests pass here once the router is registered |
+| `frontend/src/components/visual/{index.tsx,validate.ts}`, `app/contrast/page.tsx` | the seven visual templates and the contrast screen | **ported in**, plus a mock row, two nav entries ("Mind check", "Compare lessons") and a new probe scenario (8 checks) |
+| `app/baseline/{[runId],snapshot}/page.tsx` and its `lib/baseline.ts` variant | a *second* phase-2 baseline UI, from another agent-1 run | **left on `main`**: this branch's baseline is the verified one (40 engine tests, 25 probe checks, phase 2 report). Two implementations of one screen is a product decision, not a merge |
+| `UI file.txt` (1 273 lines), `adapt-web-application-prompts.zip` | repo cruft | **not carried** |
+
+The only line that had to move in a frozen file is the router registration in `api/app.py`.
+
 ## What landed
 
 | PR | Branch HEAD | What it brought |
@@ -106,11 +121,14 @@ learner-safe sentences and log the install hint instead (it is also in `docs/VOI
 * `npm run lint` (contract check + `tsc --noEmit`) - contract ok, 88 backend routes vs 78 calls.
 * `npm run build` - compiled successfully.
 * `npm run test:engine`, `test:lib`, `test:server` - 15, 18 and 2 passed.
-* `scripts/probe-fresh.sh all` - **234/234 checks passed**, exit 0 (226 API calls).
+* `scripts/probe-fresh.sh all` - **234/234 checks passed**, exit 0.
+* `pytest -q` after the phase-5 port - **970 passed** (887 + the 83 adapter tests).
+* `scripts/probe-fresh.sh contrast`, `voice`, `learn` - 8/8, 8/8 and 26/26.
 * bundle scan - clean, as above.
 
 ## Still open
 
 * Agent 2's phase 3 has not landed; the final merge order is unchanged.
-* The `main`-side PRs (#11, #13) still need reconciling at the final merge.
+* Which baseline UI ships (this branch's or `main`'s) - recommend this branch's, since it is the one
+  verified end to end here. Flagged for the final merge.
 * Everything a browser or a live model key would verify is in `docs/UNVERIFIED.md`.

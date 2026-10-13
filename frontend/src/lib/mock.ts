@@ -1160,6 +1160,49 @@ const baselineNextDayBody = {
 };
 
 const rows: Row[] = [
+  /* Phase 5's contrast screen renders two plans side by side. The fixtures keep the same shape the
+     adapter returns: ordered blocks each carrying a chunk_id and a why with its n, a why-panel, and
+     provenance. The two profiles must differ in a way the page can *read off* the plans. */
+  { method: "POST", match: /^\/api\/v1\/lesson-plan\/contrast$/, body: {
+    concept: "adding fractions",
+    title: "Adding fractions",
+    visibly_different: true,
+    note: "both lessons teach the same checked content; what differs is how it is laid out, and every difference above is read off the two plans, not written about them",
+    differences: [
+      { aspect: "opens with", a: "visual", b: "worked_example" },
+      { aspect: "step size", a: "small", b: "large" },
+      { aspect: "number of blocks", a: 4, b: 3 },
+    ],
+    lessons: [
+      { profile: "Smaller steps, pictures first", plan: {
+        concept: "adding fractions", title: "Adding fractions", lead_format: "visual", ladder_rung: 2,
+        limits: { step_size: "small", max_words_per_block: 45, tone: "warm", language: "en" },
+        subject: { p_know: 0.42, ci: [0.3, 0.55], n: 9, band: "developing" },
+        fallbacks: [], mode: "deterministic",
+        blocks: [
+          { block: 1, chunk_id: "blk_mock_v1", kind: "visual", content: { spec: { kind: "number_line", marks: [{ at: 0, label: "0" }, { at: 0.5, label: "1/2" }, { at: 0.75, label: "3/4" }] } }, why: { text: "the profile asks for the structure first", evidence_ids: ["ev_mock_1"], n: 4 } },
+          { block: 2, chunk_id: "blk_mock_t1", kind: "text", content: { text: "A fraction only adds to another when the parts are the same size. Draw both on one line before you add anything." }, why: { text: "one sentence of teaching, then a check", evidence_ids: ["ev_mock_1"], n: 4 } },
+          { block: 3, chunk_id: "blk_mock_c1", kind: "check", content: { question: "On the line above, which two marks are closest together?", hint: "compare the gaps, not the labels" }, why: { text: "a check after every explanation chunk", evidence_ids: ["ev_mock_2"], n: 3 } },
+          { block: 4, chunk_id: "blk_mock_x1", kind: "explain", content: { question: "Say in your own words why you cannot add fifths to thirds directly." }, why: { text: "explaining back is the check that sticks", evidence_ids: ["ev_mock_2"], n: 3 } },
+        ],
+        why_panel: { title: "Why this lesson looks like this", rows: [{ decision: "pictures first", text: "the profile asks for structure before symbols", evidence_ids: ["ev_mock_1"], n: 4 }], what_would_change_it: ["more answers under a different teaching method, measured against expectation, would change what leads"], fallbacks: [], mode: "deterministic", mode_note: "built by the template adapter from the measured profile (simple mode: no model was involved)" },
+        provenance: { model_version: 4, content_id: "cpk_mock_fractions", content_source: "authored_bank", evidence_ids: ["ev_mock_1", "ev_mock_2"], evidence_n: 2 },
+      } },
+      { profile: "Bigger steps, examples first", plan: {
+        concept: "adding fractions", title: "Adding fractions", lead_format: "worked_example", ladder_rung: 3,
+        limits: { step_size: "large", max_words_per_block: 90, tone: "direct", language: "en" },
+        subject: { p_know: 0.42, ci: [0.3, 0.55], n: 9, band: "developing" },
+        fallbacks: [], mode: "deterministic",
+        blocks: [
+          { block: 1, chunk_id: "blk_mock_w1", kind: "worked_example", content: { steps: [{ text: "Rewrite 1/2 and 1/3 with a common denominator of 6.", why: "sixths measure both halves and thirds exactly" }, { text: "1/2 becomes 3/6 and 1/3 becomes 2/6.", why: "multiply top and bottom by the same number" }, { text: "3/6 + 2/6 = 5/6.", why: "same-sized parts can be added" }] }, why: { text: "the profile asks for a full example first", evidence_ids: ["ev_mock_3"], n: 5 } },
+          { block: 2, chunk_id: "blk_mock_c2", kind: "check", content: { question: "Why does 1/2 turn into 3/6 and not 3/5?", hint: "what happens to the bottom when you multiply the top" }, why: { text: "a check after every explanation chunk", evidence_ids: ["ev_mock_2"], n: 3 } },
+          { block: 3, chunk_id: "blk_mock_x2", kind: "explain", content: { question: "Explain the common-denominator step to someone who has not seen it." }, why: { text: "explaining back is the check that sticks", evidence_ids: ["ev_mock_2"], n: 3 } },
+        ],
+        why_panel: { title: "Why this lesson looks like this", rows: [{ decision: "a full example first", text: "the profile asks for a worked run-through", evidence_ids: ["ev_mock_3"], n: 5 }], what_would_change_it: ["a working-memory measure would resize the steps (they are at most 90 words now, from the large step size)"], fallbacks: [], mode: "deterministic", mode_note: "built by the template adapter from the measured profile (simple mode: no model was involved)" },
+        provenance: { model_version: 4, content_id: "cpk_mock_fractions", content_source: "authored_bank", evidence_ids: ["ev_mock_2", "ev_mock_3"], evidence_n: 2 },
+      } },
+    ],
+  } },
   { method: "GET", match: /^\/api\/v1\/evidence$/, body: {
     methods: [], strategies: [], preference_vs_performance: null,
     excluded_n: 0, attributed_elsewhere_n: 0, format_comparable: true,

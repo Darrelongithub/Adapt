@@ -22,7 +22,8 @@ stays in the repo as documentation. Hand out the other five.
 ## Status (updated by the integrator session, 2026-10-13)
 
 Agents 3, 5 and 6 have landed (#9, #10, #12, #14) and their work is merged into
-`arena/06d446fc-adapt`; the merged tree is green (887 backend tests, 234 probe checks) after the
+`arena/06d446fc-adapt`, and phase 5 (agent 4's adaptation layer) was ported in from `main`, which
+carries it as a snapshot; the merged tree is green (887 backend tests, 234 probe checks) after the
 integration described in `agent-notes/7-integration.md` and the integration report in
 `docs/FUNCTIONALITY_ROUND.md`. **Agent 2 (phase 3) is the one still outstanding** - hand that file
 out. PRs #11 and #13 landed on `main` rather than on the arena branch and are reconciled at the
