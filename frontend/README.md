@@ -102,9 +102,9 @@ answered 200. Two separate React effects were wiping the learner's in-progress a
    inside a passive `useEffect([item.id, item.hint_count])`. When the probe (or a fast learner)
    typed into the newly mounted `<input>` inside the commit→effect window, the passive effect fired
    afterwards and wiped the input back to `""`. `Question` now resets its per-item state
-   synchronously during render using a derived `shownKey` (`${item.id}|${item.hint_count ?? 0}`)
-   and keys `startedItemIdRef` by `item.id` without mutating refs during render (10/10 passes on
-   `bash scripts/probe-fresh.sh diagnose` and 5/5 with `PROBE_FIRST_ITEM_KIND=numeric`).
+   synchronously during render using a derived `shownKey` (`${item.id}|${item.hint_count ?? 0}`),
+   loads in-progress drafts from `src/lib/drafts.ts`, and keys `startedItemIdRef` by `item.id`
+   without mutating refs during render (24/24 checks pass on `bash scripts/probe-fresh.sh diagnose`).
 
 ## `npm run test:server` snapshots and restores `tsconfig.json`
 

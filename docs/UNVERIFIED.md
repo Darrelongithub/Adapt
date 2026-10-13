@@ -158,7 +158,7 @@ session is the expected result, not a bug.
 
 ## Added by the 2026-10-12 full-scan pass
 
-* **The UI probe drives jsdom, not a browser.** `npm run probe` (169 checks) exercises the
+* **The UI probe drives jsdom, not a browser.** `npm run probe` (199 checks) exercises the
   real Next.js server over HTTP with a real DOM: routing, forms, controlled inputs,
   fetch/CSRF/error paths, refresh, the voice socket's handshake and the screens' data paths.
   It cannot observe layout, paint, focus order, scroll, `getUserMedia` permission prompts or

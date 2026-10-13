@@ -247,7 +247,7 @@ application. Each has a regression test, or a gate that fails, if the defect ret
 * **Probe failures under repeated runs** (onboarding reload, proposals reload, diagnose
   numeric input) were **rate-limit buckets and warm state from earlier runs in the same
   process**, not app behaviour: with one fresh API per scenario, all eleven scenarios and the full
-  probe pass (169/169), repeatedly.
+  probe pass (199/199), repeatedly.
 * `ResourceService.search` slicing at `max(6, limit*2)` is by design; the route now truncates.
 * Local-mode 500 responses include the exception text on purpose (`app.py`); on a tunnel they
   carry a request id instead.
@@ -267,20 +267,20 @@ application. Each has a regression test, or a gate that fails, if the defect ret
 
 ```bash
 cd /home/user/Adapt/backend
-../.venv/bin/python -m pytest -q                                   # 589 passed
+../.venv/bin/python -m pytest -q                                   # 645 passed
 ../.venv/bin/python -m ruff check src --select F,E7,E9,B017         # All checks passed
 ../.venv/bin/python -m adapt.cli demo --turns 3                     # exit 0 (whole loop, temp DB)
 
 cd /home/user/Adapt/frontend
-npm run lint        # contract ok: 71 routes / 49 calls, tsc clean
+npm run lint        # contract ok: 74 routes / 49 calls, tsc clean
 npm run build       # built (static pages)
 cd .. && node scripts/demo.mjs --json          # warnings: []
 
 # the UI probe: one fresh API + fresh data dir per run (warm buckets fail spuriously)
-bash scripts/probe-fresh.sh all                 # 169/169 checks passed (starts the API as a rehearsal)
+bash scripts/probe-fresh.sh all                 # 199/199 checks passed (starts the API as a rehearsal)
 bash scripts/probe-fresh.sh lesson              # one scenario: 30/30
-#   scenarios individually: learn 19/19, lesson 30/30, proposals 36/36, onboarding 12/12,
-#   diagnose 21/21, home 10/10, progress 5/5, voice 8/8, settings 12/12, review 1/1, failures 14/14
+#   scenarios individually: learn 26/26, lesson 30/30, proposals 38/38, onboarding 12/12,
+#   diagnose 24/24, home 10/10, progress 20/20, voice 8/8, settings 13/13, review 4/4, failures 14/14
 
 # the data layer, including a clean shutdown, a restart on the same data directory,
 # every route the API exposes, correct-choice grading both ways, and revoke-by-name
