@@ -105,6 +105,9 @@ export type MethodRow = {
   actual?: number;
   expected?: number;
   residual?: number;
+  ci?: [number, number];
+  effective_n?: number;
+  sources?: { source: string; weight: number; n: number }[];
   evidence?: string;
   note?: string;
   /** How many of `n` came from the pre-demo pilot, and the sentence that has to be shown with them. */
@@ -140,6 +143,13 @@ export function MethodReport({ rows, minN = EARLY_SIGNAL_N }: { rows: MethodRow[
                 {(residual * 100).toFixed(0)} points against expectation
               </span>
             </p>
+            {row.ci ? <p className="text-xs text-[var(--muted)]">
+              range {(row.ci[0] * 100).toFixed(0)} to {(row.ci[1] * 100).toFixed(0)} points
+              {row.effective_n !== undefined ? ` · weighted n=${row.effective_n}` : ""}
+            </p> : null}
+            {row.sources?.filter(s => s.n > 0).map(s => <p key={s.source} className="text-xs text-[var(--muted)]">
+              {s.source} · weight {s.weight} · n={s.n}
+            </p>)}
             {early ? <p className="text-xs text-[var(--warn)]">early signal: {row.note || `under ${minN} observations`}</p> : null}
             {row.pilot ? (
               <p className="text-xs text-[var(--think)]">

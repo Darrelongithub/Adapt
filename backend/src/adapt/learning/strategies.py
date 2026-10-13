@@ -330,7 +330,7 @@ class StrategyStat:
     @property
     def p_helps(self) -> float:
         """Posterior mean of 'this exposure was net-positive'."""
-        return (self.alpha - 1.0) / max(1e-6, (self.alpha - 1.0) + (self.beta - 1.0)) if self.n else 0.5
+        return self.alpha / (self.alpha + self.beta)
 
     @property
     def variance(self) -> float | None:
@@ -382,7 +382,11 @@ class StrategyModel:
         help while +0.02 barely moves the posterior. Deterministic on purpose --
         no sampling, no hidden randomness in the learner's model.
         """
+        if not math.isfinite(weight) or not 0 <= weight <= 1:
+            raise ValueError("weight must be finite and in [0, 1]")
         st = self.stats.setdefault(strategy, StrategyStat(strategy=strategy))
+        if weight == 0:
+            return st
         if helpful is None:
             p_help = _sigmoid(lift * 8.0)
             st.alpha += weight * p_help

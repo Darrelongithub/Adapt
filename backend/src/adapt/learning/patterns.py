@@ -184,6 +184,8 @@ class Observation:
             "candidate_strategy": self.candidate_strategy,
             "direction": self.direction,
             "design": self.design,
+            "source_type": "controlled" if self.design == "randomised" else "observational",
+            "weight": 1.0 if self.design == "randomised" else 0.4,
             "evidence": self.evidence,
             "facts": self.facts,
         }
@@ -435,7 +437,7 @@ def method_comparison(ctx: EvidenceContext) -> list[Observation]:
                 attempt_ids=[a.id for a in group][:40],
                 candidate_strategy=strategy,
                 direction="up" if residual >= 0 else "down",
-                design="randomised" if int(entry.get("n_randomised") or 0) >= int(entry["n"]) // 2 else "observational",
+                design="randomised" if int(entry.get("n_randomised") or 0) == int(entry["n"]) else "observational",
                 evidence=str(entry["evidence"]),
             )
         )
@@ -632,8 +634,9 @@ def detect_slow_start(ctx: EvidenceContext) -> list[Observation]:
 def detect_visual_benefit(ctx: EvidenceContext) -> list[Observation]:
     """Measured difference between the visual and text variants of the same topic.
 
-    This is the anti-"learning styles" detector: the variant is *randomly assigned
-    by the diagnostic* and we compare performance, never self-reported preference.
+    Legacy delivery variants and opening a visual are observational/self-selected.
+    This detector does not establish a causal effect; assigned method comparisons
+    are analysed separately using their recorded design.
     """
     rows = ctx.usable()
     visual = [a for a in rows if a.experience_mode in ("visual",) or a.visual_opened]
@@ -644,13 +647,14 @@ def detect_visual_benefit(ctx: EvidenceContext) -> list[Observation]:
     b = _mean([a.ok or 0 for a in plain])
     obs = make(
         detector="visual_representation_benefit",
+        design="observational",
         metric="accuracy",
         value=v,
         baseline=b,
         group=visual,
         other=plain,
         facts={
-            "assignment": "delivery variant was varied by the diagnostic, not chosen by the learner",
+            "assignment": "observational: legacy variants and learner-opened visuals",
             "note": "a measured difference on this topic, not a general 'visual learner' claim",
         },
         strategy="visual_representation",
