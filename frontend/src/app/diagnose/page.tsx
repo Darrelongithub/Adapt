@@ -1,8 +1,9 @@
 "use client";
 
-/** Placement: twelve unaided questions, then the analysis that seeds your first band
- *  estimates. `aidless` is not cosmetic — a hint during placement would measure the
- *  wrong thing and every later decision would inherit that error.
+/** Placement: a short adaptive sequence of unaided questions (four to twelve, eight by
+ *  default), then the analysis that seeds your first band estimates. `aidless` is not
+ *  cosmetic — a hint during placement would measure the wrong thing and every later
+ *  decision would inherit that error.
  */
 import { useEffect, useRef, useState } from "react";
 

@@ -87,7 +87,7 @@ export default function Progress() {
         </div>
         <div className="flex gap-2">
           <Btn onClick={() => Promise.all([dash.reload(), journey.reload(), methodReport.reload()])}>Reload</Btn>
-          <Btn onClick={retrain} disabled={training} title="re-derive the estimates from the event log rather than trusting the cached ones">
+          <Btn onClick={retrain} disabled={training} title="derive the estimates again from the event log rather than trusting the cached ones">
             {training ? "…" : "Recompute estimates"}
           </Btn>
         </div>
@@ -209,7 +209,9 @@ export default function Progress() {
                 key={k}
                 type="button"
                 onClick={() => setKind(kind === k ? null : k)}
-                className={`rounded border px-1.5 text-xs ${kind === k ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--line)] text-[var(--muted)]"}`}
+                aria-pressed={kind === k}
+                className="btn-ctl btn-secondary"
+                style={{ padding: "6px 10px", fontSize: 10.5 }}
               >
                 {k} {n}
               </button>

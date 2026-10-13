@@ -228,7 +228,7 @@ def next_schedule(
         reps=reps_before + 1,
         strength=1.0 / max(MIN_HALF_LIFE_H, h),
         rationale=(
-            f"half-life {h:.1f}h from {model.n} logged reviews; next retrieval at p\u2248{target:.2f}"
+            f"recall halves after about {h:.1f}h, from {model.n} logged reviews; next retrieval at p\u2248{target:.2f}"
             + (" (lapse: interval shortened)" if not recalled else "")
         ),
     )

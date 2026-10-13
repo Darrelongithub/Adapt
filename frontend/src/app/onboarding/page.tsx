@@ -2,7 +2,7 @@
 
 /** Setup, and the one screen that has to be explicit about what it is *not* asking.
  *
- * There is no learning-styles question here by design: the onboarding payload has no
+ * There is no learning styles question here by design: the onboarding payload has no
  * key for it, and the note the server sends back says the same thing the blueprint does
  * — how you learn best is measured from what happens during practice. Free text about
  * what you want more or less of is welcome, because that is a request you are making,
@@ -34,8 +34,12 @@ export default function Onboarding() {
     encourage: "",
     avoid: "",
   });
-  const [consentAnalytics, setConsentAnalytics] = useState(true);
-  const [consentLlm, setConsentLlm] = useState(true);
+  // Unchecked until something says otherwise. The learner's own answer at the door arrives
+  // in the URL because this is the first screen with a session to store it on; without one,
+  // the boxes stay empty rather than being pre-ticked on their behalf.
+  const [consentAnalytics, setConsentAnalytics] = useState(false);
+  const [consentLlm, setConsentLlm] = useState(false);
+  const [carriedConsent, setCarriedConsent] = useState<string | null>(null);
   const [voiceGender, setVoiceGender] = useState("female");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
@@ -49,13 +53,18 @@ export default function Onboarding() {
   }, [prefs.data?.preferences && JSON.stringify(prefs.data?.preferences)]);
 
   useEffect(() => {
+    // What the door recorded, when the learner came through it. A decision they made is
+    // never flipped back to the row's default on the way in.
+    const carried = new URLSearchParams(window.location.search).get("consent");
+    setCarriedConsent(carried);
+    if (carried === "yes" || carried === "no") {
+      setConsentAnalytics(carried === "yes");
+    }
     get<Me>("me").then((r) => {
-      if (r.data) {
-        setConsentAnalytics(Boolean(r.data.consent_analytics));
-        setConsentLlm(Boolean(r.data.consent_share_with_ai));
-        setVoiceGender(r.data.voice_gender || "female");
-        void r.data;
-      }
+      if (!r.data) return;
+      if (carried !== "yes" && carried !== "no") setConsentAnalytics(Boolean(r.data.consent_analytics));
+      setConsentLlm(Boolean(r.data.consent_share_with_ai));
+      setVoiceGender(r.data.voice_gender || "female");
     });
   }, []);
 
@@ -119,7 +128,7 @@ export default function Onboarding() {
                 onChange={(e) => set("session_minutes")(Number(e.target.value))}
               />
             </Field>
-            <Field label="Longest explanation you want to read" hint="The full version is always one click away; this is the default length.">
+            <Field label="Longest explanation you want to read" hint="The full version is always one click away. This is the default length.">
               <Input
                 type="number"
                 min={20}
@@ -137,7 +146,7 @@ export default function Onboarding() {
               label="Push me to try before showing"
               checked={Boolean(form.push_me)}
               onChange={set("push_me")}
-              hint="Turns re-reading off and puts a short attempt first. It feels harder; that is the mechanism, not a side effect."
+              hint="Turns rereading off and puts a short attempt first. It feels harder, and that is the mechanism rather than a side effect."
             />
             <Field label="More of this" hint="Free text. It becomes a stated preference, and the tutor reads it.">
               <Input value={String(form.encourage)} onChange={(e) => set("encourage")(e.target.value)} placeholder="diagrams before symbols" />
@@ -168,6 +177,13 @@ export default function Onboarding() {
 
         <Card title="What may be measured" tone="warn">
           <div className="space-y-3">
+            {carriedConsent ? (
+              <p className="text-xs text-[var(--muted)]">
+                You answered this before your account existed, and this screen stores the answer:{" "}
+                {carriedConsent === "yes" ? "analytics consent given" : "analytics consent declined"}. Change it here if you
+                want to — the boxes are never set on your behalf.
+              </p>
+            ) : null}
             <Check
               label="Keep the interaction log"
               checked={consentAnalytics}
@@ -211,13 +227,6 @@ export default function Onboarding() {
             </div>
           </Card>
         ) : null}
-        <Card title="What this screen refuses to ask" tone="muted">
-          <ul className="space-y-2 text-sm text-[var(--muted)]">
-            <li>“Are you a visual learner?” — the evidence does not support matching instruction to a stated style, and an answer here would only let the app label you.</li>
-            <li>“How smart are you?” — nothing on this app needs that number, and every downstream use of it would be worse.</li>
-            <li>Any permission it does not use. Consent for analytics and for the model summary are the only two, and both can be turned off later without losing practice.</li>
-          </ul>
-        </Card>
         <Card title="Allowed preference keys" tone="muted" right={<span>from the API</span>}>
           {prefs.loading ? <p className="text-sm text-[var(--muted)]">…</p> : null}
           {prefs.error ? <Err error={prefs.error} status={prefs.status} /> : null}

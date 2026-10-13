@@ -295,7 +295,7 @@ async def submit(
         attempt_id = att.id
         flags: list[str] = []
         if time_on and item.get("est_seconds") and time_on < 1000 * max(3.0, float(item["est_seconds"]) * 0.2):
-            flags.append("answered unusually fast -- treat this score as weak evidence")
+            flags.append("answered unusually fast — treat this score as weak evidence")
         if (m.get("hints_used") or 0) >= 2 and correct:
             flags.append("correct after 2+ hints: scaffolding may be doing the work")
         if att.changed_from_correct:

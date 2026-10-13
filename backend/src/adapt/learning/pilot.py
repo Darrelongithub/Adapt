@@ -30,7 +30,7 @@ from .seeds import stable_seed
 #: The label every surface must show next to pilot-derived numbers.
 PILOT_LABEL = "pilot data — not evidence of efficacy"
 PILOT_NOTE = (
-    "These answers come from the pre-demo pilot (a handful of users on this build). "
+    "These answers come from the pilot run before the demo (a handful of users on this build). "
     "They are real rows and real responses, but they are not a study: no control "
     "group, no blinding, and a sample of friends."
 )

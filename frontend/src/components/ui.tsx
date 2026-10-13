@@ -33,6 +33,14 @@ export function Card({ title, right, children, tone }: { title?: ReactNode; righ
   );
 }
 
+/** Every control that does something goes through here, so it wears one of the three
+ *  contract looks from `globals.css` (brief 2.2). The `kind` names are the ones call
+ *  sites already pass; what each one *looks* like is the contract's business, not the
+ *  page's. `danger` is a secondary button with the refusal colour, because a refusal
+ *  is a decision a learner makes, not a destructive action they can slip into.
+ *
+ *  `pressed` draws the selected state (`aria-pressed`) — that is for a control whose
+ *  job is to record which answer was given, e.g. a decision on /proposals. */
 export function Btn({
   children,
   onClick,
@@ -41,6 +49,8 @@ export function Btn({
   disabled,
   type = "button",
   title,
+  pressed,
+  ariaLabel,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -49,28 +59,34 @@ export function Btn({
   disabled?: boolean;
   type?: "button" | "submit";
   title?: string;
+  pressed?: boolean;
+  ariaLabel?: string;
 }) {
-  const base =
-    // btn-ctl is a plain marker for the coarse-pointer tap-target rules in globals.css
-    "btn-ctl inline-flex items-center gap-2 rounded-[2px] px-3 py-1.5 text-[12px] border transition-all disabled:opacity-35 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none";
-  const mono = "font-mono uppercase tracking-[0.06em]";
-  const hover = "hover:translate-y-[-1px] hover:shadow-[0_3px_0_var(--line)]";
+  // btn-ctl is the marker the coarse-pointer tap-target rules in globals.css key off.
   const look =
     kind === "primary"
-      ? `${base} ${mono} ${hover} border-[var(--ink)] bg-[var(--ink)] text-[var(--bg)] font-semibold`
+      ? "btn-ctl btn-primary"
       : kind === "danger"
-        ? `${base} ${mono} ${hover} border-[var(--bad)]/40 text-[var(--bad)] hover:bg-[var(--bad)]/10`
+        ? "btn-ctl btn-secondary danger"
         : kind === "ghost"
-          ? `${base} ${mono} border-transparent text-[var(--muted)] hover:text-[var(--ink)]`
-          : `${base} ${mono} ${hover} border-[var(--line)] bg-[var(--panel)] text-[var(--ink)] hover:border-[var(--accent)]/60`;
+          ? "btn-ctl btn-ghost"
+          : "btn-ctl btn-secondary";
+  const pressedAttr = pressed === undefined ? {} : { "aria-pressed": pressed };
   if (href)
     return (
-      <Link href={href} className={look} title={title} aria-disabled={disabled ? "true" : undefined}>
+      <Link
+        href={href}
+        className={look}
+        title={title}
+        aria-label={ariaLabel}
+        aria-disabled={disabled ? "true" : undefined}
+        {...pressedAttr}
+      >
         {children}
       </Link>
     );
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={look} title={title}>
+    <button type={type} onClick={onClick} disabled={disabled} className={look} title={title} aria-label={ariaLabel} {...pressedAttr}>
       {children}
     </button>
   );
@@ -220,7 +236,7 @@ export function Trace({ title = "why", children }: { title?: string; children: R
       <div className="mt-2 space-y-1 rounded-[2px] border border-[var(--line)] bg-[var(--panel-2)] p-3">{children}</div>
       <button
         type="button"
-        className="mt-1 underline decoration-dotted underline-offset-4 group-open:hidden"
+        className="btn-ctl btn-ghost"
         onClick={(e) => {
           const d = (e.target as HTMLElement).closest("details");
           if (d) d.removeAttribute("open");
@@ -255,11 +271,11 @@ export function Err({ error, status }: { error: string | null; status?: number |
       ) : status === 429 ? (
         <>
           The server is asking for a moment between requests, so this screen could not load. Nothing is wrong with
-          your session - wait a few seconds and try again.
+          your session. Wait a few seconds and try again.
         </>
       ) : status === 0 ? (
         <>
-          {error} — start the backend with{" "}
+          {error}. Start the backend with{" "}
           <code className="text-xs">uvicorn adapt.api.app:app --port 8000</code>, or open this page with{" "}
           <code className="text-xs">?mock=1</code> to look at the design without it.
         </>

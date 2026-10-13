@@ -263,7 +263,7 @@ def capabilities(settings: Any) -> dict[str, Any]:
     return {
         "local_stt": ok,
         "detail": why,
-        "fallback": "browser Web Speech API dictation (free, on-device in Chrome/Edge/Safari)",
+        "fallback": "browser Web Speech API dictation (free, on your device in Chrome, Edge or Safari)",
         "model_size": getattr(settings, "whisper_model_size", "base"),
         "compute_type": getattr(settings, "whisper_compute_type", "int8"),
         "spoken_math_normalisation": True,

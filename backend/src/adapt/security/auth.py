@@ -15,6 +15,8 @@ be world-readable just because someone guessed the URL. Therefore:
 
 from __future__ import annotations
 
+import re
+
 import hashlib
 import hmac
 import secrets
@@ -192,6 +194,71 @@ def email_index_for(email: str | None) -> str | None:
     if not email:
         return None
     return blind_index(email, column="student.email")
+
+
+USERNAME_MIN, USERNAME_MAX = 3, 40
+_USERNAME_OK = re.compile(r"^[a-z0-9][a-z0-9._]*$")
+
+
+def normalise_username(username: str | None) -> str:
+    """The canonical form a username is stored and looked up as.
+
+    Lowercased and trimmed for the same reason an email is: ``Rowan`` and ``rowan`` are one
+    person, and letting them be two accounts means the second one silently takes over the
+    first one's name on screen.
+    """
+    return (username or "").strip().lower()
+
+
+def username_problem(username: str | None) -> str | None:
+    """Why this username cannot be used, in the words a learner would read. ``None`` = fine.
+
+    The character set is deliberately small (letters, digits, dot, underscore): a username
+    is an identity key that is encrypted and blind indexed, not a display name, and a
+    narrow set is the difference between "we can find your row" and "which of these six
+    lookalike strings did you mean".
+    """
+    value = normalise_username(username)
+    if not value:
+        return "a username is required"
+    if len(value) < USERNAME_MIN:
+        return f"a username needs at least {USERNAME_MIN} characters"
+    if len(value) > USERNAME_MAX:
+        return f"a username can be at most {USERNAME_MAX} characters"
+    if not _USERNAME_OK.match(value):
+        return "letters, numbers, dots and underscores only, starting with a letter or a number"
+    return None
+
+
+def username_index_for(username: str | None) -> str | None:
+    """The keyed digest that makes the encrypted username searchable by equality.
+
+    Creation and lookup must call *this* function: the digest is bound to the column
+    label, so a caller that inlines its own ``blind_index(...)`` with a different label
+    produces an index that never matches, and sign-in fails only for real users.
+    """
+    from ..crypto.fields import blind_index
+
+    value = normalise_username(username)
+    if not value:
+        return None
+    return blind_index(value, column="student.username")
+
+
+def student_by_username(db: Session, username: str | None) -> Student | None:
+    value = normalise_username(username)
+    if not value:
+        return None
+    idx = username_index_for(value)
+    if not idx:
+        # Cipher disabled (ADAPT_DB_ENCRYPTION=off): compare the plaintext column, exactly as
+        # the email lookup does, and never fall back to "some student with no index".
+        return db.execute(
+            select(Student).where(func.lower(Student.username) == value, Student.deleted_at.is_(None))
+        ).scalars().first()
+    return db.execute(
+        select(Student).where(Student.username_index == idx, Student.deleted_at.is_(None))
+    ).scalars().first()
 
 
 def student_by_email(db: Session, email: str) -> Student | None:

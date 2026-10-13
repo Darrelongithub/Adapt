@@ -495,7 +495,7 @@ async def numbas_import(
         if topic_id is None:
             named = ref_hint or tag_ref or "no topic given"
             report.warnings.append(
-                f"{payload.get('stem', '')[:40] or 'item'}: skipped -- {named!r} is not a topic here. "
+                f"{payload.get('stem', '')[:40] or 'item'}: skipped — {named!r} is not a topic here. "
                 f"Tag the question ``adapt-topic:<topic code>``, one of: {known_codes}"
             )
             continue
@@ -539,7 +539,7 @@ async def numbas_import(
             # does not become a question anybody is asked.
             fields["active"] = False
             report.warnings.append(
-                f"{payload.get('stem', '')[:40] or ref}: left inactive -- unrendered field(s) {dirty} still contain "
+                f"{payload.get('stem', '')[:40] or ref}: left inactive — unrendered field(s) {dirty} still contain "
                 "{placeholders} and the item carries no variables to fill them"
             )
         if existing is None:

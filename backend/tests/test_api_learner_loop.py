@@ -169,6 +169,78 @@ def test_email_and_password_login_works_after_registering(client, registered_lea
     assert no_user.json()["detail"] == bad.json()["detail"], "the two answers must read identically"
 
 
+def test_a_username_account_can_be_made_and_signed_into(client):
+    """The front door asks for a username, so the row has to carry one and find it again.
+
+    This is the whole point of the column: the username is encrypted at rest and looked up
+    through its own blind index, so if registration writes the value but the lookup is made
+    with the email label (or vice versa) the account exists and nobody can ever sign in.
+    """
+    made = client.post(
+        "/api/v1/students",
+        json={"username": "Rowan.7", "password": "a long enough phrase"},
+    )
+    assert made.status_code == 200, made.text
+    assert made.json()["onboarding_complete"] is False
+
+    # Stored lowercased, so the next visit can be typed however it comes out of the learner's
+    # hands; and the display name falls back to the username rather than to a blank greeting.
+    with_services = client.get("/api/v1/me").json()
+    assert with_services["display_name"] == "Rowan.7"
+
+    again = client.post("/api/v1/login", json={"username": "rOwAn.7", "password": "a long enough phrase"})
+    assert again.status_code == 200, again.text
+    assert again.json()["student_id"] == made.json()["student_id"]
+    assert again.json()["created"] is False
+
+    bad = client.post("/api/v1/login", json={"username": "rowan.7", "password": "not the phrase"})
+    assert bad.status_code == 401
+    missing = client.post("/api/v1/login", json={"password": "a long enough phrase"})
+    assert missing.status_code == 422, "a sign-in with no identifier is refused in words, not a 401"
+
+
+def test_a_taken_username_is_refused_without_handing_over_a_session(client):
+    owner = client.post("/api/v1/students", json={"username": "taken.name", "password": "correct horse battery"})
+    assert owner.status_code == 200, owner.text
+
+    attacker = client.post("/api/v1/students", json={"username": "taken.name", "password": "guessing here"})
+    assert attacker.status_code == 409, attacker.text
+    assert attacker.json()["detail"]["error"] == "username_taken"
+    assert "csrf_token" not in attacker.json()["detail"], "a refusal may not carry a session"
+
+
+def test_usernames_that_cannot_be_looked_up_are_refused_before_a_row_is_written(client):
+    for bad, why in (
+        ("ab", "too short"),
+        ("has space", "a space cannot be in an identity key"),
+        ("_leading", "must start with a letter or a number"),
+        ("x" * 41, "past the column's own limit"),
+    ):
+        r = client.post("/api/v1/students", json={"username": bad, "password": "a long enough phrase"})
+        assert r.status_code == 422, f"{why}: {r.text}"
+        assert "student_id" not in r.text
+
+
+def test_an_email_account_still_signs_in(client):
+    """Two identifiers in the same column space, because accounts predate the username field."""
+    made = client.post(
+        "/api/v1/students",
+        json={"email": "still-works@example-invalid.test", "password": "correct horse battery"},
+    )
+    assert made.status_code == 200, made.text
+    back = client.post(
+        "/api/v1/login", json={"email": "still-works@example-invalid.test", "password": "correct horse battery"}
+    )
+    assert back.status_code == 200, back.text
+    # An email typed into the username field finds nothing: the lookup is by username first,
+    # so a row with no username is not reachable that way. That is the honest answer, not a
+    # silent match on a column the learner did not use.
+    typed_into_username = client.post(
+        "/api/v1/login", json={"username": "still-works@example-invalid.test", "password": "correct horse battery"}
+    )
+    assert typed_into_username.status_code == 401
+
+
 def test_logout_revokes_the_session_row_not_just_the_cookie(client, services, registered_learner):
     from sqlalchemy import select
 
@@ -334,7 +406,7 @@ def test_onboarding_never_asks_how_you_learn(client, learner):
     assert "bogus_key" in body["ignored_keys"], "silently dropping an unknown key is how a client rots"
     assert body["rejected_reasons"]["bogus_key"] == "unknown preference key"
     assert "learning_style" in body["ignored_keys"], "the app must not collect a learning-style label at all"
-    assert "learning-style" in body["note"] and "measured" in body["note"]
+    assert "learning style" in body["note"] and "measured" in body["note"]
     assert body["consent"] == {"analytics": True, "share_summary_with_ai": True}
 
     me = client.get("/api/v1/me", headers=learner["headers"]).json()

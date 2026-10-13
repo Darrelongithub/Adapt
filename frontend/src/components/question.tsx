@@ -245,11 +245,13 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
                   keep({ picked: c.index });
                   roving.setActiveIndex(idx);
                 }}
-                className={`pz-opt ${correctnessClass}`}
+                className={`option-card ${correctnessClass}`}
               >
-                <span className="l">{String.fromCharCode(65 + idx)}</span>
+                {/* The selection indicator is a shape, not a colour: aria-checked drives it,
+                    so what a learner sees and what a screen reader announces cannot drift. */}
+                <span className="radio-dot" aria-hidden="true" />
+                <span className="option-letter">{String.fromCharCode(65 + idx)}</span>
                 <span className="flex-1">{c.text}</span>
-                {isSelected ? <span className="text-xs text-[var(--accent)]">●</span> : null}
                 {/* keep hidden radio for probe compatibility */}
                 <input type="radio" name={`choice-${item.id}`} checked={isSelected} onChange={() => {}} className="sr-only" aria-hidden="true" tabIndex={-1} />
               </button>
@@ -342,7 +344,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
             type="button"
             onClick={submit}
             disabled={busy || !canSubmit}
-            className="pz-submit"
+            className="btn-ctl btn-primary"
             title={!canSubmit ? "enter an answer first" : undefined}
             aria-describedby={!canSubmit ? "submit-hint" : undefined}
           >
@@ -581,7 +583,7 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
       </div>
       {tb ? (
         <p className="mt-2 text-xs text-[var(--muted)]">
-          teach-back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
+          teach back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
           {tb.missing?.length ? <> — missing <em>{tb.missing.join(", ")}</em></> : <> — all there</>}
           {tb.followup ? <>. {tb.followup}</> : null}. {tb.note}
         </p>

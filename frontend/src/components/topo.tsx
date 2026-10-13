@@ -152,7 +152,7 @@ export function TopicTopo({ rows, minN = EARLY_SIGNAL_N }: { rows: TopoRow[]; mi
 
       <div className="table-scroll">
         <table className="topo-table">
-          <caption>Per-topic estimate — the numbers behind the chart above</caption>
+          <caption>Estimates by topic — the numbers behind the chart above</caption>
           <thead>
             <tr>
               <th scope="col">Topic</th>

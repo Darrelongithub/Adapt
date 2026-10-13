@@ -72,14 +72,14 @@ METHODS: dict[str, Method] = {
             id="explanation",
             label="Explanation first",
             strategy="segmented_text",
-            surface="short, check-after-each-step explanation",
+            surface="short explanation with a check after each step",
             teaches="segmenting text so working memory is spent on the idea, not the paragraph",
         ),
         Method(
             id="worked_example",
             label="Worked example first",
             strategy="worked_examples",
-            surface="a fully solved, step-labelled example",
+            surface="a fully solved, step labelled example",
             teaches="lowering intrinsic load on first exposure so the procedure can be seen whole",
         ),
         Method(

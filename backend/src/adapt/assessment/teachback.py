@@ -413,7 +413,7 @@ def merge_model_result(result: ChecklistResult, points: Sequence[Point]) -> Chec
     result.verdict = "met" if result.met_count == len(result.points) else "partly" if result.met_count else "not_met"
     result.graded_by = "ai2_checklist"
     if changed:
-        result.note = (result.note + f" (model disagreed on {', '.join(changed)}; the quoted-evidence rule decided)").strip()
+        result.note = (result.note + f" (model disagreed on {', '.join(changed)}; the quoted evidence rule decided)").strip()
     return result
 
 

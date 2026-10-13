@@ -66,6 +66,18 @@ async def lifespan(app: FastAPI):
     from ..crypto.fields import verify_stored_data
 
     check = verify_stored_data(svcs.db.engine)
+    if check["missing"]:
+        # Not a key problem, and saying so matters: the encrypted-column check reads through
+        # the model, and a database made by an earlier build is missing columns this build
+        # declares. SQLite answers the unknown identifier with its own name as a string
+        # literal, so without this the operator sees "the key cannot open 4 values" and goes
+        # looking for a key that is fine.
+        raise RuntimeError(
+            "startup refused: this database was made by an earlier build and is missing "
+            f"{len(check['missing'])} column(s) this build declares: {', '.join(check['missing'][:4])}. "
+            "Migrate it rather than deleting it: `alembic -c alembic.ini stamp 0002 && "
+            "alembic -c alembic.ini upgrade head` (see README, Migrations)."
+        )
     if check["checked"] and check["unreadable"]:
         # Spelled out here rather than interpolated, because an exception message about key
         # material must never touch the key itself -- and a nested f-string quoting a secret

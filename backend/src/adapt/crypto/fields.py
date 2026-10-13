@@ -175,6 +175,22 @@ class BlindIndexedEmail(EncryptedText):
         super().__init__(context="student.email")
 
 
+class BlindIndexedUsername(EncryptedText):
+    """Encrypted username; the *index* is a keyed digest so sign-in works with no plaintext.
+
+    Same shape as :class:`BlindIndexedEmail`, and deliberately a separate column with its
+    own label: the digest is bound to the column name, so a username stored under
+    ``student.email`` (or looked up with that label) would produce rows that never match
+    the lookup that created them. Two labels, two fields, no ambiguity about which
+    identifier a row carries.
+    """
+
+    cache_ok = True
+
+    def __init__(self) -> None:
+        super().__init__(context="student.username")
+
+
 def blind_index(value: str, *, column: str = "student.email") -> str | None:
     cipher = get_cipher()
     if cipher is None or not value:
@@ -211,12 +227,34 @@ def verify_stored_data(engine: Any, *, per_column: int = 4) -> dict[str, Any]:
 
     Returns counts, never plaintext: the values it touches are learner emails and answers.
     """
-    from sqlalchemy import text
+    from sqlalchemy import inspect as sa_inspect, text
 
-    report: dict[str, Any] = {"columns": 0, "checked": 0, "unreadable": 0, "columns_unreadable": [], "note": None}
+    report: dict[str, Any] = {
+        "columns": 0,
+        "checked": 0,
+        "unreadable": 0,
+        "columns_unreadable": [],
+        "missing": [],
+        "note": None,
+    }
     for table_name, column_name in encrypted_columns():
         try:
             with engine.connect() as cx:
+                # Ask the *file* which columns it has before sampling one. A model column a
+                # database has not been migrated onto yet is not a key problem, and SQLite
+                # makes it worse than that: an unknown double-quoted identifier is read as a
+                # string literal, so `SELECT "username" FROM students` on an un-migrated file
+                # returns the word "username" for every row -- non-null, undecryptable, and
+                # reported as a broken key. This is the check that turns "run the migration"
+                # into that sentence instead.
+                live = {c["name"] for c in sa_inspect(cx).get_columns(table_name)}
+                if column_name not in live:
+                    # Named in the report rather than silently skipped: "this file has not been
+                    # migrated onto" is a sentence an operator needs, and it is exactly what the
+                    # key error used to obscure (SQLite reads the unknown identifier as a string
+                    # literal, so the "unreadable value" it reports is the *column's own name*).
+                    report["missing"].append(f"{table_name}.{column_name}")
+                    continue
                 rows = cx.execute(
                     text(f'SELECT "{column_name}" FROM "{table_name}" WHERE "{column_name}" IS NOT NULL LIMIT :n'),
                     {"n": per_column},

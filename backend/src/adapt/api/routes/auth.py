@@ -25,6 +25,11 @@ from ...services import sessions as S
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
 
+def guest_requested(body: RegisterBody) -> bool:
+    """A creation is a guest when it asked to be one or gave no identifier at all."""
+    return bool(body.as_guest) or not (body.username or body.email)
+
+
 def _spend(scope: str, key: str) -> None:
     """Take one token from a bucket ``DEFAULT_LIMITS`` declares."""
     current().limiter.allow(scope, key)
@@ -55,6 +60,9 @@ def _check_bucket(request: Request, scope: str, key: str, *, note: str) -> None:
 
 class RegisterBody(BaseModel):
     display_name: str | None = Field(default=None, max_length=80)
+    # The identifier this build asks for. `email` is still accepted so accounts made before
+    # the username field existed, and the tunnel demo, keep working.
+    username: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=160)
     password: str | None = Field(default=None, min_length=10, max_length=200)
     age_band: str | None = Field(default=None, max_length=16)
@@ -62,7 +70,12 @@ class RegisterBody(BaseModel):
 
 
 class LoginBody(BaseModel):
-    email: str = Field(max_length=160)
+    """Either identifier signs in. Both fields are optional in the schema and the route
+    refuses an empty pair, so the failure is one readable sentence rather than a 422 that
+    names a field the learner never saw."""
+
+    username: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=160)
     password: str = Field(max_length=200)
 
 
@@ -91,10 +104,29 @@ def create_student(body: RegisterBody, request: Request, response: Response, s: 
             status_code=403,
             detail={"error": "demo_passphrase_required", "hint": "set ADAPT_DEMO_PASSPHRASE and send X-ADAPT-Demo-Passphrase"},
         )
-    if body.email and not body.password:
-        raise HTTPException(status_code=422, detail="an email account needs a password of at least 10 characters")
-    guest = body.as_guest or not body.email
-    if not guest and auth.student_by_email(s, body.email) is not None:
+    # Kept as typed here; the validation and lookup helpers below normalise for themselves, and
+    # the service keeps the typed form as the display fallback so "Rowan.7" is not greeted as
+    # "rowan.7".
+    username = (body.username or "").strip()
+    if not guest_requested(body) and username:
+        problem = auth.username_problem(username)
+        if problem:
+            raise HTTPException(status_code=422, detail=problem)
+    if (body.email or username) and not body.password:
+        raise HTTPException(status_code=422, detail="an account needs a password of at least 10 characters")
+    guest = body.as_guest or not (body.email or username)
+    if not guest and username and auth.student_by_username(s, username) is not None:
+        audit_event(
+            request,
+            action="register_existing_username",
+            outcome="denied",
+            detail={"reason": "username already taken"},
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "username_taken", "next": "pick another username, or sign in if it is yours"},
+        )
+    if not guest and body.email and auth.student_by_email(s, body.email) is not None:
         # Registration is not a login path. `get_or_create_student` returns the
         # existing row for a known address, so without this guard posting someone's
         # email to /students would hand back a signed-in session for their account.
@@ -128,11 +160,17 @@ def create_student(body: RegisterBody, request: Request, response: Response, s: 
         s,
         display_name=body.display_name,
         email=None if guest else body.email,
+        username=None if guest else (username or None),
         password=body.password,
         age_band=body.age_band,
     )
     login = issue_login(response, s, student, request=request)
-    audit_event(request, action="student_created", actor=student.id, detail={"guest": guest, "email_set": bool(body.email)})
+    audit_event(
+        request,
+        action="student_created",
+        actor=student.id,
+        detail={"guest": guest, "email_set": bool(body.email), "username_set": bool(username)},
+    )
     return {**login, "created": True, "onboarding_complete": student.onboarding_complete, "mode": get_settings().mode}
 
 
@@ -142,21 +180,28 @@ def login(body: LoginBody, request: Request, response: Response, s: Session = De
     # successful sign-in spends nothing, so a learner is never locked out by their own
     # activity; only failures drain the bucket, and while it is empty the password is
     # not even read.
-    acct_key = f"account:{(body.email or '').strip().lower()}"
+    acct_key = f"account:{auth.normalise_username(body.username) or (body.email or '').strip().lower()}"
     ip_key = f"ip:{client_ip(request)}"
     for key in (acct_key, ip_key):
         _check_bucket(
             request,
             "auth_fail",
             key,
-            note="too many failed sign-ins for now; a forgotten password is reset by whoever runs this instance",
+            note="too many failed attempts at signing in for now. A forgotten password is reset by whoever runs this instance",
         )
-    student = S.authenticate(s, email=body.email or "", password=body.password or "")
+    if not (body.username or body.email):
+        raise HTTPException(status_code=422, detail="a username and a password are required")
+    student = S.authenticate(
+        s,
+        username=body.username,
+        email=body.email,
+        password=body.password or "",
+    )
     if student is None:
         _spend("auth_fail", acct_key)
         _spend("auth_fail", ip_key)
         audit_event(request, action="login_failed", outcome="denied", detail={"reason": "bad credentials"})
-        raise HTTPException(status_code=401, detail="wrong email or password")
+        raise HTTPException(status_code=401, detail="wrong username or password")
     return {**issue_login(response, s, student, request=request), "created": False}
 
 

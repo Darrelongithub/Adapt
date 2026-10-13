@@ -456,6 +456,61 @@ def test_startup_key_check_reads_real_rows_and_does_not_false_alarm(client):
     assert report["columns"] >= 1
 
 
+def test_startup_key_check_ignores_a_model_column_the_file_has_not_got_yet(services, tmp_path):
+    """A database made by an earlier build is missing columns this build declares.
+
+    It must be reported as "not migrated", not as "your key is wrong". SQLite answers a query
+    for a column the file does not have with that column's own name as a value, and a value
+    that is not a ciphertext cannot be opened: on a file this build wrote, the sample comes
+    back as ``TypeError`` and the operator is told that encrypted values are unreadable when
+    the key is fine. The guard that fixes it is the live-schema read, and this test fails if
+    that read stops happening.
+
+    A second file rather than the shared one on purpose: the point is the sampler's behaviour,
+    and rewriting the live test database's schema to make the point would couple every other
+    test in the run to whether this one had executed yet. Rows go in through the ORM so the
+    column types encrypt them exactly as the app would.
+    """
+    from sqlalchemy import text as sql_text
+
+    from adapt.crypto.fields import verify_stored_data
+    from adapt.db.engine import Database
+    from adapt.db.models import Student
+
+    older = Database(services.settings, db_file=tmp_path / "earlier-build.db")
+    older.create_all()
+    with older.session() as s:
+        s.add(Student(id="stu_olderbuild", display_name="Rowan Older", email="older@example.test",
+                      email_index="older-index", username="rowan.old", username_index="rowan-old-index",
+                      role="student"))
+    baseline = verify_stored_data(older.engine)
+    assert baseline["unreadable"] == 0, baseline
+    assert baseline["missing"] == [], f"nothing should be missing on this build: {baseline}"
+    assert baseline["checked"] >= 2, baseline
+
+    # Now make the file look like one an earlier build wrote: the column is gone from the
+    # file while the model still declares it.
+    with older.engine.begin() as cx:
+        cx.execute(sql_text("ALTER TABLE students RENAME TO students_old"))
+        cx.execute(sql_text("CREATE TABLE students AS SELECT * FROM students_old"))
+        cx.execute(sql_text("ALTER TABLE students DROP COLUMN username"))
+    # Sampled after the DDL has committed: inside the transaction the sampler's own connection
+    # still sees the old table, which would make this test pass while proving nothing (a
+    # mutation that removes the guard has to fail this test).
+    reduced = verify_stored_data(older.engine)
+    assert reduced["unreadable"] == 0, (
+        "a column the file does not have was sampled anyway, and the literal column name was "
+        "counted as a value the key cannot open: " + repr(reduced)
+    )
+    assert "students.username" in reduced["missing"], (
+        "the column was not reported as missing, so nothing tells the operator to migrate: "
+        + repr(reduced)
+    )
+    assert reduced["checked"] < baseline["checked"], (
+        "the missing column still contributed a sampled value: " + repr(reduced)
+    )
+
+
 def test_startup_key_check_notices_a_foreign_blob():
     """The guard reads through the column type, so a value written by another key (or
     corrupted) is reported instead of surfacing as a 500 to a learner mid-question.

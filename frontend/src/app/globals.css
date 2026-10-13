@@ -9,7 +9,7 @@
   --bg: oklch(94% 0.02 85);
   --panel: oklch(97% 0.015 85);
   --panel-2: oklch(90% 0.02 82);
-  --line: oklch(76% 0.02 75);
+  --line: oklch(72% 0.02 75);
   --ink: oklch(22% 0.01 60);
   --muted: oklch(40% 0.015 60);
   --accent: oklch(47% 0.16 258);
@@ -136,10 +136,23 @@ kbd {
   align-items: center;
   justify-content: center;
   background: var(--bg);
-  transition: opacity 0.35s ease;
+  transition: opacity 0.5s ease;
 }
 .opening-overlay.exiting {
   opacity: 0;
+}
+.opening-mark {
+  /* The mark reads in the accent colour, not in muted grey: it is the only branding on the
+     screen, and grey on grey made it look like a caption for the skip button. */
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 .opening-phrase {
   font-family: var(--font-serif);
@@ -154,9 +167,12 @@ kbd {
 .opening-word {
   display: inline-block;
   opacity: 0;
-  filter: blur(5px);
-  transform: translateY(14px);
-  animation: oreveal 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  filter: blur(10px);
+  transform: translateY(22px);
+  /* Slower on purpose: at 0.55s a word arrived before the eye had settled on the one before
+     it, so the sentence was over before it read as a sentence. The reveal is now a beat per
+     word, and `Opening` holds the phrase long enough for the last word to land. */
+  animation: oreveal 1.15s cubic-bezier(0.16, 0.9, 0.2, 1) forwards;
 }
 .opening-word.blue {
   color: var(--accent);
@@ -169,22 +185,11 @@ kbd {
   }
 }
 .opening-skip {
+  /* Position only: the look is the button contract's ghost, the same control every other
+     low-commitment action in the app wears. */
   position: absolute;
   bottom: 40px;
   right: 40px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: pointer;
-  background: none;
-  border: none;
-  border-bottom: 1px solid transparent;
-}
-.opening-skip:hover {
-  color: var(--ink);
-  border-color: var(--line);
 }
 @media (prefers-reduced-motion: reduce) {
   .opening-word {
@@ -195,222 +200,7 @@ kbd {
   }
 }
 
-/* ========== Shell chrome - index tab + overlay + status corner ========== */
-.index-tab {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 60;
-  background: var(--ink);
-  color: var(--bg);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 10px 18px;
-  padding-left: max(18px, env(safe-area-inset-left));
-  cursor: pointer;
-  border: none;
-  border-bottom-right-radius: 3px;
-  transition: background 0.15s;
-}
-.index-tab:hover {
-  background: var(--accent);
-}
-/* The readout is `pointer-events: none` on purpose: it floats over content, and without
- * this it silently eats taps aimed at whatever sits underneath — on a phone (where it used
- * to be a wide fixed bar over the bottom of every screen) that meant the primary buttons
- * of the practice screen were the ones "not working". */
-.status-corner {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  max-width: 100%;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  align-items: center;
-  pointer-events: none;
-}
-.status-corner .d {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  display: inline-block;
-  margin-right: 5px;
-}
-.status-corner .d.good {
-  background: var(--good);
-}
-.status-corner .d.warn {
-  background: var(--warn);
-}
-/* Wide *mouse* screens keep the designed "fixed bottom-left status corner" (the prototype's
- * spot). Phones — portrait or landscape — and tablets get the same text in the footer flow
- * instead: a fixed overlay across the bottom of a small viewport is exactly what made this
- * UI unusable there — it covered content, covered buttons and forced a sideways scroll.
- * `hover: hover` is the load-bearing half: a landscape phone is 844px wide and still must
- * not get the overlay. */
-@media (min-width: 641px) and (hover: hover) {
-  .status-corner {
-    position: fixed;
-    bottom: 16px;
-    bottom: max(16px, env(safe-area-inset-bottom));
-    left: 18px;
-    left: max(18px, env(safe-area-inset-left));
-    z-index: 50;
-    max-width: min(420px, calc(100vw - 36px));
-    padding-right: 12px;
-  }
-}
-.index-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: var(--bg);
-  display: none;
-  flex-direction: column;
-  justify-content: center;
-  /* `safe center` so a short viewport (landscape phone) can scroll the list instead of
-   * clipping the first rows off the top with no way to reach them. */
-  justify-content: safe center;
-  padding: clamp(28px, 8vw, 90px);
-  padding-top: max(clamp(28px, 8vw, 90px), env(safe-area-inset-top));
-  padding-left: max(clamp(28px, 8vw, 90px), env(safe-area-inset-left));
-  padding-right: max(clamp(28px, 8vw, 90px), env(safe-area-inset-right));
-  padding-bottom: max(clamp(28px, 8vw, 90px), env(safe-area-inset-bottom));
-  overflow-y: auto;
-}
-.index-overlay.open {
-  display: flex;
-}
-.index-brand {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 15px;
-  color: var(--muted);
-  margin-bottom: 40px;
-  cursor: pointer;
-  width: fit-content;
-  background: none;
-  border: none;
-}
-.index-brand b {
-  color: var(--accent);
-  font-style: normal;
-}
-.index-list {
-  display: flex;
-  flex-direction: column;
-}
-.index-row {
-  display: flex;
-  align-items: baseline;
-  gap: 28px;
-  cursor: pointer;
-  padding: 11px 0;
-  border-bottom: 1px solid transparent;
-  background: none;
-  border-top: none;
-  border-left: none;
-  border-right: none;
-  text-align: left;
-  width: 100%;
-}
-.index-row:hover {
-  border-color: var(--line);
-}
-.index-row .n {
-  font-family: var(--font-mono);
-  color: var(--muted);
-  font-size: 13px;
-  width: 26px;
-}
-.index-row .t {
-  font-family: var(--font-serif);
-  font-size: clamp(20px, 3.2vw, 38px);
-  font-weight: 500;
-  transition: color 0.15s;
-}
-.index-row:hover .t {
-  color: var(--accent);
-}
-.index-close {
-  position: absolute;
-  top: 34px;
-  right: clamp(16px, 6vw, 44px);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--muted);
-  cursor: pointer;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: none;
-  border: none;
-}
-.index-close:hover {
-  color: var(--ink);
-}
-
-/* ========== Home - word field as entry point ========== */
-.page-home {
-  padding: clamp(40px, 8vw, 90px) clamp(24px, 8vw, 90px) 60px;
-}
-.home-greet {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--muted);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.home-title {
-  font-family: var(--font-serif);
-  font-size: clamp(22px, 3.6vw, 42px);
-  max-width: 640px;
-  margin-top: 16px;
-  line-height: 1.3;
-  font-weight: 500;
-}
-.home-title b {
-  color: var(--accent);
-  font-style: italic;
-  font-weight: 500;
-}
-.word-field {
-  display: flex;
-  flex-wrap: wrap;
-  gap: clamp(20px, 4vw, 48px) clamp(28px, 5vw, 64px);
-  margin-top: clamp(36px, 6vw, 56px);
-}
-.wf-item {
-  cursor: pointer;
-  font-family: var(--font-serif);
-  font-weight: 500;
-  color: var(--ink);
-  background: none;
-  border: none;
-  text-align: left;
-  transition: color 0.15s, transform 0.2s;
-}
-.wf-item:hover,
-.wf-item:focus-visible {
-  color: var(--accent);
-  transform: translateY(-3px);
-}
-.wf-item .n {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  margin-bottom: 6px;
-  font-weight: 400;
-}
-.wf-item:hover .n,
-.wf-item:focus-visible .n {
-  color: var(--accent);
-}
-
-/* ========== Practice / diagnose single-question focus ========== */
+/* ========== Home ========== */
 .page-practice {
   padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 140px;
   position: relative;
@@ -436,55 +226,6 @@ kbd {
   height: 2px;
   background: var(--accent);
   margin: 30px 0;
-}
-.pz-opts {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 520px;
-}
-.pz-opt {
-  font-family: var(--font-sans);
-  font-size: 17px;
-  padding: 12px 0;
-  border: none;
-  border-bottom: 1px solid var(--line);
-  background: none;
-  cursor: pointer;
-  display: flex;
-  gap: 16px;
-  transition: all 0.15s;
-  color: var(--ink);
-  text-align: left;
-  width: 100%;
-}
-.pz-opt .l {
-  font-family: var(--font-mono);
-  color: var(--muted);
-  font-size: 12px;
-}
-.pz-opt:hover {
-  border-color: var(--accent);
-}
-.pz-opt[aria-checked="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 500;
-}
-.pz-opt[aria-checked="true"] .l {
-  color: var(--accent);
-}
-.pz-opt:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.pz-opt.correct {
-  color: var(--good);
-  border-color: var(--good);
-}
-.pz-opt.incorrect {
-  color: var(--bad);
-  border-color: var(--bad);
 }
 .marginalia {
   display: flex;
@@ -542,26 +283,27 @@ kbd {
   font-size: 11px;
   color: var(--muted);
 }
-.pz-submit {
+.pz-stamp {
   font-family: var(--font-mono);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 13px 28px;
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--bg);
-  cursor: pointer;
+  font-size: 11.5px;
+  padding: 10px 16px;
   border-radius: 2px;
-  transition: all 0.15s;
+  max-width: 620px;
+  margin-top: 24px;
+  display: none;
 }
-.pz-submit:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 0 var(--line);
+.pz-stamp.show {
+  display: block;
 }
-.pz-submit:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+.pz-stamp.ok {
+  color: var(--good);
+  border: 1px dashed var(--good);
+  background: oklch(50% 0.12 150 / 0.06);
+}
+.pz-stamp.bad {
+  color: var(--bad);
+  border: 1px dashed var(--bad);
+  background: oklch(50% 0.18 25 / 0.06);
 }
 
 /* ========== Band component - track + range + marker ========== */
@@ -699,45 +441,6 @@ kbd {
   gap: 8px;
   margin-top: 16px;
 }
-.stamp-btn {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--ink);
-  cursor: pointer;
-  border-radius: 2px;
-  transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.stamp-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 0 var(--line);
-}
-.stamp-btn[aria-pressed="true"] {
-  background: var(--ink);
-  color: var(--bg);
-  border-color: var(--ink);
-}
-.stamp-btn.yes[aria-pressed="true"] {
-  background: var(--good);
-  border-color: var(--good);
-  color: white;
-}
-.stamp-btn.no[aria-pressed="true"] {
-  background: var(--bad);
-  border-color: var(--bad);
-  color: white;
-}
-.stamp-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
 /* ========== Changes page specifics ========== */
 .page-changes {
   padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 60px;
@@ -788,6 +491,22 @@ kbd {
 }
 
 /* ========== Review - horizon line ========== */
+.page-review {
+  padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 60px;
+}
+.rv-head {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.rv-sub {
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 2.6vw, 28px);
+  font-weight: 500;
+  margin-top: 8px;
+}
 .horizon {
   position: relative;
   height: 220px;
@@ -860,27 +579,17 @@ kbd {
   color: var(--ink);
   font-size: 10.5px;
 }
-.rate-btn {
+.rv-rate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 40px;
+  align-items: center;
+}
+.rv-rate span {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 10px 18px;
-  border: 1px solid var(--line);
-  background: transparent;
-  cursor: pointer;
-  border-radius: 2px;
-  transition: all 0.15s;
-}
-.rate-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 0 var(--line);
-}
-.rate-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
+  font-size: 11px;
+  color: var(--muted);
 }
 @media (prefers-reduced-motion: reduce) {
   .rv-item {
@@ -889,6 +598,22 @@ kbd {
 }
 
 /* ========== Progress - topography / uncertainty-aware scale ========== */
+.page-progress {
+  padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 60px;
+}
+.pg-head {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.pg-sub {
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 2.6vw, 28px);
+  font-weight: 500;
+  margin: 8px 0 10px;
+}
 .pg-note {
   font-family: var(--font-sans);
   font-size: 13.5px;
@@ -948,6 +673,23 @@ kbd {
   color: var(--ink);
 }
 
+/* ========== Lessons - filmstrip ========== */
+.page-lessons {
+  padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 60px;
+}
+.ls-head {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.ls-sub {
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 2.6vw, 28px);
+  font-weight: 500;
+  margin: 8px 0 36px;
+}
 /* Horizontal scrolling belongs to the table itself, never to the page: wide mono columns
  * (timestamps especially) used to push the whole document sideways on a phone. */
 .table-scroll {
@@ -969,31 +711,14 @@ kbd {
   -webkit-overflow-scrolling: touch;
 }
 .frame {
+  /* Layout only: the look is the contract's tab (btn-secondary), so a frame tab and a
+     decision button cannot drift apart. */
   min-width: 96px;
   height: 64px;
   flex-shrink: 0;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  display: flex;
-  align-items: center;
   justify-content: center;
-  font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--muted);
-  cursor: pointer;
-  transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
   border-radius: 2px;
-}
-.frame:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  transform: translateY(-1px);
-}
-.frame[aria-selected="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-dim);
-  font-weight: 600;
 }
 .frame:focus-visible {
   outline: 2px solid var(--accent);
@@ -1016,6 +741,112 @@ kbd {
   color: var(--muted);
   margin-bottom: 20px;
 }
+.frame-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.page-voice {
+  padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 60px;
+}
+.vc-head {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.vc-sub {
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 2.6vw, 28px);
+  font-weight: 500;
+  margin: 8px 0 36px;
+}
+.signal-box {
+  max-width: 620px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 28px;
+  border-radius: 2px;
+}
+.signal-line {
+  width: 100%;
+  height: 50px;
+}
+.signal-note {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--warn);
+  margin-top: 14px;
+}
+.signal-fallback {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--ink);
+  margin-top: 12px;
+  max-width: 460px;
+  line-height: 1.6;
+}
+.typed-input {
+  margin-top: 18px;
+  width: 100%;
+  max-width: 420px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--ink);
+  border-radius: 2px;
+}
+
+/* ========== Settings - plain label/value rows ========== */
+.page-settings {
+  padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 60px;
+}
+.st-head {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.st-sub {
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 2.6vw, 28px);
+  font-weight: 500;
+  margin: 8px 0 36px;
+}
+.st-list {
+  max-width: 560px;
+}
+.st-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+.st-row dt {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.st-row dd {
+  font-weight: 500;
+}
+
+/* ========== Btn hover affordance (paper ledger) ========== */
+.btn-mono {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+}
 
 /* ========== Card as hairline panel ========== */
 .panel {
@@ -1025,10 +856,31 @@ kbd {
 }
 
 /* Generic page wrapper */
+.page-wrapper {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: clamp(20px, 4vw, 40px) clamp(16px, 4vw, 32px);
+}
+.narrow {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(20px, 4vw, 40px) clamp(16px, 4vw, 32px);
+}
 .wide {
   max-width: 1120px;
   margin: 0 auto;
   padding: clamp(20px, 4vw, 40px) clamp(16px, 4vw, 32px);
+}
+
+/* Onboarding marginalia for large screens */
+.onboarding-grid {
+  display: grid;
+  gap: clamp(24px, 4vw, 40px);
+}
+@media (min-width: 860px) {
+  .onboarding-grid {
+    grid-template-columns: 1.15fr 0.85fr;
+  }
 }
 
 /* Ensure no fixed-pixel absolute positioning reflow bugs */
@@ -1046,34 +898,478 @@ kbd {
   }
 }
 
-/* Fingers, not cursors: 44px is the minimum comfortable target (WCAG 2.5.8 / Apple HIG).
-   The ledger-stamp aesthetic can keep its look — this only grows the hit area. */
 @media (pointer: coarse) {
+  /* Fingers, not cursors: 44px is the minimum comfortable target (WCAG 2.5.8 / Apple
+     HIG). Every control wears .btn-ctl, so this one list covers the whole app. */
   .btn-ctl,
-  .stamp-btn,
-  .rate-btn,
-  .pz-submit,
-  .pz-opt,
-  .index-tab,
-  .index-row,
-  .index-close,
-  .opening-skip,
-  .frame,
-  .wf-item {
+  .option-card,
+  .check-row,
+  .opening-skip {
     min-height: 44px;
-  }
-  .btn-ctl,
-  .stamp-btn,
-  .rate-btn,
-  .pz-submit {
-    display: inline-flex;
-    align-items: center;
   }
   .opening-skip {
     padding: 12px 16px;
   }
-  .index-close {
-    padding: 12px 8px;
-    top: 22px;
+}
+
+/* ==========================================================================
+   THE BUTTON CONTRACT (brief 2.2)
+   Every control that submits, decides, rates, selects or advances state uses
+   one of the three classes below. The only thing allowed to look like plain
+   underlined text is a link to reference material (`.link-inline`), because it
+   navigates rather than doing something with a consequence.
+   .btn-ctl is the marker the coarse-pointer tap-target rules already keyed off;
+   it stays on every control so the 44px minimum keeps applying.
+   ========================================================================== */
+.btn-primary,
+.btn-secondary,
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-primary {
+  background: var(--ink);
+  color: var(--bg);
+  border: 1.5px solid var(--ink);
+  padding: 13px 24px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 0 var(--line);
+}
+.btn-primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.btn-secondary {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+  padding: 11px 20px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* Selected state. `aria-pressed` is what the decisions screen sets on the answer
+   it recorded, `aria-checked` is what an option group sets, `aria-selected` is
+   what a tab sets: one visual rule, three honest semantics. */
+.btn-secondary[aria-pressed="true"],
+.btn-secondary[aria-checked="true"],
+.btn-secondary[aria-selected="true"] {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.btn-secondary.danger[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--bad) 10%, var(--panel));
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.btn-secondary.good[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--good) 10%, var(--panel));
+  border-color: var(--good);
+  color: var(--good);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-ghost:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--line);
+  background: var(--panel);
+}
+.btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* The one allowed plain-text link: it goes to reference material, it does not act. */
+.link-inline {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Selectable options — a container, a border, and a real selection indicator,
+   never a colour change on text (brief 2.2)
+   ========================================================================== */
+.option-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 15px;
+}
+.option-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.option-card[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  font-weight: 600;
+}
+.option-card:disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+.option-card.correct {
+  border-color: var(--good);
+  background: color-mix(in oklab, var(--good) 8%, var(--panel));
+}
+.option-card.incorrect {
+  border-color: var(--bad);
+  background: color-mix(in oklab, var(--bad) 8%, var(--panel));
+}
+.radio-dot {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  flex-shrink: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.option-card[aria-checked="true"] .radio-dot {
+  border-color: var(--accent);
+}
+.option-card[aria-checked="true"] .radio-dot::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.option-letter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  width: 16px;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Consent checkboxes (brief 2.4) — real <input type="checkbox">, visibly custom
+   ========================================================================== */
+.check-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  cursor: pointer;
+  padding: 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  transition: border-color 0.15s;
+}
+.check-row:hover {
+  border-color: var(--accent);
+}
+.check-row input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 19px;
+  height: 19px;
+  border: 1.5px solid var(--line);
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor: pointer;
+  background: var(--bg);
+  position: relative;
+}
+.check-row input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.check-row input:checked::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 700;
+}
+.check-row .ct {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.check-row .ct b {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+/* ==========================================================================
+   APP SHELL — permanent sidebar (brief 2.3)
+   Desktop always shows it: navigation is never hidden behind a corner control.
+   Below 860px it becomes a drawer behind a labelled hamburger, and the main
+   content takes the full width.
+   ========================================================================== */
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 232px;
+  z-index: 40;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 28px 0;
+  overflow-y: auto;
+}
+.sidebar-brand {
+  display: block;
+  padding: 0 24px 22px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 17px;
+  /* The whole wordmark reads in the accent colour. It used to be ink with only "apt" in
+     accent, which made the brand look like a typo rather than a mark. */
+  color: var(--accent);
+  text-decoration: none;
+}
+.sidebar-brand b {
+  color: var(--accent);
+  font-style: normal;
+}
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 24px;
+  border-left: 3px solid transparent;
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.sidebar-item:hover {
+  background: var(--panel-2);
+}
+.sidebar-item.active {
+  border-left-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-num {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  width: 20px;
+}
+.sidebar-item.active .sidebar-num {
+  color: var(--accent);
+}
+.sidebar-status {
+  margin-top: auto;
+  padding: 16px 24px 0;
+  border-top: 1px solid var(--line);
+}
+.main-content {
+  margin-left: 232px;
+  min-height: 100vh;
+}
+.topbar {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  z-index: 45;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+  padding: 0 16px;
+  gap: 14px;
+}
+.hamburger {
+  background: var(--panel);
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+.hamburger:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.topbar-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 52px 0 0 0;
+  background: rgb(0 0 0 / 0.25);
+  z-index: 39;
+  border: none;
+  padding: 0;
+}
+@media (max-width: 860px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    top: 52px;
+    z-index: 46;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
   }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .topbar {
+    display: flex;
+  }
+  .main-content {
+    margin-left: 0;
+    padding-top: 52px;
+  }
+  .sidebar-overlay.show {
+    display: block;
+  }
+}
+
+/* ==========================================================================
+   Home — status and one primary action (brief 2.5). Not navigation: the word
+   field that used to live here is gone, and the sidebar is the only nav.
+   ========================================================================== */
+.home-cta-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 6px 0 20px;
+  flex-wrap: wrap;
+}
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  max-width: 820px;
+}
+.stat-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 20px;
+}
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.stat-value {
+  font-family: var(--font-serif);
+  font-size: clamp(19px, 2.3vw, 28px);
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+/* ==========================================================================
+   Auth — the two-tab form behind the consent step
+   ========================================================================== */
+.auth-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.auth-tab {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 11px 4px;
+  margin-right: 26px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.auth-tab:hover {
+  color: var(--ink);
+}
+.auth-tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
 }

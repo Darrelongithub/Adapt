@@ -257,7 +257,7 @@ def plan_reteach(
             from_method=method,
             to_method=assignment.method,
             assignment=assignment,
-            comparison={**comparison, "comparable": False, "reason": "no same-format question available"},
+            comparison={**comparison, "comparable": False, "reason": "no question in the same format available"},
             checks={"prerequisite": pre, "fatigue": fatigue},
             note="next step: teach it differently on the next item of this concept, and do not count this pair as a comparison",
         )

@@ -91,6 +91,24 @@ binds `0.0.0.0`, serves Next, and proxies `/api/*`, `/healthz` and `Upgrade /ws/
 `ADAPT_API` (default `http://127.0.0.1:8000`). Set `ADAPT_API=offline` to run the interface
 against nothing.
 
+The interface is a permanent left sidebar plus one screen of content: every top-level
+destination is visible in plain words on every screen, with the current page marked
+(`aria-current="page"`), and below 860px the same list slides in as a drawer behind a
+labelled Menu button. Navigation is never hidden behind a corner control.
+
+Account creation — including "continue as guest", which also writes a learner row — is
+gated behind a consent step on `/`: two separate checkboxes, neither pre-ticked, with the
+primary action closed until the required one is ticked and a Decline that explains what
+will not work rather than dead-ending. The required box becomes `consent_analytics`. The
+optional *research* box has no field on this instance yet and the screen says so; it is
+deliberately **not** written to `consent_share_with_llm`, which means sharing a summary
+with the model. See `docs/UNVERIFIED.md` — "no decision" is still recorded as `true` by
+the database default until a tri-state column or migration lands.
+
+Every control that submits, decides, rates, selects or advances state wears one of three
+button classes (`globals.css`, "the button contract"), so nothing that acts is styled as
+plain coloured or underlined text.
+
 Open any page with `?mock=1` to see every screen from fixtures with no backend at all. A red
 banner is shown whenever that mode is on, and mock mode is stored per tab so it cannot leak
 into a real session.

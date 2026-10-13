@@ -330,8 +330,8 @@ def detect_worked_example_need(ctx: EvidenceContext) -> list[Observation]:
         other=after_read,
         design="randomised" if randomised else "observational",
         facts={
-            "after": "worked example then answer" if randomised else "an example was opened (self-selected)",
-            "before": "explanation then answer" if randomised else "no example was opened (self-selected)",
+            "after": "worked example then answer" if randomised else "an example was opened (self selected)",
+            "before": "explanation then answer" if randomised else "no example was opened (self selected)",
             "comparison": "assigned arm" if randomised else "what the learner chose to do",
             "median_seconds_to_first_answer_after_read": round(
                 _median([a.time_to_first_ms or 0 for a in after_read]) / 1000, 1
@@ -571,7 +571,7 @@ def detect_prerequisite_gap(ctx: EvidenceContext) -> list[Observation]:
 
 
 def detect_retention_decay(ctx: EvidenceContext) -> list[Observation]:
-    """Predicted recall vs actual on delayed checks (spacing model mis-fit)."""
+    """Predicted recall vs actual on delayed checks, where the spacing model does not fit."""
     if len(ctx.retention) < ctx.min_n:
         return []
     preds = [(expected_recall(r.half_life_hours, r.lag_hours), r.correct) for r in ctx.retention]
@@ -604,7 +604,7 @@ def detect_retention_decay(ctx: EvidenceContext) -> list[Observation]:
 
 
 def detect_slow_start(ctx: EvidenceContext) -> list[Observation]:
-    """Long time-to-first-interaction combined with low accuracy = overload."""
+    """Long time to first interaction combined with low accuracy = overload."""
     rows = [a for a in ctx.usable() if a.time_to_first_ms is not None]
     slow = [a for a in rows if (a.time_to_first_ms or 0) > 30_000]
     fast = [a for a in rows if (a.time_to_first_ms or 0) <= 30_000]
@@ -677,7 +677,7 @@ def detect_retrieval_over_reread(ctx: EvidenceContext) -> list[Observation]:
         group=quizzed,
         other=reread,
         facts={
-            "note": "second attempts after being tested vs second attempts after re-reading",
+            "note": "second attempts after being tested vs second attempts after reading it again",
             "re_read_openings": len([a for a in reread if a.explanation_opened]),
         },
         strategy="retrieval_practice",
@@ -770,7 +770,7 @@ def detect_teachback_gain(ctx: EvidenceContext) -> list[Observation]:
         other=[a for a in ctx.usable() if 0 < (a.teachback_score or 0) < 0.6],
         facts={
             "teachbacks": len(pairs),
-            "note": "coverage-scored explanations (rubric), not writing quality",
+            "note": "coverage scored explanations (rubric), not writing quality",
         },
         strategy="self_explanation",
         min_n=2,
@@ -874,17 +874,17 @@ def catalog() -> list[dict[str, object]]:
         }
         for name, doc in [
             ("worked_example_need", "accuracy after a worked example vs after reading an explanation"),
-            ("hint_dependency", "accuracy with hints vs unaided, plus hint-open rate"),
-            ("long_text_overload", "accuracy on long-stem vs short-stem items"),
+            ("hint_dependency", "accuracy with hints vs unaided, plus how often hints were opened"),
+            ("long_text_overload", "accuracy on long stem vs short stem items"),
             ("answer_oscillation", "answer changes and their relation to correctness"),
-            ("prerequisite_gap", "low accuracy on a topic with weakly-traced prerequisites"),
+            ("prerequisite_gap", "low accuracy on a topic with weakly traced prerequisites"),
             ("retention_decay", "predicted vs actual recall on delayed checks"),
-            ("slow_start", "time-to-first-interaction combined with accuracy"),
+            ("slow_start", "time to first interaction combined with accuracy"),
             ("visual_representation_benefit", "randomised visual vs text delivery comparison"),
-            ("retrieval_over_reread", "later accuracy after testing vs after re-reading"),
+            ("retrieval_over_reread", "later accuracy after testing vs after reading it again"),
             ("type_confusion", "errors concentrated on one neighbouring method"),
             ("difficulty_misalignment", "success rate far from the 65-92% band"),
-            ("teachback_gain", "teach-back coverage vs later accuracy"),
+            ("teachback_gain", "teach back coverage vs later accuracy"),
             ("method_effect", "actual vs expected success per teaching method, accumulated across sessions"),
         ]
     ]

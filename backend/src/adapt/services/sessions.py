@@ -72,22 +72,38 @@ def get_or_create_student(
     *,
     display_name: str | None = None,
     email: str | None = None,
+    username: str | None = None,
     password: str | None = None,
     role: str = "student",
     age_band: str | None = None,
     preferred_language: str = "en",
 ) -> Student:
-    """Create a learner. Guests need no email; a password is required if there is one."""
+    """Create a learner.
+
+    A guest needs neither identifier; an account needs a password and at least one of a
+    username or an email, because ``/login`` has to be able to find the row again.
+    """
+    typed = (username or "").strip()
+    identifier = auth.normalise_username(typed) or (email or "").strip()
+    if username:
+        existing = auth.student_by_username(s, username)
+        if existing is not None:
+            return existing
     if email:
         existing = auth.student_by_email(s, email)
         if existing is not None:
             return existing
     student = Student(
-        display_name=display_name or ("Guest learner" if not email else email.split("@")[0]),
+        # The greeting keeps the capitalisation they typed; the identifier itself is
+        # normalised, and the two are allowed to differ.
+        display_name=display_name
+        or ("Guest learner" if not identifier else (typed or identifier.split("@")[0])),
         email=email,
-        # Without this the row is invisible to `student_by_email`, i.e. nobody can
-        # ever sign in with the address they registered.
+        # Without these the row is invisible to the lookup, i.e. nobody can ever sign in
+        # with the identifier they registered.
         email_index=auth.email_index_for(email),
+        username=None if not username else auth.normalise_username(username),
+        username_index=auth.username_index_for(username),
         password_hash=auth.hash_password(password) if password else None,
         role=role,
         age_band=age_band,
@@ -99,8 +115,11 @@ def get_or_create_student(
     return student
 
 
-def authenticate(s: Session, *, email: str, password: str) -> Student | None:
-    student = auth.student_by_email(s, email)
+def authenticate(s: Session, *, password: str, email: str | None = None, username: str | None = None) -> Student | None:
+    """Sign in by username or by email. Either identifier finds the same row space."""
+    student = auth.student_by_username(s, username) if username else None
+    if student is None and email:
+        student = auth.student_by_email(s, email)
     if student is not None and student.deleted_at is not None:
         # Forgotten means forgotten: handing a deleted learner a fresh session would
         # put their history back in circulation while every read path says "gone".
@@ -206,7 +225,7 @@ def complete_onboarding(
             "share_summary_with_ai": student.consent_share_with_llm,
         },
         "note": (
-            "No learning-style question was asked. 'How you learn best' is measured from "
+            "No learning style question was asked. 'How you learn best' is measured from "
             "what happens during practice, and any lasting change needs your approval."
         ),
     }
@@ -274,12 +293,12 @@ COURSE_BLURB = (
     f"The ADAPT reference course: {len(_CATALOG)} topics with an explicit prerequisite graph, "
     f"{len(_ROWS)} items ({sum(1 for _, i in _ROWS if i.get('stem_template'))} of them parametric, "
     "so a fresh version of the question can be generated per learner), and course notes for every "
-    "topic that AI 2 is allowed to teach from. Mostly key-stage-3/4 mathematics, plus two prose "
-    "subjects -- history and biology -- which exist to prove the same loop runs on material with "
+    "topic that AI 2 is allowed to teach from. Mostly key stage 3 and 4 mathematics, plus two prose "
+    "subjects — history and biology — which exist to prove the same loop runs on material with "
     "no arithmetic in it. Seeded from the Python bank in adapt.assessment.bank so a fresh clone "
     "needs no data files."
 )
-COURSE_LEVEL = "GCSE / foundation-to-higher bridging"
+COURSE_LEVEL = "GCSE / foundation to higher bridging"
 
 
 def ensure_curriculum(s: Session, *, settings: Settings | None = None, force: bool = False) -> dict[str, Any]:

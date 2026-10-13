@@ -173,7 +173,10 @@ export default function Proposals() {
                       return (
                         <button
                           key={v.id}
-                          className={`stamp-btn ${v.id}`}
+                          /* Every decision is a real button with a boundary and, once
+                             answered, a filled selected state — the answer you gave is visible
+                             without hovering anything. */
+                          className={`btn-ctl btn-secondary${v.tone === "good" ? " good" : v.tone === "muted" ? " danger" : ""}`}
                           aria-pressed={isActive}
                           disabled={busy}
                           title={v.hint}
@@ -260,7 +263,7 @@ export default function Proposals() {
                     </div>
                   ) : (
                     <p className="text-xs text-[var(--warn)]">
-                      no published evidence is attached to this strategy, so treat it as an experiment rather than a known-good
+                      no published evidence is attached to this strategy, so treat it as an experiment rather than a settled
                       technique.
                     </p>
                   )}
@@ -297,7 +300,7 @@ export default function Proposals() {
                       ) : null}
                     </div>
                     {current?.review_window?.kind === "days" ? (
-                      <Field label="Re-check after (days)">
+                      <Field label="Check again after (days)">
                         <input
                           type="number"
                           min={1}
@@ -312,11 +315,9 @@ export default function Proposals() {
                       <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="two, not four — I lose the thread after that" />
                     </Field>
                     <button
-                      className="stamp-btn yes"
-                      aria-pressed="false"
+                      className="btn-ctl btn-primary"
                       disabled={busy}
                       onClick={() => current && void decide(current, "modify")}
-                      style={{ background: "var(--ink)", color: "var(--bg)" }}
                     >
                       {busy ? "…" : "Send it with those changes"}
                     </button>
@@ -378,7 +379,7 @@ export default function Proposals() {
 
         <Card title="What you have already answered" tone="muted" right={<span>{past.length} decisions</span>}>
           {past.length === 0 ? (
-            <p className="text-sm text-[var(--muted)]">A no is a decision too, and it is kept: it stops the same proposal being re-asked.</p>
+            <p className="text-sm text-[var(--muted)]">A no is a decision too, and it is kept. It stops the same proposal being asked again.</p>
           ) : (
             <ul className="space-y-2 text-sm">
               {past.slice(0, 8).map((d) => (

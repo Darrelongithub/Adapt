@@ -65,7 +65,7 @@ const planEntry = {
       kind: "segments",
       steps: [
         { index: 1, text: "A fraction only names parts of one whole, so the parts have to be the same size before you can count them together.", words: 24, check: { question: "Without scrolling back: what does this step say about size?", kind: "recall", expect_any: ["size", "parts", "fraction"], hint: "One sentence is enough. The step is about size." } },
-        { index: 2, text: "One half and one third name different-sized parts, so 2/5 comes from adding tops and bottoms -- which changes what the fraction means.", words: 24, check: { question: "Without scrolling back: what does this step say about fraction?", kind: "recall", expect_any: ["fraction", "parts", "tops"], hint: "One sentence is enough. The step is about fraction." } },
+        { index: 2, text: "One half and one third name differently sized parts, so 2/5 comes from adding tops and bottoms — which changes what the fraction means.", words: 24, check: { question: "Without scrolling back: what does this step say about fraction?", kind: "recall", expect_any: ["fraction", "parts", "tops"], hint: "One sentence is enough. The step is about fraction." } },
         { index: 3, text: "Rewrite both over a common denominator first, then add only the numerators and keep that denominator.", words: 17, check: { question: "Without scrolling back: what does this step say about denominator?", kind: "recall", expect_any: ["denominator", "numerators", "add"], hint: "One sentence is enough. The step is about denominator." } },
       ],
       dropped: [],
@@ -120,7 +120,7 @@ const proposal = {
   student_id: learner.student_id,
   strategy: "worked_examples",
   strategy_label: "Worked example before the next attempt",
-  what_it_does: "Show a fully solved, step-labelled example of the same problem type immediately before the question.",
+  what_it_does: "Show a fully solved, step labelled example of the same problem type immediately before the question.",
   citations: [{ ref: "Sweller & Cooper 1985", claim: "Worked examples beat equivalent practice for novice schema acquisition." }],
   action: "insert_worked_example",
   action_payload: { steps_before_answer: 1, fade_after: 3 },
@@ -385,7 +385,7 @@ const lessonScene = {
     intent: "predict which half survives each comparison, and say why sorted order makes that safe",
     framing: {
       intro: "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
-      outro: "If you can say, before the animation does, which half gets thrown away -- you have the idea.",
+      outro: "If you can say, before the animation does, which half gets thrown away — you have the idea.",
     },
     concepts: [
       "sorted order as a precondition",
@@ -423,7 +423,7 @@ const lessonUnrendered = {
     intent: "predict which half survives each comparison, and say why sorted order makes that safe",
     framing: {
       intro: "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
-      outro: "If you can say, before the animation does, which half gets thrown away -- you have the idea.",
+      outro: "If you can say, before the animation does, which half gets thrown away — you have the idea.",
     },
     concepts: [
       "sorted order as a precondition",
@@ -496,7 +496,7 @@ const lessonList = {
     },
     cpu_cycle: {
       title: "The CPU instruction cycle: fetch, decode, execute",
-      summary: "Step a program through a one-accumulator machine and watch PC, MAR, MDR and IR take their turn in every instruction -- one memory for code and data, and no way to stop but HLT.",
+      summary: "Step a program through a one accumulator machine and watch PC, MAR, MDR and IR take their turn in every instruction — one memory for code and data, and no way to stop but HLT.",
       params: {
         program: {
           type: "lines",
@@ -556,7 +556,7 @@ const lessonList = {
           type: "bool",
           default: 0,
           label: "Input B",
-          help: "ignored by a one-input gate",
+          help: "ignored by a single input gate",
         },
       },
       max_frames: 60,
@@ -575,7 +575,7 @@ const lessonList = {
           max: 999,
           default: null,
           label: "The list",
-          help: "any order, repeats allowed -- 2 to 20 numbers",
+          help: "any order, repeats allowed — 2 to 20 numbers",
         },
         n: {
           type: "int",
@@ -695,7 +695,7 @@ const lessonFinish = {
         intent: "predict which half survives each comparison, and say why sorted order makes that safe",
         framing: {
           intro: "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
-          outro: "If you can say, before the animation does, which half gets thrown away -- you have the idea.",
+          outro: "If you can say, before the animation does, which half gets thrown away — you have the idea.",
         },
         concepts: [
           "sorted order as a precondition",
@@ -771,7 +771,7 @@ const lessonReview = {
       intent: "predict which half survives each comparison, and say why sorted order makes that safe",
       framing: {
         intro: "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
-        outro: "If you can say, before the animation does, which half gets thrown away -- you have the idea.",
+        outro: "If you can say, before the animation does, which half gets thrown away — you have the idea.",
       },
       concepts: [
         "sorted order as a precondition",
@@ -884,7 +884,7 @@ const lessonKinds = {
       },
       cpu_cycle: {
         title: "The CPU instruction cycle: fetch, decode, execute",
-        summary: "Step a program through a one-accumulator machine and watch PC, MAR, MDR and IR take their turn in every instruction -- one memory for code and data, and no way to stop but HLT.",
+        summary: "Step a program through a one accumulator machine and watch PC, MAR, MDR and IR take their turn in every instruction — one memory for code and data, and no way to stop but HLT.",
         params: {
           program: {
             type: "lines",
@@ -944,7 +944,7 @@ const lessonKinds = {
             type: "bool",
             default: 0,
             label: "Input B",
-            help: "ignored by a one-input gate",
+            help: "ignored by a single input gate",
           },
         },
         max_frames: 60,
@@ -963,7 +963,7 @@ const lessonKinds = {
             max: 999,
             default: null,
             label: "The list",
-            help: "any order, repeats allowed -- 2 to 20 numbers",
+            help: "any order, repeats allowed — 2 to 20 numbers",
           },
           n: {
             type: "int",
@@ -1033,7 +1033,7 @@ const lessonEvidence = {
   };
 const lessonValidate = {
   ok: false,
-  errors: ["params.target: 42 is not in the list, and that is allowed -- but say so in the intent"],
+  errors: ["params.target: 42 is not in the list, and that is allowed — but say so in the intent"],
   warnings: ["title is 96 characters; 120 is the limit"],
   spec_id: null,
   note: "the validator reports; it does not store. a learner editing a scene sees these reasons verbatim.",
@@ -1041,7 +1041,7 @@ const lessonValidate = {
 const lessonAuthor = {
   ok: true,
   source: "builtin",
-  note: "no model is configured, so this is the closest built-in scene for the request, not a new one",
+  note: "no model is configured, so this is the closest scene already in the app for the request, not a new one",
   draft: lessonScene,
   errors: [],
   warnings: [],
@@ -1055,7 +1055,7 @@ const rows: Row[] = [
   { method: "POST", match: /^\/api\/v1\/students/, body: { ...learner, csrf_token: "mock-csrf-token", expires_at: "2026-10-12T03:00:00", created: true, onboarding_complete: false } },
   { method: "POST", match: /^\/api\/v1\/login/, body: { ...learner, csrf_token: "mock-csrf-token", created: false } },
   { method: "POST", match: /^\/api\/v1\/logout/, body: { ok: true } },
-  { method: "POST", match: /^\/api\/v1\/me\/onboarding/, body: { student_id: learner.student_id, preferences: { goal: "GCSE maths", weekly_minutes: 150 }, ignored_keys: [], rejected_reasons: {}, consent: { analytics: true, share_summary_with_ai: true }, note: "No learning-style question was asked. 'How you learn best' is measured from what happens during practice, and any lasting change needs your approval." } },
+  { method: "POST", match: /^\/api\/v1\/me\/onboarding/, body: { student_id: learner.student_id, preferences: { goal: "GCSE maths", weekly_minutes: 150 }, ignored_keys: [], rejected_reasons: {}, consent: { analytics: true, share_summary_with_ai: true }, note: "No learning styles question was asked. 'How you learn best' is measured from what happens during practice, and any lasting change needs your approval." } },
   { method: "GET", match: /^\/api\/v1\/me\/preferences/, body: { preferences: { goal: "GCSE maths", weekly_minutes: 150, max_explanation_words: 90 }, allowed_keys: ["avoid", "encourage", "goal", "language", "max_explanation_words", "push_me", "quiet_hours", "session_minutes", "want_review_reminders", "want_voice", "weekly_minutes"] } },
   { method: "POST", match: /^\/api\/v1\/me\/preferences/, body: { accepted: { goal: "GCSE maths" }, rejected_keys: [], rejected_reasons: {} } },
   { method: "DELETE", match: /^\/api\/v1\/me$/, body: { deleted: true, hard_purge_available_via: "adapt db purge-student --student-id <id> --confirm", note: "learning history is removed from every query path immediately" } },
@@ -1119,7 +1119,7 @@ const rows: Row[] = [
             ci_high: 0.73,
             verdict: "insufficient_evidence",
             explanation: "fewer than 5 scored answers in one of the windows",
-            verdict_words: "Not enough scored answers yet to judge this -- 3 so far, about 3 more to go.",
+            verdict_words: "Not enough scored answers yet to judge this — 3 so far, about 3 more to go.",
             status: "gathering_evidence",
             pilot: false,
             label: null,
@@ -1153,13 +1153,13 @@ const rows: Row[] = [
   { method: "POST", match: /^\/api\/v1\/review\/complete/, body: { lag_hours: 26.4, expected_recall: 0.84, correct: true, scheduled: { due_at: "2026-10-15T09:10:00", half_life_hours: 62.1, reps: 4, lapses: 1, expected_recall_at_due: 0.85 }, was_due_at: "2026-10-11T14:40:00" } },
   { method: "GET", match: /^\/api\/v1\/dashboard/, body: { student_id: learner.student_id, generated_at: "2026-10-11T09:30:00", profile_taken_at: "2026-10-11T09:29:40", mastery: [mastery, masterySecond], band_summary: { developing: 1, new: 1 }, weakest: [mastery], knowledge_gaps: [{ topic_id: item.topic_id, topic_title: mastery.title, blocking_prerequisite_title: "What a fraction means", severity: 0.42 }], hypotheses: [{ id: "hyp_mock_0001", statement: "You get there when the first step is visible.", status: "active", confidence: 0.61, disproof: "accuracy stays flat with examples shown" }], pending_proposals: [proposal], active_adaptations: [], decided_adaptations: [], reviews: { due_now: [{ topic_id: item.topic_id, title: mastery.title, due_at: "2026-10-11T14:40:00" }], checks_total: 2, checks_mean_score: 0.75 }, last_7_days: { attempts: 11, mean_score: 0.68, hints_used: 4, mean_seconds_on_question: 63 }, data_volume: { attempts: 11, events: 84, evidence: 3, retention_checks: 2 }, open_questions: [], measured_outcomes: { evaluated: 0, applied: 1 }, strategy_evidence: [], student_preferences: { goal: "GCSE maths" }, guardrails: { no_fixed_trait_labels: true, hypotheses_are_not_facts: true }, notes: [] } },
   { method: "GET", match: /^\/api\/v1\/journey/, body: { student_id: learner.student_id, generated_at: "2026-10-11T09:31:00", window_days: 90, nodes: [{ ts: "2026-10-11T09:12:44", kind: "proposal", tone: "ask", title: "Proposed change: worked examples (pending)", detail: proposal.change, meta: {} }, { ts: "2026-10-11T09:20:00", kind: "adaptation", tone: "good", title: "Now applying: worked example before the next attempt", detail: "you approved it", meta: {} }, { ts: "2026-10-10T18:04:11", kind: "attempt", tone: "good", title: "Answered correctly: Adding and subtracting fractions", detail: "63s, no hints", meta: {} }], counts: { attempt: 1, proposal: 1, adaptation: 1 }, phases: [{ name: "practise", from: "2026-10-10", to: "2026-10-11", nodes: 3 }], summary: "11 answers in the last 7 days, 4 of them after opening a hint.", milestones: [{ ts: "2026-10-11T09:20:00", title: "First adaptation approved", detail: "worked examples" }], stats: { sessions: 3, attempts: 11, mean_score: 0.68, events: 84 } } },
-  { method: "GET", match: /^\/api\/v1\/strategies/, body: { strategies: [{ id: "worked_examples", label: "Worked example before the next attempt", family: "load_reduction", what: "Show a fully solved, step-labelled example of the same problem type immediately before the question.", mechanism: "Reduces intrinsic load on first exposure.", watch_metric: "accuracy", n: 0, p_helps: 0.5 }] } },
-  { method: "GET", match: /^\/api\/v1\/voice\/capabilities/, body: { stt: { local_stt: false, detail: "faster-whisper not importable in this mock", fallback: "browser Web Speech API dictation (free, on-device)", model_size: "base" }, tts: { local_tts: false, detail: "kokoro not importable in this mock", fallback: "browser speechSynthesis with male/female voice selection", sample_rate: 24000 }, voices: { female: { a: "af_heart", b: "bf_violet" }, male: { a: "am_fenrir", b: "bm_ola" } }, barge_in: true, transport: "websocket /ws/voice (binary s16le frames + JSON control messages)", path: "/ws/voice", note: "transcription accuracy and teaching accuracy are measured separately" } },
+  { method: "GET", match: /^\/api\/v1\/strategies/, body: { strategies: [{ id: "worked_examples", label: "Worked example before the next attempt", family: "load_reduction", what: "Show a fully solved, step labelled example of the same problem type immediately before the question.", mechanism: "Reduces intrinsic load on first exposure.", watch_metric: "accuracy", n: 0, p_helps: 0.5 }] } },
+  { method: "GET", match: /^\/api\/v1\/voice\/capabilities/, body: { stt: { local_stt: false, detail: "faster-whisper not importable in this mock", fallback: "browser Web Speech API dictation (free, on your device)", model_size: "base" }, tts: { local_tts: false, detail: "kokoro not importable in this mock", fallback: "browser speechSynthesis with male/female voice selection", sample_rate: 24000 }, voices: { female: { a: "af_heart", b: "bf_violet" }, male: { a: "am_fenrir", b: "bm_ola" } }, barge_in: true, transport: "websocket /ws/voice (binary s16le frames + JSON control messages)", path: "/ws/voice", note: "transcription accuracy and teaching accuracy are measured separately" } },
   { method: "POST", match: /^\/api\/v1\/voice\/speak/, body: { ok: false, provider: "none", reason: "no local TTS installed", text: "Try one more question.", use_browser: true, fallback: "speechSynthesis" } },
   { method: "POST", match: /^\/api\/v1\/voice\/transcribe/, body: { text: "", backend: "browser", language: "en", confidence: null, duration_s: 0.5, latency_ms: 0, model: null, segments: 0, note: "browser STT supplies text, not audio" } },
   { method: "GET", match: /^\/api\/v1\/status/, body: { mode: "local", version: "0.1.0-mock", database: { path: ":memory:", file_encrypted: false, plaintext_header: false, driver: { driver: "sqlite", file_encrypted: false, key_source: "mock", detail: "mock" } }, llm: { configured: false, provider: "none", note: "mock: no API key" }, resources: { providers: [] }, voice: { stt: { local_stt: false }, tts: { local_tts: false } }, rate_limits: { scopes: {} }, encryption: { requested: "field-only", file_encrypted: false, driver: "sqlite", driver_detail: "mock", key_source: "mock", field_level_encryption: true, fields_encrypted: ["learner answers + feedback"] } } },
   { method: "GET", match: /^\/api\/v1\/quotas/, body: { day: "2026-10-11", budget: { calls: 120, tokens: 2000000, models: ["gemini-2.5-flash"] }, used: { calls: 0, tokens: 0 }, by_purpose: {}, calls_left: 120, buckets: {}, rate_limit_multiplier: 1, free_tiers: { gemini: { model_ai1: "gemini-2.5-flash", daily_call_budget: 120, on_exhaustion: "fall back to the local tutor" } }, rate_limiter: {} } },
-  { method: "GET", match: /^\/api\/v1\/privacy/, body: { telemetry: { recorded: ["the order of events", "timings", "first vs final answer"], never_recorded: ["keystrokes, key timing, or per-character edit content", "screenshots, screen content, other tabs"], why: "Timing and edit behaviour are evidence about the interaction, not proof of a mental state.", allowed_event_types: ["question_shown", "first_interaction", "hint_opened", "answer_submitted"], forbidden_keys: ["keystrokes", "clipboard", "screenshot"] }, sent_to_gemini: { fields: ["topic mastery", "hypotheses", "the question text"], never: ["name", "email"] }, voice: { stored: "transcript text only while voice is on" }, storage: { at_rest: "column-level AES-256-GCM", key: "a keyfile outside the database" }, learner_controls: ["export your data", "turn analytics off at any time", "delete your history (DELETE /api/v1/me)"] } },
+  { method: "GET", match: /^\/api\/v1\/privacy/, body: { telemetry: { recorded: ["the order of events", "timings", "first vs final answer"], never_recorded: ["keystrokes, key timing, or per character edit content", "screenshots, screen content, other tabs"], why: "Timing and edit behaviour are evidence about the interaction, not proof of a mental state.", allowed_event_types: ["question_shown", "first_interaction", "hint_opened", "answer_submitted"], forbidden_keys: ["keystrokes", "clipboard", "screenshot"] }, sent_to_gemini: { fields: ["topic mastery", "hypotheses", "the question text"], never: ["name", "email"] }, voice: { stored: "transcript text only while voice is on" }, storage: { at_rest: "column level AES-256-GCM", key: "a keyfile outside the database" }, learner_controls: ["export your data", "turn analytics off at any time", "delete your history (DELETE /api/v1/me)"] } },
   { method: "GET", match: /^\/api\/v1\/audit/, body: { entries: [{ ts: "2026-10-11T09:20:00", actor_id: learner.student_id, action: "adaptation_approved", object: `adaptation_proposal:${proposal.id}`, outcome: "ok", detail: { strategy: proposal.strategy } }] } },
   { method: "GET", match: /^\/api\/v1\/events\/allowlist/, body: { allowed: { question_shown: ["stem_words", "variant"], first_interaction: ["ms_since_shown"], hint_opened: ["hint_no"], answer_submitted: ["correct", "value"] }, forbidden_keys: ["keystrokes", "clipboard"], rule: "fields outside this list are dropped, and the client is told which" } },
   { method: "GET", match: /^\/api\/v1\/numbas\/export/, body: { exported: 0, imported: 0, skipped: 0, warnings: ["mock: no export"] } },
@@ -1172,7 +1172,7 @@ const rows: Row[] = [
   { method: "GET", match: /^\/api\/v1\/items\/[^/]+$/, body: { ...item, answer_key: undefined, mock: true } },
   { method: "GET", match: /^\/api\/v1\/profile$/, body: { student_id: learner.student_id, taken_at: "2026-10-11T09:29:40", mastery: [mastery], hypotheses: [], directives: [], note: "profile snapshot: what AI 1 currently believes, with the evidence counts behind it" } },
   { method: "POST", match: /^\/api\/v1\/events$/, body: { accepted: 0, rejected: 0, duplicate: 0, dropped_fields: 0, reasons: [], session_id: "lrs_mock_0001", event_types: [] } },
-  { method: "POST", match: /^\/api\/v1\/learning\/train$/, body: { trained: 1, scope: "global", note: "estimates re-derived from the event log; nothing was invented to fill a gap" } },
+  { method: "POST", match: /^\/api\/v1\/learning\/train$/, body: { trained: 1, scope: "global", note: "estimates derived again from the event log; nothing was invented to fill a gap" } },
   { method: "POST", match: /^\/api\/v1\/tutor\/message$/, body: { answer: "Like units have to match before you add, so find a denominator both parts share. Sixths work for halves and thirds.", provider: "local", sections: [{ label: "explanation", text: "Make the parts the same size, then add the counts." }], next_action: "Try 1/3 + 1/4 the same way.", sources: [], privacy: { sent_to_model: false, what_was_sent: "nothing - no model was called" }, message_id: "msg_mock_0002", llm: { used: false } } },
   { method: "POST", match: /^\/api\/v1\/resources\/search$/, body: { results: [], provider: "none", note: "no network egress allowed from this instance, and no OpenAlex key is configured" } },
   { method: "POST", match: /^\/api\/v1\/numbas\/import$/, body: { imported: 0, skipped: [], note: "a paste of Numbas XML; nothing was accepted because the mock has no file" } },

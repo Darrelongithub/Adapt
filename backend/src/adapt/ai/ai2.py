@@ -1082,9 +1082,17 @@ class EducationalIntelligence:
                     "source": "builtin",
                     "warnings": [],
                     "errors": [],
-                    "note": f"{why}, so this is the built-in scene for '{chosen}' rather than one written for your words",
+                    "note": (
+                        f"{why}, so this is the scene already in the app for '{chosen}' "
+                        "rather than one written for your words"
+                    ),
                 }
-        return {"ok": False, "draft": None, "source": "builtin", "errors": [f"no built-in scene for '{chosen}'"]}
+        return {
+            "ok": False,
+            "draft": None,
+            "source": "builtin",
+            "errors": [f"no scene already in the app for '{chosen}'"],
+        }
 
     # ------------------------------------------------------------------ #
     # internals
@@ -1166,7 +1174,7 @@ class EducationalIntelligence:
             if not resp.results:
                 return None
             best = resp.results[0]
-            return f"{best.get('title')} ({best.get('provider')}, {best.get('year') or 'n.d.'}) -- {best.get('url')}"
+            return f"{best.get('title')} ({best.get('provider')}, {best.get('year') or 'n.d.'}) — {best.get('url')}"
         except Exception as exc:  # resource lookup must never break an answer
             log.info("resource hint skipped: %s", exc.__class__.__name__)
             return None

@@ -363,7 +363,7 @@ def question_import(q: dict[str, Any], *, topic_map: dict[str, str] | None = Non
         kind = "text"
         warns.append(f"unknown Numbas part type {ptype!r}: imported for reference only, needs the hosted Numbas runtime")
     if len(parts) > 1:
-        warns.append(f"{len(parts)} parts; only part 1 is graded in-app, full item renders in hosted Numbas")
+        warns.append(f"{len(parts)} parts; only part 1 is graded inside the app, the full item renders in hosted Numbas")
 
     topic_id = None
     for tag in q.get("tags") or []:

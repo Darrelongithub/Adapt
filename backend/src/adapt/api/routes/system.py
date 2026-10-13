@@ -96,7 +96,7 @@ def encryption_report() -> dict[str, Any]:
             "display name + email (with keyed blind index for login)",
         ],
         "not_encrypted": [
-            "study preferences (goal, minutes per week, word limits) -- readable JSON",
+            "study preferences (goal, minutes per week, word limits) — readable JSON",
             "table names and numeric foreign keys (needed to query at all)",
             "topic ids and timestamps (used for scheduling)",
             "the file path of the database itself",
@@ -131,8 +131,8 @@ def quotas(s: Session = Depends(db_session), student: Student = Depends(student_
         "openalex": {"limit": "10 req/s, 100k/day (polite pool with mailto)", "our_limit_per_min": 50, "on_exhaustion": "serve cache, mark results as cached"},
         "arxiv": {"limit": "1 request / 3 s courtesy", "our_limit_per_min": 20, "on_exhaustion": "cache + skip, no retry storm"},
         "openlibrary": {"limit": "no published quota; treated as best effort", "on_exhaustion": "skip with a note"},
-        "youtube": {"limit": "10,000 units/day; search.list costs 100 units", "keys_configured": bool(svcs.settings.youtube_api_key), "on_exhaustion": "skip the provider and say so - no quota-free alternative exists for search"},
-        "numbas": {"limit": "free, self-hosted or hosted editor; we only exchange files", "on_exhaustion": "the in-app bank is used instead"},
+        "youtube": {"limit": "10,000 units/day; search.list costs 100 units", "keys_configured": bool(svcs.settings.youtube_api_key), "on_exhaustion": "skip the provider and say so - nothing else is free of quota limits for search"},
+        "numbas": {"limit": "free, self hosted or hosted editor; we only exchange files", "on_exhaustion": "the bank built into the app is used instead"},
     }
     out["rate_limiter"] = svcs.limiter.snapshot()
     return out
@@ -146,11 +146,11 @@ def privacy(s: Session = Depends(db_session), student: Student = Depends(student
         "sent_to_gemini": {
             "when": "only when a key is configured and the learner consented to sharing a summary",
             "identity": "a keyed pseudonym, never the name or email",
-            "redaction": "emails, phone numbers, URLs, addresses and id-like fields are stripped before sending",
+            "redaction": "emails, phone numbers, URLs, addresses and anything shaped like an ID are stripped before sending",
             "budget": f"{st.gemini_daily_call_budget} calls/day, then local fallback",
         },
         "voice": {
-            "stt": "local faster-whisper in-process; audio is decoded in memory and discarded",
+            "stt": "local faster-whisper running in the server process; audio is decoded in memory and discarded",
             "tts": "local Kokoro; audio is streamed to the browser and not stored",
             "stored": "transcript text for the turns the learner chose to record, plus latency and interruption flags",
             "off_means": "voice off = no microphone access at all; the keyboard path is identical",
@@ -177,7 +177,7 @@ def voice_capabilities(s: Session = Depends(db_session), student: Student = Depe
         # The client dials this instead of hard-coding a path, so the URL can move.
         "path": "/ws/voice",
         "note": (
-            "transcription accuracy and teaching accuracy are measured separately: a mis-heard word is a "
+            "transcription accuracy and teaching accuracy are measured separately: a misheard word is a "
             "speech problem, not a tutoring problem, and the transcript is always editable"
         ),
     }
