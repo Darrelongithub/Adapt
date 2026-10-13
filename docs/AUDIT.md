@@ -425,10 +425,12 @@ runs in the 625-test suite; the UI claims are checked by `scripts/probe-fresh.sh
 
 ### Found while writing the guards
 
-Eight defects surfaced from the tests rather than from the list, which is the point of writing them
+Nine defects surfaced from the tests rather than from the list, which is the point of writing them
 this way — the first three while building the guards, the next three while making the guards run
 against a catalogue that is not only mathematics, one from a test that walks the whole chain instead
-of one function, and the last from re-running every gate before opening the pull request:
+of one function, and the last two from re-running every gate before opening the pull request: a
+public helper that could not be called at all, and the harness itself, which turned out not to be
+able to answer its own bank correctly.
 
 * **A detector that never ran.** `patterns.method_comparison` — the one comparison the whole method
   story rests on — took a bare row list while `run_all` passes the shared `EvidenceContext`. It
@@ -486,3 +488,23 @@ of one function, and the last from re-running every gate before opening the pull
   it delegates to, and `test_db_session_scope.py` calls it for real: reads through it, checks a
   failure inside it still reaches the caller, and pins that it stays exported. The next caller of an
   `__all__` name is a person rather than a test, which is why this one is guarded instead of deleted.
+* **The harness could not answer its own bank.** `conftest.answer_for` builds every answer the
+  suite submits — the public item payload carries no answer key, so a test that wanted to be right
+  would otherwise have to guess. Two of its shapes were wrong, and one was wrong for every subject.
+  A *wrong* numeric answer was `value * 1.5 + 1`, which returns `value` itself when `value == -2`,
+  and `a - b - c` renders to -2 for some learners — so the app marked that answer correctly and the
+  test whose whole point is "different answers, different sentence" compared one string with itself,
+  failing for about one learner id in fourteen while nothing in the product was broken. A *correct*
+  answer was `f"{value:g}"`: six significant digits, which an item marked to 1e-09 rejects whenever
+  its answer is 34/3, so tests measuring what a correct answer does were measuring a wrong one. And
+  the teach-back branch looked for `rubric["ideas"]` — a key no item in the bank has — falling back
+  to one fractions sentence for every subject, which made the "correct" explanation of why the First
+  World War began the words "you have to make the parts the same size first". Wrong answers are now
+  built outside the item's own tolerance, correct ones in the exact form the item accepts (short
+  decimal, then fraction, then full precision), and explanations from the grader's own
+  `checklist_from_rubric`. `test_wrong_answers_are_actually_wrong.py` walks every markable item
+  under ten learner ids and grades both answers, so the harness is checked against the bank instead
+  of trusted. The same rounding was visible on the learner's side of the glass: a numeric mark
+  decided below the printed digits reported `expected 11.3333, got 11.3333` — two identical strings
+  either side of the mark — and now names the form the item accepts (`34/3`), while a correct answer
+  is never told it was rounded.

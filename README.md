@@ -64,7 +64,7 @@ travels with them ("14 of 41 scored answers are pilot data"). See `docs/PILOT.md
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e "./backend[dev]"          # fastapi, sqlalchemy, numpy, cryptography, argon2…
-cd backend && pytest -q                  # 637 tests, no network, no model call needed
+cd backend && pytest -q                  # 640 tests, no network, no model call needed
 adapt demo --turns 3                     # the whole loop, in a terminal, on a temp database
 adapt pilot --student-id <id> --seed     # the pre-demo pilot, written and labelled
 

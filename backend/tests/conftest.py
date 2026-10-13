@@ -154,6 +154,40 @@ def items(client, learner):
     return response.json()["items"]
 
 
+def _writable_number(value: float, spec: dict) -> str:
+    """A string a learner could type that this item's own tolerance accepts.
+
+    ``f"{value:g}"`` keeps six significant digits, so for an item whose answer is
+    34/3 the suite's "correct" answer arrived as 11.3333 and was marked wrong at a
+    tolerance of 1e-09 — a helper that cannot answer its own bank correctly makes
+    every test that uses it measure the wrong path. Short decimal first (that is
+    what most items want), then the exact fraction (what a fraction-of-quantity
+    item is really asking for), then full precision.
+    """
+    from fractions import Fraction
+
+    tol = float(spec.get("tolerance") if spec.get("tolerance") is not None else 1e-6)
+    short = f"{value:g}"
+    if abs(float(short) - value) <= tol:
+        return short
+    exact = Fraction(value).limit_denominator(10_000)
+    if exact.denominator > 1 and abs(float(exact) - value) <= tol:
+        return f"{exact.numerator}/{exact.denominator}"
+    return repr(value)
+
+
+def _wrong_step(spec: dict) -> float:
+    """A distance that is certainly outside this item's own mark scheme.
+
+    The wrong answer used to be ``value * 1.5 + 1``, which returns ``value`` itself
+    when ``value == -2`` -- and ``a - b - c`` renders to -2 for some learners. The app
+    then marked the "wrong" answer right, which is not a test that flaked: it is a test
+    comparing a feedback sentence with itself and calling the difference a failure.
+    """
+    tol = float(spec.get("tolerance") if spec.get("tolerance") is not None else 1e-6)
+    return max(1.0, tol * 10)
+
+
 def answer_for(services, item_id: str, *, correct: bool, student_id: str | None = None):
     """Build a right or wrong answer for a bank item, from its private answer spec.
 
@@ -199,16 +233,37 @@ def answer_for(services, item_id: str, *, correct: bool, student_id: str | None 
         value = expected()
         if value is None:
             return "42" if correct else "43"
-        return f"{value:g}" if correct else f"{value * 1.5 + 1:g}"
+        if correct:
+            return _writable_number(value, spec)
+        return f"{value + _wrong_step(spec):g}"
     if kind == "text":
         accepted = [str(v) for v in (spec.get("values") or [])] or ([str(spec["value"])] if "value" in spec else [])
-        if correct:
-            return accepted[0] if accepted else "the parts must be the same size"
         value = expected()
-        return "6/5" if value is None else f"{value * 3:g}"
-    if kind == "teachback":
-        ideas = (payload.get("rubric") or {}).get("ideas") or (payload.get("rubric") or {}).get("required") or []
         if correct:
-            return " ".join(str(i) for i in ideas[:3]) or "you have to make the parts the same size first, then count them"
-        return "not sure"
+            if accepted:
+                return accepted[0]
+            # A text item marked by formula has a number for a key: answer with the
+            # number, not with one hardcoded sentence about fractions.
+            return _writable_number(value, spec) if value is not None else "the parts must be the same size"
+        return "6/5" if value is None else f"{value + _wrong_step(spec):g}"
+    if kind == "teachback":
+        from adapt.assessment import teachback as TB
+
+        rubric = payload.get("rubric") or {}
+        criteria = TB.checklist_from_rubric(rubric)
+        if not correct:
+            return "not sure"
+        if criteria:
+            # One *sentence* per point, because that is what the checklist grades: a
+            # point is met by a span that carries the idea, so three ideas in a row is
+            # a list of words and scores nothing. Reading the rubric through the
+            # grader's own function is what keeps this working for a history or a
+            # biology concept, whose rubric is `required_concepts` and not `ideas`.
+            return " ".join(
+                f"The point about {c.idea or c.statement} is that it matters, because "
+                f"{c.idea or c.statement} is what makes this work."
+                for c in criteria
+            )
+        ideas = rubric.get("ideas") or rubric.get("required") or []
+        return " ".join(str(i) for i in ideas[:3]) or "you have to make the parts the same size first, then count them"
     return "42" if correct else "41"

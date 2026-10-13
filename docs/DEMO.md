@@ -77,7 +77,7 @@ number that pretends to be a result.
 ## Rehearsal checks
 
 ```bash
-cd backend && ../.venv/bin/python -m pytest -q     # 637 tests, no network, no model call
+cd backend && ../.venv/bin/python -m pytest -q     # 640 tests, no network, no model call
 scripts/probe-fresh.sh all                        # the whole UI on fresh servers
 node scripts/demo.mjs --as <email>                # the loop, over HTTP, on the demo learner
 ```

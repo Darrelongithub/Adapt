@@ -14,6 +14,7 @@ rubric-scored teach-backs.
 from __future__ import annotations
 
 import re
+from fractions import Fraction
 from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Sequence
@@ -42,6 +43,24 @@ class Grade:
             "detail": self.detail,
             "partial": self.partial,
         }
+
+
+def _show_number(value: float) -> str:
+    """A number a reader can act on, in the form this item actually accepts.
+
+    ``%g`` keeps six significant digits, so an item whose answer is 34/3 produced
+    ``expected 11.3333, got 11.3333`` — two identical strings either side of a mark
+    decided at the ninth decimal place. That is not a reason, and it is not
+    actionable. Show the exact fraction when there is one, full precision when
+    there is not, and the short form whenever the short form *is* the value.
+    """
+    short = f"{value:g}"
+    if to_float(short) == value:
+        return short
+    exact = Fraction(value).limit_denominator(10_000)
+    if exact.denominator > 1 and float(exact) == value:
+        return f"{exact.numerator}/{exact.denominator}"
+    return repr(value)
 
 
 def to_float(text: Any) -> float | None:
@@ -127,14 +146,23 @@ def grade(item: dict[str, Any], answer: Any, *, student_text: str | None = None)
                 False,
                 0.5,
                 "numeric",
-                f"value matches ({expected:g}) but the unit {wanted_unit!r} is missing",
+                f"value matches ({_show_number(float(expected))}) but the unit {wanted_unit!r} is missing",
                 {"expected": float(expected), "given": value, "tolerance": tol, "missing_unit": True},
+            )
+        shown_expected, shown_given = _show_number(float(expected)), _show_number(value)
+        detail = f"expected {shown_expected}, got {shown_given}"
+        if not ok and shown_expected == shown_given:
+            # The two numbers read the same, so the digits that decided this are the
+            # ones not on screen. Say what the mark scheme is, and what it accepts.
+            detail = (
+                f"expected {shown_expected} exactly: this item is marked to within {tol:g}, "
+                "so a rounded decimal is not close enough — the same value as a fraction is"
             )
         return Grade(
             ok,
             1.0 if ok else 0.0,
             "numeric",
-            f"expected {expected:g}, got {value:g}",
+            detail,
             {"expected": float(expected), "given": value, "tolerance": tol},
         )
 

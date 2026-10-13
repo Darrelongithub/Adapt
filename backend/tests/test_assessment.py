@@ -162,6 +162,38 @@ def test_numeric_units_are_opt_in_and_cost_half_a_mark_when_missing():
     assert grade({"kind": "numeric", "answer_spec": {"value": 36}}, "36").correct
 
 
+def test_a_mark_decided_below_the_printed_digits_names_the_form_it_accepts():
+    """`expected 11.3333, got 11.3333` is not a reason, and it is not actionable.
+
+    An item whose answer is 34/3, marked to 1e-09, rejects a rounded decimal — and the
+    detail it gave back printed both numbers at six significant digits, so the two
+    strings either side of the mark were identical. The exact form is named instead.
+    The same care applies to a *correct* mark, which must not be told it fell short.
+    """
+    from adapt.assessment.grading import grade
+
+    item = {
+        "kind": "numeric",
+        "answer_spec": {
+            "formula": "a*c/b",
+            "variables": {"a": 1, "b": 3, "c": 34},
+            "tolerance": 1e-09,
+        },
+    }
+    rounded = grade(item, "11.3333")
+    assert not rounded.correct
+    assert "11.3333, got 11.3333" not in rounded.detail, rounded.detail
+    assert "34/3" in rounded.detail, "the value the item accepts has to be the one on screen"
+
+    exact = grade(item, "34/3")
+    assert exact.correct, exact.detail
+    assert "not close enough" not in exact.detail, "a correct answer is not a rounded one"
+
+    # A number the short form carries exactly still reads as a plain number.
+    plain = grade({"kind": "numeric", "answer_spec": {"value": 10.4, "tolerance": 1e-09}}, "10.5")
+    assert not plain.correct and plain.detail == "expected 10.4, got 10.5"
+
+
 def test_tolerance_and_equivalent_expressions():
     from adapt.assessment.grading import grade
 
