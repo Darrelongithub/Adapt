@@ -246,7 +246,7 @@ def make(
     strategy: str,
     min_n: int,
     topics: Sequence[str] | None = None,
-    design: str = "randomised",
+    design: str = "observational",
 ) -> Observation | None:
     if len(group) < min_n or len(other) < min_n:
         return None

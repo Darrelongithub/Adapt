@@ -455,3 +455,335 @@ def test_comparison_refuses_different_question_formats():
         for r in rows
     ]
     assert outcome_report(logged)["format_comparable"] is False
+
+
+@pytest.mark.parametrize("fatigue", [False, True])
+def test_unchecked_prerequisite_never_penalises_a_method(fatigue):
+    assert attribution(None, fatigue)["multiplier"] == 0
+    assert attribution(None, fatigue)["cause"] == "unchecked_prerequisite"
+
+
+def test_missing_final_latency_does_not_reuse_an_older_fatigue_pair():
+    assert not fatigue_flag([*tired(), {"correct": False, "time_on_item_ms": None}])
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("id", None),
+        ("topic_id", ""),
+        ("concept_id", " "),
+        ("difficulty", None),
+        ("difficulty", float("nan")),
+        ("difficulty", 2),
+        ("stem", ""),
+        ("answer_spec", []),
+    ],
+)
+def test_malformed_pair_is_refused_before_it_can_be_saved(field, value):
+    a, b = pair()
+    a[field] = value
+    b[field] = value
+    # Keep the IDs distinct: the missing-ID case must be caught for that reason alone.
+    if field == "id":
+        b["id"] = "b"
+    with pytest.raises(FailureError):
+        validate_pair(a, b)
+
+
+def test_bad_mcq_key_is_not_gradeable_recovery_content():
+    a, b = pair()
+    for q in (a, b):
+        q.update(
+            kind="mcq", choices=[{"text": "A"}, {"text": "B"}], answer_spec={"correct_index": 6}
+        )
+    with pytest.raises(FailureError):
+        validate_pair(a, b)
+
+
+def test_observational_delta_uses_weighted_count_and_interval_endpoints():
+    from adapt.learning.methods import method_delta
+
+    rows = [
+        {
+            "method": m,
+            "correct": m == "visual",
+            "expected_success": 0.5,
+            "question_kind": "numeric",
+            "design": "observational",
+        }
+        for m in ("visual", "explanation")
+        for _ in range(10)
+    ]
+    result = method_delta(rows, method="visual", baseline="explanation")
+    assert result["evidence"] == "early_signal"  # raw n=10 but effective n=4 per side
+    me, other = result["method"], result["baseline"]
+    assert result["interval"] == pytest.approx(
+        [me["ci"][0] - other["ci"][1], me["ci"][1] - other["ci"][0]], abs=0.002
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("expected", "unknown"),
+        ("expected", float("nan")),
+        ("expected", 2),
+        ("correct", "False"),
+        ("multiplier", float("inf")),
+        ("multiplier", -1),
+    ],
+)
+def test_invalid_logged_outcomes_are_counted_but_never_become_estimates(field, value):
+    payload = {"method": "visual", "expected": 0.5, "correct": True, "multiplier": 1}
+    payload[field] = value
+    result = outcome_report(
+        [
+            {
+                "kind": "method_outcome",
+                "source_type": "observational",
+                "weight": 0.4,
+                "payload": payload,
+            }
+        ]
+    )
+    assert result["methods"] == []
+    assert result["excluded_n"] == 1
+
+
+def test_attributed_elsewhere_outcomes_are_not_called_corrupt():
+    result = outcome_report(
+        [
+            {
+                "kind": "method_outcome",
+                "source_type": "observational",
+                "weight": 0.4,
+                "payload": {"method": "visual", "expected": 0.5, "correct": False, "multiplier": 0},
+            }
+        ]
+    )
+    assert result["excluded_n"] == 0 and result["attributed_elsewhere_n"] == 1
+
+
+def test_concurrent_conflicting_b_answers_are_one_consistent_atomic_result(services, learner):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    loop = begin(services, learner, prerequisite=False, key="raced-answer")
+    sid = learner["student_id"]
+    barrier = Barrier(2)
+
+    def submit(answer):
+        barrier.wait(timeout=5)
+        return FailureLoop(services.state).answer(
+            sid, "raced-answer", question_id="b", answer=answer
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(submit, ("4", "5")))
+    assert results[0] == results[1] == loop.view(sid, "raced-answer")
+    rows = services.state.evidence_rows(sid)
+    assert len([r for r in rows if r["kind"] == "method_outcome"]) == 2
+    scores = [r for r in rows if r["event_id"] == "failure:raced-answer:matched-b-score"]
+    assert len(scores) == 1
+    assert scores[0]["correct"] == results[0]["outcome"]["after_correct"]
+
+
+def test_hint_opening_detector_does_not_claim_random_assignment():
+    from adapt.learning.patterns import AttemptRow, EvidenceContext, detect_hint_dependency
+
+    attempts = [
+        AttemptRow(id=f"hint-{i}", topic_id="topic", item_id=f"q-{i}", correct=True, hints_used=1)
+        for i in range(20)
+    ] + [
+        AttemptRow(id=f"plain-{i}", topic_id="topic", item_id=f"p-{i}", correct=False)
+        for i in range(20)
+    ]
+    observations = detect_hint_dependency(EvidenceContext(student_id="s", attempts=attempts))
+    assert observations
+    for obs in observations:
+        result = obs.as_dict()
+        assert result["design"] == result["source_type"] == "observational"
+        assert result["weight"] == 0.4
+
+
+@pytest.mark.parametrize(
+    "bad_spec", [{"value": float("nan")}, {"value": "garbage"}, {"value": 4, "tolerance": -1}]
+)
+def test_invalid_numeric_key_cannot_enter_the_recovery_log(bad_spec):
+    a, b = pair()
+    b["answer_spec"] = bad_spec
+    with pytest.raises(FailureError):
+        validate_pair(a, b)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {"matched_pairs": [None]},
+        {"matched_pairs": "bad"},
+        {"matched_pairs": [{"a": None}]},
+        {"matched_pairs": [{"a": {"id": "original"}, "b": None}]},
+    ],
+)
+def test_malformed_validated_registry_payload_is_a_refusal_not_500(
+    client, services, learner, session, items, make_answer, evidence_router, payload, monkeypatch
+):
+    from adapt.services.attempts import item_payload
+
+    item = next(i["item"] for i in items if i["item"]["kind"] == "numeric")
+    response = client.post(
+        "/api/v1/attempts",
+        headers=learner["headers"],
+        json={
+            "session_id": session,
+            "item_id": item["id"],
+            "answer": make_answer(item["id"], correct=False),
+            "client_events": [],
+        },
+    )
+    assert response.status_code == 200, response.text
+    with services.scope() as s:
+        a = item_payload(s, item["id"])
+    # The last case targets the actual A lookup; the others target container shape.
+    if isinstance(payload, dict) and isinstance(payload.get("matched_pairs"), list):
+        for candidate in payload["matched_pairs"]:
+            if isinstance(candidate, dict) and isinstance(candidate.get("a"), dict):
+                candidate["a"]["id"] = a["id"]
+    cid = services.state.put_content(
+        concept=a["topic_id"],
+        kind="concept_pack",
+        payload=payload or {"matched_pairs": None},
+        topic_id=a["topic_id"],
+    )
+    services.state.set_validation(cid, "validated", module="code")
+    # Registry is shared across this session's tests. Limit this corruption scenario
+    # to its own registered pack so an earlier valid A/B cannot mask the defect.
+    lookup = services.state.content_for
+    monkeypatch.setattr(
+        services.state,
+        "content_for",
+        lambda concept: [row for row in lookup(concept) if row["id"] == cid],
+    )
+    start = client.post(
+        "/api/v1/evidence/failure",
+        headers=learner["headers"],
+        json={"attempt_id": response.json()["attempt_id"]},
+    )
+    assert start.status_code == 422, start.text
+    assert start.json()["detail"]["error"] == "evidence_refused"
+    assert not [
+        r
+        for r in services.state.evidence_rows(learner["student_id"])
+        if r["kind"] == "failure_transition"
+    ]
+
+
+def test_recovery_provenance_is_frozen_on_resume(services, learner):
+    loop, sid = FailureLoop(services.state), learner["student_id"]
+    a, b = pair()
+    initial = loop.start(
+        sid,
+        attempt_id="provenance",
+        session_id="session",
+        a=a,
+        b=b,
+        method="explanation",
+        expected_a=0.4,
+        expected_b=0.4,
+        variants=variants(),
+        prerequisite=None,
+        prerequisite_required=False,
+        recent=[],
+        model_version=3,
+        content_ids=["original-pack"],
+    )
+    assert initial["why"] == {"model_version": 3, "content_ids": ["original-pack"]}
+    resumed = loop.start(
+        sid,
+        attempt_id="provenance",
+        session_id="session",
+        a=a,
+        b=b,
+        method="explanation",
+        expected_a=0.4,
+        expected_b=0.4,
+        variants=variants(),
+        prerequisite=None,
+        prerequisite_required=False,
+        recent=[],
+        model_version=9,
+        content_ids=["replacement-pack"],
+    )
+    assert resumed == initial
+    assert loop.answer(sid, "provenance", question_id="b", answer="4")["why"] == initial["why"]
+
+
+def test_placement_cannot_update_method_posteriors(services, learner):
+    loop, sid = FailureLoop(services.state), learner["student_id"]
+    with pytest.raises(FailureError, match="placement"):
+        loop.record_outcome(
+            sid,
+            event_id="placement",
+            method="visual",
+            correct=True,
+            expected=0.5,
+            topic_id="t",
+            question_kind="numeric",
+            design="placement",
+        )
+    assert loop.report(sid)["methods"] == []
+
+
+def test_opening_an_old_receipt_does_not_attribute_later_fatigue_to_it(
+    client, services, learner, session, items, make_answer, evidence_router
+):
+    from datetime import timedelta
+
+    from adapt.db.models import Attempt
+    from adapt.services.attempts import item_payload
+
+    item = next(i["item"] for i in items if i["item"]["kind"] == "numeric")
+    posted = client.post(
+        "/api/v1/attempts",
+        headers=learner["headers"],
+        json={
+            "session_id": session,
+            "item_id": item["id"],
+            "answer": make_answer(item["id"], correct=False),
+            "client_events": [],
+        },
+    )
+    assert posted.status_code == 200, posted.text
+    aid = posted.json()["attempt_id"]
+    with services.scope() as s:
+        original = s.get(Attempt, aid)
+        a = item_payload(s, item["id"])
+        # Synthetic later answers form the exact fatigue pattern, but occurred after A.
+        for i, r in enumerate(tired()):
+            s.add(
+                Attempt(
+                    student_id=learner["student_id"],
+                    session_id=session,
+                    item_id=item["id"],
+                    topic_id=a["topic_id"],
+                    correct=r["correct"],
+                    time_on_item_ms=r["time_on_item_ms"],
+                    submitted_at=original.submitted_at + timedelta(seconds=i + 1),
+                )
+            )
+    a.update(pair_id="old-receipt", concept_id="old-concept", pair_role="A")
+    b = {**a, "id": "old-b", "pair_role": "B"}
+    cid = services.state.put_content(
+        concept=a["topic_id"],
+        kind="concept_pack",
+        payload={"matched_pairs": [{"a": a, "b": b}], "variants": variants()},
+        topic_id=a["topic_id"],
+    )
+    services.state.set_validation(cid, "validated", module="code")
+    opened = client.post(
+        "/api/v1/evidence/failure", headers=learner["headers"], json={"attempt_id": aid}
+    )
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["fatigue"] is False

@@ -1,5 +1,9 @@
 # Agent 5 — evidence and the failure loop (phase 6)
 
+**Latest verification:** 59 phase-6 tests; 784 backend regressions pass excluding the documented
+nonterminating baseline file. See the continuation report below. The original report is retained
+as a chronological record. Production integration and browser checks remain pending.
+
 ## Task list / status
 
 - [x] Audit existing assignment, detectors, strategy posterior and thinner failure path.
@@ -238,3 +242,81 @@ Summarise measured results and pending integration in `docs/FUNCTIONALITY_ROUND.
 
 Next action: integrator lands the six workstreams, applies the edits above, reruns the unrestricted
 suite after Agent 1's fix, then runs the browser acceptance checklist before claiming phase 6 done.
+
+
+## Continuation — hardening after the initial PR
+
+### Fixes and added coverage
+
+Added **33 backend cases** without loosening any previous assertion (phase-6 total: 59).
+Added `frontend/src/lib/evidence.test.mjs` with **five real React SSR tests**, using the existing
+TypeScript compiler and React packages; the presentational `Tag` wrapper alone is isolated.
+No new dependency and no browser claim.
+
+- Missing final latency no longer reuses an older slow-answer pair for fatigue.
+- Opening an old attempt receipt only reads session answers at or before that attempt's
+  timestamp/ID. Later tiredness cannot be blamed for an earlier failure.
+- An unchecked prerequisite always has zero method attribution, even if fatigue is flagged.
+- Recovery questions require nonblank identities/stems, finite bounded pair difficulty,
+  gradeable structures, valid numeric constants/tolerances and an unambiguous in-range MCQ key.
+  The prerequisite must be a distinct question on a different topic.
+- Corrupt registry containers are handled as unavailable content rather than server errors.
+  Both raw and rendered pairs are guarded. MCQ choices and teach-back rubrics are also checked
+  against the original served A, not just its stem and answer key.
+- Invalid logged probabilities, weights, multipliers and nonboolean grades never produce
+  estimates. `excluded_n` distinguishes them from `attributed_elsewhere_n` (valid zero-weight
+  prerequisite attribution). Both counts are surfaced honestly on the evidence page.
+- Self-selection detector factory defaults to **observational** rather than implicitly
+  randomised. Hint-opening comparisons now carry the lower source weight as promised.
+- Legacy method-difference labels use **effective** n, not raw n. Intervals subtract the actual
+  endpoints of the two groups' ranges rather than symmetrising an asymmetric Wilson range.
+- Evidence badges honour weighted n even when raw n is larger than the threshold. Missing
+  actual/expected measurements say unavailable instead of inventing zero-percent results.
+  Pilot labels remain visible at large n; new SSR tests enforce all of these copy guarantees.
+- Placement cannot enter the new method-outcome hook or start a teaching-benefit recovery.
+- Recovery transitions/responses freeze the source `model_version` and content IDs in `why`.
+  Resume retains those original references even if the registry/model later changes. They
+  complement, but do not replace, the integrator's plan/delivery provenance.
+- A concurrent conflicting-B-answer test proves that both callers see the same winning
+  completed transition and exactly one matching grade plus two method outcomes are logged.
+
+New corruption tests initially exposed the intended failures. Their HTTP fixture also uncovered
+shared-registry cross-test contamination: the older valid pair was masking the malformed pack.
+The fixture was isolated to its own registered content ID, retaining the same 422/no-transition
+assertions. No production data is deleted and no existing test is weakened.
+
+### Latest measured commands
+
+```text
+cd backend && ../.venv/bin/python -m pytest -q tests/test_failure_loop.py
+59 passed, 1 warning in 2.24s
+
+cd backend && ../.venv/bin/python -m pytest -q --ignore=tests/test_baseline.py
+784 passed, 1 warning in 62.65s (0:01:02)
+
+.venv/bin/ruff check backend/src/adapt/learning/failure.py backend/src/adapt/services/evidence.py backend/src/adapt/api/routes/evidence.py backend/tests/test_failure_loop.py
+All checks passed!
+
+cd frontend && npm run lint
+contract ok; tsc --noEmit exited 0
+
+cd frontend && npm run test:lib
+13 tests / 13 pass / 0 fail / 0 skipped (8 existing + 5 evidence rendering tests)
+
+cd frontend && npm run test:engine
+15 tests / 15 pass / 0 fail / 0 skipped
+
+cd frontend && npm run test:server
+2 tests / 2 pass / 0 fail / 0 skipped
+
+cd frontend && NEXT_TELEMETRY_DISABLED=1 npm run build
+Compiled successfully; generated static pages (14/14)
+/evidence: 4.65 kB, 128 kB First Load JS
+
+git diff --check
+exit 0
+```
+
+**Still pending:** the frozen production integration edits listed above, Agent 1's baseline
+nontermination fix, content-engine interoperability, browser acceptance and screenshots. The
+unrestricted suite is not claimed green. This follow-up does not edit any frozen shared file.

@@ -6,16 +6,17 @@ AppServices wiring. The content engine supplies checked explicit pairs, not simi
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from ..assessment.bank import render_item_for, variant_seed
 from ..assessment.selector import expected_success_rate, gradeable
 from ..db.models import Attempt, ContentPack, Item, TopicPrerequisite
 from ..learning.bkt import params_for_kind
-from ..learning.failure import FailureError, FailureLoop
+from ..learning.failure import FailureError, FailureLoop, validate_pair
 from .attempts import item_payload
 
 
@@ -28,6 +29,10 @@ def start_for_attempt(svcs: Any, s: Session, student_id: str, attempt_id: str) -
         return loop.view(student_id, attempt_id)
     except KeyError:
         pass
+    if attempt.mapping_design == "placement":
+        raise FailureError(
+            "placement measured knowledge without prior teaching; it is not method evidence"
+        )
     if attempt.correct is not False or attempt.expected_success is None:
         raise FailureError("a scored failed attempt with a frozen prediction is required")
     # Content-engine handoff: validated packs only. The integrator maps its pack
@@ -37,9 +42,18 @@ def start_for_attempt(svcs: Any, s: Session, student_id: str, attempt_id: str) -
         if row["validation"] != "validated":
             continue
         content = s.get(ContentPack, row["id"])
-        payload = content.payload or {}
-        for candidate in payload.get("matched_pairs", []):
-            if candidate.get("a", {}).get("id") == attempt.item_id:
+        payload = content.payload if content is not None else None
+        if not isinstance(payload, Mapping):
+            continue
+        candidates = payload.get("matched_pairs")
+        if not isinstance(candidates, list):
+            continue
+        for candidate in candidates:
+            if (
+                isinstance(candidate, Mapping)
+                and isinstance(candidate.get("a"), Mapping)
+                and candidate["a"].get("id") == attempt.item_id
+            ):
                 pack, pair = payload, candidate
                 break
         if pair:
@@ -48,8 +62,11 @@ def start_for_attempt(svcs: Any, s: Session, student_id: str, attempt_id: str) -
         raise FailureError(
             "no validated matched B question is available; no comparison was invented"
         )
-    if not isinstance(pair.get("b"), dict) or not pair["b"].get("id"):
+    if not isinstance(pair.get("b"), Mapping) or not pair["b"].get("id"):
         raise FailureError("the matched B question is malformed")
+    validate_pair(pair["a"], pair["b"])
+    if not isinstance(pack.get("variants"), Mapping):
+        raise FailureError("no usable teaching variants are available")
     a = render_item_for(pair["a"], seed=variant_seed(student_id, pair["a"]["id"]))
     b = render_item_for(pair["b"], seed=variant_seed(student_id, pair["b"]["id"]))
     # Exact served A must be the validated A, not an unrelated same-id answer key.
@@ -57,7 +74,12 @@ def start_for_attempt(svcs: Any, s: Session, student_id: str, attempt_id: str) -
     if stored_a is None:
         raise FailureError("the original question is unavailable")
     original = render_item_for(stored_a, seed=variant_seed(student_id, attempt.item_id))
-    if any(a.get(k) != original.get(k) for k in ("kind", "stem", "answer_spec", "difficulty")):
+    original_fields = ("kind", "stem", "answer_spec", "difficulty")
+    if original["kind"] == "mcq":
+        original_fields += ("choices",)
+    elif original["kind"] == "teachback":
+        original_fields += ("rubric",)
+    if any(a.get(k) != original.get(k) for k in original_fields):
         raise FailureError("matched A differs from the question actually answered")
     direct = sorted(
         s.scalars(
@@ -83,7 +105,15 @@ def start_for_attempt(svcs: Any, s: Session, student_id: str, attempt_id: str) -
         {"correct": r.correct, "time_on_item_ms": r.time_on_item_ms}
         for r in s.scalars(
             select(Attempt)
-            .where(Attempt.student_id == student_id, Attempt.session_id == attempt.session_id)
+            .where(
+                Attempt.student_id == student_id,
+                Attempt.session_id == attempt.session_id,
+                # Opening an old receipt later must not attribute later fatigue to A.
+                or_(
+                    Attempt.submitted_at < attempt.submitted_at,
+                    and_(Attempt.submitted_at == attempt.submitted_at, Attempt.id <= attempt.id),
+                ),
+            )
             .order_by(Attempt.submitted_at, Attempt.id)
         ).all()
     ]
@@ -107,4 +137,6 @@ def start_for_attempt(svcs: Any, s: Session, student_id: str, attempt_id: str) -
         prerequisite=prerequisite,
         prerequisite_required=bool(direct),
         recent=recent,
+        model_version=snapshot.model_version,
+        content_ids=[row["id"]],
     )

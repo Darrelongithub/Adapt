@@ -11,7 +11,7 @@ type Method = {
   sources: { source: string; weight: number; n: number; effective_n: number }[];
 };
 type Report = {
-  methods: Method[]; note: string;
+  methods: Method[]; note: string; excluded_n?: number; attributed_elsewhere_n?: number;
   strategies: { strategy: string; n: number; p_helps: number; ci: [number, number] }[];
   preference_vs_performance: { stated: string; sentence: string; note: string } | null;
 };
@@ -72,6 +72,8 @@ export default function Evidence() {
     {report.loading ? <Notice>Reading your evidence…</Notice> : null}
     {report.error ? <Err error={report.error} status={report.status} /> : null}
     {report.data ? <>
+      {report.data.excluded_n ? <Notice>{report.data.excluded_n} incomplete or invalid evidence rows were excluded from these estimates.</Notice> : null}
+      {report.data.attributed_elsewhere_n ? <Notice>{report.data.attributed_elsewhere_n} method outcomes were attributed to a prerequisite instead; they did not penalise a teaching method.</Notice> : null}
       <Card title="What you chose, next to what happened">
         <p>{report.data.preference_vs_performance?.sentence ?? "Insufficient evidence to compare your preference with performance. We need at least two methods with eight effective observations each."}</p>
         <p className="mt-2 text-sm text-[var(--muted)]">{report.data.note}</p>

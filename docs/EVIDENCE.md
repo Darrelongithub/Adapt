@@ -33,7 +33,7 @@ model orchestration and navigation edits are in `agent-notes/5-evidence.md` for 
 `FailureLoop(state)` is callable without an HTTP server or AppServices. Its state is derived
 from append-only `failure_transition` events in the existing encrypted learner store.
 
-1. Start with a server-graded failed attempt, its frozen prediction, checked A/B pair and
+1. Start with a server-graded failed teaching attempt (not placement), its frozen prediction, checked A/B pair and
    available teaching variants. HTTP callers provide **only an attempt ID**: not a grade,
    method, expected score, prerequisite or question key.
 2. If a chain has a direct prerequisite, serve **one real question** on it. A missing question
@@ -42,12 +42,16 @@ from append-only `failure_transition` events in the existing encrypted learner s
    a one-question check, not a claim to have eliminated every possible prerequisite gap.
 3. Flag fatigue only when there are at least four usable chronological session answers,
    both final latencies exceed **1.5 times the session median**, and their mean accuracy is
-   lower than the preceding answers. Missing times and constant accuracy cannot trigger it.
+   lower than the preceding answers. Both actual final answers must have timing data; missing
+   final times never substitute an older pair. Constant accuracy cannot trigger it. The HTTP
+   adapter cuts history off at A, so opening an old receipt cannot attribute later fatigue to it.
 4. Reteach the **same sub-concept** using the best adequately measured alternate method.
    Ties (including no data) use seeded pseudorandom selection, not catalog order. Ask the
    explicit matched B question; do not substitute an arbitrary nearby-difficulty item.
 5. Grade B in code; record its grade and both method outcomes atomically with the completed
    transition. Replays and device resumes read the same log; they do not repeat updates.
+   Conflicting simultaneous B submissions resolve to one consistent winning grade/outcome.
+   The source model version and content IDs are frozen in the transition and returned in `why`.
 
 ### Attribution versus evidence source
 
@@ -78,7 +82,8 @@ and explicitly says **Insufficient evidence** below its own minimum n.
 
 The router accepts only registry rows with `validation == "validated"`. The frozen
 `content_for` returns metadata, so it uses those IDs to read private `ContentPack.payload`
-server-side. No private answer data is returned to the browser.
+server-side. No private answer data is returned to the browser. Malformed payload containers are refused
+as unavailable content; a validation flag does not bypass structural question checks.
 
 The content-engine adapter must expose this private contract (map the phase-4 engine's schema
 rather than manufacturing a B question):
@@ -143,5 +148,21 @@ all six workstreams and the integration edits:
    the wide range and second-exposure caveat. Reload and sign in on a second device mid-check.
 5. Reject an unchecked pack, wrong-format B, wrong attempt ID and unowned loop. Verify calm
    error copy, keyboard use and no duplicated submissions. Capture desktop and mobile screenshots.
+
+### Follow-up verification
+
+The phase-6 test file now contains **59 passing cases**, including malformed-content refusal,
+missing/recent timing edge cases, retrospective history cutoff, conflicting concurrent answers,
+placement exclusion and frozen provenance. The regression run excluding the previously documented
+nonterminating baseline file passes **784 tests**. The unrestricted suite is not claimed green.
+
+Five additional **React SSR** tests enforce weighted-n badges, adjacent source/range copy, honest
+missing-measurement state and pilot labelling. SSR is not a browser interaction test. No dependency
+was added. `npm run test:lib` now passes 13 tests; engine/server gates, lint and build also pass.
+
+Reports count invalid rows as `excluded_n` rather than producing nonfinite or fabricated estimates.
+Valid outcomes attributed to a prerequisite instead are counted as `attributed_elsewhere_n`.
+Self-selection detectors are observational by default; an assigned design must be explicit.
+Legacy method-difference ranges use interval endpoints and evidence labels use weighted n.
 
 No live model call, teaching-quality claim or browser behaviour is claimed verified here.

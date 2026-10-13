@@ -41,8 +41,10 @@ export type EffectSummary = {
   status?: string | null;
 };
 
-export function EvidenceBadge({ n, threshold = EARLY_SIGNAL_N, pilot = false }: { n: number; threshold?: number; pilot?: boolean }) {
-  const early = n < threshold;
+export function EvidenceBadge({ n, effectiveN, threshold = EARLY_SIGNAL_N, pilot = false }: {
+  n: number; effectiveN?: number; threshold?: number; pilot?: boolean;
+}) {
+  const early = (effectiveN ?? n) < threshold;
   return (
     <span className="inline-flex flex-wrap items-center gap-1 align-middle">
       <span className="text-[11px] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
@@ -128,22 +130,23 @@ export function MethodReport({ rows, minN = EARLY_SIGNAL_N }: { rows: MethodRow[
   return (
     <ul className="space-y-2">
       {rows.map((row) => {
-        const early = row.evidence ? row.evidence === "early_signal" : row.n < minN;
+        const early = (row.effective_n ?? row.n) < minN || row.evidence === "early_signal" || row.evidence === "insufficient evidence";
+        const hasEstimate = [row.actual, row.expected, row.residual].every(v => typeof v === "number" && Number.isFinite(v));
         const residual = Number(row.residual ?? 0);
         return (
           <li key={row.method} className="text-sm">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <strong>{row.label ?? row.method}</strong>
-              <EvidenceBadge n={row.n} threshold={minN} pilot={Boolean(row.pilot)} />
+              <EvidenceBadge n={row.n} effectiveN={row.effective_n} threshold={minN} pilot={Boolean(row.pilot)} />
             </div>
-            <p className="text-xs text-[var(--muted)]">
-              expected {Math.round(Number(row.expected ?? 0) * 100)}% · actual {Math.round(Number(row.actual ?? 0) * 100)}% ·{" "}
+            {hasEstimate ? <p className="text-xs text-[var(--muted)]">
+              expected {Math.round(Number(row.expected) * 100)}% · actual {Math.round(Number(row.actual) * 100)}% ·{" "}
               <span className={residual >= 0 ? "text-[var(--good)]" : "text-[var(--warn)]"}>
                 {residual > 0 ? "+" : ""}
                 {(residual * 100).toFixed(0)} points against expectation
               </span>
-            </p>
-            {row.ci ? <p className="text-xs text-[var(--muted)]">
+            </p> : <p className="text-xs text-[var(--muted)]">Estimate unavailable: no complete actual-versus-expected measurement.</p>}
+            {hasEstimate && row.ci?.every(Number.isFinite) ? <p className="text-xs text-[var(--muted)]">
               range {(row.ci[0] * 100).toFixed(0)} to {(row.ci[1] * 100).toFixed(0)} points
               {row.effective_n !== undefined ? ` · weighted n=${row.effective_n}` : ""}
             </p> : null}

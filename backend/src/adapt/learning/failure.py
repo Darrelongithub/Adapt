@@ -32,6 +32,67 @@ class FailureError(ValueError):
     pass
 
 
+def _unit_number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and 0 <= value <= 1
+        and math.isfinite(value)
+    )
+
+
+def _nonempty(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_question(q: Mapping[str, Any]) -> None:
+    """Structural guard in addition to the content validator's semantic checks."""
+    if (
+        not isinstance(q, Mapping)
+        or not all(_nonempty(q.get(k)) for k in ("id", "topic_id", "stem"))
+        or not isinstance(q.get("answer_spec", {}), Mapping)
+    ):
+        raise FailureError("recovery question has malformed identity or grading data")
+    if q.get("kind") == "numeric":
+        spec = q.get("answer_spec", {})
+        try:
+            if spec.get("value") is not None and (
+                isinstance(spec["value"], bool) or not math.isfinite(float(spec["value"]))
+            ):
+                raise ValueError
+            tolerance = spec.get("tolerance", 1e-6)
+            if isinstance(tolerance, bool) or not math.isfinite(float(tolerance)) or tolerance < 0:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise FailureError("recovery numeric key or tolerance is malformed") from exc
+    if q.get("kind") == "mcq":
+        choices = q.get("choices")
+        if (
+            not isinstance(choices, list)
+            or len(choices) < 2
+            or not all(isinstance(c, Mapping) and _nonempty(c.get("text")) for c in choices)
+        ):
+            raise FailureError("recovery choices must contain at least two readable options")
+        flagged = [i for i, c in enumerate(choices) if c.get("correct") is True]
+        key = q.get("answer_spec", {}).get("correct_index")
+        if key is None and len(flagged) == 1:
+            key = flagged[0]
+        if (
+            not isinstance(key, int)
+            or isinstance(key, bool)
+            or not 0 <= key < len(choices)
+            or len(flagged) > 1
+            or (flagged and flagged != [key])
+        ):
+            raise FailureError("recovery choice key is invalid or ambiguous")
+    try:
+        ready = gradeable(q)
+    except (TypeError, AttributeError, ValueError):
+        ready = False
+    if not ready:
+        raise FailureError("recovery question is not gradeable")
+
+
 def fatigue_flag(recent: Sequence[Mapping[str, Any]]) -> bool:
     """Chronological session answers: both final latencies >1.5 times median, accuracy falls.
 
@@ -39,14 +100,20 @@ def fatigue_flag(recent: Sequence[Mapping[str, Any]]) -> bool:
     Compare the last-two accuracy with the preceding answers (a binary final pair need not
     be strictly decreasing within itself). This is a signal, never a diagnosis.
     """
-    usable = [
-        r
-        for r in recent
-        if r.get("correct") is not None
-        and isinstance(r.get("time_on_item_ms"), (int, float))
-        and math.isfinite(r["time_on_item_ms"])
-        and r["time_on_item_ms"] > 0
-    ]
+
+    def usable_time(r: Mapping[str, Any]) -> bool:
+        value = r.get("time_on_item_ms")
+        return (
+            r.get("correct") is not None
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value > 0
+        )
+
+    if len(recent) < 4 or not all(usable_time(r) for r in recent[-2:]):
+        return False
+    usable = [r for r in recent if usable_time(r)]
     if len(usable) < 4:
         return False
     median = statistics.median(r["time_on_item_ms"] for r in usable)
@@ -59,17 +126,21 @@ def fatigue_flag(recent: Sequence[Mapping[str, Any]]) -> bool:
 def attribution(prerequisite_ok: bool | None, fatigue: bool) -> dict[str, Any]:
     if prerequisite_ok is False:
         return {"cause": "prerequisite", "multiplier": 0.0, "suggest_break": False}
-    if fatigue:
-        return {"cause": "fatigue", "multiplier": 0.5, "suggest_break": True}
     if prerequisite_ok is None:
         return {"cause": "unchecked_prerequisite", "multiplier": 0.0, "suggest_break": False}
+    if fatigue:
+        return {"cause": "fatigue", "multiplier": 0.5, "suggest_break": True}
     return {"cause": "method_comparison", "multiplier": 1.0, "suggest_break": False}
 
 
 def validate_pair(a: Mapping[str, Any], b: Mapping[str, Any]) -> None:
     """Fail closed unless explicitly matched on concept, format, pair id and difficulty."""
+    validate_question(a)
+    validate_question(b)
     if (
-        not a.get("pair_id")
+        not all(_nonempty(q.get(k)) for q in (a, b) for k in ("pair_id", "concept_id"))
+        or not all(_unit_number(q.get("difficulty")) for q in (a, b))
+        or not a.get("pair_id")
         or a.get("pair_id") != b.get("pair_id")
         or not a.get("concept_id")
         or a.get("concept_id") != b.get("concept_id")
@@ -109,22 +180,40 @@ def outcome_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     sources are visible separately; no point estimate is presented as proof.
     """
     groups: dict[str, list[dict[str, Any]]] = {}
+    excluded, elsewhere = 0, 0
     for r in rows:
         if r.get("kind") != "method_outcome":
             continue
-        p = dict(r.get("payload") or {})
-        if p.get("method") not in METHODS or p.get("correct") is None or p.get("expected") is None:
+        payload = r.get("payload")
+        if not isinstance(payload, Mapping):
+            excluded += 1
             continue
-        weight = float(p.get("multiplier", 1)) * float(r.get("weight", 0.4))
-        if weight <= 0:
+        p = dict(payload)
+        source = r.get("source_type", "observational")
+        source_weight = 1.0 if source == "controlled" else 0.4
+        multiplier = p.get("multiplier", 1)
+        logged_weight = r.get("weight", source_weight)
+        if (
+            p.get("method") not in METHODS
+            or not isinstance(p.get("correct"), bool)
+            or not _unit_number(p.get("expected"))
+            or not _unit_number(multiplier)
+            or not _unit_number(logged_weight)
+            or logged_weight != source_weight
+            or source not in ("controlled", "observational")
+        ):
+            excluded += 1
             continue
-        p.update(weight=weight, source_type=r.get("source_type", "observational"))
+        if multiplier == 0:
+            elsewhere += 1
+            continue
+        p.update(weight=source_weight * multiplier, source_type=source)
         groups.setdefault(p["method"], []).append(p)
     out, model = [], StrategyModel()
     for method, group in groups.items():
-        n, effective = len(group), sum(p["weight"] for p in group)
-        actual = sum(float(p["correct"]) * p["weight"] for p in group) / effective
-        expected = sum(float(p["expected"]) * p["weight"] for p in group) / effective
+        n, effective = len(group), math.fsum(p["weight"] for p in group)
+        actual = math.fsum(float(p["correct"]) * p["weight"] for p in group) / effective
+        expected = math.fsum(float(p["expected"]) * p["weight"] for p in group) / effective
         lo, hi = _wilson(actual * effective, effective)
         sources = []
         for source in sorted({p["source_type"] for p in group}):
@@ -134,7 +223,7 @@ def outcome_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                     "source": source,
                     "n": len(part),
                     "weight": 1.0 if source == "controlled" else 0.4,
-                    "effective_n": round(sum(p["weight"] for p in part), 3),
+                    "effective_n": round(math.fsum(p["weight"] for p in part), 3),
                 }
             )
         for p in group:
@@ -160,6 +249,8 @@ def outcome_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         )
     format_comparable = len({tuple(m["formats"]) for m in out}) <= 1
     return {
+        "excluded_n": excluded,
+        "attributed_elsewhere_n": elsewhere,
         "format_comparable": format_comparable,
         "methods": sorted(out, key=lambda p: -p["residual"]),
         "strategies": [st.as_dict() for st in model.ranked()],
@@ -213,13 +304,21 @@ class FailureLoop:
         prerequisite: dict[str, Any] | None,
         prerequisite_required: bool,
         recent: Sequence[Mapping[str, Any]],
+        model_version: int | None = None,
+        content_ids: Sequence[str] = (),
     ) -> dict[str, Any]:
         if self._transitions(learner, attempt_id):
             return self.view(learner, attempt_id)
         validate_pair(a, b)
-        if method not in METHODS or not all(
-            math.isfinite(x) and 0 <= x <= 1 for x in (expected_a, expected_b)
+        if model_version is not None and (
+            not isinstance(model_version, int)
+            or isinstance(model_version, bool)
+            or model_version < 0
         ):
+            raise FailureError("invalid source model version")
+        if isinstance(content_ids, str) or not all(_nonempty(cid) for cid in content_ids):
+            raise FailureError("invalid source content identities")
+        if method not in METHODS or not all(_unit_number(x) for x in (expected_a, expected_b)):
             raise FailureError("unknown method or invalid frozen prediction")
         next_method = choose_alternative(
             learner, attempt_id, method, variants, self.report(learner)
@@ -228,11 +327,20 @@ class FailureLoop:
             raise FailureError(
                 "a question on the direct prerequisite is unavailable; no method attribution"
             )
-        if prerequisite is not None and not gradeable(prerequisite):
-            raise FailureError("prerequisite question is not gradeable")
+        if prerequisite is not None:
+            validate_question(prerequisite)
+            if (
+                prerequisite["id"] in (a["id"], b["id"])
+                or prerequisite["topic_id"] == a["topic_id"]
+            ):
+                raise FailureError(
+                    "the prerequisite must be a distinct question on a different topic"
+                )
         p = {
             "loop_id": attempt_id,
             "session_id": session_id,
+            "model_version": model_version,
+            "content_ids": list(content_ids),
             "a": a,
             "b": b,
             "method_a": method,
@@ -259,6 +367,10 @@ class FailureLoop:
         )
         result = {
             "loop_id": loop_id,
+            "why": {
+                "model_version": p.get("model_version"),
+                "content_ids": p.get("content_ids", []),
+            },
             "stage": p["stage"],
             "note": CAVEAT,
             "fatigue": p["fatigue"],
@@ -391,10 +503,12 @@ class FailureLoop:
         A failed first attempt must be deferred until its diagnostic attribution is known;
         use answer() for the matched failure pair, not this hook a second time.
         """
-        if method not in METHODS or not math.isfinite(expected) or not 0 <= expected <= 1:
+        if method not in METHODS or not _unit_number(expected) or not isinstance(correct, bool):
             raise FailureError("invalid method or prediction")
-        if not math.isfinite(multiplier) or not 0 <= multiplier <= 1:
+        if not _unit_number(multiplier):
             raise FailureError("invalid attribution multiplier")
+        if design == "placement":
+            raise FailureError("placement is not evidence about teaching methods")
         source = "controlled" if design in ("randomised", "counterbalanced") else "observational"
         self.state.ingest(
             learner,

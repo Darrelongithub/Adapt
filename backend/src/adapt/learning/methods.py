@@ -595,14 +595,14 @@ def method_delta(
     if other is None:
         return {"comparable": False, "reason": f"no scored attempts yet under {baseline}", "method": me}
     diff = float(me["residual"]) - float(other["residual"])
-    width = (float(me["ci"][1]) - float(me["ci"][0])) / 2 + (float(other["ci"][1]) - float(other["ci"][0])) / 2
     return {
         "comparable": True,
         "method": me,
         "baseline": other,
         "residual_difference": round(diff, 3),
-        "interval": [round(diff - width, 3), round(diff + width, 3)],
-        "evidence": evidence_label(min(int(me["n"]), int(other["n"]))),
+        "interval": [round(float(me["ci"][0]) - float(other["ci"][1]), 3),
+                     round(float(me["ci"][1]) - float(other["ci"][0]), 3)],
+        "evidence": evidence_label(min(float(me["effective_n"]), float(other["effective_n"]))),
         "randomised_n": min(int(me.get("n_randomised") or 0), int(other.get("n_randomised") or 0)),
     }
 
