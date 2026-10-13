@@ -117,6 +117,9 @@ export type Receipt = {
   retention?: Record<string, unknown> | null;
   flags?: string[];
   proposals_expected?: boolean;
+  teaching?: { method: string | null; design: string | null; label: string | null };
+  next_step?: { stage: string; loop_id: string; note: string; suggest_break?: boolean } | null;
+  method_compare?: Record<string, unknown> | null;
 };
 
 export type Proposal = {

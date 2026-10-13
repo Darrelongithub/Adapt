@@ -23,10 +23,13 @@
   comparisons when fewer than two methods have eight effective observations, or when their
   format sets differ. Teaching reuses the existing segmented/example/visual renderer.
 
-**Integration status:** this is a parallel workstream, not a claim that production wiring has
-been merged. The router is wired only by the HTTP test fixture. The production registration,
-normal-attempt outcome hook, replacement of `_reteach_step`, content-engine schema mapping,
-model orchestration and navigation edits are in `agent-notes/5-evidence.md` for the integrator.
+**Integration status:** production router registration, immutable server delivery metadata,
+normal outcomes, checked recovery, model/plan updates, baseline comparison and receipt navigation
+are wired. `/methods/report` now excludes deferred failures from method estimates. Missing checked
+content is an explicit unavailable state; existing generators are not assumed to supply validated
+matched pairs for every bank item. Unrestricted backend regression: **834 passing tests**, including
+all **38 baseline tests**. Browser interactions remain unverified. See the final production report
+in `agent-notes/5-evidence.md`; older handoff/verification sections are chronological history.
 
 ## Failure cycle
 
@@ -166,3 +169,28 @@ Self-selection detectors are observational by default; an assigned design must b
 Legacy method-difference ranges use interval endpoints and evidence labels use weighted n.
 
 No live model call, teaching-quality claim or browser behaviour is claimed verified here.
+
+
+## Production integration verification
+
+The serving log owns method, design and prediction; client echoes cannot change them. Missing
+server delivery, repeat exposure and voluntary support are observational (weight 0.4). Placement
+is not teaching-method evidence. A failed A receives no method penalty until diagnosis; successful
+nonplacement answers receive one method outcome. Matched B grades and their outcomes rebuild the
+learner model, replan the remaining lesson and record delivery without restarting its current block.
+
+`/methods/report` is backed by attributed outcomes. Historical undiagnosed methods have unavailable
+estimates and n=0. `n_scored` counts submitted answers; `n_attributed` counts usable method evidence.
+The canonical `/evidence` report remains all-topics/all-sessions with source weights, intervals and
+minimum effective n. Baseline seals a frozen copy of the real preference/performance comparison.
+
+Content validation requires an explicit successful checker. No checker means unvalidated, not
+validated. The explicit matched-pair contract above is unchanged; absent checked B content never
+becomes a made-up comparison. Demo evidence is empty and demo recovery is refused, not simulated
+as a measured result. Production receipts link to the saved recovery and prefill the attempt ID.
+
+Final checks: backend **834**, failure/integration **71**, frontend lib **18**, engine **15**, server
+**2**, frontend lint/typecheck/contract (**87 routes, 56 calls**), build **14/14**. Scoped Ruff and diff
+checks pass; shared legacy Python-wide style findings remain. Browser/screenshot acceptance,
+teaching quality and live-model generation remain unverified. Full command outputs and baseline
+repair details are recorded in the agent note.

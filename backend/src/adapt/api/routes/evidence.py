@@ -2,7 +2,7 @@
 
 Only the attempt id is accepted at start: grades, methods, prerequisites and
 private matched pairs are loaded server-side, never supplied by the browser.
-Router registration is an integrator-owned edit (see agent-notes/5-evidence.md).
+Registered in the production application alongside learning and baseline.
 """
 
 from __future__ import annotations
@@ -71,9 +71,33 @@ def answer(
     loop_id: str, body: AnswerBody, student: Student = Depends(rate("mutation"))
 ) -> dict[str, Any]:
     try:
-        return FailureLoop(current().state).answer(
+        svcs = current()
+        result = FailureLoop(svcs.state).answer(
             student.id, loop_id, question_id=body.question_id, answer=body.answer
         )
+        # Every recovery grade updates the derived knowledge/method model, then
+        # replaces the plan without resetting the learner's current block.
+        transitions = [
+            r
+            for r in svcs.state.evidence_rows(student.id)
+            if r["kind"] == "failure_transition" and r["payload"].get("loop_id") == loop_id
+        ]
+        session_id = transitions[-1]["payload"]["session_id"]
+        turn = svcs.orchestrator.replan(
+            student.id,
+            session_id,
+            reason=f"failure recovery: {result['stage']}",
+            blocks=[{"kind": "failure_recovery", "loop_id": loop_id, "stage": result["stage"]}],
+        )
+        svcs.orchestrator.deliver(
+            student.id,
+            session_id=session_id,
+            plan_id=turn.plan_id,
+            block=f"failure:{loop_id}",
+            seen={"loop_id": loop_id, "stage": result["stage"]},
+            why={"model_version": turn.model_version, "reason": result["note"]},
+        )
+        return result
     except KeyError as exc:
         raise HTTPException(
             404, detail={"error": "unknown_loop", "message": "no such recovery"}

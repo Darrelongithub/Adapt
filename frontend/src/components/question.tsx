@@ -558,6 +558,13 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
         <Tag>{receipt.grading_method}</Tag>
       </div>
       <p className="text-sm leading-relaxed">{receipt.feedback}</p>
+      {receipt.next_step ? <Notice>
+        <p>{receipt.next_step.note}</p>
+        {receipt.next_step.suggest_break ? <p>A short break is worth trying before continuing.</p> : null}
+        {receipt.next_step.stage === "unavailable"
+          ? <p>No method comparison was recorded. <Btn href="/evidence">View your evidence</Btn></p>
+          : <Btn href={`/evidence?attempt=${encodeURIComponent(receipt.attempt_id)}`}>Continue the recovery check</Btn>}
+      </Notice> : null}
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         {/* The interval the server computed, not `undefined`: this row used to print a bare
             estimate next to an observation count, which reads as a measurement. It now shows

@@ -1050,6 +1050,15 @@ const lessonAuthor = {
 };
 
 const rows: Row[] = [
+  { method: "GET", match: /^\/api\/v1\/evidence$/, body: {
+    methods: [], strategies: [], preference_vs_performance: null,
+    excluded_n: 0, attributed_elsewhere_n: 0, format_comparable: true,
+    note: "Demo mode has no measured method outcomes. Insufficient evidence; no comparison was invented.",
+  } },
+  { method: "GET", match: /^\/api\/v1\/evidence\/failure\//,
+    body: null, status: 422, error: { message: "Recovery requires a real graded attempt and checked matched content; unavailable in demo mode." } },
+  { method: "POST", match: /^\/api\/v1\/evidence\/failure/,
+    body: null, status: 422, error: { message: "Recovery requires a real graded attempt and checked matched content; unavailable in demo mode." } },
   { method: "GET", match: /^\/api\/v1\/health/, body: { ok: true, mode: "local", learners: 1, mock: true } },
   { method: "GET", match: /^\/api\/v1\/me$/, body: learner },
   { method: "POST", match: /^\/api\/v1\/students/, body: { ...learner, csrf_token: "mock-csrf-token", expires_at: "2026-10-12T03:00:00", created: true, onboarding_complete: false } },

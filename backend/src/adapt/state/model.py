@@ -20,7 +20,8 @@ evidence about the session — a stall, a re-ask — and the model says so rathe
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 from ..learning import bkt as B
 
@@ -84,7 +85,9 @@ def build_model(
         st["kinds"][kind] = st["kinds"].get(kind, 0) + 1
         kinds[kind] = kinds.get(kind, 0) + 1
         scored += 1
-        step = _expected_step(float(st["p_know"]), bool(correct), kind=kind, choices=row.get("choices"))
+        step = _expected_step(
+            float(st["p_know"]), bool(correct), kind=kind, choices=row.get("choices")
+        )
         if weight >= 1.0:
             st["p_know"] = step[0]
         else:
@@ -111,7 +114,10 @@ def build_model(
             }
         )
 
+    from ..learning.failure import outcome_report
+
     return {
+        "method_evidence": outcome_report(rows),
         "model_kind": "derived_from_evidence",
         "topics": topics,
         "methods_seen": dict(sorted(methods.items())),
@@ -124,9 +130,7 @@ def build_model(
 
 def _expected_step(p_know: float, correct: bool, *, kind: str, choices: Any) -> tuple[float, float]:
     params = B.params_for_kind(kind or None, choices=choices)
-    bounded, note = B.update_capped(
-        p_know, correct, params, kind=kind or None, choices=choices
-    )
+    bounded, note = B.update_capped(p_know, correct, params, kind=kind or None, choices=choices)
     return bounded, float(note.get("p_guess_used") or params.p_guess)
 
 

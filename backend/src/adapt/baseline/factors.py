@@ -209,10 +209,10 @@ def _attention(trials: Sequence[Trial]) -> Factor:
     last_acc = _band_score(*[(0.0, bool(t.correct)) for t in drift_trials[-third:]])
     intuitive = sum(1 for t in traps if str(t.response.get("value") or "") == str(t.task.get("intuitive") or ""))
     correct_traps = sum(1 for t in traps if t.correct)
-    # Pause time on a trap is the measurement of "did you think about it": the near-miss of the
-    # intuitive answer is kept beside it, because the interesting case is the learner who paused,
-    # saw the trap, and still chose the wrong one.
-    pauses = [int(t.latency_ms) for t in traps if t.latency_ms]
+    # Report successful resistance separately from all trap pauses. A paused
+    # intuitive error is still retained, not mistaken for successful resistance.
+    pauses = [int(t.latency_ms) for t in traps if t.latency_ms and t.correct]
+    all_pauses = [int(t.latency_ms) for t in traps if t.latency_ms]
     return Factor(
         key="attention_self_control",
         title=FACTOR_TITLES["attention_self_control"],
@@ -241,6 +241,7 @@ def _attention(trials: Sequence[Trial]) -> Factor:
             "traps_correct": correct_traps,
             "traps_intuitive": intuitive,
             "median_pause_ms": int(median(pauses)) if pauses else None,
+            "median_all_trap_pause_ms": int(median(all_pauses)) if all_pauses else None,
         },
     )
 
@@ -313,7 +314,7 @@ def _reasoning(trials: Sequence[Trial]) -> Factor:
         high=min(1.0, rate + 0.15),
         summary=f"{falsifying}/{len(probes)} tests tried to break your idea, {len(solved)}/{len(guesses)} guesses right",
         statement=(
-            f"About {rate:.0%} of the inputs you tested were ones that could have proved you wrong"
+            f"About {rate:.0%} of the inputs you tested were ones that could prove you wrong"
             + (", which is a good habit" if rate >= 0.4 else ", so the app will prompt you to test the awkward case first")
             + "."
         ),
@@ -542,7 +543,7 @@ def levers(factors: Mapping[str, Factor], *, preferences: Mapping[str, Any] | No
         why_pace = f"median {pace.detail.get('median_ms')}ms per quick tap, drift {drift:+.0%} across the session (n={pace.n})"
 
     return {
-        "step_size": {"value": step_size, "why": why_step, "source": "measured"},
+        "step_size": {"value": step_size, "why": why_step, "source": "measured" if wm.state == "measured" else "default"},
         "lead_format_prior": {"value": lead_format_prior, "why": why_lead, "source": "stated" if stated_format else "default"},
         "pace": {"value": pace_lever, "why": why_pace, "source": "measured" if pace.state == "measured" else "default"},
         "review_halflife_prior": {"value": halflife, "why": why_hl, "source": "measured" if ltm.state == "measured" else "default"},

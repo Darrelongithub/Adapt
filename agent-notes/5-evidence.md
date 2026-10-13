@@ -1,8 +1,12 @@
 # Agent 5 — evidence and the failure loop (phase 6)
 
-**Latest verification:** 59 phase-6 tests; 784 backend regressions pass excluding the documented
-nonterminating baseline file. See the continuation report below. The original report is retained
-as a chronological record. Production integration and browser checks remain pending.
+**Latest verification (production integration):** the unrestricted backend suite passes
+**834 tests**, including all **38 baseline tests**, with one dependency deprecation warning.
+The **59 failure-loop + 12 new integration cases** pass against the production router.
+Frontend lib **18**, engine **15**, server **2**, lint/typecheck/contract and production build pass.
+The user's “Finish then merge” authorized the shared edits and merging PR #9. Browser interaction
+and screenshots remain unverified. Earlier sections below are historical and are superseded by
+the production-integration report at the end.
 
 ## Task list / status
 
@@ -12,7 +16,8 @@ as a chronological record. Production integration and browser checks remain pend
 - [x] Test all attribution branches, seeded simulations, persistence, replay, CSRF and HTTP isolation.
 - [x] Run frontend gates/build and backend regression checks; document actual limitations.
 - [x] Supply integrator-owned edits below without modifying frozen files.
-- [ ] Integrator: register router, replace old attempt loop, wire normal outcomes and content packs.
+- [x] Production: register router, replace old attempt loop, freeze server deliveries, wire normal
+  outcomes, checked-content contract, model/plan provenance, baseline comparison and navigation.
 - [ ] Browser acceptance / screenshots after integration (no browser installed here).
 
 ## Files changed
@@ -320,3 +325,98 @@ exit 0
 **Still pending:** the frozen production integration edits listed above, Agent 1's baseline
 nontermination fix, content-engine interoperability, browser acceptance and screenshots. The
 unrestricted suite is not claimed green. This follow-up does not edit any frozen shared file.
+
+
+## Production integration — authorized by “Finish then merge”
+
+### Exact production changes
+
+- Registered `/api/v1/evidence` in `app.py`. Recovery tests no longer mount their own router;
+  they assert the endpoint exists in the production OpenAPI contract.
+- Practice and method-probe serving persist `method_offered` metadata, assignment/exposure,
+  pre-answer model prediction and source model version. Placement offers are session-owned.
+  Submission reads this record: client method/design/expected echoes cannot promote observational
+  data to controlled evidence or rewrite expectations. Without a recorded delivery, evidence is
+  observational. Repeated questions and voluntary hint/example/explanation/visual support are
+  observational too, weighted 0.4. Frontend telemetry flushes before grading/attribution.
+- Removed the old scalar `_reteach_step` production path. Failed A now starts the checked,
+  resumable prerequisite/fatigue/alternate-method/matched-B engine. Missing validated pairs or
+  prerequisite questions produce an explicit `unavailable` receipt; no similar-item or fabricated
+  comparison is substituted. Failed A is deferred, including legacy active-strategy credit.
+- Successful nonplacement attempts log exactly one idempotently addressed method outcome.
+  Legacy approved-strategy credit uses actual-minus-expected and the proper source weight.
+  Placement updates knowledge only; it is excluded from method effects and recovery.
+- `/methods/report` now reads attributed outcomes rather than prematurely penalising undiagnosed
+  misses. Unattributed methods have n=0 and unavailable estimates, not zero-percent accuracy.
+  Pilot data retains its explicit labels; `n_scored` is distinguished from `n_attributed`.
+- The immutable derived model folds in method/strategy estimates from the same evidence log.
+  Recovery grades advance that model and replan/record delivery without resetting the current
+  block. A replay cannot add another B grade or another pair of method outcomes.
+- Content-engine validation now uses the adapter's `validated` status only after an explicit
+  checker `ok=True`; absent checkers are `unvalidated`, absent/false verdicts are rejected.
+  Explicit A/B identities, answer specifications and teaching variants are still required.
+  This does **not** claim that the existing generator supplies checked matched pairs for every
+  topic. A bank without them remains honestly unavailable; synthetic packs exist only in tests.
+- Baseline draft comparison reads real adjusted method outcomes. Sealing freezes that comparison
+  in the existing encrypted snapshot payload, including explicit null when evidence is insufficient;
+  subsequent preferences/outcomes cannot rewrite it. No new table or migration was needed.
+- Receipt recovery links prefill the attempt ID and resume the saved check. Evidence is in the
+  main navigation. Demo reports have no measured outcomes and demo recovery returns 422 honestly.
+
+### Baseline regression repairs uncovered by integration
+
+The previously timed-out file is now included, not ignored or skipped. The root SQLite write
+problem was a baseline trial transaction calling a second writer for evidence ingestion. Ingestion
+now shares the trial's transaction. Once it ran promptly, seven genuine failures were repaired:
+
+- Persist machine response actions so its bounded rounds actually terminate.
+- Suppress practice correctness in the public result as well as the stored measurement.
+- Accept wagers only on measured, scored, wager-eligible questions.
+- Retain successful trap-resistance pauses separately from all trap pauses (intuitive errors remain).
+- Align falsifying-test copy with its stated mechanism and label unmeasured step size as default.
+- Filter next-day trials to that game, rather than treating all baseline trials as next-day answers.
+- Include the free-recall anchor when generating delayed recognition tasks.
+
+All existing baseline assertions pass unchanged. Two foundational integration assertions were
+updated for the new contract: additional recovery metadata must not duplicate the single scored
+attempt; practice delivery IDs must be real nested item IDs, not `[None, None, None]`.
+The malformed-content tests retain their 422/no-transition assertions, isolating the test's pack
+**before** automatic recovery. A new checked-pack fixture initially leaked its validation into the
+shared test registry; a finalizer restores its unvalidated status, preserving test isolation rather
+than hiding the failing missing-content assertion.
+
+### Final measured commands
+
+```text
+cd backend && ../.venv/bin/python -m pytest -q --tb=short
+834 passed, 1 warning in 72.04s (0:01:12)
+
+cd backend && ../.venv/bin/python -m pytest -q tests/test_evidence_integration.py tests/test_failure_loop.py --tb=short
+71 passed, 1 warning in 3.42s
+
+cd backend && ../.venv/bin/python -m pytest -q tests/test_baseline.py
+38 passed, 1 warning in 6.90s
+
+cd frontend && npm run lint
+contract ok: 87 routes / 56 calls; tsc --noEmit exited 0
+
+cd frontend && npm run test:lib
+18 tests / 18 pass / 0 fail / 0 skipped (includes 10 real React SSR/mock regressions)
+
+cd frontend && npm run test:engine
+15 tests / 15 pass / 0 fail / 0 skipped
+
+cd frontend && npm run test:server
+2 tests / 2 pass / 0 fail / 0 skipped
+
+cd frontend && NEXT_TELEMETRY_DISABLED=1 npm run build
+Compiled successfully; generated static pages 14/14
+/evidence: 4.79 kB / 129 kB First Load JS
+```
+
+Scoped Ruff and `git diff --check` pass. A broader Ruff inspection of shared legacy files still
+reports style findings, so repository-wide Python lint is **not** claimed green. GitHub reported
+no PR checks; these are local regression results. The sole pytest warning is Starlette's httpx
+TestClient deprecation. No browser automation, screenshots, live model call, symbolic formula
+verification or teaching-quality validation is claimed. The user has explicitly authorized
+merging PR #9; GitHub is the authoritative record of the merge result.

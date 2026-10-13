@@ -14,7 +14,7 @@ mis-grades a correct answer teaches a misconception with confidence.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from typing import Any
 
@@ -24,23 +24,19 @@ from sqlalchemy.orm import Session
 from ..assessment import generated as GEN
 from ..assessment.grading import grade as grade_answer
 from ..assessment.selector import expected_success_rate
-from ..state import EvidenceEvent
 from ..db.models import (
     ActiveAdaptation,
     Attempt,
     BktState,
     Item,
-    LearningMaterial,
     LearningSession,
     RetentionSchedule,
     Topic,
-    TopicPrerequisite,
     utcnow,
-)  # noqa: E501
-from ..learning import content as CONTENT
+)
 from ..learning import methods as M
-from ..learning import reteach as RE
 from ..learning import telemetry as T
+from ..state import EvidenceEvent
 from . import telemetry
 
 log = logging.getLogger("adapt.attempts")
@@ -85,19 +81,32 @@ def item_dict(s: Session, item_id: str) -> dict[str, Any] | None:
 
 
 def active_strategies(s: Session, student_id: str) -> list[dict[str, Any]]:
-    rows = s.execute(
-        select(ActiveAdaptation).where(ActiveAdaptation.student_id == student_id, ActiveAdaptation.active.is_(True))
-    ).scalars().all()
-    return [{"strategy": r.strategy, "action": r.action, "payload": r.payload or {}, "id": r.id} for r in rows]
+    rows = (
+        s.execute(
+            select(ActiveAdaptation).where(
+                ActiveAdaptation.student_id == student_id, ActiveAdaptation.active.is_(True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {"strategy": r.strategy, "action": r.action, "payload": r.payload or {}, "id": r.id}
+        for r in rows
+    ]
 
 
 def history_ms(s: Session, student_id: str, *, limit: int = 60) -> list[int]:
-    vals = s.execute(
-        select(Attempt.time_on_item_ms)
-        .where(Attempt.student_id == student_id, Attempt.time_on_item_ms.is_not(None))
-        .order_by(Attempt.submitted_at.desc())
-        .limit(limit)
-    ).scalars().all()
+    vals = (
+        s.execute(
+            select(Attempt.time_on_item_ms)
+            .where(Attempt.student_id == student_id, Attempt.time_on_item_ms.is_not(None))
+            .order_by(Attempt.submitted_at.desc())
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
     return [int(v) for v in reversed(vals) if v]
 
 
@@ -122,9 +131,7 @@ class SubmitResult:
     #: the screen can say what it did and how much it is entitled to conclude.
     teaching_method: str | None = None
     teaching_design: str | None = None
-    #: The live fail → diagnose → reteach step, when one applies (``learning/reteach``).
-    #: ``blame`` is the important field: on a prerequisite gap or a fatigue signal the
-    #: loop refuses to attribute the miss to the method.
+    #: The checked, resumable recovery, or an honest unavailable-content notice.
     next_step: dict[str, Any] | None = None
     #: Actual-versus-expected per teaching method, accumulated across sessions.
     method_compare: dict[str, Any] | None = None
@@ -147,7 +154,9 @@ class SubmitResult:
             "teaching": {
                 "method": self.teaching_method,
                 "design": self.teaching_design,
-                "label": M.METHODS[self.teaching_method].label if self.teaching_method in M.METHODS else None,
+                "label": M.METHODS[self.teaching_method].label
+                if self.teaching_method in M.METHODS
+                else None,
             },
             "next_step": self.next_step,
             "method_compare": self.method_compare,
@@ -197,70 +206,89 @@ async def submit(
         item = render_item_for(raw_item, seed=variant_seed(student_id, item_id))
         metrics = telemetry.metrics_for_attempt(s, session_id=session_id, item_id=item_id)
         m: dict[str, Any] = metrics.as_dict() if metrics else {}
-        # Which method taught this question. The plan assigned it and put it in the
-        # response; the client echoes it back. When it is absent (an older client, a
-        # direct API call, a replay), the server *derives* the same decision from
-        # (learner, item, exposure) rather than recording nothing -- a null method
-        # would silently exclude the attempt from every comparison.
-        prior_on_topic = int(
-            s.execute(
-                select(func.count())
-                .select_from(Attempt)
-                .where(Attempt.student_id == student_id, Attempt.topic_id == item["topic_id"])
-            ).scalar_one()
-        )
-        served_method = str(method or "").strip().lower() or None
-        if served_method not in M.METHODS:
-            served_method = None
+        from .evidence import offered_assignment
+
+        offer = offered_assignment(services, student_id, item_id, session_id)
         assignment = M.assign_method(
             learner_id=student_id,
             item_id=item_id,
             topic_id=item["topic_id"],
-            exposure=prior_on_topic,
+            exposure=0,
             directives=[],
         )
-        if served_method is None or (
-            served_method != assignment.method and str(method_design or "") != "assigned_by_adaptation"
-        ):
-            # No method was echoed, or an unknown one: use the derived assignment and
-            # record that it was derived (which is honest, and keeps the row usable).
-            effective = assignment
-        else:
-            effective = M.MethodAssignment(
-                method=served_method,
-                arm=str(method_arm or assignment.arm),
-                design=str(method_design or assignment.design),
-                assigned_by="served" if method_design else assignment.assigned_by,
-                seed=assignment.seed,
-                exposure=prior_on_topic,
-                why=assignment.why,
-            )
+        placement = sess.mode in ("placement", "diagnostic", "assessment")
+        placement = placement or bool(offer and offer.get("design") == "placement")
+        chosen = (offer or {}).get("method") or method
+        if chosen not in M.METHODS:
+            chosen = assignment.method
+        effective = M.MethodAssignment(
+            method=chosen,
+            arm=str((offer or {}).get("arm") or "unrecorded"),
+            design="placement"
+            if placement
+            else str((offer or {}).get("design") or "observational"),
+            assigned_by="server_delivery" if offer else "unrecorded_delivery",
+            seed=assignment.seed,
+            exposure=int((offer or {}).get("exposure") or 0),
+            why="frozen server delivery" if offer else "no server delivery; observational only",
+        )
         graded = grade_answer(item, answer, student_text=teachback_text)
-        correct = graded.correct if graded.correct is not None else None
+        correct = graded.correct
         score = graded.score
         if attempt_no is None:
-            attempt_no = int(
-                s.execute(
-                    select(func.count())
-                    .select_from(Attempt)
-                    .where(Attempt.student_id == student_id, Attempt.item_id == item_id)
-                ).scalar_one()
-            ) + 1
+            attempt_no = (
+                int(
+                    s.execute(
+                        select(func.count())
+                        .select_from(Attempt)
+                        .where(Attempt.student_id == student_id, Attempt.item_id == item_id)
+                    ).scalar_one()
+                )
+                + 1
+            )
+        repeated = s.scalar(
+            select(func.count())
+            .select_from(Attempt)
+            .where(
+                Attempt.student_id == student_id,
+                Attempt.item_id == item_id,
+            )
+        )
+        extra_support = any(
+            m.get(key)
+            for key in (
+                "hints_used",
+                "examples_opened",
+                "explanation_opened",
+                "visual_opened",
+            )
+        )
+        if not placement and (repeated or extra_support):
+            effective = replace(
+                effective,
+                design="observational",
+                assigned_by="learner_choice",
+                why="repeat exposure or self-selected support; not a controlled comparison",
+            )
         lat_hist = history_ms(s, student_id)
         time_on = m.get("time_on_item_ms")
         z = T.latency_z(int(time_on), lat_hist) if time_on else None
         state = s.get(BktState, (student_id, item["topic_id"]))
         p_know = float(state.p_know) if state is not None else 0.2
-        params = services.ai1.params_for(student_id, item["topic_id"], s, kind=item.get("kind"), choices=len(item.get("choices") or []) or None)
+        params = services.ai1.params_for(
+            student_id,
+            item["topic_id"],
+            s,
+            kind=item.get("kind"),
+            choices=len(item.get("choices") or []) or None,
+        )
         # The model's own prediction for this item, before the answer arrives. This is
         # the number "actual vs expected" compares against, so it is computed the same
         # way the selector computes it and stored with the attempt.
         model_expected = expected_success_rate(p_know, float(item.get("difficulty") or 0.5), params)
-        expected = (
-            float(expected_success_client)
-            if expected_success_client is not None and 0.0 < float(expected_success_client) < 1.0
-            else model_expected
-        )
+        # The client prediction is deliberately ignored. Preserve the serve-time
+        # prediction when available; direct API submissions use the pre-answer model.
+        expected = float(offer["expected"]) if offer else model_expected
         strategies = active_strategies(s, student_id)
         att = Attempt(
             session_id=session_id,
@@ -269,7 +297,9 @@ async def submit(
             topic_id=item["topic_id"],
             experience_mode=item.get("experience_mode") or "read",
             attempt_no=attempt_no,
-            first_answer={"value": m.get("first_answer")} if m.get("first_answer") is not None else None,
+            first_answer={"value": m.get("first_answer")}
+            if m.get("first_answer") is not None
+            else None,
             final_answer={"value": answer} if not isinstance(answer, dict) else answer,
             correct=correct,
             score=score,
@@ -277,7 +307,9 @@ async def submit(
             time_to_first_ms=m.get("first_interaction_ms"),
             time_on_item_ms=time_on,
             change_count=int(m.get("change_count") or 0),
-            changed_from_correct=bool((m.get("answer_changes") or []) and m.get("first_answer") != m.get("final_answer")),
+            changed_from_correct=bool(
+                (m.get("answer_changes") or []) and m.get("first_answer") != m.get("final_answer")
+            ),
             hints_used=int(m.get("hints_used") or 0),
             examples_opened=int(m.get("examples_opened") or 0),
             explanation_opened=bool(m.get("explanation_opened")),
@@ -295,7 +327,11 @@ async def submit(
         s.flush()
         attempt_id = att.id
         flags: list[str] = []
-        if time_on and item.get("est_seconds") and time_on < 1000 * max(3.0, float(item["est_seconds"]) * 0.2):
+        if (
+            time_on
+            and item.get("est_seconds")
+            and time_on < 1000 * max(3.0, float(item["est_seconds"]) * 0.2)
+        ):
             flags.append("answered unusually fast — treat this score as weak evidence")
         if (m.get("hints_used") or 0) >= 2 and correct:
             flags.append("correct after 2+ hints: scaffolding may be doing the work")
@@ -314,7 +350,9 @@ async def submit(
             row.n_attempts = int(row.n_attempts or 0) + 1
             row.n_correct = int(row.n_correct or 0) + (1 if correct else 0)
             if row.source == "ai2":
-                declared = float(row.prior_difficulty if row.prior_difficulty is not None else row.difficulty)
+                declared = float(
+                    row.prior_difficulty if row.prior_difficulty is not None else row.difficulty
+                )
                 row.difficulty = GEN.observed_difficulty(
                     row.prior_difficulty,
                     declared=declared,
@@ -349,7 +387,9 @@ async def submit(
         if teachback is not None:
             att.teachback_score = float(teachback.get("score") or 0.0)
             if correct is None:
-                correct = att.teachback_score >= float((item.get("rubric") or {}).get("pass_fraction", 0.6))
+                correct = att.teachback_score >= float(
+                    (item.get("rubric") or {}).get("pass_fraction", 0.6)
+                )
                 att.correct = correct
                 score = score if score is not None else att.teachback_score
         att.ai_feedback = feedback
@@ -376,18 +416,27 @@ async def submit(
         score=score,
         difficulty=float(item.get("difficulty") or 0.5),
         self_explain=float(teachback.get("score") or 0.0) if teachback else 0.0,
-        active_strategies=[x["strategy"] for x in strategies],
+        active_strategies=[x["strategy"] for x in strategies] if correct and not placement else [],
+        expected_success=expected,
+        strategy_weight=1.0 if effective.design in ("randomised", "counterbalanced") else 0.4,
         kind=item.get("kind"),
         choices=len(item.get("choices") or []) or None,
     )
     with services.scope() as s:
         sched = s.get(RetentionSchedule, (student_id, item["topic_id"]))
-        review_was_due = bool(sched is not None and sched.due_at is not None and sched.due_at <= utcnow() + timedelta(minutes=5))
+        review_was_due = bool(
+            sched is not None
+            and sched.due_at is not None
+            and sched.due_at <= utcnow() + timedelta(minutes=5)
+        )
         recent_n = int(
             s.execute(
                 select(func.count())
                 .select_from(Attempt)
-                .where(Attempt.student_id == student_id, Attempt.submitted_at >= utcnow() - timedelta(days=7))
+                .where(
+                    Attempt.student_id == student_id,
+                    Attempt.submitted_at >= utcnow() - timedelta(days=7),
+                )
             ).scalar_one()
         )
     retention = None
@@ -436,7 +485,7 @@ async def submit(
             # The model is a pure fold of the log, so advancing it here is safe and idempotent: an
             # unchanged log produces an identical payload and no new version.
             store.advance_model(student_id, module="ai1", reason="ingest", titles=store.title_map())
-            # Step 5 of the turn cycle: record what the learner saw, against the plan that served it.
+            # Step 5: record delivery against the plan that served it.
             state = store.session_state(student_id, session_id) if session_id else {}
             plan_id = state.get("plan_id")
             store.record_delivery(
@@ -457,21 +506,49 @@ async def submit(
                 session_id=session_id,
             )
     except Exception:  # pragma: no cover - the store must never be able to lose an answer
-        log.exception("attempts: the state store could not record this attempt (the answer is still stored)")
+        log.exception(
+            "attempts: the state store could not record this attempt (the answer is still stored)"
+        )
 
-    # ---- phase 5: the loop. Fail -> diagnose -> reteach -> matched -> compare ---- #
-    next_step, compare = _reteach_step(
-        services,
-        student_id=student_id,
-        session_id=session_id,
-        item=item,
-        item_id=item_id,
-        method=effective.method,
-        correct=bool(correct) if correct is not None else None,
-        expected=float(expected),
-        time_on_item_ms=int(time_on) if time_on else None,
-        latency_z=None if z is None else float(z),
-    )
+    # Failed A receives no method/strategy penalty until diagnosis and matched B.
+    from ..learning.failure import FailureError, FailureLoop
+    from .evidence import start_for_attempt
+
+    next_step, compare = None, None
+    loop = FailureLoop(services.state)
+    if not placement and correct is False:
+        try:
+            with services.scope() as s:
+                next_step = start_for_attempt(services, s, student_id, attempt_id)
+        except FailureError as exc:
+            next_step = {"stage": "unavailable", "loop_id": attempt_id, "note": str(exc)}
+        services.orchestrator.replan(
+            student_id,
+            session_id,
+            reason="failed answer: diagnose before method attribution",
+            blocks=[
+                {
+                    "kind": "failure_recovery",
+                    "topic_id": item["topic_id"],
+                    "attempt_id": attempt_id,
+                    "stage": next_step["stage"],
+                }
+            ],
+        )
+    elif not placement and correct is True:
+        loop.record_outcome(
+            student_id,
+            event_id=f"method:{attempt_id}",
+            method=effective.method,
+            correct=True,
+            expected=expected,
+            topic_id=item["topic_id"],
+            question_kind=item["kind"],
+            design=effective.design,
+        )
+        services.state.advance_model(student_id, reason="method outcome")
+    if not placement:
+        compare = loop.report(student_id)
     return SubmitResult(
         attempt_id=attempt_id,
         item_id=item_id,
@@ -493,169 +570,88 @@ async def submit(
     )
 
 
-def _reteach_step(
-    services: Any,
-    *,
+def method_report_for(
+    s: Session,
     student_id: str,
-    session_id: str,
-    item: dict[str, Any],
-    item_id: str,
-    method: str,
-    correct: bool | None,
-    expected: float,
-    time_on_item_ms: int | None,
-    latency_z: float | None,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Run the diagnose → reteach → compare loop for the answer just given.
+    *,
+    state: Any,
+    limit: int = 400,
+) -> dict[str, Any]:
+    """Compatibility surface backed by attributed outcomes, not undiagnosed misses.
 
-    The plan itself is pure (``learning.reteach.plan_reteach``); this is the part that
-    gathers the evidence it needs from the database — what else exists on the topic in
-    the same format, the prerequisite graph, the learner's measured prior skills, the
-    last few responses of this session (for the fatigue check) and the method record
-    *across sessions*, which is what makes the comparison a comparison.
+    Pilot rows remain separately labelled. Missing attribution is unavailable, not
+    a zero success rate; n_scored counts submitted answers, not method evidence.
     """
-    with services.scope() as s:
-        topic_id = str(item["topic_id"])
-        candidates = [
-            {
-                "id": it.id,
-                "topic_id": it.topic_id,
-                "kind": it.kind,
-                "difficulty": it.difficulty,
-                "est_seconds": it.est_seconds,
-                "active": bool(it.active),
-                "choices": it.choices or [],
-            }
-            for it in s.execute(select(Item).where(Item.topic_id == topic_id, Item.active.is_(True))).scalars().all()
-        ]
-        prereqs = {topic_id: [row.prerequisite_id for row in s.execute(select(TopicPrerequisite).where(TopicPrerequisite.topic_id == topic_id)).scalars().all()]}
-        mastery, observations = {}, {}
-        for state in s.execute(select(BktState).where(BktState.student_id == student_id)).scalars().all():
-            mastery[state.topic_id] = float(state.p_know)
-            observations[state.topic_id] = int(state.n_obs)
-        recent = [
-            {"time_on_item_ms": a.time_on_item_ms, "est_seconds": (float(it.est_seconds) if it else None)}
-            for a, it in (
-                (a, s.get(Item, a.item_id))
-                for a in s.execute(
-                    select(Attempt)
-                    .where(Attempt.session_id == session_id, Attempt.correct.is_not(None))
-                    .order_by(Attempt.submitted_at.desc())
-                    .limit(6)
-                ).scalars().all()
-            )
-        ]
-        method_rows = M.rows_from_attempts(
-            s.execute(
-                select(Attempt)
-                .where(Attempt.student_id == student_id, Attempt.correct.is_not(None))
-                .order_by(Attempt.submitted_at.desc())
-                .limit(200)
-            ).scalars().all()
-        )
-        topic = s.get(Topic, topic_id)
-        title = topic.title if topic is not None else topic_id
-        material = s.execute(
-            select(LearningMaterial).where(LearningMaterial.topic_id == topic_id).limit(1)
-        ).scalar_one_or_none()
-        source_text = (material.body if material is not None else (topic.description if topic is not None else "")) or ""
-        # The parameters the *next* question will be predicted with. Read here, while
-        # the session is open: the expected value of the reteach question is part of
-        # what makes the comparison "actual vs expected" rather than "right vs wrong".
-        topic_params = services.ai1.params_for(student_id, topic_id, s)
+    from ..learning.failure import outcome_report
 
-    plan = RE.plan_reteach(
-        learner_id=student_id,
-        topic_id=topic_id,
-        item=item,
-        method=method,
-        correct=correct,
-        expected_success=expected,
-        candidates=candidates,
-        prereqs=prereqs,
-        mastery=mastery,
-        observations=observations,
-        time_on_item_ms=time_on_item_ms,
-        latency_z=latency_z,
-        recent=recent,
-        method_rows=method_rows,
-    )
-    compare = M.method_delta(method_rows, method=method, baseline=plan.to_method) if plan.to_method else None
-    payload = plan.as_dict()
-    payload["sentence"] = RE.compare_text(plan)
-    if plan.question is not None and plan.assignment is not None:
-        # The reteach question is served *now*, with its own method's teaching payload,
-        # so the next attempt is a real observation under the new method — and it is a
-        # question of the same format, so the difference is the teaching.
-        question_item = dict(plan.question)
-        question_item["topic_id"] = question_item.get("topic_id") or topic_id
-        rendered = dict(question_item)
-        teaching = CONTENT.teaching_payload(
-            method=plan.assignment.method,
-            topic_id=topic_id,
-            title=str(question_item.get("title") or title),
-            source_text=source_text,
-            learner_id=student_id,
-        )
-        p_know = float(mastery.get(topic_id, 0.2))
-        payload["item"] = {
-            "id": rendered.get("id"),
-            "topic_id": topic_id,
-            "kind": rendered.get("kind"),
-            "difficulty": rendered.get("difficulty"),
-            "est_seconds": rendered.get("est_seconds"),
-        }
-        payload["presentation"] = {
-            "method": plan.assignment.method,
-            "method_label": M.METHODS[plan.assignment.method].label,
-            "method_assignment": plan.assignment.as_dict(),
-            "teaching": teaching,
-            "expected_success": round(
-                expected_success_rate(
-                    p_know,
-                    float(rendered.get("difficulty") or 0.5),
-                    _format_params(topic_params, rendered),
-                ),
-                3,
+    attempts = s.scalars(
+        select(Attempt)
+        .where(Attempt.student_id == student_id, Attempt.correct.is_not(None))
+        .order_by(Attempt.submitted_at.desc())
+        .limit(limit)
+    ).all()
+    historical = M.rows_from_attempts(attempts)
+    report = outcome_report(state.evidence_rows(student_id))
+    methods = [
+        {
+            **row,
+            "evidence": M.evidence_label(row["effective_n"]),
+            "n_randomised": sum(
+                source["n"] for source in row["sources"] if source["source"] == "controlled"
             ),
+            "note": report["note"],
         }
-    return (payload if plan.needed else None), compare
+        for row in report["methods"]
+    ]
+    pilots = M.method_report([row for row in historical if row.get("pilot")])["methods"]
+    if not methods:
+        methods = pilots
+    known = {row["method"] for row in methods}
+    for row in historical:
+        method = row["method"]
+        if method in known or row.get("design") == "placement" or row.get("pilot"):
+            continue
+        known.add(method)
+        methods.append(
+            {
+                "method": method,
+                "label": M.METHODS[method].label if method in M.METHODS else method,
+                "n": 0,
+                "effective_n": 0,
+                "n_randomised": 0,
+                "sources": [],
+                "actual": None,
+                "expected": None,
+                "residual": None,
+                "ci": None,
+                "evidence": "no_data",
+                "note": "No attributed method outcomes; failed A awaits diagnosis.",
+            }
+        )
+    return {
+        **report,
+        "methods": methods,
+        "pilot_methods": pilots,
+        "n_scored": sum(row.get("design") != "placement" for row in historical),
+        "n_attributed": sum(row["n"] for row in report["methods"]),
+        "min_n_for_a_finding": 8,
+        "note": "Attributed actual-minus-expected outcomes only; failed A awaits diagnosis. "
+        "n_scored counts answers, not method evidence. Pilot data is labelled separately. "
+        + report["note"],
+    }
 
 
-def _format_params(base: Any, item: dict[str, Any]) -> Any:
-    """The belief's parameters with the *next* question's format guess rate applied."""
-    from ..learning.bkt import params_for_kind
-
-    return params_for_kind(
-        str(item.get("kind") or ""),
-        choices=len(item.get("choices") or []) or None,
-        base=base,
-    )
-
-
-def method_report_for(s: Session, student_id: str, *, limit: int = 400) -> dict[str, Any]:
-    """Actual vs expected per teaching method, accumulated across every session."""
-    rows = M.rows_from_attempts(
-        s.execute(
-            select(Attempt)
-            .where(Attempt.student_id == student_id, Attempt.correct.is_not(None))
-            .order_by(Attempt.submitted_at.desc())
-            .limit(limit)
-        ).scalars().all()
-    )
-    report = M.method_report(rows)
-    report["note"] = (
-        "each method is judged on actual minus expected success, so a method that met harder "
-        "material is not punished for it; under 8 observations is labelled an early signal"
-    )
-    return report
-
-
-def attempts_for(s: Session, student_id: str, *, limit: int = 200, topic_id: str | None = None) -> list[dict[str, Any]]:
+def attempts_for(
+    s: Session, student_id: str, *, limit: int = 200, topic_id: str | None = None
+) -> list[dict[str, Any]]:
     conds = [Attempt.student_id == student_id]
     if topic_id:
         conds.append(Attempt.topic_id == topic_id)
-    rows = s.execute(select(Attempt).where(*conds).order_by(Attempt.submitted_at.desc()).limit(limit)).scalars().all()
+    rows = (
+        s.execute(select(Attempt).where(*conds).order_by(Attempt.submitted_at.desc()).limit(limit))
+        .scalars()
+        .all()
+    )
     titles = {t.id: t.title for t in s.execute(select(Topic)).scalars().all()}
     out = []
     for a in rows:

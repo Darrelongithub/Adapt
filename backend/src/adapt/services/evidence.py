@@ -17,6 +17,7 @@ from ..assessment.selector import expected_success_rate, gradeable
 from ..db.models import Attempt, ContentPack, Item, TopicPrerequisite
 from ..learning.bkt import params_for_kind
 from ..learning.failure import FailureError, FailureLoop, validate_pair
+from ..learning.methods import METHODS
 from .attempts import item_payload
 
 
@@ -140,3 +141,75 @@ def start_for_attempt(svcs: Any, s: Session, student_id: str, attempt_id: str) -
         model_version=snapshot.model_version,
         content_ids=[row["id"]],
     )
+
+
+def remember_offers(
+    svcs: Any,
+    student_id: str,
+    picks: list[dict[str, Any]],
+    *,
+    session_id: str | None = None,
+    placement: bool = False,
+) -> None:
+    """Freeze server-selected teaching and prediction before the answer arrives.
+
+    A delivery is not a scored observation. Echoed client metadata cannot promote
+    a learner choice to controlled evidence or rewrite this prediction.
+    """
+    from uuid import uuid4
+
+    from ..db.models import BktState
+    from ..state import EvidenceEvent
+
+    events = []
+    version = svcs.state.latest_version(student_id)
+    with svcs.scope() as s:
+        for pick in picks:
+            item = pick["item"]
+            presentation = pick.get("presentation") or {}
+            assignment = dict(presentation.get("method_assignment") or {})
+            if placement:
+                assignment["design"] = "placement"
+            if not placement and assignment.get("method") not in METHODS:
+                continue
+            belief = s.get(BktState, (student_id, item["topic_id"]))
+            params = svcs.ai1.params_for(
+                student_id,
+                item["topic_id"],
+                s,
+                kind=item["kind"],
+                choices=len(item.get("choices") or []) or None,
+            )
+            expected = expected_success_rate(
+                float(belief.p_know) if belief is not None else 0.2,
+                float(item.get("difficulty", 0.5)),
+                params,
+            )
+            events.append(
+                EvidenceEvent(
+                    event_id=f"offer:{uuid4().hex}",
+                    kind="method_offered",
+                    source_type="controlled"
+                    if assignment.get("design") in ("randomised", "counterbalanced")
+                    else "observational",
+                    session_id=session_id,
+                    item_id=item["id"],
+                    topic_id=item["topic_id"],
+                    payload={**assignment, "expected": expected, "model_version": version},
+                )
+            )
+    if events:
+        svcs.state.ingest(student_id, events, module="code")
+
+
+def offered_assignment(
+    svcs: Any, student_id: str, item_id: str, session_id: str
+) -> dict[str, Any] | None:
+    for row in reversed(svcs.state.evidence_rows(student_id)):
+        if (
+            row["kind"] == "method_offered"
+            and row.get("item_id") == item_id
+            and row.get("session_id") in (None, session_id)
+        ):
+            return dict(row["payload"])
+    return None

@@ -138,7 +138,7 @@ class Orchestrator:
         validator = getattr(self.ai2, "validate_pack", None)
         if validator is not None:
             verdict = validator(payload) or {}
-            ok = bool(verdict.get("ok", True))
+            ok = verdict.get("ok") is True
             notes.extend(list(verdict.get("notes") or []))
         else:
             ok = True
@@ -147,7 +147,8 @@ class Orchestrator:
             kind=kind,
             payload=payload,
             topic_id=topic_id,
-            validation="valid" if ok else "rejected",
+            validation=("validated" if ok and validator is not None else
+                        "unvalidated" if validator is None else "rejected"),
             validation_notes=notes,
             module="ai2",
         )

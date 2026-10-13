@@ -319,13 +319,8 @@ def test_preference_screen_uses_real_adjusted_outcomes(services, learner):
 
 @pytest.fixture
 def evidence_router(client):
-    # Test-only wiring; production app.py is integrator-owned.
-    from adapt.api.routes.evidence import router
-
-    original = list(client.app.router.routes)
-    client.app.include_router(router)
-    yield
-    client.app.router.routes[:] = original
+    # Use production registration: test-only router wiring would mask a broken app.
+    assert "/api/v1/evidence" in client.app.openapi()["paths"]
 
 
 def test_http_full_loop_and_isolation(
@@ -633,17 +628,6 @@ def test_malformed_validated_registry_payload_is_a_refusal_not_500(
     from adapt.services.attempts import item_payload
 
     item = next(i["item"] for i in items if i["item"]["kind"] == "numeric")
-    response = client.post(
-        "/api/v1/attempts",
-        headers=learner["headers"],
-        json={
-            "session_id": session,
-            "item_id": item["id"],
-            "answer": make_answer(item["id"], correct=False),
-            "client_events": [],
-        },
-    )
-    assert response.status_code == 200, response.text
     with services.scope() as s:
         a = item_payload(s, item["id"])
     # The last case targets the actual A lookup; the others target container shape.
@@ -666,6 +650,17 @@ def test_malformed_validated_registry_payload_is_a_refusal_not_500(
         "content_for",
         lambda concept: [row for row in lookup(concept) if row["id"] == cid],
     )
+    response = client.post(
+        "/api/v1/attempts",
+        headers=learner["headers"],
+        json={
+            "session_id": session,
+            "item_id": item["id"],
+            "answer": make_answer(item["id"], correct=False),
+            "client_events": [],
+        },
+    )
+    assert response.status_code == 200, response.text
     start = client.post(
         "/api/v1/evidence/failure",
         headers=learner["headers"],

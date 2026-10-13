@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TeachingPanel, type Teaching } from "@/components/teaching";
 import { Btn, Card, Err, Field, Input, Notice, Select, Tag } from "@/components/ui";
 import { get, post, useApi } from "@/lib/api";
@@ -33,6 +33,20 @@ export default function Evidence() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const receipt = new URLSearchParams(window.location.search).get("attempt");
+    if (!receipt) return;
+    let alive = true;
+    setAttempt(receipt); setBusy(true);
+    get<Recovery>(`evidence/failure/${encodeURIComponent(receipt)}`).then(response => {
+      if (!alive) return;
+      if (response.data) setRecovery(response.data);
+      else setError(response.error ?? "Could not resume this check");
+    }).catch(e => { if (alive) setError(String(e)); })
+      .finally(() => { if (alive) setBusy(false); });
+    return () => { alive = false; };
+  }, []);
 
   async function action(resume = false) {
     setBusy(true); setError(null);
