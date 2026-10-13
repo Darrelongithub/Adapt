@@ -285,7 +285,7 @@ def teaching_payload(
         return {
             "method": method,
             "kind": "no_material",
-            "text": "There is no material for this concept yet, so there is no worked example to show before the question.",
+            "text": "There is no course material for this concept yet, so there is no worked example to show before the question.",
         }
     if method == "visual":
         visual = VIS.build_visual(title=title, text=source_text, seed=str(stable_seed(learner_id, topic_id)))
@@ -293,7 +293,7 @@ def teaching_payload(
             return {
                 "method": method,
                 "kind": "no_material",
-                "text": "There is no material to draw from yet, so nothing is shown before the question.",
+                "text": "There is no course material to draw from yet, so nothing is shown before the question.",
             }
         return {"method": method, "kind": "visual", "visual": visual.as_dict()}
     segmented = SEG.segment(source_text, seed=f"{topic_id}:{learner_id}") if source_text else SEG.Segmented()

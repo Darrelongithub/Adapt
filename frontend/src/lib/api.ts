@@ -229,18 +229,6 @@ export type Me = {
   sessions: number;
 };
 
-export async function whoAmI(): Promise<Me | null> {
-  const r = await get<Me>("me");
-  return r.data;
-}
-
-export async function register(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const out = await post<Record<string, unknown>>("students", payload);
-  // The backend sets the CSRF cookie in the same response; a hard reload of /me makes
-  // the new session visible to every screen rather than half-rendering.
-  if (typeof window !== "undefined") window.sessionStorage.removeItem("adapt-me-cache");
-  return out;
-}
 
 export async function logout(): Promise<void> {
   try {

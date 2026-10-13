@@ -13,8 +13,6 @@ What each one is here to prove:
 
 from __future__ import annotations
 
-import pytest
-
 
 def _csrf(client) -> dict[str, str]:
     r = client.post("/api/v1/students", json={"display_name": "Smoke", "age_band": "16-18", "as_guest": True})
@@ -98,6 +96,10 @@ def test_an_attempt_remembers_the_method_it_was_served_under(client):
     report = client.get("/api/v1/methods/report", headers=h).json()
     assert report["n_scored"] >= 1, report
     assert any(e["method"] == method for e in report["methods"]), report["methods"]
+    mine = client.get("/api/v1/me/attempts?limit=5", headers=h)
+    assert mine.status_code == 200, mine.text
+    assert mine.json()["count"] >= 1 and mine.json()["attempts"][0]["method"] == method
+    assert mine.json()["attempts"][0]["kind"] == served["item"]["kind"]
 
 
 def test_concept_versions_are_three_and_show_what_is_unverified(client):

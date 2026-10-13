@@ -260,10 +260,6 @@ export function When({ ts }: { ts?: string | null }) {
   );
 }
 
-export function Loading({ label = "loading" }: { label?: string }) {
-  return <p className="text-sm text-[var(--muted)]">{label}…</p>;
-}
-
 export function Err({ error, status }: { error: string | null; status?: number | null }) {
   if (!error) return null;
   return (

@@ -252,6 +252,17 @@ async def submit_attempt(
     return result.as_dict()
 
 
+@router.get("/me/attempts")
+def my_attempts(
+    limit: int = 200,
+    topic_id: str | None = None,
+    s: Session = Depends(db_session),
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    rows = A.attempts_for(s, student.id, limit=max(1, min(500, limit)), topic_id=topic_id)
+    return {"attempts": rows, "count": len(rows)}
+
+
 @router.get("/concepts/{topic_id}/versions")
 def concept_versions(
     topic_id: str,
@@ -402,5 +413,5 @@ def strategies() -> dict[str, Any]:
 
 @router.get("/plan")
 def plan(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
-    _graph, mastery, out = current().ai1.plan(student.id)
+    _graph, _mastery, out = current().ai1.plan(student.id)
     return out

@@ -86,7 +86,7 @@ export default function Progress() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Btn onClick={() => Promise.all([dash.reload(), journey.reload()])}>Reload</Btn>
+          <Btn onClick={() => Promise.all([dash.reload(), journey.reload(), methodReport.reload()])}>Reload</Btn>
           <Btn onClick={retrain} disabled={training} title="derive the estimates again from the event log rather than trusting the cached ones">
             {training ? "…" : "Recompute estimates"}
           </Btn>
@@ -225,7 +225,7 @@ export default function Progress() {
           <div className="mb-3 flex flex-wrap gap-2 text-xs">
             {journey.data.phases.map((p, i) => (
               <span key={i} className="rounded border border-[var(--line)] px-2 py-1 text-[var(--muted)]" title={String(p.why ?? "")}>
-                <span className="text-[var(--fg)]/70">{String(p.phase ?? p.label ?? "?")}</span> {String(p.title ?? "")}
+                <span className="text-ink-2">{String(p.phase ?? p.label ?? "?")}</span> {String(p.title ?? "")}
                 {p.why ? <span className="opacity-70"> — {String(p.why)}</span> : null}
               </span>
             ))}

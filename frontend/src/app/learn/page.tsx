@@ -160,7 +160,7 @@ export default function Learn() {
             {active.map((a) => (
               <li key={a.id} className="flex items-start gap-2">
                 <Tag tone="good">on</Tag>
-                <span className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1">
                   <strong>{a.label ?? a.strategy}</strong>{" "}
                   {typeof a.effect_summary === "string" ? (
                     <span className="text-[var(--muted)]">{a.effect_summary}</span>
@@ -170,7 +170,7 @@ export default function Learn() {
                   {a.effect_summary && typeof a.effect_summary !== "string" ? (
                     <EffectLine effect={a.effect_summary as unknown as EffectSummary} />
                   ) : null}
-                </span>
+                </div>
               </li>
             ))}
           </ul>

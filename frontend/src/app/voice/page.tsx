@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, humanize, Notice, Tag, Textarea, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, humanize, Notice, Select, Tag, Textarea, useSession } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
 
 type Caps = {
@@ -349,14 +349,13 @@ export default function VoicePage() {
               <Check label="Let it speak out loud" checked={voiceOn} onChange={setVoiceOn} hint="off = text bubbles only, and the server stops synthesising anything" />
               <Check label="Interrupt me when I start talking" checked={barge} onChange={setBarge} hint="any keypress stops the current utterance — being able to cut in is the difference between a tutor and a lecture" />
               <Field label="Which voice">
-                <select
-                  className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]"
+                <Select
                   value={gender}
                   onChange={(e) => setGender(e.target.value)}
                 >
                   <option value="female">female</option>
                   <option value="male">male</option>
-                </select>
+                </Select>
               </Field>
               {open ? (
                 <Btn

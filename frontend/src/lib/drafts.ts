@@ -10,10 +10,10 @@
  * answer away. That is the "sometimes lost" fault: it is not one bad line, it is the answer
  * being stored in the one place guaranteed to be discarded.
  *
- * What it is *not*: persisted to the server, or a cache of anything the app graded. A draft
- * is cleared the moment the answer is submitted, and it lives in `sessionStorage` so that a
- * reload is the same answer rather than a fresh box — a learner who refreshes mid-question
- * has not answered yet, and losing what they typed is the same fault wearing a different hat.
+ * What it is *not*: persisted to the server, or a cache of anything the app graded. Drafts
+ * are cleared when the session finishes (`clearAllDrafts`), and they live in `sessionStorage`
+ * so that navigating back or reloading mid-session restores the learner's own answer rather
+ * than an empty box.
  *
  * Nothing here ever holds a correct answer: the client is not given one (see the API), so
  * the worst a stale draft can do is put the learner's own words back on the screen.
@@ -69,17 +69,7 @@ export function saveDraft(itemId: string, patch: Partial<Draft>): Draft {
   return next;
 }
 
-/** Called once an answer is submitted: nothing of the learner's is kept after the mark. */
-export function clearDraft(itemId: string): void {
-  memory.delete(itemId);
-  try {
-    sessionStorage.removeItem(key(itemId));
-  } catch {
-    /* nothing to do */
-  }
-}
-
-/** Test helper and the "start from scratch" path. */
+/** Cleared when the session ends (`useFlow.finish`) and in tests. */
 export function clearAllDrafts(): void {
   memory.clear();
   try {

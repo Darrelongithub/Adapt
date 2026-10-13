@@ -338,11 +338,13 @@ export default function Proposals() {
 
       <div className="grid gap-4 md:grid-cols-2 mt-6">
         <Card
-          title="On right now"
+          title={active.loading && live.length === 0 ? "Active changes" : "On right now"}
           tone="good"
           right={<span>{live.length ? `${waiting.length} not yet measured` : ""}</span>}
         >
-          {live.length === 0 ? (
+          {active.loading && live.length === 0 ? (
+            <p className="text-sm text-[var(--muted)]">checking what is on…</p>
+          ) : live.length === 0 ? (
             <p className="text-sm text-[var(--muted)]">Nothing is applied. Practice is running on your stated settings alone.</p>
           ) : (
             <ul className="space-y-2 text-sm">

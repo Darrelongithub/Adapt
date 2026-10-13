@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Tag, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Select, Tag, useSession } from "@/components/ui";
 import { del, get, post, useApi } from "@/lib/api";
 
 type PrefReply = { accepted?: Record<string, unknown>; rejected_keys?: string[]; rejected_reasons?: Record<string, string>; note?: string };
@@ -146,9 +146,8 @@ export default function Settings() {
                     onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
                   />
                 ) : NUMERIC.has(k) ? (
-                  <input
+                  <Input
                     type="number"
-                    className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]"
                     value={String(form[k] ?? "")}
                     onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
                   />
@@ -206,14 +205,13 @@ export default function Settings() {
               />
               {consent.voice ? (
                 <Field label="Voice for replies">
-                  <select
-                    className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]"
+                  <Select
                     value={consent.gender}
                     onChange={(e) => setConsent((c) => ({ ...c, gender: e.target.value }))}
                   >
                     <option value="female">female</option>
                     <option value="male">male</option>
-                  </select>
+                  </Select>
                 </Field>
               ) : null}
               <p className="text-xs text-[var(--muted)]">
@@ -232,7 +230,7 @@ export default function Settings() {
             <ul className="space-y-1 text-xs text-[var(--muted)]">
               {Object.entries(status.data ?? {}).map(([k, v]) => (
                 <li key={k}>
-                  <span className="text-[var(--fg)]/70">{k.replace(/_/g, " ")}:</span> {typeof v === "object" ? humanize(v) : String(v)}
+                  <span className="text-ink-2">{k.replace(/_/g, " ")}:</span> {typeof v === "object" ? humanize(v) : String(v)}
                 </li>
               ))}
             </ul>
@@ -266,12 +264,12 @@ export default function Settings() {
         <div className="mt-3 grid gap-2 text-xs text-[var(--muted)] md:grid-cols-2">
           {Object.entries(privacy.data?.sent_to_gemini ?? {}).map(([k, v]) => (
             <p key={k}>
-              <span className="text-[var(--fg)]/70">to the model · {k.replace(/_/g, " ")}:</span> {v}
+              <span className="text-ink-2">to the model · {k.replace(/_/g, " ")}:</span> {v}
             </p>
           ))}
           {Object.entries(privacy.data?.voice ?? {}).map(([k, v]) => (
             <p key={k}>
-              <span className="text-[var(--fg)]/70">voice · {k.replace(/_/g, " ")}:</span> {v}
+              <span className="text-ink-2">voice · {k.replace(/_/g, " ")}:</span> {v}
             </p>
           ))}
         </div>

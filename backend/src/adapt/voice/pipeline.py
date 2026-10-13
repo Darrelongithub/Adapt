@@ -119,7 +119,7 @@ class VoiceConversation:
 
         self.state = State.IDLE
         self.turn_index = 0
-        self.buffer: list[np.ndarray] = np.array([], dtype=np.float32)
+        self.buffer: list[np.ndarray] = []
         self._buf = np.zeros(0, dtype=np.float32)
         self._speak_cancel = asyncio.Event()
         self._lock = asyncio.Lock()

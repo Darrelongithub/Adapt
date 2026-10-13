@@ -22,8 +22,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
+from ..db.models import utcnow
 from .seeds import stable_seed
 
 #: The label every surface must show next to pilot-derived numbers.
@@ -60,7 +61,7 @@ def seed_pilot_rows(
     the method and the index, so the same call produces the same pilot twice (a
     demo that changes its own numbers between rehearsals is worse than no demo).
     """
-    start = start or (datetime.utcnow() - timedelta(days=2))
+    start = start or (utcnow() - timedelta(days=2))
     rows: list[dict[str, Any]] = []
     for spec in specs:
         for i in range(max(0, int(spec.n))):
@@ -94,18 +95,8 @@ DEFAULT_PILOT: tuple[PilotSpec, ...] = (
 )
 
 
-def default_rows(student_id: str) -> list[dict[str, Any]]:
-    return seed_pilot_rows(student_id=student_id, specs=DEFAULT_PILOT)
-
-
 def label(*, pilot: bool, base: str | None = None) -> str | None:
     """The label to attach to a result, or ``None`` when the data is not pilot data."""
     if not pilot:
         return base
     return PILOT_LABEL if not base else f"{base} ({PILOT_LABEL})"
-
-
-def is_pilot(flags: Iterable[str] | None, *, pilot_field: bool = False) -> bool:
-    if pilot_field:
-        return True
-    return any(str(f).lower() in {"pilot", "pilot_data"} for f in (flags or ()))

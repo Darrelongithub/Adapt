@@ -137,7 +137,7 @@ def fatigue_check(
             continue
         if estimate and float(elapsed) < max(1500.0, float(estimate) * 1000.0 * rapid_fraction):
             fast_recent += 1
-    fired = this_rapid or fast_recent + (1 if this_rapid else 0) >= run
+    fired = this_rapid or fast_recent >= run
     return {
         "fired": fired,
         "this_response_was_rapid": this_rapid,
@@ -295,7 +295,7 @@ def compare_text(plan: ReteachPlan) -> str:
     )
     if delta is None or not plan.comparison.get("comparable"):
         return f"Taught differently this time ({plan.to_method}), then the same kind of question. n so far: {n}."
-    label = M.evidence_label(min(int((plan.comparison.get("method") or {}).get("n") or 0), n))
+    label = M.evidence_label(n)
     return (
         f"{plan.to_method} is {float(delta):+.2f} against expectation compared with {plan.from_method}, "
         f"over {n} matched attempts ({label.replace('_', ' ')})."

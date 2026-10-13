@@ -244,7 +244,8 @@ async def speak(body: dict[str, Any], s: Session = Depends(db_session), student:
     audio, rate = out
     from ...voice.audio import encode_wav
 
-    return Response(content=encode_wav(audio, sample_rate=rate), media_type="audio/wav", headers={"x-tts-sample-rate": str(rate)})
+    wav = bytes(audio) if isinstance(audio, (bytes, bytearray)) else encode_wav(audio, sample_rate=rate)
+    return Response(content=wav, media_type="audio/wav", headers={"x-tts-sample-rate": str(rate)})
 
 
 @router.get("/audit")

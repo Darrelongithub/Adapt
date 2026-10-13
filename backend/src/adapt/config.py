@@ -230,10 +230,6 @@ class Settings(BaseSettings):
     def numbas_dir(self) -> Path:
         return self.numbas_export_dir or (self.data_dir / "numbas")
 
-    @property
-    def has_gemini(self) -> bool:
-        return bool(self.gemini_api_key)
-
     def ensure_dirs(self) -> None:
         for d in (self.data_dir, self.keyfile_path.parent, self.numbas_dir):
             Path(d).mkdir(parents=True, exist_ok=True)
@@ -242,9 +238,8 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     s = Settings()
-    s.ensure_dirs()
-    if os.environ.get("ADAPT_DISABLE_DIR_CREATE"):
-        pass
+    if not os.environ.get("ADAPT_DISABLE_DIR_CREATE"):
+        s.ensure_dirs()
     return s
 
 

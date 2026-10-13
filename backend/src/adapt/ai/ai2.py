@@ -615,7 +615,7 @@ class EducationalIntelligence:
             points, reason = (None, "no_model_answer")
             if res.ok and res.data:
                 points, reason = TB.accept_model_grading(res.data, text=text, criteria=criteria)
-            out["llm_status"] = res.status if res.ok else res.status
+            out["llm_status"] = res.status
             out["llm_checklist"] = reason
             if points is not None:
                 merged = TB.merge_model_result(scored, points)
@@ -634,16 +634,25 @@ class EducationalIntelligence:
         question you are about to be measured on is not teaching, it is marking. The
         item's own steps stay behind the measured "open the worked example" endpoint.
         """
+        from ..assessment import bank as BANK
+
         text: dict[str, str] = {}
         titles: dict[str, str] = {}
+        codes: dict[str, str] = {}
         for topic in s.execute(select(Topic)).scalars().all():
             titles[topic.id] = topic.title
             text[topic.id] = topic.description or ""
+            codes[topic.id] = str(topic.code or "")
         for material in s.execute(select(LearningMaterial)).scalars().all():
             if material.topic_id and material.body:
                 existing = text.get(material.topic_id) or ""
                 if not existing or len(material.body) > len(existing):
                     text[material.topic_id] = material.body
+        for tid, code in codes.items():
+            if not text.get(tid) and code:
+                notes = BANK.materials_for(code)
+                if notes:
+                    text[tid] = notes[0][1]
         return text, titles
 
     def diagnostic_items(self, student_id: str, *, count: int = 8, session_id: str | None = None) -> list[dict[str, Any]]:
@@ -655,29 +664,7 @@ class EducationalIntelligence:
                 rows = s.execute(
                     select(Item).where(Item.topic_id == t.id, Item.active.is_(True)).order_by(Item.difficulty)
                 ).scalars().all()
-                items_by_topic[t.id] = [
-                    {
-                        "id": it.id,
-                        "topic_id": it.topic_id,
-                        "kind": it.kind,
-                        "stem": it.stem,
-                        "stem_template": it.stem_template if hasattr(it, "stem_template") else None,
-                        "experience_mode": it.experience_mode,
-                        "choices": it.choices,
-                        "answer_spec": it.answer_spec,
-                        "solution_steps": it.solution_steps,
-                        "hints": it.hints,
-                        "rubric": it.rubric,
-                        "difficulty": it.difficulty,
-                        "prompt_context": it.prompt_context,
-                        "visual_spec": it.visual_spec,
-                        "est_seconds": it.est_seconds,
-                        "numbas_ref": it.numbas_ref,
-                        "active": True,
-                    }
-                    for it in rows
-                ]
-        with self.sf() as s:
+                items_by_topic[t.id] = [self._item_dict(it) for it in rows]
             teaching_text, titles = self._teaching_material(s)
             answered: list[dict[str, Any]] = []
             if session_id:
@@ -788,30 +775,7 @@ class EducationalIntelligence:
             for tid in wanted_ids:
                 rows = s.execute(select(Item).where(Item.topic_id == tid, Item.active.is_(True))).scalars().all()
                 if rows:
-                    items_by_topic[tid] = [
-                        {
-                            "id": it.id,
-                            "topic_id": it.topic_id,
-                            "kind": it.kind,
-                            "stem": it.stem,
-                            "stem_template": it.stem_template if hasattr(it, "stem_template") else None,
-                            "experience_mode": it.experience_mode,
-                            "choices": it.choices,
-                            "answer_spec": it.answer_spec,
-                            "solution_steps": it.solution_steps,
-                            "hints": it.hints,
-                            "rubric": it.rubric,
-                            "difficulty": it.difficulty,
-                            "prompt_context": it.prompt_context,
-                            "visual_spec": it.visual_spec,
-                            "est_seconds": it.est_seconds,
-                            "numbas_ref": it.numbas_ref,
-                            "active": True,
-                            "tags": it.tags,
-                        }
-                        for it in rows
-                    ]
-        with self.sf() as s:
+                    items_by_topic[tid] = [self._item_dict(it) for it in rows]
             teaching_text, titles = self._teaching_material(s)
         mastery = {t.topic_id: t.p_know for t in prof.traces}
         counts: dict[str, int] = {}
@@ -1020,7 +984,7 @@ class EducationalIntelligence:
             except json.JSONDecodeError as exc:
                 params = {}
                 data["_params_error"] = f"params_json was not JSON: {exc}"
-        draft = {
+        draft: dict[str, Any] = {
             "kind": str(data.get("kind") or wanted or "").strip(),
             "title": str(data.get("title") or "")[:160],
             "intent": str(data.get("intent") or "")[:400],
@@ -1425,7 +1389,7 @@ def spoken_form(reply: Reply) -> str:
     return (out or body)[:900]
 
 
-def public_item(item: dict[str, Any]) -> dict[str, Any]:
+def public_item(item: Mapping[str, Any]) -> dict[str, Any]:
     """Strip answers/hints from an item before it reaches the browser."""
     return {
         "id": item.get("id"),

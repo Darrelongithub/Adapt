@@ -64,7 +64,6 @@ def enumerate_items():
 def test_every_item_can_actually_be_graded_right_and_wrong():
     """A bank item with no reachable correct answer is a bug that only shows up as
     a learner who cannot finish a session."""
-    from adapt.assessment import bank
     from adapt.assessment.grading import grade
 
     right = wrong = 0
@@ -477,7 +476,7 @@ def test_question_export_carries_stem_choices_and_answer():
 
 
 def test_exam_export_writes_a_zip_the_importer_can_read_back(tmp_path):
-    from adapt.assessment.numbas import exam_export, import_exam, question_export, supported_subset, write_numbas_zip
+    from adapt.assessment.numbas import exam_export, import_exam, supported_subset, write_numbas_zip
 
     items = [
         {

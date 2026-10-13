@@ -177,7 +177,6 @@ def hierarchical_fit(
             locals_[learner] = HalfLifeModel(weights=gmodel.weights, n=len(rows), lam=lam_local)
         else:
             locals_[learner] = fit_half_life(rows, lam=lam_local)
-    gmodel.weights = gmodel.weights  # normalise API surface
     return gmodel, locals_
 
 

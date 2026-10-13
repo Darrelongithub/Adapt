@@ -257,8 +257,13 @@ def doctor(as_json: bool = typer.Option(False, "--json")) -> None:
         ("webrtcvad", "tighter endpointing", "pip install webrtcvad (energy VAD is the fallback)"),
     ]:
         try:
+            import importlib.metadata as _meta
+
             mod = __import__(pkg)
-            ver = getattr(mod, "__version__", "installed")
+            try:
+                ver = _meta.version("argon2-cffi" if pkg == "argon2" else pkg.replace("_", "-"))
+            except _meta.PackageNotFoundError:
+                ver = getattr(mod, "__version__", "installed")
             check(pkg, True, str(ver))
         except Exception as exc:
             check(pkg, False, f"not importable ({type(exc).__name__})", fix)
@@ -918,7 +923,7 @@ def voice_selftest(seconds: float = 2.0) -> None:
     rng = np.random.default_rng(0)
     burst = tone(300, sample_rate=16000, seconds=0.45).astype(np.float32) * 0.3 + rng.normal(0, 0.02, 7200).astype(np.float32)
     frames = np.concatenate([silence(0.2, sample_rate=16000), burst, silence(seconds, sample_rate=16000)])
-    decisions = vad.feed(frames, sample_rate=16000) if hasattr(vad, "feed") else vad.accept(np.array_split(frames, 24))
+    decisions = vad.feed(frames, sample_rate=16000) if hasattr(vad, "feed") else vad.accept(frames)
     summary = segment_summary(decisions)
     _echo({"frames_in": int(frames.size / 320), **{k: v for k, v in summary.items()}})
 
@@ -930,7 +935,7 @@ def token_cmd(student_id: str = typer.Option(..., "--for"), hours: int = typer.O
     from .security import auth
 
     with get_db().session() as s:
-        issued = auth.create_session(s, student_id)
+        issued = auth.create_session(s, student_id, hours=hours)
         s.commit()
         typer.echo(f"token: {issued.token}")
         typer.echo(f"csrf:  {issued.csrf}")

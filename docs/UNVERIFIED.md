@@ -126,8 +126,8 @@ session is the expected result, not a bug.
   file, a `create_all` file and a downgraded one. Nobody has run it against a months-old
   deployment: do that on a copy (`cp adapt.db /tmp/x.db`), because `render_as_batch` rebuilds
   tables and SQLite has no rollback to offer.
-* **`scripts/check-contract.mjs` coverage of dynamic paths.** It resolves the 16 literal call
-  sites the frontend makes. Paths assembled at runtime (none today) would slip through, and the
+* **`scripts/check-contract.mjs` coverage of dynamic paths.** It resolves the 49 call
+  sites the frontend makes against the 71 backend routes. Paths assembled at runtime (none today) would slip through, and the
   mock-parity rule is "some fixture regex accepts a concrete sample of the path", which cannot
   prove the fixture's *body* is the right shape — `?mock=1` still needs a human eye.
 
@@ -146,8 +146,8 @@ session is the expected result, not a bug.
   not transcription. Real accuracy, real latency, real barge-in timing and the audible difference
   between `af_heart` and `am_fenrir` have to be judged on a machine that can install them
   (`pip install 'adapt-backend[voice]'`, Python ≥3.11 <3.13).
-* **Interaction, without a browser:** `npm run probe` drives the built pages in jsdom (139 checks
-  across ten screens). It catches hydration-order bugs, real click→request→DB round trips and
+* **Interaction, without a browser:** `npm run probe` drives the built pages in jsdom (169 checks
+  across eleven scenarios). It catches hydration-order bugs, real click→request→DB round trips and
   what the screen says afterwards, and it can break one endpoint on purpose (the `failures`
   scenario answers 429 to the session read and asserts the app does not turn that into a sign-out).
   It cannot catch: CSS/layout at any viewport, focus rings,
@@ -158,7 +158,7 @@ session is the expected result, not a bug.
 
 ## Added by the 2026-10-12 full-scan pass
 
-* **The UI probe drives jsdom, not a browser.** `npm run probe` (139 checks) exercises the
+* **The UI probe drives jsdom, not a browser.** `npm run probe` (199 checks) exercises the
   real Next.js server over HTTP with a real DOM: routing, forms, controlled inputs,
   fetch/CSRF/error paths, refresh, the voice socket's handshake and the screens' data paths.
   It cannot observe layout, paint, focus order, scroll, `getUserMedia` permission prompts or
@@ -221,24 +221,25 @@ session is the expected result, not a bug.
   and screens are judged while the limiter holds them. The limiter is verified at its real ceiling
   elsewhere (failure matrix, and the probe's own flood check, which reads the effective bucket from
   `GET /api/v1/quotas`). A paced whole-suite run's screen-by-screen behaviour is *not* verified.
-* **Two of the three whole-suite flakes were harness races, now fixed; the third is a known
-  unknown.** (a) The proposals check read the "On right now" panel while it was still loading and
-  reported an applied change as missing — it now waits for the panel. (b) The "clearly struggling"
-  learner answered 14 items spread across topics while the detectors need 8 attempts on *one*
-  topic, so the evidence the check claimed did not exist — it now concentrates its wrong answers.
-  (c) The placement answer box was seen read back empty once, with the element still connected,
-  in a default-limits run. **Closed in this pass, and it was a real defect.** The answer lived in
-  `Question`'s own `useState`, so it was tied to the lifetime of one React element: leaving a
-  question and coming back, or a parent re-render replacing the subtree, threw it away, and
-  `Back` also discarded the mark (so `Next` stayed disabled). It is now kept per item in
+* **All three whole-suite flakes were races, now fixed.** (a) The proposals check read the "On
+  right now" panel while it was still loading and reported an applied change as missing — it now
+  waits for the panel. (b) The "clearly struggling" learner answered 14 items spread across
+  topics while the detectors need 8 attempts on *one* topic, so the evidence the check claimed did
+  not exist — it now concentrates its wrong answers. (c) The placement answer box (`numeric-state-reset`
+  in `diagnose`) was seen read back empty once, with the element still connected, in a
+  default-limits run. **Closed in this pass, and it was a real defect.** The answer lived in
+  `Question`'s own `useState` and was cleared in a passive effect or ref check on item changes:
+  leaving a question and coming back, or a parent re-render replacing the subtree, threw it away,
+  and `Back` also discarded the mark (so `Next` stayed disabled). It is now kept per item in
   `frontend/src/lib/drafts.ts` (sessionStorage + an in-memory fallback) with the receipt held per
-  item by the page. The probe checks both directions — the answer survives a round trip, and the
-  way forward is not locked — and the check is **not vacuous**: with the draft store disabled
-  (`loadDraft` returning the empty draft, which is the pre-fix behaviour) the diagnose scenario
-  fails 2 of its 24 checks and prints the loss — `before=text:1/2 after=text:` and
-  `before=text:The denominator says… after=teachback:` — while passing 24/24 with it restored.
-  What remains unproven is only what jsdom cannot see: a real browser's input events at a real
-  frame rate.
+  item by the page, and `frontend/src/components/question.tsx` reconciles per-item state
+  synchronously during render via a derived `shownKey` (`${item.id}|${item.hint_count ?? 0}`).
+  The probe checks both directions — the answer survives a round trip, and the way forward is not
+  locked — and the check is **not vacuous**: with the draft store disabled (`loadDraft` returning
+  the empty draft, which is the pre-fix behaviour) the diagnose scenario fails 2 of its 24 checks
+  and prints the loss — `before=text:1/2 after=text:` and `before=text:The denominator says…
+  after=teachback:` — while passing 24/24 with it restored. What remains unproven is only what
+  jsdom cannot see: a real browser's input events at a real frame rate.
 * **The 0002 collision is a real-world migration hazard for anyone who ran the pre-merge branch.**
   A database stamped `0002` by *this* branch before the merge (item calibration) cannot be told
   apart from one stamped `0002` by `main` (learning engine); the merged chain reads it as the

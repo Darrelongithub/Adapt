@@ -22,7 +22,7 @@ import { useMemo, useRef, useState } from "react";
 import { Band, Btn, Card, Field, Input, Notice, Receipt, Tag, Textarea, Trace, announce } from "./ui";
 import { TeachingPanel, type Teaching } from "./teaching";
 import { api, post } from "@/lib/api";
-import { loadDraft, saveDraft } from "@/lib/drafts";
+import { loadDraft, saveDraft, type Draft } from "@/lib/drafts";
 import type { ExplainReply, PlanEntry, Presentation, Receipt as ReceiptType } from "@/lib/types";
 import { useRovingTabIndex } from "@/lib/a11y/useRovingTabIndex";
 
@@ -69,34 +69,31 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
   const [question, setQuestion] = useState("");
   const [reply, setReply] = useState<ExplainReply | null>(null);
   const [askBusy, setAskBusy] = useState(false);
-  const startedRef = useRef(false);
-
-  // Deliberate fix: new-question answer state is cleared during render, never in a useEffect,
-  // because clearing in an effect reintroduced a real intermittent bug (`numeric-state-reset`,
-  // ~1-in-10 diagnose runs) where a keystroke inside the commit→effect window got wiped.
-  // Restyle JSX only; do not move this logic into an effect.
-  const prevIdRef = useRef<string | null>(null);
-  if (prevIdRef.current !== item.id) {
-    prevIdRef.current = item.id;
-    // Reset synchronously during render - not in effect. The *answer* is no longer reset from
-    // here at all: it belongs to the item and lives in the draft store, so returning to an
-    // item puts back what was typed instead of an empty box (`@/lib/drafts`).
-    if (receipt !== null) setReceipt(null);
-    if (hints.length) setHints([]);
-    if (example !== null) setExample(null);
-    if (revealed !== null) setRevealed(null);
-    if (reply !== null) setReply(null);
-    if (error !== null) setError(null);
-    // Avoid infinite loop: schedule state reset via queueMicrotask for complex state
-    // Instead, use direct assignment for derived hintState
-    const expectedAvailable = item.hint_count ?? 0;
-    if (hintState.available !== expectedAvailable || hintState.exhausted !== false) {
-      queueMicrotask(() => setHintState({ available: expectedAvailable, exhausted: false, max: null }));
-    }
-    startedRef.current = false;
-  }
-
+  const startedItemIdRef = useRef<string | null>(null);
   const roving = useRovingTabIndex(choices.length, "vertical");
+
+  // Deliberate fix: per-item state is reconciled synchronously during render via React's
+  // derived-key state reset pattern, never in a passive useEffect (`numeric-state-reset` wiped
+  // fast input inside the commit→effect window) and without mutating refs during render. The
+  // answer itself comes from `@/lib/drafts` so returning to an item restores what was typed.
+  const itemKey = `${item.id}|${item.hint_count ?? 0}`;
+  const [shownKey, setShownKey] = useState(itemKey);
+  if (shownKey !== itemKey) {
+    const draft = loadDraft(item.id);
+    setShownKey(itemKey);
+    setPicked(draft.picked);
+    setTyped(draft.typed);
+    setTeach(draft.teach);
+    setReceipt(submitted);
+    setHints([]);
+    setHintState({ available: item.hint_count ?? 0, exhausted: false, max: null });
+    setExample(null);
+    setRevealed(null);
+    setQuestion("");
+    setReply(null);
+    setError(null);
+    roving.setActiveIndex(0);
+  }
 
   const answer = useMemo(() => {
     if (isChoice) return picked;
@@ -109,13 +106,13 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
 
   /** Mirror every edit into the draft store. Cheap (a synchronous write) and it is the
    *  difference between "the box lost my answer" and "the box showed it again". */
-  const keep = (patch: Partial<{ picked: number | null; typed: string; teach: string }>) => {
+  const keep = (patch: Partial<Draft>) => {
     saveDraft(item.id, patch);
   };
 
   const touch = () => {
-    if (startedRef.current) return;
-    startedRef.current = true;
+    if (startedItemIdRef.current === item.id) return;
+    startedItemIdRef.current = item.id;
     onInteract(item);
   };
 
@@ -387,9 +384,9 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
       {!canSubmit ? <span id="submit-hint" className="sr-only">Enter an answer to enable checking</span> : null}
 
       {error ? (
-        <p className="mt-4 max-w-[660px]">
+        <div className="mt-4 max-w-[660px]">
           <Notice tone="bad">{error}</Notice>
-        </p>
+        </div>
       ) : null}
 
       {hints.length ? (
@@ -571,7 +568,7 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
         <Tag>{receipt.grading_method}</Tag>
       </div>
       <p className="text-sm leading-relaxed">{receipt.feedback}</p>
-      <p className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         <Band band={receipt.mastery.band} pKnow={receipt.mastery.p_know} ci={undefined} />
         <span>
           {receipt.mastery.p_know_before !== undefined
@@ -583,7 +580,7 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
         </span>
         {receipt.mastery.due_at ? <span>review {new Date(receipt.mastery.due_at).toLocaleDateString()}</span> : null}
         {receipt.mastery.first_observation ? <Tag tone="think">first data point on this topic</Tag> : null}
-      </p>
+      </div>
       {tb ? (
         <p className="mt-2 text-xs text-[var(--muted)]">
           teach back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas

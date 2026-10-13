@@ -18,9 +18,7 @@ cannot be checked is reported as unverified instead of being served as if it had
 
 from __future__ import annotations
 
-import pytest
-
-from adapt.db.models import AdaptationProposal, Student
+from adapt.db.models import AdaptationProposal
 
 #: A paragraph with no arithmetic in it anywhere: if anything in this path needed to
 #: evaluate an expression, this text could not produce a question at all.

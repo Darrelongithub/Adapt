@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 from ..db.models import HypothesisStatus
 from .patterns import Observation
@@ -338,7 +338,10 @@ class _SafeMap(dict):
             words=obs.facts.get("long_stem_words_median", 0),
             seconds=obs.facts.get("median_seconds_before_first_input", 0),
             extra="too hard" if obs.facts.get("direction") == "too_hard" else "too easy",
-            weak=", ".join(obs.facts.get("weak_prerequisites", [])[:2]) or "the prerequisite",
+            weak=", ".join(
+                str(x) for x in (obs.facts.get("weak_prerequisites") if isinstance(obs.facts.get("weak_prerequisites"), list) else [])[:2]
+            )
+            or "the prerequisite",
             # A method finding names the teaching, and says the gap in points rather than in
             # two percentages the reader has to subtract.
             method=str(obs.facts.get("label") or obs.facts.get("method") or "this way of teaching it"),
@@ -346,7 +349,7 @@ class _SafeMap(dict):
             # Empty unless some of the answers behind the finding were seeded before a demo,
             # in which case the sentence says how many and what they are.
             pilot=(
-                f", {int(obs.facts['n_pilot'])} of them {obs.facts['pilot_label']}"
+                f", {int(str(obs.facts['n_pilot']))} of them {obs.facts['pilot_label']}"
                 if obs.facts.get("n_pilot") and obs.facts.get("pilot_label")
                 else ""
             ),
@@ -429,7 +432,7 @@ def decide(
     return HypothesisStatus.INCONCLUSIVE
 
 
-def summarize(hypotheses: Sequence[dict[str, object]], *, now: datetime | None = None) -> dict[str, object]:
+def summarize(hypotheses: Sequence[Mapping[str, Any]], *, now: datetime | None = None) -> dict[str, Any]:
     """Counts by status, for the dashboard's 'what we think we know' panel."""
     by: dict[str, int] = {}
     for h in hypotheses:

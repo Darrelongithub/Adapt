@@ -369,3 +369,32 @@ def test_repo_root_points_at_the_checkout_that_holds_the_web_app():
     frontend = hosting.Frontend(root / "frontend")
     assert frontend.script.name == "server.mjs"
     assert os.path.basename(str(root)) == "Adapt" or (root / "README.md").exists()
+
+
+def test_cli_token_honors_hours_and_doctor_emits_no_argon2_deprecation(services):
+    import warnings
+    from datetime import datetime
+
+    from adapt.db.models import Student, utcnow
+
+    with services.db.session() as s:
+        stu = Student(display_name="CLI Token Learner")
+        s.add(stu)
+        s.commit()
+        stu_id = stu.id
+
+    before = utcnow()
+    tok_res = CliRunner().invoke(hosting_cli(), ["token", "--for", stu_id, "--hours", "2"])
+    assert tok_res.exit_code == 0, tok_res.output
+    exp_line = next(line for line in tok_res.stdout.splitlines() if line.startswith("expires: "))
+    expires_at = datetime.fromisoformat(exp_line.split("expires: ", 1)[1].strip())
+    delta_hours = (expires_at - before).total_seconds() / 3600.0
+    assert 1.9 <= delta_hours <= 2.2, f"expected ~2h TTL, got {delta_hours:.2f}h"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        doc_res = CliRunner().invoke(hosting_cli(), ["doctor", "--json"])
+    assert doc_res.exit_code == 0, doc_res.output
+    argon_warnings = [w for w in caught if "argon2" in str(w.message).lower()]
+    assert not argon_warnings, argon_warnings
+

@@ -7,7 +7,7 @@
 # and is not. One process (and one data directory) per run is what makes the result repeatable.
 #
 # Usage:  scripts/probe-fresh.sh [scenario|all]
-#         scripts/probe-fresh.sh all        # the whole probe: 139 checks
+#         scripts/probe-fresh.sh all        # the whole probe: 199 checks
 #         scripts/probe-fresh.sh learn      # one scenario (learn|diagnose|proposals|...)
 #
 # Ports 8010/3001 are used so a running dev pair on 8000/3000 is left alone. Needs a production

@@ -59,11 +59,23 @@ def seed(
     item = s.execute(select(Item).where(Item.topic_id == topic.id).limit(1)).scalars().first()
     item_id = item.id if item is not None else None
 
-    # Re-running must not double the pilot: the previous rows are removed first, which is
-    # safe because they are flagged as what they are.
+    # Re-running must not double the pilot: the previous rows and pilot sessions are
+    # removed first, which is safe because they are flagged as what they are.
     previous = s.execute(select(Attempt).where(Attempt.student_id == student_id, Attempt.pilot.is_(True))).scalars().all()
-    for row in previous:
-        s.delete(row)
+    for prev_attempt in previous:
+        s.delete(prev_attempt)
+    previous_sessions = (
+        s.execute(
+            select(LearningSession).where(
+                LearningSession.student_id == student_id,
+                LearningSession.mode == "pilot",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for prev_session in previous_sessions:
+        s.delete(prev_session)
     s.flush()
 
     started = (start or (utcnow() - timedelta(days=2)))
@@ -82,22 +94,22 @@ def seed(
         specs=[P.PilotSpec(**{**spec.__dict__, "topic_id": topic.id, "item_id": item_id or "itm_missing"}) for spec in specs],
         start=started,
     )
-    for row in rows:
+    for entry in rows:
         s.add(
             Attempt(
                 session_id=session.id,
                 student_id=student_id,
-                item_id=row["item_id"],
-                topic_id=row["topic_id"],
+                item_id=entry["item_id"],
+                topic_id=entry["topic_id"],
                 attempt_no=1,
-                correct=bool(row["correct"]),
-                score=float(row["score"]),
+                correct=bool(entry["correct"]),
+                score=float(entry["score"]),
                 graded_by="rules",
-                submitted_at=row["submitted_at"],
-                method=row["method"],
-                question_kind=row["question_kind"],
-                expected_success=float(row["expected_success"]),
-                mapping_design=row["mapping_design"],
+                submitted_at=entry["submitted_at"],
+                method=entry["method"],
+                question_kind=entry["question_kind"],
+                expected_success=float(entry["expected_success"]),
+                mapping_design=entry["mapping_design"],
                 pilot=True,
             )
         )
@@ -119,5 +131,17 @@ def remove(s: Session, student_id: str) -> dict[str, Any]:
     n = len(rows)
     for row in rows:
         s.delete(row)
+    pilot_sessions = (
+        s.execute(
+            select(LearningSession).where(
+                LearningSession.student_id == student_id,
+                LearningSession.mode == "pilot",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for sess in pilot_sessions:
+        s.delete(sess)
     s.commit()
     return {"removed": n}

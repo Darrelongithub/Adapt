@@ -133,7 +133,7 @@ class EvidenceContext:
     prereqs: dict[str, list[str]] = field(default_factory=dict)
     mastery: dict[str, float] = field(default_factory=dict)  # topic -> p_know
     half_lives: dict[str, float] = field(default_factory=dict)  # topic -> hours
-    retention: Sequence[RetentionRow] = field(default_factory=dict)
+    retention: Sequence[RetentionRow] = field(default_factory=list)
     teachback_later: list[tuple[float, float]] = field(default_factory=list)  # (score, later acc)
     lessons: Sequence[LessonRow] = field(default_factory=list)
     min_n: int = 4

@@ -161,7 +161,7 @@ class Analysis:
     hypotheses: list[dict[str, Any]] = field(default_factory=list)
     proposals: list[dict[str, Any]] = field(default_factory=list)
     evaluated: list[dict[str, Any]] = field(default_factory=list)
-    gaps: list[dict[str, Any]] = field(default_factory=dict)
+    gaps: list[dict[str, Any]] = field(default_factory=list)
     plan: list[dict[str, Any]] = field(default_factory=list)
     bkt: dict[str, Any] = field(default_factory=dict)
     retention: dict[str, Any] = field(default_factory=dict)

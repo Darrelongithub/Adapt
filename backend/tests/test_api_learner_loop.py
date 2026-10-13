@@ -1777,8 +1777,6 @@ async def test_a_flooded_clip_is_refused_before_it_is_buffered_or_transcribed(cl
     difference: a buffered implementation takes the whole flood, a capped read stops a
     megabyte past the line.
     """
-    from types import SimpleNamespace
-
     from adapt.api.routes import system as SYS
 
     class MustNotRun:

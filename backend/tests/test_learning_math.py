@@ -7,8 +7,7 @@ tested against properties rather than golden strings: monotonicity, saturation,
 
 from __future__ import annotations
 
-import math
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 
@@ -576,3 +575,14 @@ def test_recalibrating_the_difficulty_target_moves_it_the_right_way():
     # and the tuned value always stays inside the band the strategy claims to aim at
     for facts in ({"observed": 0.0}, {"observed": 1.0}, {"observed": 0.5, "target_success_rate": 0.5}):
         assert 0.60 <= recalibrated_target(facts) <= 0.92, facts
+
+
+def test_analysis_and_evidence_context_sequence_defaults_are_lists():
+    from adapt.ai.ai1 import Analysis
+    from adapt.learning.patterns import EvidenceContext
+
+    analysis = Analysis(student_id="stu_test", session_id=None)
+    ctx = EvidenceContext(student_id="stu_test", attempts=[])
+    assert isinstance(analysis.gaps, list) and analysis.gaps == []
+    assert isinstance(ctx.retention, list) and ctx.retention == []
+

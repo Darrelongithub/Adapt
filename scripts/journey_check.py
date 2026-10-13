@@ -171,7 +171,7 @@ def main() -> int:
             })
             if status == 200:
                 answered += 1
-        check(answered == len(served) and answered >= 5, "answers are accepted and recorded",
+        check(answered == len(served) and answered >= 8, "answers are accepted and recorded",
               f"{answered}/{len(served)} accepted (of {len(items)} served)")
         status, done = c.call("POST", f"/api/v1/sessions/{sid}/finish", {})
         check(status == 200, "placement can be finished", f"{status} {str(done)[:160]}")
@@ -185,7 +185,7 @@ def main() -> int:
         for round_no in range(3):
             status, sess2 = c.call("POST", "/api/v1/sessions", {"mode": "practice"})
             rsid = sess2.get("session_id")
-            status, plan = c.call("GET", "/api/v1/practice?count=6")
+            status, plan = c.call("GET", "/api/v1/practice?count=8")
             for j, entry in enumerate(plan.get("items") or []):
                 item = entry["item"]
                 if item["kind"] == "numeric":
@@ -252,7 +252,6 @@ def main() -> int:
             # (b) modify: the learner's number is the one stored, not the default
             edit_me = next((p for p in proposals[1:] if p.get("action_payload")), None)
             if edit_me is not None:
-                strategy = edit_me["strategy"]
                 knobs = dict(edit_me.get("action_payload") or {})
                 knob = next(iter(knobs), "target")
                 mine = 0.8 if isinstance(knobs.get(knob), (int, float)) else knobs.get(knob)

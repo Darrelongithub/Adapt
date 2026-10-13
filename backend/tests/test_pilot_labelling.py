@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from adapt.db.models import Attempt
+from adapt.db.models import Attempt, LearningSession
 from adapt.learning import effect, pilot as P
 from adapt.services import pilot as PS
 
@@ -23,6 +23,20 @@ from adapt.services import pilot as PS
 def _attempts(services, student_id: str) -> list[Attempt]:
     with services.scope() as s:
         return list(s.execute(select(Attempt).where(Attempt.student_id == student_id)).scalars().all())
+
+
+def _pilot_sessions(services, student_id: str) -> list[LearningSession]:
+    with services.scope() as s:
+        return list(
+            s.execute(
+                select(LearningSession).where(
+                    LearningSession.student_id == student_id,
+                    LearningSession.mode == "pilot",
+                )
+            )
+            .scalars()
+            .all()
+        )
 
 
 def test_pilot_rows_are_real_attempt_rows_and_flagged(services, learner):
@@ -69,11 +83,13 @@ def test_reseeding_replaces_its_own_rows_instead_of_doubling_them(services, lear
         second = PS.seed(s, student_id)
     assert first["session_id"] != second["session_id"]
     assert len(_attempts(services, student_id)) == 14
+    assert [sess.id for sess in _pilot_sessions(services, student_id)] == [second["session_id"]]
 
     with services.scope() as s:
         out = PS.remove(s, student_id)
     assert out["removed"] == 14
     assert _attempts(services, student_id) == []
+    assert _pilot_sessions(services, student_id) == []
 
 
 def test_every_pilot_figure_carries_the_label(services, learner):

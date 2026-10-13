@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 from .seeds import stable_seed
 
@@ -120,9 +120,6 @@ class Segmented:
             "note": self.note,
         }
 
-    def as_text(self) -> str:
-        return " ".join(s.text for s in self.steps)
-
 
 def _check_for(step_sentences: Sequence[str], *, seed: int) -> dict[str, Any]:
     """A quick check that can only be answered from this step.
@@ -137,7 +134,6 @@ def _check_for(step_sentences: Sequence[str], *, seed: int) -> dict[str, Any]:
     terms = key_terms(text, limit=3)
     focus = terms[seed % len(terms)] if terms else "this step"
     others = [t for t in terms if t != focus]
-    _options = [focus, *others]
     return {
         "question": f"Without scrolling back: what does this step say about {focus}?",
         "kind": "recall",
@@ -180,8 +176,3 @@ def segment(
             f"({_words(text)} words in, {sum(s.words for s in steps)} words shown)"
         ),
     )
-
-
-def segment_many(texts: Iterable[str], *, max_words: int = DEFAULT_STEP_WORDS, seed: str = "") -> Segmented:
-    """Segment concatenated material as one lesson."""
-    return segment(" ".join(t for t in texts if t), max_words=max_words, seed=seed)

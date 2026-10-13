@@ -119,7 +119,7 @@ export default function Review() {
                   <span className="rv-dot" style={{
                     display: "block",
                     width: 10, height: 10, borderRadius: "50%",
-                    background: tone === "good" ? "var(--good)" : tone === "warn" ? "var(--warn)" : "var(--ask)",
+                    background: tone === "good" ? "var(--good)" : tone === "warn" ? "var(--warn)" : "var(--think)",
                     border: "2px solid var(--panel)",
                     boxShadow: "0 0 0 1px var(--line)",
                   }} />

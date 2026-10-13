@@ -237,6 +237,4 @@ def segment_summary(decisions: Iterable[VadDecision]) -> dict[str, float | int]:
             segs += 1
         if d.in_speech:
             speech_ms += FRAME_MS
-        if d.speech_ended:
-            pass
     return {"frames": rows, "segments": segs, "speech_ms": int(speech_ms)}
