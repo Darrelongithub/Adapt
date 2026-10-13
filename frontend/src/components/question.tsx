@@ -22,7 +22,7 @@ import { useMemo, useRef, useState } from "react";
 import { Band, Btn, Card, Field, Input, Notice, Receipt, Tag, Textarea, Trace, announce } from "./ui";
 import { TeachingPanel, type Teaching } from "./teaching";
 import { api, post } from "@/lib/api";
-import { loadDraft, saveDraft } from "@/lib/drafts";
+import { loadDraft, saveDraft, type Draft } from "@/lib/drafts";
 import type { ExplainReply, PlanEntry, Presentation, Receipt as ReceiptType } from "@/lib/types";
 import { useRovingTabIndex } from "@/lib/a11y/useRovingTabIndex";
 
@@ -106,7 +106,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
 
   /** Mirror every edit into the draft store. Cheap (a synchronous write) and it is the
    *  difference between "the box lost my answer" and "the box showed it again". */
-  const keep = (patch: Partial<{ picked: number | null; typed: string; teach: string }>) => {
+  const keep = (patch: Partial<Draft>) => {
     saveDraft(item.id, patch);
   };
 

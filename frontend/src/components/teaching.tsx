@@ -28,9 +28,9 @@ import { useMemo, useState } from "react";
 
 import { Btn, Card, Notice, Tag } from "./ui";
 
-export type TeachingStep = { index: number; text: string; words?: number; check?: { question?: string; expect_any?: string[]; hint?: string } | null };
+type TeachingStep = { index: number; text: string; words?: number; check?: { question?: string; expect_any?: string[]; hint?: string } | null };
 
-export type TeachingVisual = {
+type TeachingVisual = {
   kind?: string;
   template?: boolean;
   title?: string;
@@ -202,7 +202,7 @@ function SegmentWalkthrough({ teaching, headline }: { teaching: NonNullable<Teac
         </div>
       ) : null}
 
-      {teaching.dropped?.length ? (
+      {!teaching.dropped?.length ? (
         <p className="mt-3 text-xs text-[var(--muted)]">Nothing was cut from the material to fit this screen.</p>
       ) : null}
     </Card>
@@ -212,6 +212,10 @@ function SegmentWalkthrough({ teaching, headline }: { teaching: NonNullable<Teac
 /** The four structural templates, filled from the concept's own material. */
 function VisualTemplate({ visual, headline }: { visual: TeachingVisual; headline?: string | null }) {
   const kind = String(visual.kind ?? "flow");
+  const columns =
+    visual.columns?.length === 3
+      ? visual.columns
+      : ["aspect", ...(visual.columns ?? ["one side", "the other side"]).slice(-2)];
   return (
     <Card
       title={visual.title || headline || "Before the question"}
@@ -238,9 +242,8 @@ function VisualTemplate({ visual, headline }: { visual: TeachingVisual; headline
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="border-b border-[var(--line)] p-2 text-left font-medium" />
-              {(visual.columns ?? ["one", "the other"]).map((c) => (
-                <th key={c} className="border-b border-[var(--line)] p-2 text-left font-medium">
+              {columns.map((c) => (
+                <th key={c} scope="col" className="border-b border-[var(--line)] p-2 text-left font-medium">
                   {c}
                 </th>
               ))}

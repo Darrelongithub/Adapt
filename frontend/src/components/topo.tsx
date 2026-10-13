@@ -22,9 +22,8 @@
  */
 
 import { EARLY_SIGNAL_N, EvidenceBadge } from "./evidence";
-import type { Mastery } from "@/lib/types";
 
-export type TopoRow = {
+type TopoRow = {
   topic_id: string;
   title?: string;
   p_know: number;
@@ -43,7 +42,6 @@ const BAND_REGIONS = [
 ];
 
 const W = 760;
-const GUTTER = 212;
 const X0 = 216;
 const X1 = 744;
 const LANE_H = 48;
@@ -204,7 +202,3 @@ export function TopoNote() {
     </p>
   );
 }
-
-/** Re-exported so the page can keep one import for the honesty rule this chart is built on. */
-export { EARLY_SIGNAL_N };
-export type { Mastery };
