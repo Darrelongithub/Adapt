@@ -352,13 +352,15 @@ area. What changed, and what a phone still has to confirm:
 
 ## Added by the visual-redesign pass (2026-10-13): navigation, consent, buttons
 
-* **Verified (jsdom, 204/204):** that the consent step renders before the account form and
+* **Verified (jsdom, 207/207):** that the consent step renders before the account form and
   before any `POST /students` on either the email or the guest path; that neither checkbox is
   pre-ticked; that the primary control is `disabled` until the required box is, and enabled
   after; that the optional box is a separate control and stays unticked; that Decline explains
   itself and creates nothing; that every screen's sidebar contains all seven destinations and
-  marks the current one with `aria-current="page"`; that every migrated control carries a
-  `.btn-*` class with an accessible name; and that the whole existing flow (placement,
+  marks the current one with `aria-current="page"`; that signed in, home offers exactly one
+  primary action (the next step in that learner's journey) with no word-field menu, and says
+  "Nothing due yet" / "Not measured yet" / "No answers yet" instead of printing zeros; that
+  every migrated control carries a `.btn-*` class with an accessible name; and that the whole existing flow (placement,
   practice, the approval gate, lessons, review, settings, voice refusals) still passes.
 * **Not verified, and not verifiable here — layout and paint.** There is no browser in this
   sandbox, and jsdom applies no CSS, so none of the following is evidence of anything on glass:

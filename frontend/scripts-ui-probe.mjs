@@ -607,6 +607,42 @@ async function main() {
     check("home", "and a csrf token the page can read (by design, that one is not httpOnly)", csrf.length > 8, page.doc.cookie?.slice(0, 120) ?? "no document.cookie");
     const after = await api("/api/v1/me", { headers: { cookie } });
     check("home", "the session the browser got really authenticates", after.status === 200 && after.body.email === undefined ? true : after.status === 200, JSON.stringify(after.body).slice(0, 160));
+
+    /* ---- signed in, home is status and one way forward (brief 2.5) ----
+     * The screen this redesign replaced carried a word-field menu of every section: a second
+     * navigation surface, and the reason a whole screen could go missing from a room. Signed
+     * in, home has to behave like a status page — one primary action, and anything not
+     * measured yet said in words rather than printed as a confident zero. */
+    const homeIn = await open("/", "home");
+    await waitFor(() => !/Checking the session/.test(homeIn.text()), { label: "the session check to finish" });
+    // The cards read three endpoints; waiting for the dashes to go is waiting for the data,
+    // not a fixed sleep that would read the loading frame and call it an empty state.
+    await waitFor(
+      () => homeIn.find(".stat-card").length === 4 && homeIn.find(".stat-value").every((el) => (el.textContent ?? "").trim() !== "\u2014"),
+      { timeout: 20_000, label: "the status cards to answer" },
+    ).catch(() => {});
+    const row = homeIn.find(".home-cta-row")[0];
+    const primaries = row ? [...row.querySelectorAll(".btn-primary")] : [];
+    check(
+      "home",
+      "signed in, home offers exactly one primary action and no word-field menu",
+      primaries.length === 1 && homeIn.find(".word-field").length === 0,
+      `${primaries.length} primary control(s), ${homeIn.find(".word-field").length} word-field(s)`,
+    );
+    check(
+      "home",
+      "and it is the next step in the journey for this learner, not a link to a menu",
+      (primaries[0]?.getAttribute("href") ?? "") === "/diagnose" && /Start learning/i.test(primaries[0]?.textContent ?? ""),
+      `${primaries[0]?.getAttribute("href") ?? "(none)"} "${(primaries[0]?.textContent ?? "").trim()}"`,
+    );
+    const statusText = homeIn.text();
+    check(
+      "home",
+      "nothing measured yet is said in words rather than shown as a zero",
+      ["Nothing due yet", "Nothing waiting", "Not measured yet", "No answers yet"].every((w) => statusText.includes(w)),
+      homeIn.find(".stat-card").map((c) => (c.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 70)).join(" | "),
+    );
+    closePage(homeIn);
   }
 
   /* ----------------------------------------------------------- onboarding ---- */

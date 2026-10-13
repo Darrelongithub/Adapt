@@ -393,7 +393,7 @@ mistaken for a sign-out, and the gate retries instead of blanking the screen.
 ### "No frontend test runner" — **superseded**
 
 `frontend/scripts-ui-probe.mjs` (jsdom against the built pages, `npm run probe`) now exists and runs
-169 checks across eleven scenarios, including the approval-gate phases and the lesson engine. It
+207 checks across eleven scenarios, including the approval-gate phases and the lesson engine. It
 still cannot see layout, focus order, `getUserMedia` prompts or paint — that limitation is recorded
 in `docs/UNVERIFIED.md`, not here.
 
@@ -403,7 +403,7 @@ in `docs/UNVERIFIED.md`, not here.
 
 Fifteen defects, fixed against the user's own specification of the fix. The table is the map:
 what was wrong, where the fix lives, and what fails if the fix is removed. Every test named here
-runs in the 640-test suite; the UI claims are checked by `scripts/probe-fresh.sh all` (204 checks after the
+runs in the 640-test suite; the UI claims are checked by `scripts/probe-fresh.sh all` (207 checks after the
 visual-redesign pass below; 199 at the time this table was written).
 
 | # | Defect | Root cause | Fix (where) | Guard |
@@ -533,7 +533,7 @@ that had two, one on the screen that had one, and a stronger claim in both place
 | Command | Result after this pass |
 |---|---|
 | `cd frontend && npm run build` | exit 0 — 11 routes, shared 103 kB |
-| `bash scripts/probe-fresh.sh all` | **204/204 checks, 223 API calls**, exit 0 (was 199/199) |
+| `bash scripts/probe-fresh.sh all` | **207/207 checks, 223 API calls**, exit 0 (was 199/199) |
 | `.venv/bin/python scripts/journey_check.py` | **59/59**, exit 0 (was 58/59 and failing) |
 | `cd frontend && npm run lint` | contract ok — 74 backend routes / 54 frontend calls, 4 scene kinds agree |
 | `cd frontend && npm run test:engine / test:lib / test:server` | 15/15, 8/8, 2/2 |

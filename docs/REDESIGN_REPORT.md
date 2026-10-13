@@ -133,13 +133,15 @@ are *and* offers everything else.
 
 | Scenario | Before | After | Why |
 |---|---|---|---|
-| `home` | 11 | 16 | Five new assertions for the consent step: it is asked before a password field exists, neither box is pre-ticked, the primary control is closed until the required box is, ticking it opens the way forward, the optional box is separate and stays unticked, and declining explains itself without a `POST /students`. The "both ways in" and "email + password" text assertions became control assertions (`Continue as guest`, `Sign in`, name/email/password fields), because the tab labels changed by design. |
+| `home` | 11 | 19 | Six new assertions for the consent step (asked before a password field exists; neither box pre-ticked; the primary control closed until the required box is; ticking it opening the way forward; the optional research box separate and still unticked; declining explaining itself with no `POST /students`), three for the signed-in status home the brief asks for (§2.5: exactly one primary action and no word-field menu; that action being the next step in the journey for this learner; the four cards saying "Nothing due yet" / "Not measured yet" / "No answers yet" rather than printing zeros), and one replaced: "switching to email+password reveals email and password fields" became "the create-account tab asks for a name, an email and a password" — the same claim about the same form, keyed to the labels the redesign actually renders. |
 | `progress` | 2 on the tab | 2 on the sidebar | The corner tab is cancelled; the replacement asserts the marked item *is* Progress and that all seven destinations are present. |
 | `review` | 1 on the tab | 1 on the sidebar | Same rewrite, one screen. |
 | `diagnose` | landing-page check read incidental words ("placed") | asserts the CTA | Rewritten to the design's own claim: home offers to continue practising, does not offer placement again, and links to neither `/diagnose`. |
 | `lesson` | choice found by `button[class*="font-mono"]` | choice found by `button.option-card[role="radio"]` | A class-based selector was an implementation detail, not a claim; the replacement asserts presence, selectable state (`aria-checked`) and a non-empty label. |
 
-No assertion was weakened or deleted to make a run green. Total: **199 → 204 checks**.
+No assertion was weakened or deleted to make a run green. Total: **199 → 207 checks**
+(home 11 → 19: the consent step, the signed-in status view, and the two keyboard-less states the
+door can be left in).
 
 ## 5. Actual output, pasted
 
@@ -151,15 +153,15 @@ $ cd frontend && npm run build && cd .. && bash scripts/probe-fresh.sh all
   ok  no raw JSON object is shown to the learner on this screen
   ok  being rate limited does not break the app (reads still answer)
 
-204/204 checks passed  (223 API calls)
-== all exit=0 (logs: /tmp/tmp.OEJGEUCSKn)
+207/207 checks passed  (223 API calls)
+== all exit=0 (logs: /tmp/tmp.Vq2Z1K39sU)
 ```
 
 Each scenario also run by name (the narrowest relevant one after each screen, and all of them
 again on the final tree):
 
 ```
-home        16/16 checks passed  (2 API calls)     == home exit=0
+home        19/19 checks passed  (2 API calls)     == home exit=0
 onboarding  12/12 checks passed  (5 API calls)     == onboarding exit=0
 diagnose    24/24 checks passed  (4 API calls)     == diagnose exit=0
 learn       26/26 checks passed  (3 API calls)     == learn exit=0
@@ -172,7 +174,7 @@ voice        8/8  checks passed  (3 API calls)     == voice exit=0
 failures    14/14 checks passed  (130 API calls)   == failures exit=0
 ```
 
-The per-scenario numbers add to 203 and the full run is 204 because one settings assertion
+The per-scenario numbers add to 206 and the full run is 207 because one settings assertion
 ("a changed choice reaches the stored preferences") only fires when a `<select>` is present in
 the preferences card, which the state an earlier scenario leaves behind produces in an `all`
 run; standalone, that branch is not reached. No assertion differs in strength between the two
@@ -290,8 +292,8 @@ CSRF, disabled logic and screen-reader-visible attributes.
 | Every interactive element passes the "clickable without hovering" test | **Pass as far as it can be checked here.** Every control that acts wears a contract class with a border or fill (asserted by class in the probe); two "retry" controls and four decision verbs that were plain text are now buttons. Whether a given fill reads as clickable is a paint question and is listed as unverified. |
 | Sidebar is present and shows the current page on this screen | **Pass** — asserted per screen (`aria-current="page"` names the section) plus one assertion that all seven destinations are present. |
 | No fabricated numbers introduced | **Pass** — home's cards read `dashboard`/`review/due`/`adaptations/pending` and say "nothing due yet"/"not measured yet" where there is no value; research consent has no number to fabricate and is stated as unpersisted. |
-| No raw JSON visible | **Pass** — the `closePage` tripwire runs on `/learn /lesson /proposals /settings /voice /progress` and passed 204/204; the new home panel renders lists, not payloads. |
+| No raw JSON visible | **Pass** — the `closePage` tripwire runs on `/learn /lesson /proposals /settings /voice /progress` and passed 207/207; the new home panel renders lists, not payloads. |
 | Telemetry call sites unchanged | **Pass** — `lib/flow.ts` is untouched; the same five events fire from the same call sites, and the probe's event-log assertions still pass. |
 | Keyboard operable, visible focus, accessible names | **Partly verifiable here.** Roles, names, states, `aria-current`, `aria-expanded`, roving tabindex and the focus trap are implemented and asserted; focus *order* and visible focus rings are not verifiable without a browser and are listed as unverified. |
-| Relevant probe scenario passes at the same or higher count | **Pass** — 199 → 204 in total; per screen: home 11 → 16, others equal. |
+| Relevant probe scenario passes at the same or higher count | **Pass** — 199 → 207 in total; per screen: home 11 → 19, others equal. |
 | `npm run lint` passes | **Pass** — contract ok, 74 routes / 54 calls, `tsc` clean. |
