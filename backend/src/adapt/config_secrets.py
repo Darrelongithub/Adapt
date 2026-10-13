@@ -1,327 +1,282 @@
-"""Console-only configuration: secrets live on disk, never in the database or API.
+"""Console-only storage for model-provider credentials and configured budgets.
 
-This module is the *only* place that reads or writes API keys and provider
-configuration. The rules from the brief (section 3) are enforced here and
-tested in ``test_config_secrecy.py``:
+Secrets live in one owner-only environment file below ``ADAPT_DATA_DIR``.  The file
+is intentionally separate from the learner database: no API query, learner export,
+or database dump can read it.  Only the names in :data:`MANAGED_KEYS` are accepted;
+this is not a general-purpose environment-file editor.
 
-* Secrets are stored in the encrypted keystore or a ``0600`` env file, never
-  in a form the API can read back.
-* ``adapt config set-key`` uses a hidden prompt, never echoes, never writes
-  to shell history.
-* ``adapt config status`` shows configured yes/no and masks all but the last
-  four characters.
-* ``adapt config test`` makes one minimal call and reports pass/fail.
-* ``adapt config rotate`` generates a new key, replacing the old one.
-* ``adapt config remove`` erases the key from disk.
-* ``adapt config set-budget`` sets the daily call/token budget.
+The settings loader integration is deliberately a small public helper so the runtime
+can merge this file without duplicating parsing rules.  Explicit process environment
+variables always win over values in this file.
 """
 
 from __future__ import annotations
 
-import base64
+import contextlib
+import json
 import os
 import re
 import stat
-from dataclasses import dataclass, field
+import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from .config import get_settings
-
-# The canary prefix used in tests to prove keys never leak.
-CANARY_PREFIX = "ADAPT_TEST_CANARY_KEY_"
-
-# Provider names that must never appear in HTTP responses or bundles.
-PROVIDER_NAMES = frozenset(
-    {
-        "gemini",
-        "openai",
-        "anthropic",
-        "openalex",
-        "arxiv",
-        "openlibrary",
-        "youtube",
-        "kokoro",
-        "faster-whisper",
-        "faster_whisper",
-        "whisper",
-    }
+SECRET_FIELDS: dict[str, tuple[str, str]] = {
+    "gemini": ("ADAPT_GEMINI_API_KEY", "gemini_api_key"),
+    "youtube": ("ADAPT_YOUTUBE_API_KEY", "youtube_api_key"),
+}
+BUDGET_FIELDS: dict[str, str] = {
+    "ADAPT_GEMINI_DAILY_CALL_BUDGET": "gemini_daily_call_budget",
+    "ADAPT_GEMINI_DAILY_TOKEN_BUDGET": "gemini_daily_token_budget",
+}
+MANAGED_KEYS = frozenset(
+    [env_name for env_name, _field in SECRET_FIELDS.values()] + list(BUDGET_FIELDS)
 )
-
-# Model names that must never appear in HTTP responses or bundles.
-MODEL_NAME_PATTERNS = (
-    re.compile(r"gemini-\d"),
-    re.compile(r"gpt-\d"),
-    re.compile(r"claude-\d"),
-    re.compile(r"whisper-(?:tiny|base|small|medium|large)"),
-    re.compile(r"af_heart|am_fenrir|bf_violet|bm_ola"),
-)
+_SERVICE_NAMES = frozenset(SECRET_FIELDS)
+_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
-@dataclass
-class KeyStatus:
-    """What ``adapt config status`` reports. Masked, never the full value."""
-
-    configured: bool
-    source: str
-    masked: str
-    budget_calls: int
-    budget_tokens: int
-    note: str
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "configured": self.configured,
-            "source": self.source,
-            "masked_key": self.masked,
-            "budget": {
-                "daily_calls": self.budget_calls,
-                "daily_tokens": self.budget_tokens,
-            },
-            "note": self.note,
-        }
+class ConfigSecretError(ValueError):
+    """Safe configuration error; messages never contain a submitted secret."""
 
 
-def _env_file_path() -> Path:
-    st = get_settings()
-    return st.data_dir / ".adapt_keys"
+def config_file(data_dir: str | os.PathLike[str]) -> Path:
+    """Return the private, non-database settings file for this installation."""
+    return Path(data_dir).expanduser() / "keys" / "console.env"
 
 
-def _read_env_file(path: Path) -> dict[str, str]:
-    """Read a ``0600`` env file into a dict. Returns ``{}`` if missing."""
-    if not path.exists():
-        return {}
-    out: dict[str, str] = {}
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            out[key.strip()] = value.strip()
-    return out
+def _ensure_private_parent(path: Path) -> None:
+    parent = path.parent
+    if parent.is_symlink():
+        raise ConfigSecretError("configuration directory must not be a symbolic link")
+    parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if parent.is_symlink():
+        raise ConfigSecretError("configuration directory must not be a symbolic link")
+    try:
+        os.chmod(parent, 0o700)
+    except OSError as exc:
+        raise ConfigSecretError("could not secure the configuration directory") from exc
 
 
-def _write_env_file(path: Path, data: dict[str, str]) -> None:
-    """Write a ``0600`` env file, creating parent dirs as needed."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as fh:
-        fh.write("# ADAPT configuration secrets -- do not commit, do not share\n")
-        for key, value in sorted(data.items()):
-            fh.write(f"{key}={value}\n")
-    os.chmod(path, 0o600)
-
-
-def _mask_key(key: str | None) -> str:
-    """Show only the last four characters of a key."""
-    if not key:
+def _unquote(raw: str) -> str:
+    raw = raw.strip()
+    if not raw:
         return ""
-    if len(key) <= 4:
-        return "****"
-    return "*" * (len(key) - 4) + key[-4:]
+    if raw.startswith('"'):
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError) as exc:
+            raise ConfigSecretError(
+                "managed settings file contains an invalid quoted value"
+            ) from exc
+        if not isinstance(value, str):
+            raise ConfigSecretError("managed settings file contains an invalid value")
+        return value
+    if raw.startswith("'"):
+        if len(raw) < 2 or not raw.endswith("'"):
+            raise ConfigSecretError("managed settings file contains an invalid quoted value")
+        return raw[1:-1]
+    # Unquoted values are accepted only for numeric budget settings. Do not
+    # implement shell expansion, command substitution, or inline comments.
+    return raw
 
 
-def get_key_status() -> KeyStatus:
-    """Read the current configuration status without exposing the key."""
-    st = get_settings()
-    env_path = _env_file_path()
-    env_data = _read_env_file(env_path)
+def read_managed_values(path: str | os.PathLike[str]) -> dict[str, str]:
+    """Read the allowlisted environment file and repair it to mode ``0600``.
 
-    key = st.gemini_api_key or env_data.get("ADAPT_GEMINI_API_KEY")
-    source = "environment" if st.gemini_api_key else ("file" if env_data.get("ADAPT_GEMINI_API_KEY") else "none")
+    Unknown keys are rejected instead of silently turning this file into a way to
+    inject arbitrary runtime configuration.  The CLI never prints parser errors
+    that include a line value.
+    """
+    target = Path(path).expanduser()
+    if target.parent.is_symlink():
+        raise ConfigSecretError("configuration directory must not be a symbolic link")
+    if target.is_symlink():
+        raise ConfigSecretError("managed settings file must not be a symbolic link")
+    if not target.exists():
+        return {}
+    try:
+        info = target.stat()
+        if not stat.S_ISREG(info.st_mode):
+            raise ConfigSecretError("managed settings path is not a regular file")
+        if stat.S_IMODE(info.st_mode) != 0o600:
+            os.chmod(target, 0o600)
+        text = target.read_text(encoding="utf-8")
+    except ConfigSecretError:
+        raise
+    except OSError as exc:
+        raise ConfigSecretError("could not read managed settings file") from exc
 
-    return KeyStatus(
-        configured=bool(key),
-        source=source,
-        masked=_mask_key(key),
-        budget_calls=st.gemini_daily_call_budget,
-        budget_tokens=st.gemini_daily_token_budget,
-        note=(
-            "configured"
-            if key
-            else "no key: lessons use deterministic templates (simple mode)"
-        ),
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            raise ConfigSecretError("managed settings file has an invalid entry")
+        name, raw = stripped.split("=", 1)
+        name = name.strip()
+        if not _ENV_NAME.fullmatch(name) or name not in MANAGED_KEYS:
+            raise ConfigSecretError("managed settings file contains an unsupported setting")
+        values[name] = _validate_value(name, _unquote(raw))
+    return values
+
+
+def _validate_value(name: str, value: str) -> str:
+    if name not in MANAGED_KEYS:
+        raise ConfigSecretError("unsupported console setting")
+    text = str(value)
+    if "\x00" in text or "\n" in text or "\r" in text:
+        raise ConfigSecretError("value must be a single line")
+    if name in BUDGET_FIELDS:
+        try:
+            number = int(text)
+        except ValueError as exc:
+            raise ConfigSecretError("budget must be a whole number") from exc
+        if number < 0 or number > 1_000_000_000:
+            raise ConfigSecretError("budget is outside the supported range")
+        return str(number)
+    if not text.strip():
+        raise ConfigSecretError("key cannot be empty")
+    if len(text) > 4096:
+        raise ConfigSecretError("key is too long")
+    return text
+
+
+def write_managed_values(path: str | os.PathLike[str], values: Mapping[str, Any]) -> Path:
+    """Atomically replace the allowlisted settings file with owner-only permissions."""
+    target = Path(path).expanduser()
+    _ensure_private_parent(target)
+    if target.is_symlink():
+        raise ConfigSecretError("managed settings file must not be a symbolic link")
+    current = read_managed_values(target)
+    merged = dict(current)
+    for name, value in values.items():
+        if value is None:
+            merged.pop(name, None)
+        else:
+            merged[name] = _validate_value(name, str(value))
+
+    lines = [f"{name}={json.dumps(merged[name], ensure_ascii=False)}" for name in sorted(merged)]
+    payload = ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+    fd = -1
+    temporary: str | None = None
+    try:
+        fd, temporary = tempfile.mkstemp(prefix=".console-", suffix=".tmp", dir=target.parent)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as stream:
+            fd = -1
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+        temporary = None
+        os.chmod(target, 0o600)
+        # Persist the directory entry where the platform supports it.
+        try:
+            dir_fd = os.open(target.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
+    except OSError as exc:
+        raise ConfigSecretError("could not safely write managed settings file") from exc
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        if temporary:
+            with contextlib.suppress(OSError):
+                os.unlink(temporary)
+    return target
+
+
+def set_key(data_dir: str | os.PathLike[str], service: str, secret: str) -> Path:
+    """Store one API key without returning or logging its value."""
+    service = service.lower().strip()
+    if service not in _SERVICE_NAMES:
+        raise ConfigSecretError("unsupported service")
+    env_name, _field = SECRET_FIELDS[service]
+    value = _validate_value(env_name, secret)
+    return write_managed_values(config_file(data_dir), {env_name: value})
+
+
+def remove_key(data_dir: str | os.PathLike[str], service: str) -> Path:
+    service = service.lower().strip()
+    if service not in _SERVICE_NAMES:
+        raise ConfigSecretError("unsupported service")
+    env_name, _field = SECRET_FIELDS[service]
+    return write_managed_values(config_file(data_dir), {env_name: None})
+
+
+def set_budgets(data_dir: str | os.PathLike[str], *, calls: int, tokens: int) -> Path:
+    return write_managed_values(
+        config_file(data_dir),
+        {
+            "ADAPT_GEMINI_DAILY_CALL_BUDGET": calls,
+            "ADAPT_GEMINI_DAILY_TOKEN_BUDGET": tokens,
+        },
     )
 
 
-def set_key(key: str) -> dict[str, str]:
-    """Store a key in the env file. The caller has already hidden the prompt."""
-    key = key.strip()
-    if not key:
-        return {"ok": False, "error": "key cannot be empty"}
-    env_path = _env_file_path()
-    data = _read_env_file(env_path)
-    data["ADAPT_GEMINI_API_KEY"] = key
-    _write_env_file(env_path, data)
-    return {
-        "ok": True,
-        "stored_at": str(env_path),
-        "masked": _mask_key(key),
-        "note": "key stored; restart the API to use it",
-    }
+def masked_last_four(value: str | None) -> str | None:
+    """Return no prefix or length information, and never reveal a <=4 character key."""
+    if not value:
+        return None
+    return "****" + value[-4:] if len(value) > 4 else "****"
 
 
-def remove_key() -> dict[str, str]:
-    """Remove the key from the env file."""
-    env_path = _env_file_path()
-    data = _read_env_file(env_path)
-    removed = data.pop("ADAPT_GEMINI_API_KEY", None)
-    if removed is None:
-        return {"ok": True, "note": "no key was stored"}
-    _write_env_file(env_path, data)
-    return {"ok": True, "note": "key removed; restart the API"}
+def effective_values(settings: Any, path: str | os.PathLike[str] | None = None) -> dict[str, str]:
+    """Resolve process env > managed file > existing settings/env-file values."""
+    values = read_managed_values(path or config_file(settings.data_dir))
+    out: dict[str, str] = {}
+    for env_name, field_name in [*SECRET_FIELDS.values(), *BUDGET_FIELDS.items()]:
+        explicit = os.environ.get(env_name)
+        if explicit is not None and str(explicit).strip():
+            out[env_name] = _validate_value(env_name, str(explicit))
+        elif env_name in values:
+            out[env_name] = values[env_name]
+        else:
+            existing = getattr(settings, field_name, None)
+            if existing is not None:
+                out[env_name] = str(existing)
+    return out
 
 
-def rotate_key(new_key: str) -> dict[str, str]:
-    """Replace the stored key with a new one."""
-    new_key = new_key.strip()
-    if not new_key:
-        return {"ok": False, "error": "new key cannot be empty"}
-    env_path = _env_file_path()
-    data = _read_env_file(env_path)
-    old = data.get("ADAPT_GEMINI_API_KEY")
-    data["ADAPT_GEMINI_API_KEY"] = new_key
-    _write_env_file(env_path, data)
-    return {
-        "ok": True,
-        "stored_at": str(env_path),
-        "old_masked": _mask_key(old),
-        "new_masked": _mask_key(new_key),
-        "note": "key rotated; restart the API to use the new key",
-    }
+def settings_with_managed_values(settings: Any, path: str | os.PathLike[str] | None = None) -> Any:
+    """Copy a Settings object with managed values applied (process env still wins).
 
-
-def set_budget(calls: int | None = None, tokens: int | None = None) -> dict[str, Any]:
-    """Set daily call/token budget in the env file."""
-    env_path = _env_file_path()
-    data = _read_env_file(env_path)
-    changes: list[str] = []
-    if calls is not None:
-        if calls < 1:
-            return {"ok": False, "error": "daily call budget must be at least 1"}
-        data["ADAPT_GEMINI_DAILY_CALL_BUDGET"] = str(calls)
-        changes.append(f"calls={calls}")
-    if tokens is not None:
-        if tokens < 1000:
-            return {"ok": False, "error": "daily token budget must be at least 1000"}
-        data["ADAPT_GEMINI_DAILY_TOKEN_BUDGET"] = str(tokens)
-        changes.append(f"tokens={tokens}")
-    if not changes:
-        return {"ok": False, "error": "specify --calls or --tokens"}
-    _write_env_file(env_path, data)
-    return {
-        "ok": True,
-        "stored_at": str(env_path),
-        "changes": changes,
-        "note": "budget updated; restart the API to apply",
-    }
-
-
-async def test_key() -> dict[str, Any]:
-    """Make one minimal call to verify the key works."""
-    st = get_settings()
-    env_path = _env_file_path()
-    env_data = _read_env_file(env_path)
-    key = st.gemini_api_key or env_data.get("ADAPT_GEMINI_API_KEY")
-    if not key:
-        return {
-            "ok": False,
-            "error": "no key configured",
-            "hint": "run: adapt config set-key",
-        }
-    try:
-        import httpx
-
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                f"{st.gemini_base_url}/models/gemini-2.5-flash:generateContent",
-                headers={"x-goog-api-key": key, "content-type": "application/json"},
-                json={
-                    "contents": [{"parts": [{"text": "ping"}]}],
-                    "generationConfig": {"maxOutputTokens": 4},
-                },
-            )
-            if resp.status_code == 200:
-                return {"ok": True, "detail": "key accepted, model responded"}
-            return {
-                "ok": False,
-                "error": f"provider returned {resp.status_code}",
-                "hint": "check the key or try again later",
-            }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "error": f"{type(exc).__name__}: {str(exc)[:120]}",
-            "hint": "network or provider error",
-        }
-
-
-def learner_safe_status() -> dict[str, Any]:
-    """The status payload safe for learner-facing endpoints.
-
-    This is what ``/api/v1/status`` and the footer status bar must return.
-    No key, no provider names, no model names, no budget figures.
+    ``get_settings`` calls this in the runtime integration.  The CLI also uses it
+    directly for the one-call connection test, avoiding a write to the process
+    environment and keeping the stored secret out of unrelated commands.
     """
-    st = get_settings()
-    key = st.gemini_api_key
-    return {
-        "version": _safe_version(),
-        "mode": st.mode,
-        "lessons": "ready" if key else "simple mode",
-        "voice": "ready" if _voice_ready() else "browser fallback",
-        "resources": "ready" if _resources_ready() else "limited",
-        "database": "ok",
-        "note": (
-            "all systems operational"
-            if key
-            else "running without a model key; lessons use built-in content"
-        ),
-    }
+    effective = effective_values(settings, path)
+    updates: dict[str, Any] = {}
+    for env_name, field_name in [*SECRET_FIELDS.values(), *BUDGET_FIELDS.items()]:
+        if env_name not in effective:
+            continue
+        value: Any = effective[env_name]
+        if field_name.endswith("_budget"):
+            try:
+                value = int(value)
+            except ValueError as exc:
+                raise ConfigSecretError("managed budget value is invalid") from exc
+        updates[field_name] = value
+    return settings.model_copy(update=updates)
 
 
-def _safe_version() -> str:
-    from . import __version__
-
-    return __version__
-
-
-def _voice_ready() -> bool:
-    try:
-        from .voice import stt as STT
-        from .voice import tts as TTS
-
-        st = get_settings()
-        return bool(STT.capabilities(st).get("local_stt")) and bool(
-            TTS.capabilities(st).get("local_tts")
+def status_rows(settings: Any, path: str | os.PathLike[str] | None = None) -> list[dict[str, Any]]:
+    effective = effective_values(settings, path)
+    rows: list[dict[str, Any]] = []
+    for service, (env_name, _field_name) in SECRET_FIELDS.items():
+        secret = effective.get(env_name)
+        rows.append(
+            {
+                "service": service,
+                "configured": bool(secret),
+                "masked": masked_last_four(secret),
+            }
         )
-    except Exception:
-        return False
-
-
-def _resources_ready() -> bool:
-    st = get_settings()
-    return bool(st.openalex_enabled and st.arxiv_enabled and st.openlibrary_enabled)
-
-
-def is_canary_string(text: str) -> bool:
-    """Check if text contains a canary key."""
-    return CANARY_PREFIX in text
-
-
-def contains_provider_name(text: str) -> str | None:
-    """Check if text contains a provider name (case-insensitive)."""
-    lower = text.lower()
-    for name in PROVIDER_NAMES:
-        if name in lower:
-            return name
-    return None
-
-
-def contains_model_name(text: str) -> str | None:
-    """Check if text contains a model name pattern."""
-    for pat in MODEL_NAME_PATTERNS:
-        m = pat.search(text)
-        if m:
-            return m.group(0)
-    return None
+    return rows

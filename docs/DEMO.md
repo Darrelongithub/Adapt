@@ -42,28 +42,47 @@ anybody who asks afterwards.
 
 ## Before you stand up
 
+The console is the only place credentials and model/provider configuration belong. Never put a
+key after a command name or in a source file; command-line arguments are kept in shell history.
+Without a configured key, the deterministic tutor still runs in honest simple mode.
+
 ```bash
-# 1. the pilot: real rows, written before the demo, labelled as pilot data
-adapt pilot --student-id <the learner you will show> --seed
+# 1. Optional live-model configuration. Input is hidden; status shows only configured yes/no
+#    and the last four characters. A live test makes one minimal request.
+adapt config set-key --service gemini
+adapt config status
+adapt config test
 
-# 2. rehearse the exact path on that same learner, so the pilot rows are the ones on screen
-node scripts/demo.mjs --as <that learner's email>
+# 2. Build clearly labelled, deterministic synthetic demo histories (not learner evidence).
+#    The helper creates two reserved .invalid accounts and displays a one-time password.
+.venv/bin/python scripts/demo_seed.py
 
-# 3. the interface, on the same database
+# 3. Rehearse the exact path against either seeded synthetic account. Keep the generated
+#    password in an environment variable, not in the command arguments or source.
+ADAPT_DEMO_PASSWORD='<password printed by demo_seed.py>' node scripts/demo.mjs --as demo-example@adapt.invalid
+
+# 4. The interface, on the same database
 cd frontend && npm run dev          # http://localhost:3000
 ```
 
-Why the pilot: the effect check needs **five scored attempts on each side** of a change before it
-will say anything, and the method comparison calls anything under **eight observations** an early
-signal. That is the point of the gate — below it, a difference is noise. A live demo cannot
-manufacture five answers without lowering the bar, and lowering the bar is how a demo turns into
-a claim. So the rows exist before the demo and are flagged: every number derived from them carries
+The synthetic profiles' display names begin `SYNTHETIC DEMO`; every seeded attempt is flagged
+as pilot data, and the existing evidence card labels those rows *"pilot data — not evidence of
+efficacy"*. These are controlled examples, not collected responses, a study, or learner
+measurements. Do not remove the label or present the contrast as a result. Use
+`.venv/bin/python scripts/demo_seed.py --remove` to remove only the synthetic sessions/attempts;
+if anyone added non-synthetic history to a demo account, cleanup deliberately keeps that account and reseeding refuses to overwrite it.
+
+For a real rehearsal learner, `adapt pilot --student-id <id> --seed` remains available. The effect
+check needs **five scored attempts on each side** of a change before it will say anything, and the
+method comparison calls anything under **eight observations** an early signal. That is the point
+of the gate — below it, a difference is noise. A live demo cannot manufacture five answers without
+lowering the bar, and lowering the bar is how a demo turns into a claim. Seeded rows carry
 `pilot: true` and the sentence *"pilot data — not evidence of efficacy"*, in the API payload and on
 the screen.
 
-If the pilot was not run, **say so on stage** rather than seeding it live: "this is one session, so
-the app will say early signal — which is what it should say". That is a stronger demo than a
-number that pretends to be a result.
+The `adapt demo-seed` CLI alias and the explicit synthetic label in the method comparison panel
+need shared-CLI/UI integration by the owning agent; until then, use the standalone script above,
+keep the `SYNTHETIC DEMO` display name visible, and do not claim the alias exists.
 
 ## If something goes wrong
 
@@ -78,7 +97,7 @@ number that pretends to be a result.
 ## Rehearsal checks
 
 ```bash
-cd backend && ../.venv/bin/python -m pytest -q     # 640 tests, no network, no model call
+cd backend && ../.venv/bin/python -m pytest -q     # local regression suite; no live model call
 scripts/probe-fresh.sh all                        # the whole UI on fresh servers
 node scripts/demo.mjs --as <email>                # the loop, over HTTP, on the demo learner
                                                   # (the app's door takes the username; the

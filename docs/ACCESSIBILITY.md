@@ -1,86 +1,69 @@
-# Accessibility
+# Accessibility and performance check
 
-ADAPT is designed to be usable by every learner, including those using assistive
-technology, low-end devices, or who have asked the app not to use timers.
+This is a small, repeatable audit for the lesson/player and baseline. It records what is
+already enforced in code, separates automated checks from manual checks, and does not claim
+a colour or device measurement that has not been run.
 
-## Keyboard operation
+## Safeguards present in the repository
 
-Every screen and every game in the baseline is operable by keyboard:
+- Reduced-motion preference is read by the scene player. `autoplayAllowed()` returns false
+  when `prefers-reduced-motion: reduce` is active, while the learner keeps the manual play,
+  step, back, seek, and replay controls. The lesson page also avoids autoplay for reduced
+  motion, and the global stylesheet reduces/removes selected animations and transitions.
+- The navigation drawer uses a focus trap only while it is open; Escape closes it and returns
+  focus to the button that opened it. Controls use native buttons, links, inputs, and labels.
+- The baseline lever contract includes `timers_visible`; the existing backend baseline test
+  asserts that its default is false. This is a regression check for the default, not proof that
+  every future learner preference path is respected.
+- The scene engine has deterministic state transitions and bounded frame processing, so a
+  performance rehearsal can use the same script and scenes on each device.
 
-- **Tab / Shift+Tab** moves focus between interactive elements.
-- **Enter / Space** activates the focused element.
-- **Arrow keys** navigate within composite widgets (the vault grid, radio groups).
-- **Escape** closes modals and returns to the previous screen.
+These are implementation observations, not a WCAG conformance claim.
 
-The vault grid game (part of the baseline) is navigable with arrow keys + Enter.
-Focus is managed with a roving tabindex pattern (see
-`frontend/src/lib/a11y/useRovingTabIndex.ts`).
+## Automated checks in this checkout
 
-Focus is trapped inside modals and dialogs (see
-`frontend/src/lib/a11y/useFocusTrap.ts`) so a screen reader never reads content
-behind an open dialog.
+Run from `frontend/`:
 
-## Reduced motion
+```bash
+npm run lint
+npm run test:engine
+npm run test:lib
+npm run probe:mock
+```
 
-When the user's operating system has `prefers-reduced-motion: reduce` set, the
-app:
+`npm run lint` includes the repository's route/mock/environment contract checker and TypeScript
+checking. `probe:mock` exercises the current mock-backed browser flow. The baseline timer
+regression is in `backend/tests/test_baseline.py`; run it with the backend suite.
 
-- Disables CSS transitions and animations.
-- Shows lesson frames as static cards rather than animated transitions.
-- Replaces slide/fade transitions with instant display changes.
+## Manual keyboard and reduced-motion pass
 
-This is implemented via `@media (prefers-reduced-motion: reduce)` in
-`frontend/src/app/globals.css`.
+1. In browser settings or the OS, enable reduced motion. Reload `/lesson` and `/learn`.
+2. Verify no lesson auto-advances or scene starts playing without a learner action. Use each
+   manual scene control with keyboard only.
+3. Starting at the address bar, use Tab / Shift+Tab / Enter / Space through sign-in, consent,
+   lesson navigation, answer controls, hints, and the scene player. Focus must remain visible.
+4. Open the mobile navigation drawer; verify focus stays in the open drawer, Escape closes it,
+   and focus returns to the opening control.
+5. Use browser zoom at 200% and a 320 CSS-pixel-wide viewport. Confirm controls remain reachable
+   and content does not require horizontal scrolling.
+6. For a learner who turned timers off, verify no countdown, auto-submit, or time-pressure copy
+   appears in the baseline. The current automated default assertion is not a substitute for this
+   per-preference check.
 
-## Readable contrast
+Record browser, OS, viewport, and the exact page if any step fails. Do not describe an unrun
+manual step as verified.
 
-All text meets WCAG 2.1 AA contrast requirements (4.5:1 for normal text, 3:1
-for large text). The colour palette is tested against common colour-vision
-deficiencies. Status indicators never rely on colour alone: every status
-includes a text label or icon.
+## Contrast and low-end phone pass
 
-## No forced timers
+Readable contrast must be measured, not guessed from a palette. For each page used in the demo,
+measure foreground/background pairs for body text, muted text, buttons, borders that convey
+meaning, focus indicators, and error/status text with a contrast tool. Record the measured ratio,
+colour pair, and whether the text is normal or large; target WCAG AA (4.5:1 for normal text and
+3:1 for large text and meaningful graphical controls). No contrast ratios are claimed in this
+file until that pass is run.
 
-**This is a hard rule, not a preference.** When a learner tells the baseline
-that timers stress them (the `timers_help` question), all visible timers are
-hidden throughout the app. The app still measures latency quietly for the
-learning model, but the learner never sees a countdown.
-
-Implementation:
-
-- The baseline stores the preference as `timers_visible: false` in the levers.
-- Every screen that shows a timer checks this lever before rendering it.
-- The study-phase 45-second timer in the codewords game is replaced with a
-  "Ready" button when timers are off.
-- The locked box and machine games hide their timeout displays.
-
-This is tested: `test_no_timers_forced_on_learner_who_asked_for_them_off`
-asserts that a learner with `timers_visible: false` never receives a visible
-timer in any game task.
-
-## Screen reader support
-
-- All interactive elements have accessible names.
-- Live regions announce game state changes (correct/wrong, new frame, hint opened).
-- Images carry alt text or are marked decorative.
-- The lesson player announces frame transitions and prediction prompts.
-
-## Low-end device performance
-
-The baseline games are designed to run smoothly on a low-end phone:
-
-- No WebGL or heavy canvas rendering.
-- Animations use CSS transforms (GPU-accelerated) and are disabled under reduced motion.
-- Asset sizes are minimised; fonts are system fonts by default.
-- The voice pipeline processes audio in a worker thread so the UI stays responsive.
-
-## Text sizing
-
-The app respects the user's browser text-size setting. Layouts use `rem` units
-and flex/grid so content reflows at 200% zoom without horizontal scrolling.
-
-## Language
-
-The language question in the baseline sets the language of every explanation.
-The app supports English and Kiswahili, with the ability to add more languages
-through the content engine.
+For performance, use a physical low-end phone (or a throttled browser profile) and the same
+baseline flow: sign in, answer the first baseline game, move through a scene, and return to
+practice. Record device/browser, CPU/network throttle, elapsed time, dropped frames, memory if
+available, and whether input remains responsive. The sandbox has no installed Chromium/device
+emulator, so a browser-level phone result is pending and must not be reported as passed here.
