@@ -244,7 +244,6 @@ def main() -> int:
             # (b) modify: the learner's number is the one stored, not the default
             edit_me = next((p for p in proposals[1:] if p.get("action_payload")), None)
             if edit_me is not None:
-                strategy = edit_me["strategy"]
                 knobs = dict(edit_me.get("action_payload") or {})
                 knob = next(iter(knobs), "target")
                 mine = 0.8 if isinstance(knobs.get(knob), (int, float)) else knobs.get(knob)

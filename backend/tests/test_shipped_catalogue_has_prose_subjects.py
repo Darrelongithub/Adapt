@@ -26,7 +26,6 @@ from adapt.db.models import Topic
 from adapt.services import sessions as S
 
 PROSE_TOPICS = ("history_ww1", "bio_photosynthesis")
-ARITHMETIC = "+-*/^=0123456789"
 
 
 def _items(code: str) -> list[dict]:

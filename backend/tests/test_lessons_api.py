@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from adapt.db.models import Attempt, BktState, EvidenceRecord, LlmCall
 from adapt.learning import scenespec, sims
 
@@ -177,7 +175,7 @@ def test_another_learners_run_is_not_visible(client, learner, services):
         f"/api/v1/lessons/run/{opened['run_id']}/progress", json={"frame_index": 2, "action": "step"}, headers=headers
     )
     assert r.status_code == 404, r.text
-    assert client.get(f"/api/v1/lessons/runs", headers=headers).json()["runs"] == []
+    assert client.get("/api/v1/lessons/runs", headers=headers).json()["runs"] == []
 
 
 # --------------------------------------------------------------------------- #
@@ -597,7 +595,7 @@ def test_explaining_a_scene_with_no_renderer_still_works(client, learner, servic
     opened = _post(client, learner, "/api/v1/lessons/open", {"scene_id": scene_id})
     assert opened.status_code == 422, opened.text
     assert "no longer runs" in json.dumps(opened.json()), opened.json()
-    got = client.get(f"/api/v1/lessons", headers=learner["headers"]).json()["scenes"]
+    got = client.get("/api/v1/lessons", headers=learner["headers"]).json()["scenes"]
     card = next(x for x in got if x["spec_id"] == fake["id"])
     assert card["has_renderer"] is False, "the list claimed a renderer for a kind the engine does not have"
 

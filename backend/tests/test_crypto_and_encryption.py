@@ -92,21 +92,25 @@ def test_subkeys_differ_per_purpose(tmp_path):
 
 
 def test_field_cipher_roundtrip_and_context_binding(tmp_path):
+    from cryptography.exceptions import InvalidTag
+
     cipher = cipher_in(tmp_path)
     blob = cipher.encrypt("rowan@example.test", context="student.email")
     assert cipher.decrypt(blob, context="student.email") == "rowan@example.test"
     assert b"rowan" not in blob
     assert blob[:4] == b"AGC1"
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidTag):
         cipher.decrypt(blob, context="student.name")
     assert cipher.encrypt("x", context="c") != cipher.encrypt("x", context="c")
 
 
 def test_tampered_ciphertext_does_not_decrypt(tmp_path):
+    from cryptography.exceptions import InvalidTag
+
     cipher = cipher_in(tmp_path)
     blob = bytearray(cipher.encrypt("display name", context="student.name"))
     blob[-1] ^= 0x01
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidTag):
         cipher.decrypt(bytes(blob), context="student.name")
 
 
@@ -460,7 +464,7 @@ def test_startup_key_check_notices_a_foreign_blob():
     the other tests in this file share. Every NOT NULL column is filled from its own type,
     so the probe row keeps working when the schema grows.
     """
-    from sqlalchemy import Integer, String, create_engine, text as sql_text
+    from sqlalchemy import Integer, create_engine, text as sql_text
 
     from adapt.crypto.fields import EncryptedText, verify_stored_data
     from adapt.db.models import Base
