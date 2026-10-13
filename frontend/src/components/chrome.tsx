@@ -109,8 +109,6 @@ export function Chrome({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <MockBanner />
-
       {/* Below 860px the sidebar slides in from here. The control is a labelled button,
           not a bare glyph: navigation must never be something you have to discover. */}
       <div className="topbar">
@@ -165,6 +163,8 @@ export function Chrome({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="main-content">
+        {/* Inside the content column, so it never runs under the fixed sidebar. */}
+        <MockBanner />
         <div className="flex justify-end px-4 py-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
           <div className="flex items-center gap-3">
             <Who />
