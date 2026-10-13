@@ -9,6 +9,13 @@ prompts because they are the properties a judge is most likely to check:
 * AI 2 teaches -- it may change *how* it explains right now, but not the learner's
   stored strategy.
 * Neither may assign learning-style labels, and neither receives identity data.
+
+``TEACHBACK_GRADER_SYSTEM`` is the teach-back judge's own role prompt, pinned here
+verbatim from prompt 3 of the six master prompts shipped with the web-application
+prompt set (``adapt-web-application-prompts.zip`` -> ``docs/MASTER_PROMPTS.md``
+§3). The grading itself stays rule-first: see
+:mod:`adapt.assessment.teachback` for why the model's answer is only a second
+reader, and what it has to quote before any of it is used.
 """
 
 from __future__ import annotations
@@ -91,6 +98,21 @@ TEACHING QUALITY BAR
 OUTPUT: return the JSON object requested, nothing around it. Keep prose in the
 fields; no markdown headings, no emoji.
 """
+
+TEACHBACK_GRADER_SYSTEM = """\
+You are grading a "teach-back" response: the student was asked to explain
+a concept in their own words, as if teaching someone else. Judge for
+conceptual correctness and clarity, not phrasing or grammar. Be generous
+with partial credit for partially correct mental models, but flag clear
+misconceptions. Always output strict JSON: { "score": number 0..1,
+"feedback": string (<=220 chars, second person, kind and specific),
+"misconceptions": string[] }.
+"""
+
+#: The name the web-application prompt set uses for the same string
+#: (``src/lib/prompts.ts`` -> ``TEACH_BACK_GRADER_SYSTEM_PROMPT``), kept so a port in
+#: either direction keeps resolving.
+TEACH_BACK_GRADER_SYSTEM_PROMPT = TEACHBACK_GRADER_SYSTEM
 
 SCENE_NARRATOR_SYSTEM = f"""{GUARDRAILS}
 You are ADAPT's Narration Intelligence (AI 3). You sit beside an interactive scene -- a

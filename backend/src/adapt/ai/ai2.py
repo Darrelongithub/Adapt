@@ -49,7 +49,7 @@ from ..db.models import (
 from ..learning.profile import to_llm_payload
 from ..security.redact import redact_payload
 from . import local_tutor as LT
-from .prompts import AI2_SYSTEM
+from .prompts import AI2_SYSTEM, TEACHBACK_GRADER_SYSTEM
 
 log = logging.getLogger("adapt.ai2")
 
@@ -632,15 +632,24 @@ class EducationalIntelligence:
         """Score a teach-back against a fixed three-point checklist.
 
         The rule grader decides. A model may read the same answer as a **second
-        opinion**, and its output is only used when it is structurally valid *and its
-        quotes are verbatim* (:func:`adapt.assessment.teachback.accept_model_grading`);
-        otherwise the rejection is recorded and the rule result stands. Two properties
-        matter more than the score itself:
+        opinion**, running under master prompt 3
+        (:func:`adapt.ai.prompts.TEACHBACK_GRADER_SYSTEM`) plus the checklist task
+        prompt; its output is only used when it is structurally valid *and its quotes
+        are verbatim* (:func:`adapt.assessment.teachback.accept_judgement`); otherwise
+        the rejection is recorded and the rule result stands. Two properties matter
+        more than the score itself:
 
         * the learner's text is *data* — ``as_data`` strips instruction-shaped lines and
           tags what is left, and the judge prompt says so;
         * a point can only be met by a sentence the learner actually wrote, so listing
           the rubric's words no longer passes and a good paraphrase no longer fails.
+
+        The reply always carries master prompt 3's learner-facing contract —
+        ``score`` (0..1), ``feedback`` (<=220 chars, second person, kind and
+        specific) and ``misconceptions`` — on the model path and off it. An accepted
+        judgement may replace the feedback and name misconceptions, and its own
+        ``score`` is recorded as ``model_score`` for the trace; the recorded score
+        stays the one the quoted points add up to.
         """
         from ..assessment import teachback as TB
 
@@ -651,8 +660,10 @@ class EducationalIntelligence:
         out["matched"] = [p.statement for p in scored.points if p.met]
         out["missing"] = [p.statement for p in scored.points if not p.met]
         out["coverage"] = round(scored.score, 3)
+        out["feedback_source"] = "rules"
+        out["misconceptions_source"] = "rules"
         if self.llm is not None and getattr(self.llm, "configured", False):
-            system = AI2_SYSTEM + "\n" + TB.judge_prompt(criteria)
+            system = TEACHBACK_GRADER_SYSTEM + "\n" + TB.judge_prompt(criteria)
             user = TB.as_data(text)
             safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
             res = await self.llm.complete(
@@ -668,18 +679,26 @@ class EducationalIntelligence:
             await self._log_llm(
                 "ai2_teachback", "ai2", res, student_id, len(user), dropped, kinds=redacted_kinds
             )
-            points, reason = (None, "no_model_answer")
+            judgement, reason = (None, "no_model_answer")
             if res.ok and res.data:
-                points, reason = TB.accept_model_grading(res.data, text=text, criteria=criteria)
+                judgement, reason = TB.accept_judgement(res.data, text=text, criteria=criteria)
             out["llm_status"] = res.status
             out["llm_checklist"] = reason
-            if points is not None:
-                merged = TB.merge_model_result(scored, points)
+            if judgement is not None:
+                merged = TB.merge_model_result(scored, judgement.points)
                 out.update(merged.as_dict())
                 out["method"] = "checklist_3_point+model"
                 out["matched"] = [p.statement for p in merged.points if p.met]
                 out["missing"] = [p.statement for p in merged.points if not p.met]
                 out["coverage"] = round(merged.score, 3)
+                if judgement.feedback:
+                    out["feedback"] = judgement.feedback
+                    out["feedback_source"] = "model"
+                if judgement.misconceptions:
+                    out["misconceptions"] = list(judgement.misconceptions)
+                    out["misconceptions_source"] = "model"
+                if judgement.score is not None:
+                    out["model_score"] = round(judgement.score, 3)
         return out
 
     def _teaching_material(self, s) -> tuple[dict[str, str], dict[str, str]]:
