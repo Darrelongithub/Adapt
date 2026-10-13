@@ -87,7 +87,7 @@ export default function Progress() {
         </div>
         <div className="flex gap-2">
           <Btn onClick={() => Promise.all([dash.reload(), journey.reload()])}>Reload</Btn>
-          <Btn onClick={retrain} disabled={training} title="re-derive the estimates from the event log rather than trusting the cached ones">
+          <Btn onClick={retrain} disabled={training} title="derive the estimates again from the event log rather than trusting the cached ones">
             {training ? "…" : "Recompute estimates"}
           </Btn>
         </div>

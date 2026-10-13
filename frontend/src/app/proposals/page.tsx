@@ -263,7 +263,7 @@ export default function Proposals() {
                     </div>
                   ) : (
                     <p className="text-xs text-[var(--warn)]">
-                      no published evidence is attached to this strategy, so treat it as an experiment rather than a known-good
+                      no published evidence is attached to this strategy, so treat it as an experiment rather than a settled
                       technique.
                     </p>
                   )}
@@ -300,7 +300,7 @@ export default function Proposals() {
                       ) : null}
                     </div>
                     {current?.review_window?.kind === "days" ? (
-                      <Field label="Re-check after (days)">
+                      <Field label="Check again after (days)">
                         <input
                           type="number"
                           min={1}
@@ -377,7 +377,7 @@ export default function Proposals() {
 
         <Card title="What you have already answered" tone="muted" right={<span>{past.length} decisions</span>}>
           {past.length === 0 ? (
-            <p className="text-sm text-[var(--muted)]">A no is a decision too, and it is kept: it stops the same proposal being re-asked.</p>
+            <p className="text-sm text-[var(--muted)]">A no is a decision too, and it is kept. It stops the same proposal being asked again.</p>
           ) : (
             <ul className="space-y-2 text-sm">
               {past.slice(0, 8).map((d) => (

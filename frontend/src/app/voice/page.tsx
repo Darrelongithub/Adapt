@@ -110,7 +110,7 @@ export default function VoicePage() {
   async function start() {
     setError(null);
     if (!me) {
-      setError("voice needs a signed-in learner: the session it joins is your session, and an anonymous microphone has no place to be recorded to.");
+      setError("voice needs a learner who is signed in: the session it joins is your session, and an anonymous microphone has no place to be recorded to.");
       return;
     }
     try {
@@ -185,7 +185,7 @@ export default function VoicePage() {
       const kill = () => {
         src.stop();
         setState("listening");
-        setLog((l) => [...l, "interrupted by you (barge-in)"]);
+        setLog((l) => [...l, "interrupted by you"]);
         window.removeEventListener("keydown", kill);
       };
       window.addEventListener("keydown", kill, { once: true });
@@ -291,11 +291,11 @@ export default function VoicePage() {
             ))}
             {turns.length === 0 ? (
               <p className="text-sm text-[var(--muted)]">
-                Nothing said yet. Ask about the question you are stuck on — the tutor sees the same plan and the same estimates
-                as the text screens.
+                Nothing said yet. Ask about the question you are stuck on. The tutor sees the same plan and the same
+                estimates as the text screens.
               </p>
             ) : null}
-            <Field label={partial ? "heard so far…" : "What you said (edit it; it is what the tutor actually reads)"}>
+            <Field label={partial ? "heard so far…" : "What you said (edit it, because this is what the tutor actually reads)"}>
               <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="why do I have to flip the second fraction" rows={2} />
             </Field>
             {partial ? <p className="text-sm text-[var(--think)]">{partial}…</p> : null}
@@ -368,8 +368,8 @@ export default function VoicePage() {
                 </Btn>
               ) : null}
               <p className="text-xs text-[var(--muted)]">
-                The same three settings are stored on your account from the settings screen; what you change here is for this
-                session only, so a borrowed laptop does not leave your voice preference switched off for the next person.
+                The same three settings live on your account, on the settings screen. What you change here lasts for this session
+                only, so a borrowed laptop does not leave your voice preference switched off for the next person.
               </p>
             </div>
           </Card>
@@ -392,8 +392,8 @@ apt-get install espeak-ng   # kokoro's phonemiser
 # weights are fetched once from Hugging Face, then cached in ~/.cache`}</pre>
               <p className="mt-1">
                 This sandbox has no network access to Hugging Face, so neither engine could be installed or heard here —
-                see <code>docs/UNVERIFIED.md</code>. Everything above the audio boundary (turn-taking, barge-in flags, latency
-                accounting, the fallbacks) is exercised by the test suite.
+                see <code>docs/UNVERIFIED.md</code>. Everything above the audio boundary (taking turns, cutting in, latency accounting, the
+                fallbacks) is exercised by the test suite.
               </p>
             </Notice>
           </Card>

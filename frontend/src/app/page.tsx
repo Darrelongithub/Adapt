@@ -31,6 +31,15 @@ type Dash = {
 
 type ReviewDueLite = { count?: number; due?: unknown[] };
 
+/** The ranges the server accepts as `age_band`, with the label a person reads. The stored
+ *  value is the one the backend already knows; only the wording changes here. */
+const AGE_BANDS = [
+  { value: "under-16", label: "Under 16" },
+  { value: "16-18", label: "16 to 18" },
+  { value: "19-24", label: "19 to 24" },
+  { value: "25+", label: "25 and over" },
+];
+
 type Privacy = {
   telemetry?: { recorded?: string[]; never_recorded?: string[]; why?: string; note?: string };
 };
@@ -43,8 +52,10 @@ export default function Home() {
   const [research, setResearch] = useState(false);
   const [declined, setDeclined] = useState(false);
   const [mode, setMode] = useState<"create" | "signin">("create");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  // One identifier, not a name and an address. It is what the learner signs in with, and it
+  // is also what the app greets them by, so there is no second field that only ever gets
+  // echoed back.
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [ageBand, setAgeBand] = useState("16-18");
   const [passphrase, setPassphrase] = useState("");
@@ -91,7 +102,12 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      await post("login", { email, password });
+      // One field, so nothing here has to explain a second kind of identifier. If what was
+      // typed is an address, it is also sent as one: accounts made before this build carry an
+      // address and no username, and being unable to sign in because the label changed would
+      // be a fault of the screen, not of the account. Nothing in the copy promises this.
+      const ident = username.trim();
+      await post("login", ident.includes("@") ? { username: ident, password, email: ident } : { username: ident, password });
       refresh();
       router.push("/learn");
     } catch (err) {
@@ -101,7 +117,16 @@ export default function Home() {
     }
   }
 
-  const greet = me ? `Good evening, ${(me as Me).display_name || "learner"}` : "Good evening, Guest learner";
+  // Read the clock after mount, never during render: the server renders at one time and the
+  // browser hydrates at another, and a greeting that disagrees with itself is a hydration
+  // error rather than a nicety. Until then it is simply "Hello".
+  const [partOfDay, setPartOfDay] = useState("");
+  useEffect(() => {
+    const h = new Date().getHours();
+    setPartOfDay(h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening");
+  }, []);
+  const who = me ? (me as Me).display_name || "learner" : "Guest learner";
+  const greet = partOfDay ? `${partOfDay}, ${who}` : `Hello, ${who}`;
 
   return (
     <div className="page-home">
@@ -114,17 +139,17 @@ export default function Home() {
         Practice that measures how you study, proposes what to change, and asks first.
       </p>
       <p className="mt-2 max-w-[640px] text-sm text-[var(--muted)]">
-        ADAPT records the order of what you do — when a question appeared, when you first typed, how many times you changed
-        your answer, whether you opened a hint — and turns that into estimates of what you know. When a pattern is
-        consistent it writes a proposal with its evidence, its alternative explanations and its disproof condition. Nothing
-        changes how you learn until you answer it.
+        ADAPT records the order of what you do (when a question appeared, when you first typed, how many times you changed
+        your answer, whether you opened a hint) and turns that into estimates of what you know. When a pattern holds across
+        your answers it writes a proposal with its evidence, its alternative explanations and its disproof condition.
+        Nothing changes how you learn until you answer it.
       </p>
 
       <div className="mt-6 flex flex-wrap gap-2 text-xs">
-        <Tag tone="good">no learning-styles question</Tag>
+        <Tag tone="good">no learning styles question</Tag>
         <Tag tone="think">hypotheses, not labels</Tag>
         <Tag tone="accent">keystrokes never recorded</Tag>
-        <Tag>{health?.mode ? `mode: ${health.mode}` : "api not answering"}</Tag>
+        <Tag>{health?.mode ? `mode: ${health.mode}` : "the API is not answering"}</Tag>
         {mock ? <Tag tone="bad">showing demo data</Tag> : null}
       </div>
       {mock ? (
@@ -167,7 +192,7 @@ export default function Home() {
               <p className="mt-2 text-xs text-[var(--muted)]">
                 Never recorded:{" "}
                 {(privacy.data?.telemetry?.never_recorded ?? [
-                  "keystrokes, key timing or per-character edits",
+                  "keystrokes, key timing, or per character edit content",
                   "screenshots, screen content, or anything from another tab",
                 ]).join("; ")}
                 .{" "}
@@ -259,29 +284,38 @@ export default function Home() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (mode === "signin") void signIn();
-                  else void go({ display_name: name || email.split("@")[0] || "Guest learner", email, password, age_band: ageBand }, false);
+                  else void go({ username, password, age_band: ageBand }, false);
                 }}
               >
                 {mode === "create" ? (
                   <>
-                    <Field label="A name" hint="Anything you want shown back to you. A guest learner is stored the same way; you can add an email later.">
-                      <Input type="text" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="Rowan" />
+                    <Field
+                      label="Username"
+                      hint="Three to forty characters: letters, numbers, dots and underscores. This is what you sign in with, and what the app greets you by. Stored encrypted, and only ever looked up as a key."
+                    >
+                      <Input
+                        type="text"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        placeholder="rowan"
+                        required
+                      />
                     </Field>
-                    <Field label="Email">
-                      <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required autoComplete="username" />
-                    </Field>
-                    <Field label="Password" hint="At least 10 characters. Argon2id, and the address itself is encrypted at rest.">
+                    <Field label="Password" hint="At least ten characters. Stored with Argon2id, never written into any log.">
                       <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required autoComplete="new-password" />
                     </Field>
-                    <Field label="Age band" hint="Used only to keep the wording age-appropriate.">
+                    <Field label="Age band" hint="Used only to keep the wording age appropriate. It is stored as a range, never as a date of birth.">
                       <select
                         className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
                         value={ageBand}
                         onChange={(e) => setAgeBand(e.target.value)}
                       >
-                        {["under-16", "16-18", "19-24", "25+"].map((a) => (
-                          <option key={a} value={a}>
-                            {a}
+                        {AGE_BANDS.map((a) => (
+                          <option key={a.value} value={a.value}>
+                            {a.label}
                           </option>
                         ))}
                       </select>
@@ -289,8 +323,16 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <Field label="Email">
-                      <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required autoComplete="username" />
+                    <Field label="Username" hint="The one you chose when you made the account.">
+                      <Input
+                        type="text"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        required
+                      />
                     </Field>
                     <Field label="Password">
                       <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required autoComplete="current-password" />
@@ -303,10 +345,10 @@ export default function Home() {
                   </Field>
                 ) : null}
                 <div className="flex flex-wrap items-center gap-3">
-                  <Btn kind="primary" type="submit" disabled={busy || (mode === "signin" && (!email || !password))}>
+                  <Btn kind="primary" type="submit" disabled={busy || !username || !password}>
                     {busy ? "…" : mode === "create" ? "Create account" : "Sign in"}
                   </Btn>
-                  <Btn kind="ghost" onClick={() => void go({ display_name: name || "Guest learner", age_band: ageBand }, true)} disabled={busy}>
+                  <Btn kind="ghost" onClick={() => void go({ age_band: ageBand }, true)} disabled={busy}>
                     Continue as guest
                   </Btn>
                 </div>
@@ -332,21 +374,21 @@ export default function Home() {
         <Card title="The loop" tone="muted">
           <ol className="list-decimal space-y-1 pl-5 text-sm">
             <li>
-              <strong>Placement</strong> — a short adaptive sequence across the topics, no hints, one band estimate each.
+              <strong>Placement</strong>: a short adaptive sequence across the topics, with no hints, giving one band estimate each.
             </li>
             <li>
-              <strong>Practise</strong> — answer, get feedback written from your own material, ask for a hint if you want.
+              <strong>Practise</strong>: answer the question, get feedback written from your own material, and ask for a hint if you want one.
             </li>
             <li>
-              <strong>Analysis</strong> — evidence, a hypothesis, and a proposal that says what it would change and what it
+              <strong>Analysis</strong>: the evidence, a hypothesis, and a proposal that says what it would change and what it
               would watch.
             </li>
             <li>
-              <strong>You decide</strong> — yes, no, later, or change the numbers. A no is recorded and stops the same
-              question coming back tomorrow.
+              <strong>You decide</strong>: yes, no, later, or change the numbers. A no is recorded too, and it stops the
+              same question coming back tomorrow.
             </li>
             <li>
-              <strong>Review</strong> — topics come back at the point your own recall is projected to fall to ~85%, not on a
+              <strong>Review</strong>: topics come back at the point your own recall is projected to fall to about 85%, not on a
               fixed schedule.
             </li>
           </ol>
@@ -357,7 +399,7 @@ export default function Home() {
               backend: <code>uvicorn adapt.api.app:app --port 8000</code>
             </li>
             <li>
-              one-command loop demo: <code>adapt demo</code>
+              one command loop demo: <code>adapt demo</code>
             </li>
             <li>
               health: <code>GET /api/v1/health</code> · routes: <code>GET /api</code>

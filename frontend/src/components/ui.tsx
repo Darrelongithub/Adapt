@@ -275,11 +275,11 @@ export function Err({ error, status }: { error: string | null; status?: number |
       ) : status === 429 ? (
         <>
           The server is asking for a moment between requests, so this screen could not load. Nothing is wrong with
-          your session - wait a few seconds and try again.
+          your session. Wait a few seconds and try again.
         </>
       ) : status === 0 ? (
         <>
-          {error} — start the backend with{" "}
+          {error}. Start the backend with{" "}
           <code className="text-xs">uvicorn adapt.api.app:app --port 8000</code>, or open this page with{" "}
           <code className="text-xs">?mock=1</code> to look at the design without it.
         </>

@@ -29,8 +29,8 @@ from ._choice import order_choices
 KIND = "cpu_cycle"
 TITLE = "The CPU instruction cycle: fetch, decode, execute"
 SUMMARY = (
-    "Step a program through a one-accumulator machine and watch PC, MAR, MDR and IR take their "
-    "turn in every instruction -- one memory for code and data, and no way to stop but HLT."
+    "Step a program through a one accumulator machine and watch PC, MAR, MDR and IR take their "
+    "turn in every instruction — one memory for code and data, and no way to stop but HLT."
 )
 PROMPTS = ("next_register", "accumulator_after", "memory_after", "pc_after")
 MAX_FRAMES = 240
@@ -149,7 +149,7 @@ def run(params: dict[str, Any]) -> list[dict[str, Any]]:
             "title": "One memory: instructions, then data",
             "narration": (
                 f"Cells 0-{n_instr - 1} hold the program; the data starts at cell {p['data_at']}. The machine reads "
-                "the same memory for both, which is what 'stored program' means -- and why it has no idea whether a "
+                "the same memory for both, which is what 'stored program' means — and why it has no idea whether a "
                 "cell is code."
             ),
             "state": _regs(p, cells, pc=pc, a=a, mar=None, mdr=None, ir=None, z=z, cycle=0),
@@ -167,7 +167,7 @@ def run(params: dict[str, Any]) -> list[dict[str, Any]]:
                     "title": "PC walked past the program",
                     "narration": (
                         f"PC is {pc}, past the last instruction at {n_instr - 1}. Nothing is left to fetch, so the "
-                        "machine stops. It had no HLT to run -- that is a way to end a program, and a bad one."
+                        "machine stops. It had no HLT to run — that is a way to end a program, and a bad one."
                     ),
                     "state": _regs(p, cells, pc=pc, a=a, mar=None, mdr=None, ir=None, z=z, cycle=cycle),
                     "highlights": ["pc"],
@@ -221,7 +221,7 @@ def run(params: dict[str, Any]) -> list[dict[str, Any]]:
                 {
                     "kind": "execute",
                     "title": f"Cycle {cycle} · halt",
-                    "narration": f"HLT stops the fetch-decode-execute loop. A is {a} and the data cells read {cells[p['data_at']:]}.",
+                    "narration": f"HLT stops the fetch, decode, execute loop. A is {a} and the data cells read {cells[p['data_at']:]}.",
                     "state": _regs(p, cells, pc=pc + 1, a=a, mar=pc, mdr=word, ir=str(word), z=z, cycle=cycle),
                     "highlights": ["a"],
                     "cause": "halt",
@@ -285,7 +285,7 @@ def run(params: dict[str, Any]) -> list[dict[str, Any]]:
             "narration": (
                 f"This program had not halted after {p['max_steps']} instructions, so the animation stops here rather "
                 "than pretending to finish. A machine in a loop looks exactly like a machine working, which is why a "
-                "watchdog -- this limit -- is part of the story."
+                "watchdog — this limit — is part of the story."
             ),
             "state": _regs(p, cells, pc=pc, a=a, mar=None, mdr=None, ir=None, z=z, cycle=cycle),
             "highlights": [],
@@ -322,7 +322,7 @@ def _decode_prompt(op: str, arg: int | None, a: int, cells: list[Any], pc: int, 
     if op == "JZ":
         return {
             "type": "pc_after",
-            "question": f"A is {a} and this is a jump-if-zero. Which cell does the next fetch read?",
+            "question": f"A is {a} and this is a jump if zero. Which cell does the next fetch read?",
             "choices": order_choices(KIND, frame_index, [f"cell {arg}", f"cell {pc + 1}", "it stops"]),
         }
     return None
@@ -389,7 +389,7 @@ def grade(params: dict[str, Any], frame_index: int, choice: Any) -> dict[str, An
     elif prompt_type == "accumulator_after":
         why = f"The execute phase of {frame['state'].get('ir')} leaves A = {want}. A store or a jump would leave it alone."
     elif prompt_type == "memory_after":
-        why = f"After this instruction, that cell holds {want} -- a store copies A into it, it does not clear it."
+        why = f"After this instruction, that cell holds {want} — a store copies A into it, it does not clear it."
     elif prompt_type == "pc_after":
         why = f"The next fetch reads {want}: a jump writes PC inside the execute phase, which is why PC moved twice in this cycle."
     else:
@@ -438,7 +438,7 @@ def explain(params: dict[str, Any], frame_index: int, question: str = "") -> dic
         return {
             "answer": (
                 f"One array: cells 0-{len(p['program']) - 1} are instructions and the data begins at cell {p['data_at']}. "
-                "The fetch does not distinguish them, which is what makes a self-modifying program possible -- and what "
+                "The fetch does not distinguish them, which is what makes a self modifying program possible — and what "
                 "makes 'execute' permissions a thing later."
             ),
             "source": "machine_rule",

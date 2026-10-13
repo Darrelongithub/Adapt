@@ -41,7 +41,11 @@ export function Opening() {
       phraseRef.current = pickPhrase();
       setVisible(true);
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      timerRef.current = setTimeout(dismiss, reduced ? 500 : 1500);
+      // Long enough for the last word to arrive and then be read: the reveal now takes
+      // ``stagger * (words - 1) + 1.15s`` and the longest phrase is seven words, so 4.2s leaves
+      // about a second and a half of settled text. Reduced motion keeps a short hold, because
+      // there is no reveal to wait for.
+      timerRef.current = setTimeout(dismiss, reduced ? 900 : 4200);
     }
     return () => clearTimeout(timerRef.current);
   }, []);
@@ -50,7 +54,9 @@ export function Opening() {
     clearTimeout(timerRef.current);
     try { sessionStorage.setItem(SEEN_KEY, '1'); } catch { /* ignore */ }
     setExiting(true);
-    setTimeout(() => setVisible(false), 350);
+    // Matches the overlay's own `transition: opacity`; a shorter timer would remove the node
+    // mid-fade and the exit would read as a blink.
+    setTimeout(() => setVisible(false), 500);
   }
 
   if (!mounted || !visible) return null;
@@ -67,6 +73,7 @@ export function Opening() {
       onKeyDown={dismiss}
       tabIndex={-1}
     >
+      <p className="opening-mark">A·D·A·P·T</p>
       <p className="opening-phrase" aria-live="off">
         {words.map((w, i) => {
           const isBlue = w.replace(/[?.!,]/g, '') === blue || w.includes(blue);
@@ -74,7 +81,7 @@ export function Opening() {
             <span
               key={i}
               className={`opening-word${isBlue ? ' blue' : ''}`}
-              style={{ animationDelay: `${i * 0.08}s` }}
+              style={{ animationDelay: `${i * 0.14}s` }}
             >
               {w}{' '}
             </span>

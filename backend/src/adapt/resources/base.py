@@ -151,7 +151,7 @@ class Provider:
         ckey: str | None = None,
         ttl_hours: float | None = None,
     ) -> tuple[dict[str, Any] | None, ProviderResult | None]:
-        """Return ``(payload, failure_result)`` -- exactly one of the two is None."""
+        """Return ``(payload, failure_result)`` — exactly one of the two is None."""
         ttl = float(ttl_hours if ttl_hours is not None else self.default_ttl_hours)
         now = datetime.now(timezone.utc)
         if cache is not None and ckey:
@@ -245,7 +245,7 @@ def rank(
     topic_keywords: Sequence[str] = (),
     prefer: Sequence[str] = ("video", "paper", "preprint", "book"),
 ) -> list[Resource]:
-    """Filter for suitability, then rank. Retrieved != verified -- so we say which.
+    """Filter for suitability, then rank. Retrieved != verified — so we say which.
 
     Signals used: exact keyword overlap in the title (strong), overlap in the
     snippet (weak), recency for papers, a minimum length for videos, and a small

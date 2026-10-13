@@ -136,10 +136,23 @@ kbd {
   align-items: center;
   justify-content: center;
   background: var(--bg);
-  transition: opacity 0.35s ease;
+  transition: opacity 0.5s ease;
 }
 .opening-overlay.exiting {
   opacity: 0;
+}
+.opening-mark {
+  /* The mark reads in the accent colour, not in muted grey: it is the only branding on the
+     screen, and grey on grey made it look like a caption for the skip button. */
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 .opening-phrase {
   font-family: var(--font-serif);
@@ -154,9 +167,12 @@ kbd {
 .opening-word {
   display: inline-block;
   opacity: 0;
-  filter: blur(5px);
-  transform: translateY(14px);
-  animation: oreveal 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  filter: blur(10px);
+  transform: translateY(22px);
+  /* Slower on purpose: at 0.55s a word arrived before the eye had settled on the one before
+     it, so the sentence was over before it read as a sentence. The reveal is now a beat per
+     word, and `Opening` holds the phrase long enough for the last word to land. */
+  animation: oreveal 1.15s cubic-bezier(0.16, 0.9, 0.2, 1) forwards;
 }
 .opening-word.blue {
   color: var(--accent);
@@ -1163,7 +1179,9 @@ kbd {
   font-family: var(--font-serif);
   font-style: italic;
   font-size: 17px;
-  color: var(--ink);
+  /* The whole wordmark reads in the accent colour. It used to be ink with only "apt" in
+     accent, which made the brand look like a typo rather than a mark. */
+  color: var(--accent);
   text-decoration: none;
 }
 .sidebar-brand b {

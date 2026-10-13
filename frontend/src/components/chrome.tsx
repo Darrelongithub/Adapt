@@ -28,8 +28,8 @@ export function MockBanner() {
     // pl-4: there is no fixed corner control any more, so the banner starts at the edge
     // on every screen size.
     <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 py-2 pl-4 pr-4 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
-      <strong>DEMO DATA</strong> — this screen is running on fixtures (<code>?mock=1</code>). Nothing here was measured from a
-      learner, and nothing was saved.{" "}
+      <strong>DEMO DATA.</strong> This screen is running on fixtures (<code>?mock=1</code>), so nothing you see here was
+      measured from a learner and nothing on it was saved.{" "}
       <Link className="link-inline" href="/?mock=off">
         turn it off
       </Link>
@@ -65,18 +65,18 @@ export function StatusChip() {
       ? "db encrypted at rest"
       : status.encryption?.field_level_encryption
         ? "columns encrypted"
-        : "no at-rest encryption";
+        : "no encryption at rest";
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
       {error ? (
-        <span className="text-[var(--bad)]">api unreachable</span>
+        <span className="text-[var(--bad)]">the API is unreachable</span>
       ) : (
         <>
           <span title={`mode=${health?.mode ?? "not read yet"}`}>
-            {health == null ? "checking the api…" : health.ok ? "api up" : "api down"} · {llm} · {enc}
+            {health == null ? "checking the API…" : health.ok ? "API up" : "API down"} · {llm} · {enc}
           </span>
           {status?.version ? <span>v{status.version}</span> : null}
-          {status?.mode === "demo" ? <span className="text-[var(--warn)]">demo mode (writes need a passphrase)</span> : null}
+          {status?.mode === "demo" ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
         </>
       )}
     </div>

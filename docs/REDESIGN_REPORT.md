@@ -133,15 +133,16 @@ are *and* offers everything else.
 
 | Scenario | Before | After | Why |
 |---|---|---|---|
-| `home` | 11 | 19 | Six new assertions for the consent step (asked before a password field exists; neither box pre-ticked; the primary control closed until the required box is; ticking it opening the way forward; the optional research box separate and still unticked; declining explaining itself with no `POST /students`), three for the signed-in status home the brief asks for (§2.5: exactly one primary action and no word-field menu; that action being the next step in the journey for this learner; the four cards saying "Nothing due yet" / "Not measured yet" / "No answers yet" rather than printing zeros), and one replaced: "switching to email+password reveals email and password fields" became "the create-account tab asks for a name, an email and a password" — the same claim about the same form, keyed to the labels the redesign actually renders. |
+| `home` | 11 | 20 | Six new assertions for the consent step (asked before a password field exists; neither box pre-ticked; the primary control closed until the required box is; ticking it opening the way forward; the optional research box separate and still unticked; declining explaining itself with no `POST /students`), three for the signed-in status home the brief asks for (§2.5: exactly one primary action and no word-field menu; that action being the next step in the journey for this learner; the four cards saying "Nothing due yet" / "Not measured yet" / "No answers yet" rather than printing zeros), and one replaced: "switching to email+password reveals email and password fields" became "the create-account tab asks for a name, an email and a password" — the same claim about the same form, keyed to the labels the redesign actually renders. |
 | `progress` | 2 on the tab | 2 on the sidebar | The corner tab is cancelled; the replacement asserts the marked item *is* Progress and that all seven destinations are present. |
 | `review` | 1 on the tab | 1 on the sidebar | Same rewrite, one screen. |
 | `diagnose` | landing-page check read incidental words ("placed") | asserts the CTA | Rewritten to the design's own claim: home offers to continue practising, does not offer placement again, and links to neither `/diagnose`. |
 | `lesson` | choice found by `button[class*="font-mono"]` | choice found by `button.option-card[role="radio"]` | A class-based selector was an implementation detail, not a claim; the replacement asserts presence, selectable state (`aria-checked`) and a non-empty label. |
 
-No assertion was weakened or deleted to make a run green. Total: **199 → 207 checks**
-(home 11 → 19: the consent step, the signed-in status view, and the two keyboard-less states the
-door can be left in).
+No assertion was weakened or deleted to make a run green. Total: **199 → 208 checks**
+(home 11 → 20: the consent step, the signed-in status view, the two keyboard-less states the
+door can be left in, and — after the door became username + password (§8) — one check that the
+create form asks for a username and a password and renders no email field at all).
 
 ## 5. Actual output, pasted
 
@@ -153,7 +154,7 @@ $ cd frontend && npm run build && cd .. && bash scripts/probe-fresh.sh all
   ok  no raw JSON object is shown to the learner on this screen
   ok  being rate limited does not break the app (reads still answer)
 
-207/207 checks passed  (223 API calls)
+208/208 checks passed  (224 API calls)
 == all exit=0 (logs: /tmp/tmp.Vq2Z1K39sU)
 ```
 
@@ -161,7 +162,7 @@ Each scenario also run by name (the narrowest relevant one after each screen, an
 again on the final tree):
 
 ```
-home        19/19 checks passed  (2 API calls)     == home exit=0
+home        20/20 checks passed  (3 API calls)     == home exit=0
 onboarding  12/12 checks passed  (5 API calls)     == onboarding exit=0
 diagnose    24/24 checks passed  (4 API calls)     == diagnose exit=0
 learn       26/26 checks passed  (3 API calls)     == learn exit=0
@@ -174,7 +175,7 @@ voice        8/8  checks passed  (3 API calls)     == voice exit=0
 failures    14/14 checks passed  (130 API calls)   == failures exit=0
 ```
 
-The per-scenario numbers add to 206 and the full run is 207 because one settings assertion
+The per-scenario numbers add to 207 and the full run is 208 because one settings assertion
 ("a changed choice reaches the stored preferences") only fires when a `<select>` is present in
 the preferences card, which the state an earlier scenario leaves behind produces in an `all`
 run; standalone, that branch is not reached. No assertion differs in strength between the two
@@ -194,7 +195,7 @@ $ .venv/bin/python scripts/failure_matrix_check.py
 
 ```
 $ cd backend && ../.venv/bin/python -m pytest -q
-640 passed, 1 warning in 47.70s
+645 passed, 1 warning in 48.72s
 ```
 
 ```
@@ -292,8 +293,120 @@ CSRF, disabled logic and screen-reader-visible attributes.
 | Every interactive element passes the "clickable without hovering" test | **Pass as far as it can be checked here.** Every control that acts wears a contract class with a border or fill (asserted by class in the probe); two "retry" controls and four decision verbs that were plain text are now buttons. Whether a given fill reads as clickable is a paint question and is listed as unverified. |
 | Sidebar is present and shows the current page on this screen | **Pass** — asserted per screen (`aria-current="page"` names the section) plus one assertion that all seven destinations are present. |
 | No fabricated numbers introduced | **Pass** — home's cards read `dashboard`/`review/due`/`adaptations/pending` and say "nothing due yet"/"not measured yet" where there is no value; research consent has no number to fabricate and is stated as unpersisted. |
-| No raw JSON visible | **Pass** — the `closePage` tripwire runs on `/learn /lesson /proposals /settings /voice /progress` and passed 207/207; the new home panel renders lists, not payloads. |
+| No raw JSON visible | **Pass** — the `closePage` tripwire runs on `/learn /lesson /proposals /settings /voice /progress` and passed 208/208; the new home panel renders lists, not payloads. |
 | Telemetry call sites unchanged | **Pass** — `lib/flow.ts` is untouched; the same five events fire from the same call sites, and the probe's event-log assertions still pass. |
 | Keyboard operable, visible focus, accessible names | **Partly verifiable here.** Roles, names, states, `aria-current`, `aria-expanded`, roving tabindex and the focus trap are implemented and asserted; focus *order* and visible focus rings are not verifiable without a browser and are listed as unverified. |
-| Relevant probe scenario passes at the same or higher count | **Pass** — 199 → 207 in total; per screen: home 11 → 19, others equal. |
+| Relevant probe scenario passes at the same or higher count | **Pass** — 199 → 208 in total; per screen: home 11 → 20, others equal. |
 | `npm run lint` passes | **Pass** — contract ok, 74 routes / 54 calls, `tsc` clean. |
+
+## 10. Follow-up pass, same day — asked for after the report above was written
+
+Four changes the user asked for after the redesign landed. The numbers in §4, §5 and §9 have
+been updated in place to the ones here; this section says what changed and what it cost.
+
+### 10.1 The door is username + password (no email)
+
+* **Schema.** `students.username` (AES-GCM, `EncryptedText`) plus `username_index` (blind index,
+  unique), migration `0006_username_accounts.py` — existence-aware in both directions, so a
+  database that already has the columns is not re-migrated and a `create_all` database can be
+  stamped and upgraded (both verified on copies of the dev database, one of them 21 students).
+* **API.** `POST /api/v1/students` takes `{username, password, age_band}`; **email is still
+  accepted** so `journey_check.py`, `demo.mjs --as` and every existing fixture keep working. A
+  taken name is `409 {"error": "username_taken"}` with no session in the body; a refused name is
+  a 422 that says in words why; an unknown name and a wrong password return the *same* 401
+  (`wrong username or password`) so the endpoint cannot be used to enumerate accounts.
+* **Case.** Stored lowercased (and blind-indexed on the lowercase form), displayed as typed:
+  signing in as `Rowan.7` for an account made as `rowan.7` greets you as `Rowan.7`. Nothing is
+  Title-cased for you.
+* **The screen.** Consent → one form: username, password, age band. The sign-in hint reads
+  "The one you chose when you made the account." and nothing on the page mentions email. The
+  single field is still *tolerant*: a value containing `@` is also sent as `email`, so an account
+  made before this build can sign in by typing its address — the code says so; the copy does not
+  promise it, because the user asked for email to be dropped "for now".
+* **Left unfinished, stated:** an existing **email-only account is not discoverable** through the
+  UI (nothing tells the learner that typing the address works), and research consent is still
+  unpersisted — unchanged from §7.
+
+### 10.2 The opening is slower and the mark is blue
+
+`.opening-mark` (`A·D·A·P·T`) is accent blue and monospaced at the top centre; `.opening-word`
+reveals over **1.15 s** with a 0.14 s stagger, 10 px blur and 22 px rise; the overlay holds
+**4200 ms** (900 ms under `prefers-reduced-motion`) before a 0.5 s exit. The hold is derived, not
+guessed: `stagger × (words − 1) + 1.15 s` for the longest phrase is 1.99 s, and the timer leaves
+room for the exit without cutting the last word off. The sidebar wordmark (`.sidebar-brand`) is
+the same accent blue, so "the corner Adapt" and the sidebar agree. Values live in the component's
+own comments; motion itself remains unverified here (no browser — §8).
+
+### 10.3 The copy sweep (hyphens and punctuation)
+
+Scope: **everything a learner reads**, including strings the backend serves — not only the JSX.
+Measured, not eyeballed:
+
+* `frontend/scripts-copy-dump.mjs` renders all 11 routes in jsdom and prints the text. Current
+  dump: **zero** prose hyphens. The only hyphenated tokens left are `faster-whisper`,
+  `espeak-ng` and `apt-get`, inside the voice screen's install block, where they are command
+  names a learner could paste into a terminal.
+* A live-API walk (13 endpoints plus the loop: answer, hint, worked example, teach back, reveal,
+  analyse, train, validate) prints every hyphenated token in every JSON string. What remains is
+  identifiers and notation only: `AES-256-CBC`, `HMAC-SHA512`, `faster-whisper`,
+  `gemini-2.5-flash`, the keyfile path, `10^-3` / `x^-2`, ISO timestamps, and the historical
+  proper nouns `Austria-Hungary` / `Austro-Hungarian` (the country's name; un-hyphenating it
+  would be a factual change, not a style one).
+* Typewriter dashes went the other way: ` -- ` became a real em dash (—) in 33 served strings,
+  because that is the honest glyph for the parenthetical the sentence is doing.
+* Punctuation pass: sentences that began mid-thought ("…in the backend; nothing here is a video")
+  became full sentences; the 429 line and the backend-down line read as sentences now.
+* Carve-outs kept deliberately: `?mock=1` route matches, the `learning-style` payload key,
+  `worked-example` (a route), env var names, CSS class names. Renaming those would be a
+  behaviour change wearing a copy change's clothes.
+
+### 10.4 "What this screen refuses to ask" was removed, and the probe got stricter
+
+The card on `/onboarding` is gone, at the user's instruction. The probe check that guarded the
+same claim used to test only the form's fields ("no *input* asks for a learning style") because
+the page itself discussed styles in that paragraph; with the paragraph removed the check can be
+made against **the whole rendered screen** — a strictly stronger assertion, still 12/12.
+
+### 10.5 A database from an earlier build no longer looks like a broken key
+
+Found by running the live server against a database created before `0006`. The startup key check
+sampled `students.username` on a file that does not have the column; SQLite answers an unknown
+double-quoted identifier with **the column's own name as a string literal**, that value is not a
+ciphertext, and the operator was told:
+
+```
+startup refused: the key this process loaded cannot open 4 of 33 encrypted value(s) it sampled.
+Columns affected: students. Cipher said: TypeError.
+```
+
+The key was fine; the database was un-migrated. The check now reads the file's live schema first,
+reports missing columns separately, and the app refuses with the remedy instead:
+
+```
+startup refused: this database was made by an earlier build and is missing 1 column(s) this
+build declares: students.username. Migrate it rather than deleting it:
+`alembic -c alembic.ini stamp 0002 && alembic -c alembic.ini upgrade head` (see README, Migrations).
+```
+
+`test_startup_key_check_ignores_a_model_column_the_file_has_not_got_yet` holds the line: it
+builds a database, drops the column the file "does not have", and asserts the report says
+`missing` rather than `unreadable`. Deleting the guard fails the test (checked by mutation, not
+by inspection). This is why the suite is 645 and not 644.
+
+### 10.6 Gates re-run after all of the above
+
+```
+$ cd frontend && npx tsc --noEmit && npm run lint && npm run build
+contract ok: every path the frontend calls exists, ?mock=1 covers them, the scene kinds agree
+across engine/stages/mock, route modules export what Next allows, no host or env misuse in browser code
+ ✓ Compiled successfully
+
+$ bash scripts/probe-fresh.sh all
+208/208 checks passed  (224 API calls)
+
+$ cd backend && ../.venv/bin/python -m pytest -q
+645 passed, 1 warning in 48.72s
+
+$ .venv/bin/python scripts/journey_check.py            # 59/59 journey checks passed
+$ .venv/bin/python scripts/failure_matrix_check.py     # 25/25 failure-matrix checks passed
+```

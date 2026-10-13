@@ -147,7 +147,7 @@ export default function Review() {
                 >
                   <p className="text-sm">
                     projected recall at this moment:{" "}
-                    <strong>{Math.round((r.expected_recall_at_due ?? 0.85) * 100)}%</strong> · half-life{" "}
+                    <strong>{Math.round((r.expected_recall_at_due ?? 0.85) * 100)}%</strong> · recall halves after{" "}
                     {Math.round(r.half_life_hours ?? 0)} h · {r.reps ?? 0} successful review{r.reps === 1 ? "" : "s"}
                     {r.lapses ? `, ${r.lapses} lapse${r.lapses === 1 ? "" : "s"}` : ""}
                   </p>
@@ -205,7 +205,7 @@ export default function Review() {
         ) : (
           <>
             <p className="text-sm">
-              Brier score <strong>{cal.brier?.toFixed(3)}</strong> (lower is better; always-guessing-0.5 scores 0.25) ·
+              Brier score <strong>{cal.brier?.toFixed(3)}</strong> (lower is better, and answering 0.5 every time scores 0.25) ·
               expected calibration error <strong>{cal.ece?.toFixed(3)}</strong>
             </p>
             <div className="table-scroll">

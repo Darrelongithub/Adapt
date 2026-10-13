@@ -339,7 +339,7 @@ export default function LessonPlayer() {
           <h1 className="text-xl font-semibold">Interactive lessons</h1>
           <p className="max-w-[70ch] text-[13px] text-[var(--muted)]">
             {catalogue?.note ??
-              "every scene is computed by a simulation in the backend; nothing here is a video, and nothing here is graded into a mastery number"}
+              "Every scene is computed by a simulation in the backend. Nothing here is a video, and nothing here is graded into a mastery number."}
           </p>
         </div>
         <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
@@ -364,7 +364,7 @@ export default function LessonPlayer() {
           {!catalogue && !loadError ? (
             <Card title="lessons">
               <p className="text-[13px] text-[var(--muted)]">
-                asking the backend which scenes it has validated… the frames are computed there, so there is nothing to
+                Asking the backend which scenes it has validated. The frames are computed there, so there is nothing to
                 show until it answers.
               </p>
             </Card>
@@ -381,11 +381,11 @@ export default function LessonPlayer() {
           {!catalogue?.scenes.length ? (
             <Card title="nothing seeded">
               <p className="text-[13px] text-[var(--muted)]">
-                the backend has stored no scenes. they are seeded at startup from validated specifications, so an empty
+                The backend has stored no scenes. They are seeded at startup from validated specifications, so an empty
                 list means the seed step did not run.
               </p>
               <p className="mt-2 text-[12px] text-[var(--muted)]">
-                restart the backend: seeding runs once at startup, and it refuses to store a spec the validator
+                Restart the backend. Seeding runs once at startup, and it refuses to store a spec the validator
                 rejects.
               </p>
             </Card>
@@ -826,7 +826,7 @@ function VariablesPanel({
         </Field>
         {problem ? <Notice tone="bad">{problem}</Notice> : null}
         <Btn onClick={submit} disabled={busy || editable.length === 0}>
-          {busy ? "re-validating" : "re-run with these"}
+          {busy ? "checking again" : "run again with these"}
         </Btn>
         {!editable.length ? (
           <p className="text-[12px] text-[var(--warn)]">

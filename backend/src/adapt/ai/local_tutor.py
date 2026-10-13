@@ -263,7 +263,7 @@ def explain(
         "new": "Let's start from one concrete case.",
         "developing": f"You have most of {topic_title or 'this'}; here is the part that is missing.",
         "proficient": "Short version, then the edge case.",
-        "mastered": "You know this -- so here is the harder question instead.",
+        "mastered": "You know this — so here is the harder question instead.",
     }[level]
 
     # Content: pick the most relevant material sentences, de-duplicated.
@@ -290,7 +290,7 @@ def explain(
     else:
         add(
             f"Your notes do not cover {topic_title or 'that'} yet, so I will not guess at it. "
-            "Ask me about a topic in your course, or add the material and I will re-read it.",
+            "Ask me about a topic in your course, or add the material and I will read it again.",
             "explanation",
         )
         return Grounded(" ".join(parts), sections, sources, list(dmap), level, confident=False)
@@ -378,7 +378,7 @@ def feedback(item: dict[str, Any], answer: str | None, *, correct: bool, score: 
             bits.append(str(alt))
         steps = item.get("solution_steps") or []
         if steps and len(steps) > 1:
-            bits.append("What you did is step-general: the same move works on the next two.")
+            bits.append("What you did is step general: the same move works on the next two.")
     else:
         why = None
         for key, text in misc.items():

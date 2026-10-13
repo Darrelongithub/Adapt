@@ -183,7 +183,7 @@ class Narrator:
                 frame=int(frame_index),
                 citations=citations,
                 ok=False,
-                note="the model's answer was refused by the plain-text check",
+                note="the model's answer was refused by the plain text check",
             )
         return Answer(
             text=text,
@@ -294,7 +294,7 @@ def _template_answer(spec: dict[str, Any], frame_index: int, question: str) -> s
     if prev and here:
         parts.append(f"It follows from the previous step ({prev['cause'] or prev['kind']}), which is the only reason it happens.")
     parts.append(
-        "That is all the simulation can tell you about it right now -- the model that would paraphrase it further is not answering, "
+        "That is all the simulation can tell you about it right now — the model that would paraphrase it further is not answering, "
         "so nothing has been invented to fill the gap."
     )
     if question.strip():

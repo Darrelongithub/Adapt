@@ -162,7 +162,7 @@ export default function Settings() {
             <Btn kind="primary" onClick={savePrefs} disabled={busy}>
               {busy ? "…" : "Save"}
             </Btn>
-            <span className="text-xs text-[var(--muted)]">these apply now, without approval — they are requests you made</span>
+            <span className="text-xs text-[var(--muted)]">These apply straight away and need no approval, because they are requests you made.</span>
           </div>
           {reply ? (
             <Notice tone={rejected.length ? "warn" : "good"}>
@@ -291,7 +291,7 @@ export default function Settings() {
         {audit.error ? <Err error={audit.error} status={audit.status} /> : null}
         {entries.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">
-            Empty until something happens: approving or revoking a change, a sign-in, a deletion. It is not a log of your
+            Empty until something happens: approving or revoking a change, signing in, or a deletion. It is not a log of your
             answers — it is the log of the system acting, which is the thing worth auditing.
           </p>
         ) : (
@@ -364,7 +364,7 @@ export default function Settings() {
 function hintFor(k: string): string | undefined {
   switch (k) {
     case "push_me":
-      return "turns re-reading off and puts an attempt first";
+      return "turns rereading off and puts an attempt first";
     case "max_explanation_words": {
       return "the full explanation stays one click away";
     }

@@ -586,7 +586,7 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
       </p>
       {tb ? (
         <p className="mt-2 text-xs text-[var(--muted)]">
-          teach-back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
+          teach back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
           {tb.missing?.length ? <> — missing <em>{tb.missing.join(", ")}</em></> : <> — all there</>}
           {tb.followup ? <>. {tb.followup}</> : null}. {tb.note}
         </p>

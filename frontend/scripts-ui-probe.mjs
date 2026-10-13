@@ -481,7 +481,15 @@ async function main() {
     return page;
   };
 
-  const learner = { email: `probe-${Date.now().toString(36)}@example.test`, password: "probe password long", name: "Probe Learner" };
+  const learner = {
+    // The door's own account: a username, which is what the form asks for now.
+    username: `probe.${Date.now().toString(36)}`,
+    // Kept for the fixture sign-in below and the other scenarios, which create their learner
+    // over the API with an email. Both identifier kinds have to keep working.
+    email: `probe-${Date.now().toString(36)}@example.test`,
+    password: "probe password long",
+    name: "Probe Learner",
+  };
   let csrf = "";
 
   // Scenarios are individually runnable, so any run that skipped the front door signs
@@ -577,10 +585,17 @@ async function main() {
 
     check("home", "a signed-out visitor is offered both ways in", !!page.byText("Continue as guest", "button") && !!page.byText("Sign in", "button"), page.text().slice(0, 180));
     await page.click("Create account", "button");
-    await waitFor(() => page.find('input[type="email"]').length > 0, { label: "the create-account form" });
-    check("home", "the create-account tab asks for a name, an email and a password", page.find('input[type="email"]').length === 1 && page.find('input[type="password"]').length === 1 && page.find('input[type="text"]').length >= 1, `${page.find("input").length} inputs`);
-    page.type(page.find('input[type="text"]')[0] ?? page.find("input")[0], learner.name);
-    page.type(page.find('input[type="email"]')[0], learner.email);
+    // The form is two identity fields and no email: the account is found again by username.
+    await waitFor(() => page.find('input[autocomplete="username"]').length > 0, { label: "the create-account form" });
+    check(
+      "home",
+      "the create-account tab asks for a username and a password, and no email",
+      page.find('input[autocomplete="username"]').length === 1 &&
+        page.find('input[type="password"]').length === 1 &&
+        page.find('input[type="email"]').length === 0,
+      `${page.find("input").length} inputs, types: ${page.find("input").map((i) => i.type || i.getAttribute("autocomplete")).join(", ")}`,
+    );
+    page.type(page.find('input[autocomplete="username"]')[0], learner.username);
     page.type(page.find('input[type="password"]')[0], learner.password);
     const submit = page.find('button[type="submit"]')[0];
     check("home", "the submit button is enabled once the fields are filled", !!submit && !submit.disabled, submit ? "enabled" : "not found");
@@ -607,6 +622,16 @@ async function main() {
     check("home", "and a csrf token the page can read (by design, that one is not httpOnly)", csrf.length > 8, page.doc.cookie?.slice(0, 120) ?? "no document.cookie");
     const after = await api("/api/v1/me", { headers: { cookie } });
     check("home", "the session the browser got really authenticates", after.status === 200 && after.body.email === undefined ? true : after.status === 200, JSON.stringify(after.body).slice(0, 160));
+    // The account has to be findable by the identifier the door asked for, or the next visit
+    // cannot get back in: this signs out, signs back in with the typed username, and checks
+    // the same learner row answers.
+    const back = await api("/api/v1/login", { method: "POST", body: { username: learner.username, password: learner.password } });
+    check(
+      "home",
+      "and the username it was made with signs back into the same account",
+      back.status === 200 && back.body.student_id === after.body.student_id,
+      `${back.status} ${JSON.stringify(back.body).slice(0, 120)}`,
+    );
 
     /* ---- signed in, home is status and one way forward (brief 2.5) ----
      * The screen this redesign replaced carried a word-field menu of every section: a second
@@ -653,10 +678,17 @@ async function main() {
     check("onboarding", "the setup screen renders as a form, not an error", /Time and words/.test(page.text()) && page.find("input").length >= 3, page.text().slice(0, 140));
     // the form is seeded from GET me/preferences; editing before that lands loses the edits
     await waitFor(() => [...page.find("span")].some((el) => el.textContent?.trim() === "weekly_minutes"), { timeout: 15_000, label: "the allowed-key list from the server" });
-    // The page talks *about* learning styles in the card that explains why it refuses to ask.
-    // What must not exist is a field that asks for one, so the check is on the controls.
+    // The screen does not raise the idea at all any more (the paragraph that explained the
+    // refusal was removed, at the user's instruction), so the check can be made about the whole
+    // screen rather than only its controls -- a stronger claim than the one it replaces.
     const fieldText = [...page.find("label, .field, [data-field]")].map((el) => el.textContent ?? "").join(" ");
-    check("onboarding", "no input asks the learner for a learning style", !/learning style|visual learner|auditory|kinesthetic/i.test(fieldText) && page.find("input,select,textarea").every((el) => !/style/.test(el.name ?? "")), fieldText.slice(0, 160));
+    check(
+      "onboarding",
+      "no input asks the learner for a learning style",
+      !/learning styles?|visual learner|auditory|kinesthetic/i.test(page.text()) &&
+        page.find("input,select,textarea").every((el) => !/style/.test(el.name ?? "")),
+      fieldText.slice(0, 160),
+    );
     const goal = page.find("input[type='text']")[0];
     if (goal) page.type(goal, "GCSE maths, higher tier");
     const numbers = page.find('input[type="number"]');
@@ -1562,7 +1594,7 @@ async function main() {
     // and it carries the frame's own words.
     const choice = page
       .find('button.option-card[role="radio"]')
-      .find((b) => !/next|back|play|end|ask|re-run/.test(b.textContent ?? ""));
+      .find((b) => !/next|back|play|end|ask|run again/.test(b.textContent ?? ""));
     check(
       "lesson",
       "the choices are the ones the frame carried",
@@ -1591,7 +1623,9 @@ async function main() {
     check("lesson", "the editable parameters are the ones the engine declares", !!values && !!target, page.find("input").map((i) => i.getAttribute("name")).join(","));
     page.type(values, "1, 4, 7, 9, 12, 15, 19, 23");
     page.type(target, "12");
-    await page.click("re-run with these", "button");
+    // the label follows the app's copy sweep ("run again with these"): the check is the same
+    // one -- new numbers, a new validated scene -- and it is still clicked by what it says
+    await page.click("run again with these", "button");
     await waitFor(() => /your own copy/.test(page.text()), { timeout: 12_000, label: "the derived scene to come back" });
     check("lesson", "changing the numbers says plainly that this is a new scene", /your own copy of the scene/.test(page.text()), page.text().match(/this is your own copy[^.]*\./)?.[0] ?? "");
     if (MOCK) {

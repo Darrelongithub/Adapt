@@ -75,12 +75,12 @@ export function EffectLine({ effect }: { effect: EffectSummary }) {
     <p className="text-xs text-[var(--muted)]">
       {gathering ? (
         <>
-          <span className="text-[var(--warn)]">being measured</span> — {number} from {before} answer{before === 1 ? "" : "s"} before
+          <span className="text-[var(--warn)]">being measured</span>: {number} from {before} answer{before === 1 ? "" : "s"} before
           and {after} after. Under {EARLY_SIGNAL_N} on either side this is a direction, not a result.{" "}
         </>
       ) : early ? (
         <>
-          <span className="text-[var(--warn)]">early signal</span> — {number} from {before} answer{before === 1 ? "" : "s"} before
+          <span className="text-[var(--warn)]">early signal</span>: {number} from {before} answer{before === 1 ? "" : "s"} before
           and {after} after. Under {EARLY_SIGNAL_N} on either side this is a direction, not a result.{" "}
         </>
       ) : (
@@ -88,7 +88,7 @@ export function EffectLine({ effect }: { effect: EffectSummary }) {
           {number} against the change ({before} before, {after} after).{" "}
         </>
       )}
-      {pilot ? <span className="text-[var(--think)]">{effect.label ?? "pilot data — not evidence of efficacy"}. </span> : null}
+      {pilot ? <span className="text-[var(--think)]">{effect.label ?? "pilot data, not evidence of efficacy"}. </span> : null}
       {effect.verdict_words ? <span className="opacity-80">{effect.verdict_words}</span> : null}
       {!effect.verdict_words && effect.explanation ? (
         <span className="opacity-80">{effect.explanation}</span>

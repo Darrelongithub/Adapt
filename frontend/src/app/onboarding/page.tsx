@@ -2,7 +2,7 @@
 
 /** Setup, and the one screen that has to be explicit about what it is *not* asking.
  *
- * There is no learning-styles question here by design: the onboarding payload has no
+ * There is no learning styles question here by design: the onboarding payload has no
  * key for it, and the note the server sends back says the same thing the blueprint does
  * — how you learn best is measured from what happens during practice. Free text about
  * what you want more or less of is welcome, because that is a request you are making,
@@ -128,7 +128,7 @@ export default function Onboarding() {
                 onChange={(e) => set("session_minutes")(Number(e.target.value))}
               />
             </Field>
-            <Field label="Longest explanation you want to read" hint="The full version is always one click away; this is the default length.">
+            <Field label="Longest explanation you want to read" hint="The full version is always one click away. This is the default length.">
               <Input
                 type="number"
                 min={20}
@@ -146,7 +146,7 @@ export default function Onboarding() {
               label="Push me to try before showing"
               checked={Boolean(form.push_me)}
               onChange={set("push_me")}
-              hint="Turns re-reading off and puts a short attempt first. It feels harder; that is the mechanism, not a side effect."
+              hint="Turns rereading off and puts a short attempt first. It feels harder, and that is the mechanism rather than a side effect."
             />
             <Field label="More of this" hint="Free text. It becomes a stated preference, and the tutor reads it.">
               <Input value={String(form.encourage)} onChange={(e) => set("encourage")(e.target.value)} placeholder="diagrams before symbols" />
@@ -227,13 +227,6 @@ export default function Onboarding() {
             </div>
           </Card>
         ) : null}
-        <Card title="What this screen refuses to ask" tone="muted">
-          <ul className="space-y-2 text-sm text-[var(--muted)]">
-            <li>“Are you a visual learner?” — the evidence does not support matching instruction to a stated style, and an answer here would only let the app label you.</li>
-            <li>“How smart are you?” — nothing on this app needs that number, and every downstream use of it would be worse.</li>
-            <li>Any permission it does not use. Consent for analytics and for the model summary are the only two, and both can be turned off later without losing practice.</li>
-          </ul>
-        </Card>
         <Card title="Allowed preference keys" tone="muted" right={<span>from the API</span>}>
           {prefs.loading ? <p className="text-sm text-[var(--muted)]">…</p> : null}
           {prefs.error ? <Err error={prefs.error} status={prefs.status} /> : null}

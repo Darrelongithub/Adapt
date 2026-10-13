@@ -283,7 +283,7 @@ def practice(
 ) -> dict[str, Any]:
     svcs = current()
     picks = svcs.ai2.next_items(student.id, topic_id=topic_id, count=max(1, min(12, count)))
-    return {"items": picks, "why": "selected for expected information gain, review due-date and gap utility"}
+    return {"items": picks, "why": "selected for expected information gain, review due date and gap utility"}
 
 
 @router.post("/review/complete")
@@ -292,7 +292,7 @@ def review_result(
     s: Session = Depends(db_session),
     student: Student = Depends(require_csrf),
 ) -> dict[str, Any]:
-    """A delayed retest that was not tied to a specific bank item (self-report)."""
+    """A delayed retest that was not tied to a specific bank item (self report)."""
     out = current().ai1.record_retention_check(
         student_id=student.id,
         topic_id=body.topic_id,
@@ -393,7 +393,7 @@ def strategies() -> dict[str, Any]:
         "strategies": [ST.get(k).as_dict() for k in ST.CATALOG],
         "persistent_require_approval": sorted(ST.PERSISTENT_STRATEGIES),
         "note": (
-            "In-the-moment help (a clearer explanation, one more example) is not here because it needs no "
+            "Help in the moment (a clearer explanation, one more example) is not here because it needs no "
             "approval: you asked for it. Only changes that keep applying after this screen are proposed, "
             "and only with your answer."
         ),

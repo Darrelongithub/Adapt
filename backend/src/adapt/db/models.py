@@ -40,7 +40,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from ..crypto.fields import BlindIndexedEmail, EncryptedJSON, EncryptedText
+from ..crypto.fields import BlindIndexedEmail, BlindIndexedUsername, EncryptedJSON, EncryptedText
 
 
 def utcnow() -> datetime:
@@ -153,6 +153,12 @@ class Student(Base):
     display_name: Mapped[str | None] = mapped_column(EncryptedText(context="student.name"))
     email: Mapped[str | None] = mapped_column(BlindIndexedEmail())
     email_index: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
+    # The identifier a learner signs in with on this build. Separate column, separate digest
+    # label (see `crypto/fields.py`), so "which identifier does this row carry" is answerable
+    # from the row rather than from a convention nobody can see. Email is kept for existing
+    # accounts and the tunnel demo, and either one signs in.
+    username: Mapped[str | None] = mapped_column(BlindIndexedUsername())
+    username_index: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(16), default="student")
 

@@ -352,8 +352,8 @@ area. What changed, and what a phone still has to confirm:
 
 ## Added by the visual-redesign pass (2026-10-13): navigation, consent, buttons
 
-* **Verified (jsdom, 207/207):** that the consent step renders before the account form and
-  before any `POST /students` on either the email or the guest path; that neither checkbox is
+* **Verified (jsdom, 208/208):** that the consent step renders before the account form and
+  before any `POST /students` on either the account or the guest path; that neither checkbox is
   pre-ticked; that the primary control is `disabled` until the required box is, and enabled
   after; that the optional box is a separate control and stays unticked; that Decline explains
   itself and creates nothing; that every screen's sidebar contains all seven destinations and
@@ -384,10 +384,15 @@ area. What changed, and what a phone still has to confirm:
   summary"). And "no decision" is still stored as consent by the database default
   (`Student.consent_analytics = True`) — see `docs/AUDIT.md`, fourth pass, for the shape of the
   fix and why flipping the default is not it.
+* **Added after the door became username + password (same day):** creating an account and
+  signing in with it are exercised over HTTP and asserted in the probe (`home`, 20/20), but the
+  *stored* identifier and its blind index are only covered by the backend suite; a laptop
+  check should make one account, sign out, sign in with the same name typed in a different
+  case, and confirm the greeting keeps the capitalisation that was typed.
 * **To check (~5 minutes on a laptop, then a phone):** load `/` and confirm the sidebar is
   visible without hovering anything and Settings is one click away; narrow the window past
   860px and confirm the Menu button opens the drawer and Escape closes it; tab through the
   consent step with the keyboard only and confirm the tick and the primary button are
-  reachable and visibly focused; submit the email path and confirm `/onboarding` shows the
-  consent answer carried from the door; then open `/progress` and confirm the chart, its
+  reachable and visibly focused; create an account and confirm `/onboarding` shows the consent
+  answer carried from the door; then open `/progress` and confirm the chart, its
   table and the marked sidebar item are all visible together at 1280px and at 375px.

@@ -46,7 +46,7 @@ def assert_evidence_only(payload: dict[str, Any]) -> None:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
             raise StyleLabelError(
-                f"rejected fixed-trait label {m.group(0)!r} in learner profile; "
+                f"rejected fixed trait label {m.group(0)!r} in learner profile; "
                 "ADAPT records topic mastery and measured responses only"
             )
 
