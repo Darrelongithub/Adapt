@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any, Iterable, Mapping, Sequence
 
-from .games import Trial, calibration, measured, predicted_vs_actual
+from .games import Trial, calibration, measured, predicted_vs_actual, trial_action
 
 #: The eight factors, in the order the snapshot shows them. Prior knowledge is filled in Phase 3
 #: (the subject round); this module reports it as not measured until that evidence exists.
@@ -118,7 +118,9 @@ def _working_memory(trials: Sequence[Trial]) -> Factor:
     forward = max([int(t.task.get("length") or 0) for t in measured(trials) if t.game == "vault" and t.task.get("direction") == "forward" and t.correct] or [0])
     backward = max([int(t.task.get("length") or 0) for t in measured(trials) if t.game == "vault" and t.task.get("direction") == "backward" and t.correct] or [0])
     shop = [t for t in measured(trials) if t.game == "shopkeeper" and t.correct is not None]
-    recall_hits = [int((t.response.get("hits") if isinstance(t.response.get("hits"), int) else (t.response.get("scored") or {}).get("hits")) or 0) for t in shop]
+    recall_hits = [
+        int(((t.response.get("scored") or {}).get("hits") or 0)) for t in shop
+    ]
     n = len(measured([t for t in trials if t.game in ("vault", "shopkeeper")]))
     if n < MIN_N["working_memory"] or not spans:
         return _not_measured("working_memory", need=MIN_N["working_memory"], n=n, what="a few more tile sequences")
@@ -128,7 +130,11 @@ def _working_memory(trials: Sequence[Trial]) -> Factor:
     # false precision the brief explicitly forbids.
     low = max(2.0, best - 1)
     high = min(9.0, best + 0.5)
-    distractor_accuracy = [t.response.get("distractor_accuracy") for t in shop if t.response.get("distractor_accuracy") is not None]
+    distractor_accuracy = [
+        (t.response.get("scored") or {}).get("distractor_accuracy")
+        for t in shop
+        if (t.response.get("scored") or {}).get("distractor_accuracy") is not None
+    ]
     return Factor(
         key="working_memory",
         title=FACTOR_TITLES["working_memory"],
@@ -212,7 +218,12 @@ def _attention(trials: Sequence[Trial]) -> Factor:
     # Pause time on a trap is the measurement of "did you think about it": the near-miss of the
     # intuitive answer is kept beside it, because the interesting case is the learner who paused,
     # saw the trap, and still chose the wrong one.
-    pauses = [int(t.latency_ms) for t in traps if t.latency_ms]
+    pauses = [int(t.latency_ms) for t in traps if t.latency_ms is not None]
+    pause_note = (
+        f" On the two questions where the obvious answer is wrong, you paused about {median(pauses) / 1000:.1f} seconds."
+        if pauses
+        else " Response timing for the trap questions was not recorded."
+    )
     return Factor(
         key="attention_self_control",
         title=FACTOR_TITLES["attention_self_control"],
@@ -226,10 +237,7 @@ def _attention(trials: Sequence[Trial]) -> Factor:
             + ("held up" if last_acc >= first_acc - 0.1 else "dropped")
             + " toward the end of the session, so "
             + ("blocks can stay long" if last_acc >= first_acc - 0.1 else "the app will shorten blocks and add a check-in")
-            + ("."
-               if not traps
-               else f" On the two questions where the obvious answer is wrong, you paused about "
-               f"{(sorted(pauses)[len(pauses) // 2] / 1000) if pauses else 0:.1f} seconds.")
+            + ("." if not traps else pause_note)
         ),
         actions=(
             ("keep blocks long" if last_acc >= first_acc - 0.1 else "shorten blocks and add a check-in"),
@@ -254,7 +262,7 @@ def _long_term_memory(trials: Sequence[Trial]) -> Factor:
     if n < MIN_N["long_term_memory"]:
         return _not_measured("long_term_memory", need=MIN_N["long_term_memory"], n=n, what="finishing the codeword round")
     immediate_score = _band_score(*[(0.0, bool(t.correct)) for t in immediate])
-    free_hits = [int(t.response.get("hits") or 0) for t in free]
+    free_hits = [int((t.response.get("scored") or {}).get("hits") or 0) for t in free]
     free_score = (max(free_hits) / 8.0) if free_hits else None
     recog_score = _band_score(*[(0.0, bool(t.correct)) for t in recog]) if recog else None
     gap = None
@@ -291,13 +299,14 @@ def _long_term_memory(trials: Sequence[Trial]) -> Factor:
 
 def _reasoning(trials: Sequence[Trial]) -> Factor:
     machines = [t for t in measured(trials) if t.game == "machine"]
-    guesses = [t for t in machines if t.task.get("action") == "guess"]
-    probes = [t for t in machines if t.task.get("action") == "probe"]
+    guesses = [t for t in machines if trial_action(t) == "guess"]
+    probes = [t for t in machines if trial_action(t) == "probe"]
     n = len(probes) + len(guesses)
     if n < MIN_N["reasoning"]:
         return _not_measured("reasoning", need=MIN_N["reasoning"], n=n, what="finishing a machine round")
-    falsifying = sum(1 for t in probes if t.response.get("falsifying"))
-    first_guess_wrong = [g for g in guesses[:3] if not g.correct]
+    falsifying = sum(
+        1 for t in probes if (t.response.get("scored") or {}).get("falsifying")
+    )
     solved = [g for g in guesses if g.correct]
     tries_to_first_guess = None
     if guesses:
@@ -328,7 +337,9 @@ def _reasoning(trials: Sequence[Trial]) -> Factor:
             "first_guess_correct": bool(guesses and guesses[0].correct),
             "tries_before_first_guess": tries_to_first_guess,
             "rounds_solved": len(solved),
-            "noticed_the_switch": bool([t for t in machines if t.response.get("noticed")]),
+            "noticed_the_switch": bool(
+                [t for t in guesses if (t.response.get("scored") or {}).get("noticed")]
+            ),
         },
     )
 
@@ -367,26 +378,31 @@ def _metacognition(trials: Sequence[Trial]) -> Factor:
 
 def _persistence(trials: Sequence[Trial]) -> Factor:
     box = [t for t in trials if t.game == "locked_box"]
-    attempts = [t for t in box if t.task.get("action") == "attempt"]
-    hints = [t for t in box if t.task.get("action") == "hint"]
-    quit_trial = next((t for t in box if t.task.get("action") == "walk_away"), None)
+    attempts = [t for t in box if trial_action(t) == "attempt"]
+    hints = [t for t in box if trial_action(t) == "hint"]
+    quit_trial = next((t for t in box if trial_action(t) == "walk_away"), None)
     n = len(attempts) + len(hints) + (1 if quit_trial else 0)
-    starter = next((t for t in box if t.task.get("action") == "start"), None)
+    starter = next((t for t in box if trial_action(t) == "start"), None)
     if n < MIN_N["persistence_help_seeking"] or starter is None:
         return _not_measured("persistence_help_seeking", need=MIN_N["persistence_help_seeking"], n=n, what="trying the locked box")
     first_hint_ms = None
-    if hints and starter:
-        first_hint_ms = int(hints[0].latency_ms or 0) or None
+    if hints:
+        first_hint = min(hints, key=lambda t: t.index)
+        # The client times the whole puzzle, rather than restarting the clock after each hint or
+        # attempt. This is time to the first request for help, not time spent reading the hint.
+        first_hint_ms = int(first_hint.latency_ms or 0) or None
     wrong_attempts = [a for a in attempts if a.correct is False]
     after_wrong_retry = None
     if wrong_attempts:
         last_wrong = wrong_attempts[-1]
-        after = [t for t in box if t.index > last_wrong.index and t.task.get("action") == "attempt"]
+        after = [t for t in box if t.index > last_wrong.index and trial_action(t) == "attempt"]
         after_wrong_retry = len(after) > 0
     minutes = None
     if starter and (quit_trial or attempts or hints):
         last = max([t for t in box if t.index >= starter.index], key=lambda t: t.index)
-        minutes = round(((last.latency_ms or 0) + sum(int(t.latency_ms or 0) for t in box if t.index <= last.index)) / 60000, 2)
+        # As with the hint time, this is cumulative time from the puzzle screen to the final
+        # action, supplied by the client; adding per-action cumulative values would double count.
+        minutes = round(int(last.latency_ms or 0) / 60000, 2) if last.latency_ms is not None else None
     return Factor(
         key="persistence_help_seeking",
         title=FACTOR_TITLES["persistence_help_seeking"],
@@ -406,7 +422,9 @@ def _persistence(trials: Sequence[Trial]) -> Factor:
         ),
         detail={
             "hints_used": len(hints),
-            "hint_cost": sum(int(h.response.get("cost") or 0) for h in hints),
+            "hint_cost": sum(
+                int((h.response.get("scored") or {}).get("cost") or 0) for h in hints
+            ),
             "wrong_attempts": len(wrong_attempts),
             "time_to_first_hint_ms": first_hint_ms,
             "walked_away": bool(quit_trial),
@@ -531,8 +549,10 @@ def levers(factors: Mapping[str, Factor], *, preferences: Mapping[str, Any] | No
         else:
             confidence_prompting, why_conf = "keep_asking", f"well calibrated within {abs(index):.0%} (n={meta.n})"
 
-    tone = str(prefs.get("feedback_style") or "straight")
-    language = str(prefs.get("language") or "en")
+    tone_stated = prefs.get("feedback_style")
+    language_stated = prefs.get("language")
+    tone = str(tone_stated or "straight")
+    language = str(language_stated or "en")
     timers_visible = bool(prefs.get("timers_help", True))
     pace_lever = "measured"
     why_pace = "no pace measurement yet"
@@ -542,17 +562,33 @@ def levers(factors: Mapping[str, Factor], *, preferences: Mapping[str, Any] | No
         why_pace = f"median {pace.detail.get('median_ms')}ms per quick tap, drift {drift:+.0%} across the session (n={pace.n})"
 
     return {
-        "step_size": {"value": step_size, "why": why_step, "source": "measured"},
+        "step_size": {"value": step_size, "why": why_step, "source": "measured" if wm.state == "measured" else "default"},
         "lead_format_prior": {"value": lead_format_prior, "why": why_lead, "source": "stated" if stated_format else "default"},
         "pace": {"value": pace_lever, "why": why_pace, "source": "measured" if pace.state == "measured" else "default"},
         "review_halflife_prior": {"value": halflife, "why": why_hl, "source": "measured" if ltm.state == "measured" else "default"},
         "hint_policy": {"value": hint_policy, "why": why_hint, "source": "measured" if persist.state == "measured" else "default"},
         "confidence_prompting": {"value": confidence_prompting, "why": why_conf, "source": "measured" if meta.state == "measured" else "default"},
-        "tone": {"value": tone, "why": "you chose how you want to hear that you got something wrong (stated)", "source": "stated"},
-        "language": {"value": language, "why": "you chose the language for explanations (stated)", "source": "stated"},
-        "timers_visible": {"value": timers_visible, "why": "you said timers " + ("help" if timers_visible else "stress you") + " (stated)", "source": "stated"},
-        "attention_note": {"value": att.summary, "why": "attention and self-control across the session", "source": "measured"},
-        "reasoning_note": {"value": reason.summary, "why": "how you tested the machine's rule", "source": "measured"},
+        "tone": {
+            "value": tone,
+            "why": "you chose how you want to hear that you got something wrong (stated)" if tone_stated else "default tone until you choose one",
+            "source": "stated" if tone_stated else "default",
+        },
+        "language": {
+            "value": language,
+            "why": "you chose the language for explanations (stated)" if language_stated else "default language until you choose one",
+            "source": "stated" if language_stated else "default",
+        },
+        "timers_visible": {
+            "value": timers_visible,
+            "why": (
+                "you said timers " + ("help" if timers_visible else "stress you") + " (stated)"
+                if "timers_help" in prefs
+                else "timers are visible by default until you tell us otherwise"
+            ),
+            "source": "stated" if "timers_help" in prefs else "default",
+        },
+        "attention_note": {"value": att.summary, "why": "attention and self-control across the session", "source": "measured" if att.state == "measured" else "default"},
+        "reasoning_note": {"value": reason.summary, "why": "how you tested the machine's rule", "source": "measured" if reason.state == "measured" else "default"},
     }
 
 

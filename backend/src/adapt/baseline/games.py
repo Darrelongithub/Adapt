@@ -62,7 +62,22 @@ class Trial:
 
     @property
     def measured(self) -> bool:
-        return self.phase != "practice"
+        return self.phase not in ("practice", "show")
+
+
+def trial_action(trial: Trial) -> str:
+    """Return the action taken, whether it was part of the generated task or the response.
+
+    Probe/guess and hint/attempt are learner choices, so the task generator cannot know them
+    ahead of time. Reading only ``trial.task['action']`` silently discarded those actions and
+    left the machine game with an endless stream of probes. Keep the response as the source of
+    truth while supporting older rows/tests that stamped the action on the task.
+    """
+    for source in (trial.response, trial.response.get("scored", {}), trial.task):
+        action = source.get("action") if isinstance(source, Mapping) else None
+        if action:
+            return str(action)
+    return ""
 
 
 def measured(trials: Iterable[Trial]) -> list[Trial]:
@@ -192,7 +207,7 @@ def vault_next(seed: int, trials: Sequence[Trial], direction: str) -> dict[str, 
             "direction": direction,
             "length": 3,
             "sequence": seq,
-            "answer_direction": "forward",
+            "answer_direction": direction,
             "prompt": (
                 "Watch the tiles light up, then tap them in the same order."
                 if direction == "forward"
@@ -227,7 +242,6 @@ def vault_next(seed: int, trials: Sequence[Trial], direction: str) -> dict[str, 
         attempt += 1
         if attempt >= 4:
             return None
-    wanted = "forward" if len(measured(done)) == 0 else "backward"
     seq = _vault_sequence(seed, direction, length, attempt)
     return {
         "id": f"vault_{direction}_{length}_{attempt}",
@@ -236,13 +250,13 @@ def vault_next(seed: int, trials: Sequence[Trial], direction: str) -> dict[str, 
         "direction": direction,
         "length": length,
         "sequence": seq,
-        # Both directions are graded identically: the learner taps tiles, the server compares
-        # against the sequence or its reverse. Recording the rule makes a mis-scored trial
-        # legible after the fact.
-        "answer_direction": wanted,
+        # The two blocks do not switch direction after the first item: every task in the
+        # forward block expects forward recall, and every task in the backward block expects
+        # backward recall.
+        "answer_direction": direction,
         "prompt": (
             f"{length} tiles. Tap them in the same order."
-            if wanted == "forward"
+            if direction == "forward"
             else f"{length} tiles. Tap them in the reverse order."
         ),
         "practice": False,
@@ -282,7 +296,9 @@ def shopkeeper_next(seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None
     afterwards. `recall under distraction` is compared with the same learner's plain span, which is
     why both live in the working-memory factor.
     """
-    done = [t for t in trials]
+    # ``trials`` is the run log, not a shopkeeper-only slice. Filter here so earlier
+    # codeword/quick-tap results cannot make this game disappear before it starts.
+    done = [t for t in trials if t.game == "shopkeeper"]
     if not done:
         return {
             "id": "vault_shop_practice",
@@ -411,16 +427,17 @@ def codewords_cued(seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None:
 
 
 def codewords_delayed(seed: int, trials: Sequence[Trial], *, kind: str) -> dict[str, Any] | None:
-    """Delayed free recall, then recognition (brief §5.2).
+    """Delayed free recall, then one recognition check for each studied pair (brief §5.2).
 
-    The gap between free recall and recognition is itself the measurement — a learner who recognises
-    what they could not produce has a retrieval problem, not an encoding one, and that changes what
-    the app should do next.
+    The run log contains every game. Count only delayed-codeword rows of the requested kind;
+    otherwise the earlier immediate-recall and quick-tap trials suppress free recall, or a
+    recognition prompt is served repeatedly with the same id.
     """
-    done = [t for t in trials if t.phase == "measure"]
+    done = [t for t in trials if t.game == "codewords_delayed"]
     pairs = codewords_pairs(seed)
+    free_done = any(t.task.get("kind") == "free" for t in done)
     if kind == "free":
-        if done:
+        if free_done:
             return None
         return {
             "id": "codewords_delayed_free",
@@ -430,19 +447,15 @@ def codewords_delayed(seed: int, trials: Sequence[Trial], *, kind: str) -> dict[
             "prompt": "Type as many of the eight code words as you can remember, separated by commas.",
             "max_latency_ms": 90_000,
         }
-    if len(done) < 1:
+    if kind != "recognition" or not free_done:
         return None
-    index = len(done) - 1
-    if index >= len(pairs) * 2:
-        return None
+    index = sum(1 for t in done if t.task.get("kind") == "recognition")
     if index >= len(pairs):
         return None
     pair = pairs[index]
     r = rng(seed, "recog", index)
     options = [pair["place"]]
-    for other in pairs:
-        if other["place"] != pair["place"]:
-            options.append(other["place"])
+    options.extend(other["place"] for other in pairs if other["place"] != pair["place"])
     r.shuffle(options)
     options = options[:4]
     if pair["place"] not in options:  # pragma: no cover - defensive, the shuffle cannot drop it
@@ -462,7 +475,7 @@ def codewords_delayed(seed: int, trials: Sequence[Trial], *, kind: str) -> dict[
 
 def codewords_next_day(seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None:
     """The next-day check: three cues from the same set, no new study."""
-    done = [t for t in trials if t.phase == "measure"]
+    done = [t for t in trials if t.game == "codewords_next_day" and t.phase == "measure"]
     if len(done) >= 3:
         return None
     pairs = codewords_pairs(seed)
@@ -585,10 +598,13 @@ def machine_next(seed: int, trials: Sequence[Trial], round_no: int) -> dict[str,
             "warmup_inputs": [1, 2, 5],
             "max_latency_ms": 120000,
         }
-    probes = [t for t in done if t.task.get("action") == "probe"]
-    guesses = [t for t in done if t.task.get("action") == "guess"]
-    wrong = [g for g in guesses if not g.correct]
-    solved = any(g.correct for g in guesses)
+    # Practice is a demonstration, not part of the probe or wrong-guess budget. Actions live
+    # in the response because a task can be either a probe or a guess.
+    measured_done = [t for t in done if t.phase == "measure"]
+    probes = [t for t in measured_done if trial_action(t) == "probe"]
+    guesses = [t for t in measured_done if trial_action(t) == "guess"]
+    wrong = [g for g in guesses if g.correct is False]
+    solved = any(g.correct is True for g in guesses)
     if solved or len(wrong) >= MACHINE_MAX_WRONG_GUESSES or len(probes) >= MACHINE_TEST_INPUTS:
         return None
     return {
@@ -614,8 +630,16 @@ def machine_respond(seed: int, round_no: int, task: Mapping[str, Any], response:
     the rule the code is holding.
     """
     rule_one, rule_two, switch_at = machine_rule(seed, round_no)
-    probes_done = len([t for t in trials if t.task.get("round") == round_no and t.task.get("action") == "probe"])
-    rule = rule_two if (rule_two is not None and probes_done >= switch_at + 1) else rule_one
+    probes_done = len(
+        [
+            t
+            for t in trials
+            if t.task.get("round") == round_no
+            and t.phase == "measure"
+            and trial_action(t) == "probe"
+        ]
+    )
+    rule = rule_two if (rule_two is not None and probes_done >= switch_at) else rule_one
     action = str(response.get("action") or "probe")
     if action == "guess":
         text = str(response.get("text") or "")
@@ -685,18 +709,33 @@ def machine_switched(seed: int, round_no: int, trials: Sequence[Trial]) -> dict[
     rule_one, rule_two, switch_at = machine_rule(seed, round_no)
     if rule_two is None:
         return {"switched": False}
-    probes = [t for t in trials if t.task.get("round") == round_no and t.task.get("action") == "probe"]
-    after = [t for t in probes[switch_at:]]
-    new_rule_probes = [t for t in after if _guess_matches(str(t.response.get("text") or ""), rule_two)]
-    guessed_new = [
-        t for t in trials if t.task.get("round") == round_no and t.task.get("action") == "guess" and t.correct and str(t.response.get("rule") or "") == rule_two.name
-    ]
+    round_trials = [t for t in trials if t.task.get("round") == round_no and t.phase == "measure"]
+    probes = [t for t in round_trials if trial_action(t) == "probe"]
+    after = probes[switch_at:]
+    guesses_after_switch: list[Trial] = []
+    probes_seen = 0
+    for trial in sorted(round_trials, key=lambda t: t.index):
+        action = trial_action(trial)
+        if action == "guess" and probes_seen >= switch_at:
+            guesses_after_switch.append(trial)
+        elif action == "probe":
+            probes_seen += 1
+    noticed = next(
+        (
+            t
+            for t in guesses_after_switch
+            if _guess_matches(str(t.response.get("text") or ""), rule_two)
+        ),
+        None,
+    )
     return {
         "switched": True,
         "switch_after_probe": switch_at,
         "probes_after_switch": len(after),
-        "noticed": bool(new_rule_probes or guessed_new),
-        "probes_before_noticing": (new_rule_probes[0].index - switch_at) if new_rule_probes else None,
+        "noticed": noticed is not None,
+        "probes_before_noticing": (
+            sum(1 for t in probes if t.index < noticed.index) - switch_at if noticed else None
+        ),
     }
 
 
@@ -779,6 +818,20 @@ def quick_trial(index: int) -> dict[str, Any]:
     }
 
 
+def trap_practice_task() -> dict[str, Any]:
+    """A neutral practice choice so the instruction is clear before either trap is measured."""
+    return {
+        "id": "trap_practice",
+        "game": "trap",
+        "phase": "practice",
+        "story": "A bowl has four pears and two apples.",
+        "prompt": "How many pieces of fruit are in the bowl?",
+        "options": ["4", "6", "8"],
+        "answer": "6",
+        "max_latency_ms": 30000,
+    }
+
+
 def trap_task(index: int) -> dict[str, Any]:
     t = TRAPS[index % len(TRAPS)]
     return {
@@ -807,9 +860,27 @@ def choice_score(task: Mapping[str, Any], response: Mapping[str, Any]) -> dict[s
 MAX_WAGER = 3
 
 
-def wager_allowed(task: Mapping[str, Any]) -> bool:
-    """A wager needs an answer that can be right or wrong, and not a practice trial."""
-    return task.get("phase") == "measure" and task.get("game") in ("codewords_cued", "codewords_delayed", "trap", "quick")
+def wager_allowed(task: Mapping[str, Any], *, action: str | None = None) -> bool:
+    """Whether a 0–3 confidence wager belongs on this task.
+
+    The round intro, an unscored practice, a study display, and non-answer machine probes are
+    never wagered. The same predicate is used by the server and the baseline UI.
+    """
+    if task.get("phase") != "measure":
+        return False
+    game = task.get("game")
+    if game == "machine":
+        return action == "guess"
+    if game == "codewords_delayed" and (action == "predict" or task.get("action") == "predict"):
+        return False
+    return game in (
+        "codewords_cued",
+        "codewords_delayed",
+        "quick",
+        "shopkeeper",
+        "trap",
+        "vault",
+    )
 
 
 def calibration(trials: Sequence[Trial]) -> dict[str, Any]:
@@ -842,19 +913,32 @@ def calibration(trials: Sequence[Trial]) -> dict[str, Any]:
 
 
 def predicted_vs_actual(trials: Sequence[Trial]) -> dict[str, Any] | None:
-    predicted = [t for t in trials if t.task.get("action") == "predict"]
-    if not predicted:
+    predicted = [
+        t for t in trials if t.game == "codewords_delayed" and trial_action(t) == "predict"
+    ]
+    free = [
+        t
+        for t in trials
+        if t.game == "codewords_delayed" and t.task.get("kind") == "free" and t.measured
+    ]
+    if not predicted or not free:
         return None
-    p = predicted[0]
     try:
-        guess = float(p.response.get("value"))
+        guess = float(predicted[0].response.get("value"))
     except (TypeError, ValueError):
         return None
-    scored = [t for t in measured(trials) if t.correct is not None]
-    if not scored:
+    score = free[0].response.get("scored", {})
+    try:
+        actual = float(score.get("hits", free[0].response.get("hits", 0)))
+    except (AttributeError, TypeError, ValueError):
         return None
-    actual = sum(1 for t in scored if t.correct) / len(scored)
-    return {"predicted": guess, "actual": round(actual, 3), "n": len(scored), "gap": round(guess - actual, 3)}
+    return {
+        "predicted": guess,
+        "actual": actual,
+        "of": 8,
+        "n": 8,
+        "gap": round(guess - actual, 3),
+    }
 
 
 __all__ = [
