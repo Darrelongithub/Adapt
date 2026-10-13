@@ -148,7 +148,7 @@ export default function Settings() {
                 ) : NUMERIC.has(k) ? (
                   <input
                     type="number"
-                    className="w-full rounded-md border border-[var(--line)] bg-black/25 px-3 py-2 text-sm"
+                    className="w-full rounded-md border border-[var(--line)] bg-[var(--bg-elev)] px-3 py-2 text-sm text-ink"
                     value={String(form[k] ?? "")}
                     onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
                   />
@@ -207,7 +207,7 @@ export default function Settings() {
               {consent.voice ? (
                 <Field label="Voice for replies">
                   <select
-                    className="w-full rounded-md border border-[var(--line)] bg-black/25 px-3 py-2 text-sm"
+                    className="w-full rounded-md border border-[var(--line)] bg-[var(--bg-elev)] px-3 py-2 text-sm text-ink"
                     value={consent.gender}
                     onChange={(e) => setConsent((c) => ({ ...c, gender: e.target.value }))}
                   >
@@ -227,7 +227,7 @@ export default function Settings() {
             <ul className="space-y-1 text-xs text-[var(--muted)]">
               {Object.entries(status.data ?? {}).map(([k, v]) => (
                 <li key={k}>
-                  <span className="text-[var(--fg)]/70">{k.replace(/_/g, " ")}:</span> {typeof v === "object" ? humanize(v) : String(v)}
+                  <span className="text-ink-2">{k.replace(/_/g, " ")}:</span> {typeof v === "object" ? humanize(v) : String(v)}
                 </li>
               ))}
             </ul>
@@ -261,12 +261,12 @@ export default function Settings() {
         <div className="mt-3 grid gap-2 text-xs text-[var(--muted)] md:grid-cols-2">
           {Object.entries(privacy.data?.sent_to_gemini ?? {}).map(([k, v]) => (
             <p key={k}>
-              <span className="text-[var(--fg)]/70">to the model · {k.replace(/_/g, " ")}:</span> {v}
+              <span className="text-ink-2">to the model · {k.replace(/_/g, " ")}:</span> {v}
             </p>
           ))}
           {Object.entries(privacy.data?.voice ?? {}).map(([k, v]) => (
             <p key={k}>
-              <span className="text-[var(--fg)]/70">voice · {k.replace(/_/g, " ")}:</span> {v}
+              <span className="text-ink-2">voice · {k.replace(/_/g, " ")}:</span> {v}
             </p>
           ))}
         </div>

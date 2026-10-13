@@ -120,7 +120,7 @@ export default function Diagnose() {
           <ol className="mt-2 space-y-1 text-xs text-[var(--muted)]">
             {report.loop.map((l, i) => (
               <li key={i}>
-                <span className="text-[var(--fg)]/70">{l.step}</span> — {l.done}
+                <span className="text-ink-2">{l.step}</span> — {l.done}
                 {l.evidence ? <span className="opacity-70"> ({l.evidence})</span> : null}
               </li>
             ))}
