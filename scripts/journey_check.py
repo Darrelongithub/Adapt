@@ -164,7 +164,7 @@ def main() -> int:
             })
             if status == 200:
                 answered += 1
-        check(answered >= 10, "answers are accepted and recorded", f"{answered}/{len(items)} accepted")
+        check(answered == len(items) and answered >= 8, "answers are accepted and recorded", f"{answered}/{len(items)} accepted")
         status, done = c.call("POST", f"/api/v1/sessions/{sid}/finish", {})
         check(status == 200, "placement can be finished", f"{status} {str(done)[:160]}")
         status, prog = c.call("GET", "/api/v1/dashboard")
@@ -177,7 +177,7 @@ def main() -> int:
         for round_no in range(3):
             status, sess2 = c.call("POST", "/api/v1/sessions", {"mode": "practice"})
             rsid = sess2.get("session_id")
-            status, plan = c.call("GET", "/api/v1/practice?count=6")
+            status, plan = c.call("GET", "/api/v1/practice?count=8")
             for j, entry in enumerate(plan.get("items") or []):
                 item = entry["item"]
                 if item["kind"] == "numeric":
