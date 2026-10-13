@@ -282,7 +282,11 @@ def shopkeeper_next(seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None
     afterwards. `recall under distraction` is compared with the same learner's plain span, which is
     why both live in the working-memory factor.
     """
-    done = [t for t in trials]
+    # Filtered to this game's own trials: `next_task_for` hands every generator the whole run's
+    # log, and counting all of it here meant the stage looked finished the moment anything else had
+    # been measured -- so the shopkeeper never ran at all and "recall under distraction" was
+    # silently missing from the working-memory factor.
+    done = [t for t in trials if t.game == "shopkeeper"]
     if not done:
         return {
             "id": "vault_shop_practice",
@@ -417,7 +421,7 @@ def codewords_delayed(seed: int, trials: Sequence[Trial], *, kind: str) -> dict[
     what they could not produce has a retrieval problem, not an encoding one, and that changes what
     the app should do next.
     """
-    done = [t for t in trials if t.phase == "measure"]
+    done = [t for t in trials if t.game == "codewords_delayed" and t.phase == "measure"]
     pairs = codewords_pairs(seed)
     if kind == "free":
         if done:
@@ -461,8 +465,13 @@ def codewords_delayed(seed: int, trials: Sequence[Trial], *, kind: str) -> dict[
 
 
 def codewords_next_day(seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None:
-    """The next-day check: three cues from the same set, no new study."""
-    done = [t for t in trials if t.phase == "measure"]
+    """The next-day check: three cues from the same set, no new study.
+
+    ``done`` is filtered to this game's own trials. Counting every measured trial in the run would
+    make the check vanish the moment the learner had answered three questions of anything — which is
+    exactly what it did until a test with a stop-early baseline caught it.
+    """
+    done = [t for t in trials if t.game == "codewords_next_day" and t.phase == "measure"]
     if len(done) >= 3:
         return None
     pairs = codewords_pairs(seed)
@@ -686,17 +695,33 @@ def machine_switched(seed: int, round_no: int, trials: Sequence[Trial]) -> dict[
     if rule_two is None:
         return {"switched": False}
     probes = [t for t in trials if t.task.get("round") == round_no and t.task.get("action") == "probe"]
-    after = [t for t in probes[switch_at:]]
-    new_rule_probes = [t for t in after if _guess_matches(str(t.response.get("text") or ""), rule_two)]
+    after = probes[switch_at:]
+    # "Noticed" = a probe after the switch whose *output* matched the new rule. That is the moment
+    # the learner's model of the machine had to change; a guess that happens to name the new rule
+    # counts too. Reading it from the graded output (rather than from a typed sentence) means it is
+    # true of probes as well as guesses — which is where noticing usually shows up first.
+    noticed_at: int | None = None
+    for t in after:
+        scored = t.response.get("scored") or {}
+        value, output = scored.get("value"), scored.get("output")
+        if value is None or output is None:
+            continue
+        try:
+            if abs(float(rule_two.apply(float(value))) - float(output)) < 1e-9:
+                noticed_at = t.index
+                break
+        except (TypeError, ValueError):
+            continue
     guessed_new = [
-        t for t in trials if t.task.get("round") == round_no and t.task.get("action") == "guess" and t.correct and str(t.response.get("rule") or "") == rule_two.name
+        t for t in trials
+        if t.task.get("round") == round_no and t.task.get("action") == "guess" and t.correct and str(t.response.get("rule") or "") == rule_two.name
     ]
     return {
         "switched": True,
         "switch_after_probe": switch_at,
         "probes_after_switch": len(after),
-        "noticed": bool(new_rule_probes or guessed_new),
-        "probes_before_noticing": (new_rule_probes[0].index - switch_at) if new_rule_probes else None,
+        "noticed": bool(noticed_at is not None or guessed_new),
+        "probes_before_noticing": (noticed_at - switch_at) if noticed_at is not None else None,
     }
 
 

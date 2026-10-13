@@ -51,7 +51,7 @@ function check(scenario, label, ok, detail = "") {
 // Objects must not reach a learner as JSON. Several screens used to stringify a payload into
 // visible text -- a measured effect, the privacy statement, the voice capability list -- so the
 // tripwire runs on every screen that has ever done it, at the moment the page is inspected.
-const JSON_FREE = new Set(["/learn", "/lesson", "/proposals", "/settings", "/voice", "/progress"]);
+const JSON_FREE = new Set(["/learn", "/lesson", "/proposals", "/settings", "/voice", "/progress", "/baseline"]);
 
 function visibleText(page) {
   const doc = page?.dom?.window?.document;
@@ -1862,6 +1862,126 @@ async function main() {
     closePage(gated);
     const stillOk = await api("/api/v1/health", { headers: { cookie } });
     check("failures", "being rate limited does not break the app (reads still answer)", stillOk.status === 200, String(stillOk.status));
+  }
+
+  /* -------------------------------------------------------------- baseline ---- */
+  // The mind baseline (phase 2). The flow is the server's, so this walks it the way a learner
+  // does: pick a format, skip the questions, look at the pairs, answer the cued trials until the
+  // vault arrives, tap a tile with the keyboard, then stop early. Stopping is the point of the
+  // last checks: a partial baseline must be a finished baseline, and the snapshot must say "not
+  // measured" rather than invent a zero for a game nobody played.
+  if (run("baseline")) {
+    console.log("\x1b[1mbaseline\x1b[0m");
+    const page = await open("/baseline", "baseline");
+    await waitFor(() => /How would you like to meet a new idea/.test(page.text()), { label: "the format pick" });
+    check("baseline", "opens on the format pick, not a game", page.find('[role="gridcell"]').length === 0, page.text().slice(0, 140));
+    const radios = page.find('[role="radio"]');
+    check("baseline", "the format pick is a radio group with the three stated options", radios.length === 3, `${radios.length} roles`);
+    check("baseline", "a preference screen asks for no coin wager", page.find(".baseline-coins").length === 0, String(page.find(".baseline-coins").length));
+    check("baseline", "stopping is on screen from the first step", !!page.byText("Stop here", "button"), page.text().slice(0, 200));
+
+    await page.click("a written explanation", '[role="radio"]');
+    await waitFor(() => /How you work/.test(page.text()), { label: "the questions screen" });
+    const qtext = page.text();
+    check("baseline", "the questions arrive in one sitting, not one per screen", /What are you learning this for\?/.test(qtext) && /How many days a week can you study\?/.test(qtext), qtext.slice(0, 160));
+    check("baseline", "every question says why it is asked", (qtext.match(/asked because it /g) ?? []).length >= 10, String((qtext.match(/asked because it /g) ?? []).length));
+    check("baseline", "the questions are skippable", !!page.byText("Skip the questions", "button"), "");
+
+    await page.click("Skip the questions", "button");
+    await waitFor(() => /Spy codewords: study/.test(page.text()), { label: "the study screen" });
+    check("baseline", "the study screen shows the eight pairs it will ask for later", page.find(".baseline-pairs li").length === 8, String(page.find(".baseline-pairs li").length));
+    check("baseline", "a practice screen is labelled as unscored and offers no coins", /not scored/.test(page.text()) && page.find(".baseline-coins").length === 0, page.text().slice(0, 160));
+
+    await page.click("I have looked at them", "button");
+    // Answer whatever comes until the vault, using the page's own controls. A wrong answer is a
+    // legitimate way through (cued recall is either right or it is not) -- what is being checked
+    // is that the flow advances without a reload and that coins appear exactly on scored tasks.
+    let saw_coins_on_measured = false;
+    let coins_on_practice = 0;
+    let prev = "";
+    for (let step = 0; step < 40; step += 1) {
+      if (/Watch: the tiles light up/.test(page.text())) break;
+      const text = page.text();
+      if (text === prev) break;
+      prev = text;
+      const coins = page.find(".baseline-coins").length > 0;
+      const scored = !/not scored/.test(text);
+      if (coins && scored) saw_coins_on_measured = true;
+      if (coins && !scored) coins_on_practice += 1;
+      const box = page.find("#baseline-free")[0];
+      if (box) {
+        page.type(box, "the old well");
+        await page.click("Answer", "button");
+      } else {
+        const opt = page.find(".baseline-option")[0];
+        if (!opt) break;
+        await page.click(opt);
+      }
+      await sleep(120);
+    }
+    check("baseline", "a scored question task offers the coin wager", saw_coins_on_measured, `coins seen: ${saw_coins_on_measured}`);
+    check("baseline", "no practice trial ever offers coins", coins_on_practice === 0, `${coins_on_practice} practice screens with coins`);
+
+    const tiles = page.find('[role="gridcell"]');
+    check("baseline", "the vault arrives as a nine-tile grid", tiles.length === 9, `${tiles.length} tiles`);
+    const busyAtStart = page.find('.vault-grid[aria-busy="true"]').length === 1;
+    check("baseline", "the tiles are disabled while the sequence is being flashed", busyAtStart || tiles.every((t) => t.disabled), busyAtStart ? "aria-busy" : "tiles disabled");
+    let ready = false;
+    try {
+      await waitFor(() => page.find('[role="gridcell"]').every((t) => !t.disabled), { timeout: 12_000, label: "the flash to finish" });
+      ready = true;
+    } catch { /* reported below */ }
+    check("baseline", "the flash ends and the grid becomes tappable", ready, "");
+    if (ready) {
+      // A keypress either marks the tile (right order so far), submits a wrong order and brings the
+      // next vault trial (whose own flash disables the grid again), or -- the only real failure --
+      // does nothing at all. So the signal is "the task changed", not "the tile is marked": an
+      // earlier version waited for a marked tile and read a *successful* wrong-order tap as nothing
+      // happening, because the next trial's flash looks exactly like a grid that ignored the key.
+      const beforeText = page.text();
+      const Ev = page.dom.window.KeyboardEvent;
+      page.dom.window.document.dispatchEvent(new Ev("keydown", { key: "7", bubbles: true, cancelable: true }));
+      let reacted = false;
+      try {
+        await waitFor(
+          () =>
+            page.text() !== beforeText ||
+            page.find(".vault-tile.tapped").length >= 1 ||
+            page.find('[role="gridcell"]').length === 0,
+          { timeout: 6000, label: "the vault to react to the keypress" },
+        );
+        reacted = true;
+      } catch { /* reported below, not swallowed */ }
+      check("baseline", "a number key taps a tile: no mouse needed for the grid", reacted, page.text().slice(0, 140));
+    }
+    const walkErrors = page.appErrors();
+    check("baseline", "no uncaught error during the walk", walkErrors.length === 0, walkErrors.join(" | ").slice(0, 200));
+
+    // The stop control is disabled while a trial is in flight, and the last keypress may still be
+    // waiting for its score -- so wait for the control to be usable instead of pressing a disabled
+    // button and blaming the snapshot.
+    await waitFor(() => { const b = page.byText("Stop here", "button"); return b ? !b.disabled : false; }, { timeout: 12_000, label: "the stop control to be ready" });
+    await page.click("Stop here", "button");
+    await waitFor(() => /What we noticed/.test(page.text()) && /not measured/.test(page.text()), { timeout: 12_000, label: "the snapshot" });
+    const snapText = page.text();
+    check("baseline", "stopping early still produces the snapshot", /What we measured, and what we did not/.test(snapText), snapText.slice(0, 200));
+    check("baseline", "the snapshot names what was not measured instead of zeroing it", /not measured/.test(snapText), snapText.slice(0, 200));
+    const measuredRows = page.find(".baseline-factors li").filter((li) => !li.classList.contains("muted"));
+    check("baseline", "a measured factor carries its range and its n", measuredRows.length > 0 && /n=\d+/.test(snapText), `${measuredRows.length} measured rows`);
+    check("baseline", "every lever says where it came from", (snapText.match(/measured|you told us|default/g) ?? []).length >= 3, snapText.slice(0, 200));
+    closePage(page);
+
+    // `?mock=1` has to reach the same screens, or a design review on a machine with no backend
+    // stops at the first fetch. The fixture advances the way the real flow does (it is scripted in
+    // mock.ts), so this walks two steps of it rather than one static view.
+    const mocked = await open("/baseline?mock=1", "baseline");
+    await waitFor(() => /How would you like to meet a new idea/.test(mocked.text()), { label: "the mocked format pick" });
+    check("baseline", "?mock=1 opens the baseline without a backend", mocked.find('[role="radio"]').length === 3, mocked.text().slice(0, 140));
+    await mocked.click("a written explanation", '[role="radio"]');
+    await waitFor(() => /How you work/.test(mocked.text()), { label: "the mocked questions" });
+    check("baseline", "the mock answers with the questions screen, not an error frame", /What are you learning this for\?/.test(mocked.text()), mocked.text().slice(0, 160));
+    check("baseline", "and no uncaught error on the mocked walk", mocked.appErrors().length === 0, mocked.appErrors().join(" | ").slice(0, 160));
+    closePage(mocked);
   }
 
   /* --------------------------------------------------------------- summary ---- */

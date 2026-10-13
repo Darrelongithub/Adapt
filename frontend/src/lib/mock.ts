@@ -9,7 +9,16 @@
  * there is no red bar at the top, this file is not involved.
  */
 
-type Row = { method: string; match: RegExp; body: unknown; status?: number; error?: { message: string; detail?: unknown } };
+type Row = {
+  method: string;
+  match: RegExp;
+  /** A recorded payload, or a function for the two cases that genuinely have state (the baseline
+   *  run advances; see `baselineView`). A static row for a stateful flow would let a broken "what
+   *  comes next" wiring look fine under `?mock=1`. */
+  body: unknown | ((url: string, method: string) => unknown);
+  status?: number;
+  error?: { message: string; detail?: unknown };
+};
 
 const learner = {
   student_id: "stu_mock_0001",
@@ -1049,7 +1058,127 @@ const lessonAuthor = {
   already_existed: false,
 };
 
+
+/* --------------------------------------------------------------- the baseline ----
+ * `?mock=1` walks the real flow: the run advances one step per trial, so the design can be
+ * reviewed screen by screen without a backend. Payloads are recorded shapes from the phase 2
+ * API (see `backend/tests/test_baseline.py`), not invented ones.
+ */
+const baselineQuestions = [
+  { key: "goal", question: "What are you learning this for?", options: ["an exam with a date", "a course I am taking", "work or a job", "just curious"], why: "decides what the app calls progress" },
+  { key: "session_minutes", question: "How long would you like one sitting to be?", options: [10, 20, 30, 45], why: "sizes a lesson to a sitting you actually have" },
+  { key: "study_days", question: "How many days a week can you study?", options: [1, 2, 3, 4, 5, 6, 7], why: "sets the review schedule" },
+  { key: "study_when", question: "When do you usually study?", options: ["early morning", "midday", "afternoon", "evening", "late night", "it varies"], why: "times reminders, and never sends them at the wrong hour" },
+  { key: "motivation", question: "What keeps you going?", options: ["seeing progress", "a streak", "competing", "curiosity", "finishing things"], multi: true, why: "picks what the progress screen shows first" },
+  { key: "quit_trigger", question: "What makes you stop?", options: ["boredom", "being stuck", "no time", "feeling behind"], multi: true, why: "tells the app what to notice and work around" },
+  { key: "feedback_style", question: "How do you want to hear that you got something wrong?", options: ["straight", "gentle", "just show the answer"], why: "sets the tone of every correction" },
+  { key: "challenge_first", question: "Would you rather start with something hard, or something you can do?", options: ["challenge me first", "safe success first"], why: "sets the opening difficulty of a lesson" },
+  { key: "when_stuck", question: "What do you do when you are stuck?", options: ["ask someone", "search for it", "keep pushing", "move on and come back"], why: "compared later with what you actually did in the locked box" },
+  { key: "device_context", question: "Where and on what do you study?", options: ["phone", "laptop", "shared device", "limited data", "often offline"], multi: true, why: "decides how light the pages are and whether things must work offline" },
+  { key: "language", question: "Which language should explanations be in?", options: ["English", "Kiswahili", "mixed"], why: "the language of every explanation" },
+  { key: "timers_help", question: "Do you like seeing a timer, or does it stress you?", options: ["timers help", "timers stress me"], why: "shows or hides the clock; the app still measures quietly either way" },
+  { key: "anything_else", question: "Anything else about how you learn? (one line, optional)", options: [], free_text: true, why: "read by you later, and shown next to your settings" },
+];
+
+const baselineStudyPairs = [
+  { code: "Mebra", place: "the old well" },
+  { code: "Sarn", place: "the salt market" },
+  { code: "Pirel", place: "a stone tower" },
+  { code: "Quilo", place: "a red roof" },
+  { code: "Harn", place: "the river bend" },
+  { code: "Tuvik", place: "a low hill" },
+  { code: "Solva", place: "a quiet bay" },
+  { code: "Neril", place: "a green bridge" },
+];
+
+const baselineSteps: { stage: string; stage_title: string; task: unknown }[] = [
+  { stage: "codewords_study", stage_title: "Spy codewords: study", task: { id: "codewords_study", game: "codewords_study", phase: "show", pairs: baselineStudyPairs, study_ms: 45000, prompt: "Learn these eight pairs. You will be asked for them again later.", max_latency_ms: 75000 } },
+  { stage: "codewords_cued", stage_title: "Spy codewords: straight after", task: { id: "codewords_cued_2", game: "codewords_cued", phase: "measure", prompt: "Which place went with Pirel?", cue: "Pirel", answer: "a stone tower", practice: false, max_latency_ms: 30000 } },
+  { stage: "quick_a", stage_title: "Quick taps", task: { id: "quick_a_0", game: "quick", phase: "measure", prompt: "tap the bigger number", options: ["7", "3"], answer: "7", max_latency_ms: 15000, stage: "quick_a" } },
+  { stage: "vault", stage_title: "Vault lights", task: { id: "vault_forward_3_1", game: "vault", phase: "measure", direction: "forward", length: 3, sequence: [6, 8, 0], answer_direction: "forward", prompt: "3 tiles. Tap them in the same order.", practice: false, max_latency_ms: 30000 } },
+  { stage: "shopkeeper", stage_title: "Vault lights: shopkeeper", task: { id: "vault_shop_1", game: "shopkeeper", phase: "measure", items: ["a brass key", "a coil of rope", "a tin cup"], distractors: [ { id: "d1_0", text: "The month after March is April.", answer: true }, { id: "d1_1", text: "A week has nine days.", answer: false }, { id: "d1_2", text: "Half of 20 is 10.", answer: true } ], prompt: "Hold these three items. Answer the quick questions. Then type the items back.", practice: false, max_latency_ms: 60000 } },
+  { stage: "machine", stage_title: "Crack the machine", task: { id: "machine_r1_step1", game: "machine", round: 1, phase: "measure", prompt: "Test another input, or guess the rule.", max_probes: 5, max_wrong_guesses: 2, probes_used: 0, wrong_guesses: 0, max_latency_ms: 120000 } },
+  { stage: "locked_box", stage_title: "The locked box", task: { id: "locked_box", game: "locked_box", phase: "measure", prompt: "A lock opens on a sequence of numbers. The first four are below. Work out the fifth. This one is hard on purpose \u2014 you can buy a hint, try again, or walk away and nothing bad happens.", cases: [{ n: 1, value: 3 }, { n: 2, value: 8 }, { n: 3, value: 18 }, { n: 4, value: 33 }], answer: 53, hint_shop: [ { id: "hint_nudge", cost: 1, text: "Write down what changes and what does not. One of them is the key.", level: "nudge" }, { id: "hint_method", cost: 2, text: "Try the smallest case first, then the next one up, and look at the difference between them.", level: "method" }, { id: "hint_near", cost: 3, text: "The gaps are growing by five each time.", level: "near answer" } ], max_latency_ms: 120000 } },
+  { stage: "trap", stage_title: "Two questions to think about", task: { id: "trap_bat_ball", game: "trap", phase: "measure", story: "A bat and a ball cost 1.10 together. The bat costs 1.00 more than the ball.", prompt: "How much does the ball cost, in the currency's units?", options: ["0.10", "0.05", "1.00", "0.55"], answer: "0.05", intuitive: "0.10", max_latency_ms: 60000 } },
+  { stage: "codewords_delayed", stage_title: "Spy codewords: later", task: { id: "codewords_predict", game: "codewords_delayed", phase: "measure", action: "predict", prompt: "Before we check: how many of the eight pairs do you think you will remember, out of 8?", max_value: 8, max_latency_ms: 30000 } },
+  { stage: "codewords_delayed", stage_title: "Spy codewords: later", task: { id: "codewords_free", game: "codewords_delayed", phase: "measure", action: "recall", kind: "free", prompt: "Write the pairs you remember.", max_latency_ms: 90000 } },
+];
+
+let baselineAt = 0;
+
+function baselineView(step?: "format" | "questions" | "next"): Record<string, unknown> {
+  const base = { run_id: "base_mock_0001", student_id: learner.student_id, status: "in_progress", format_pick: null, notes: undefined };
+  if (step === "format" || step === undefined) {
+    return { ...base, stage: "format", stage_title: "How you like to meet a new idea", kind: "format", task: null, progress: 0, note: "one question before anything else", format_options: [ { value: "diagram", label: "a diagram", hint: "a picture or graph of the idea" }, { value: "text", label: "a written explanation", hint: "a short paragraph that explains it" }, { value: "worked_example", label: "a worked example", hint: "one worked through, step by step" } ], questions: [] };
+  }
+  if (step === "questions") {
+    return { ...base, format_pick: "diagram", stage: "questions", stage_title: "How you work", kind: "questions", task: null, progress: 0.07, note: "", format_options: [], questions: baselineQuestions };
+  }
+  if (baselineAt >= baselineSteps.length) {
+    return { ...base, format_pick: "diagram", stage: "snapshot", stage_title: "What we noticed", kind: "snapshot", task: null, progress: 1, note: "every game has an ending", format_options: [], questions: [] };
+  }
+  const at = baselineSteps[baselineAt];
+  baselineAt += 1;
+  return { ...base, format_pick: "diagram", stage: at.stage, stage_title: at.stage_title, kind: "task", task: at.task, progress: Math.min(0.95, 0.15 + baselineAt * 0.08), note: "", format_options: [], questions: [], scored: { correct: true } };
+}
+
+const baselineSnapshotBody = {
+  student_id: learner.student_id,
+  run_id: "base_mock_0001",
+  snapshot_id: "mind_mock_0001",
+  taken_at: "2026-10-12T09:40:00",
+  state: "in_progress",
+  measured: 5,
+  total: 8,
+  factors: [
+    { key: "prior_knowledge", title: "What you already know", state: "not_enough_data", n: 0, range: null, summary: "not measured yet (0 of 5 needed)", statement: "Not enough data yet \u2014 the subject round (next step) would fill this in.", actions: [], detail: { needed: 5, have: 0 } },
+    { key: "working_memory", title: "How much you hold at once", state: "measured", n: 28, range: [8, 9], summary: "about 8\u20139 steps at once, 0 sequence(s) missed", statement: "You currently hold about 8 steps at once, so lessons will use smaller steps and check between them.", actions: ["keep explanation blocks to about 8 ideas before a check"], detail: { forward_span: 9, backward_span: 9, failures: 0 } },
+    { key: "processing_pace", title: "How fast you work", state: "measured", n: 13, range: [0.9, 1.1], summary: "middle 0.9s per quick tap, 100% right", statement: "Most quick answers take you about a second, so the app will pace new material at that speed and not chase a fastest time.", actions: ["size checks to about this pace rather than to a clock"], detail: { median_ms: 900 } },
+    { key: "attention_self_control", title: "Staying on it", state: "measured", n: 13, range: [0.8, 1], summary: "100% right early, 80% right late, 1/1 traps spotted", statement: "Your accuracy held up toward the end of the session, so blocks can stay long.", actions: ["keep blocks long"], detail: { first_third_accuracy: 1, last_third_accuracy: 0.8 } },
+    { key: "long_term_memory", title: "Remembering over time", state: "measured", n: 9, range: [0.6, 0.9], summary: "100% recalled straight away", statement: "You recalled the pairs straight away, so review will be scheduled around the default spacing.", actions: ["seed your review spacing from this, with a range"], detail: { immediate: 1 } },
+    { key: "reasoning_style", title: "How you work things out", state: "not_enough_data", n: 1, range: null, summary: "not measured yet (1 of 3 needed)", statement: "Not measured yet.", actions: [] },
+    { key: "persistence_help_seeking", title: "Sticking with something hard", state: "not_enough_data", n: 0, range: null, summary: "not measured yet", statement: "Not measured yet.", actions: [] },
+    { key: "confidence_calibration", title: "Knowing what you know", state: "measured", n: 12, range: [-0.2, 0.1], summary: "close to right on average", statement: "Your coin bets are close to your actual results, so confidence is used as a light signal.", actions: [], detail: {} },
+  ],
+  levers: {
+    step_size: { value: "large", why: "holds about 9 steps at once (n=28)", source: "measured" },
+    lead_format_prior: { value: "diagram", why: "you chose diagram for a new topic (stated, not measured)", source: "stated" },
+    pace: { value: "steady", why: "median 900ms per quick tap (n=8)", source: "measured" },
+    hint_policy: { value: "on request", why: "default: hints are there when asked for", source: "default" },
+  },
+  preferences: { preferred_format: "diagram", goal: "just curious" },
+  preference_vs_performance: null,
+  completion: { stages: [], complete: 6, total: 14, played: ["codewords_study", "codewords_cued", "quick_a", "vault", "shopkeeper", "machine", "locked_box", "trap"], not_measured: ["prior_knowledge", "reasoning_style", "persistence_help_seeking"] },
+};
+
+const baselineNextDayBody = {
+  student_id: learner.student_id,
+  run_id: "base_mock_0001",
+  tasks: [{ id: "codewords_next_day_0", game: "codewords_next_day", phase: "measure", prompt: "Which place went with Mebra?", cue: "Mebra", answer: "the old well", practice: false, max_latency_ms: 30000 }],
+  studied: true,
+  note: "these are the pairs you learned last time, asked again with no new study",
+};
+
 const rows: Row[] = [
+  { method: "GET", match: /^\/api\/v1\/evidence$/, body: {
+    methods: [], strategies: [], preference_vs_performance: null,
+    excluded_n: 0, attributed_elsewhere_n: 0, format_comparable: true,
+    note: "Demo mode has no measured method outcomes. Insufficient evidence; no comparison was invented.",
+  } },
+  { method: "GET", match: /^\/api\/v1\/evidence\/failure\//,
+    body: null, status: 422, error: { message: "Recovery requires a real graded attempt and checked matched content; unavailable in demo mode." } },
+  { method: "POST", match: /^\/api\/v1\/evidence\/failure/,
+    body: null, status: 422, error: { message: "Recovery requires a real graded attempt and checked matched content; unavailable in demo mode." } },
+  /* the baseline first: `/baseline/snapshot` and `/baseline/next-day` must be matched before the
+     run-id row, or a GET of the snapshot would be read as a run view */
+  { method: "POST", match: /^\/api\/v1\/baseline$/, body: () => baselineView("format") },
+  { method: "GET", match: /^\/api\/v1\/baseline\/snapshot/, body: baselineSnapshotBody },
+  { method: "GET", match: /^\/api\/v1\/baseline\/next-day/, body: baselineNextDayBody },
+  { method: "GET", match: /^\/api\/v1\/baseline\/[^/]+$/, body: () => baselineView("next") },
+  { method: "POST", match: /^\/api\/v1\/baseline\/[^/]+\/format$/, body: () => baselineView("questions") },
+  { method: "POST", match: /^\/api\/v1\/baseline\/[^/]+\/questions$/, body: () => baselineView("next") },
+  { method: "POST", match: /^\/api\/v1\/baseline\/[^/]+\/trial$/, body: () => baselineView("next") },
+  { method: "POST", match: /^\/api\/v1\/baseline\/[^/]+\/finish$/, body: baselineSnapshotBody },
   { method: "GET", match: /^\/api\/v1\/health/, body: { ok: true, mode: "local", learners: 1, mock: true } },
   { method: "GET", match: /^\/api\/v1\/me$/, body: learner },
   { method: "POST", match: /^\/api\/v1\/students/, body: { ...learner, csrf_token: "mock-csrf-token", expires_at: "2026-10-12T03:00:00", created: true, onboarding_complete: false } },
@@ -1198,7 +1327,8 @@ export function mockLookup(method: string, url: string): { found: boolean; body?
     if (row.method !== method) continue;
     if (!row.match.test(url)) continue;
     if (row.error) return { found: true, error: row.error, status: row.status };
-    return { found: true, body: row.body, status: row.status ?? 200 };
+    const body = typeof row.body === "function" ? (row.body as (url: string, method: string) => unknown)(url, method) : row.body;
+    return { found: true, body, status: row.status ?? 200 };
   }
   return { found: false };
 }

@@ -1209,5 +1209,180 @@ def config_set_budget(
     typer.echo("Restart the application process to load the new configuration.")
 
 
+@app.command("demo-seed")
+def demo_seed_cmd(
+    count: int = typer.Option(3, "--count", help="number of demo learners to create"),
+    reset: bool = typer.Option(False, "--reset", help="remove existing demo-seeded learners first"),
+) -> None:
+    """Create labelled pilot/demo learners with realistic synthetic histories.
+
+    Each learner is clearly marked as synthetic in every view. Their histories
+    are deterministic (seeded) so the contrast demo and evidence screens always
+    show the same shapes.
+    """
+    from .services import build
+
+    svcs = build()
+    result = demo_seed(svcs, count=count, reset=reset)
+    _echo(result)
+
+
+def demo_seed(svcs: Any, *, count: int = 3, reset: bool = False) -> dict[str, Any]:
+    """Create synthetic demo learners. Called by the CLI and by tests."""
+    import random
+    from datetime import datetime, timezone, timedelta
+
+    from .db.engine import get_db
+    from .db.models import Student, Attempt, LearningSession, Item, Topic
+    from .security.auth import hash_password
+    from .crypto.fields import blind_index_for
+    from sqlalchemy import select as sa_select
+
+    db = svcs.db
+    created: list[dict[str, str]] = []
+
+    profiles = [
+        {
+            "username": "demo_alice",
+            "display_name": "Alice (demo, synthetic)",
+            "topic_strength": {"fraction": 0.85, "algebra": 0.70},
+            "style": "methodical",
+        },
+        {
+            "username": "demo_ben",
+            "display_name": "Ben (demo, synthetic)",
+            "topic_strength": {"fraction": 0.30, "algebra": 0.60},
+            "style": "intuitive",
+        },
+        {
+            "username": "demo_clara",
+            "display_name": "Clara (demo, synthetic)",
+            "topic_strength": {"fraction": 0.55, "algebra": 0.90},
+            "style": "visual",
+        },
+        {
+            "username": "demo_david",
+            "display_name": "David (demo, synthetic)",
+            "topic_strength": {"fraction": 0.45, "algebra": 0.35},
+            "style": "mixed",
+        },
+        {
+            "username": "demo_elena",
+            "display_name": "Elena (demo, synthetic)",
+            "topic_strength": {"fraction": 0.75, "algebra": 0.80},
+            "style": "verbal",
+        },
+    ]
+
+    rng = random.Random(42)
+    chosen = profiles[: min(count, len(profiles))]
+
+    with db.session() as s:
+        if reset:
+            # Remove existing demo learners by username prefix
+            for p in profiles:
+                existing = s.execute(
+                    sa_select(Student).where(Student.username_index == blind_index_for("student.username", p["username"]))
+                ).scalars().first()
+                if existing:
+                    s.delete(existing)
+            s.commit()
+
+        # Ensure we have topics and items to reference
+        topics = s.execute(sa_select(Topic)).scalars().all()
+        topic_ids = {t.id for t in topics}
+        items = s.execute(sa_select(Item)).scalars().all()
+        item_ids = {it.id for it in items}
+
+        for profile in chosen:
+            # Skip if already exists
+            existing = s.execute(
+                sa_select(Student).where(Student.username_index == blind_index_for("student.username", profile["username"]))
+            ).scalars().first()
+            if existing:
+                created.append({
+                    "student_id": existing.id,
+                    "username": profile["username"],
+                    "display_name": profile["display_name"],
+                    "style": profile["style"],
+                    "label": "synthetic demo learner (already existed)",
+                })
+                continue
+
+            student = Student(
+                username=profile["username"],
+                username_index=blind_index_for("student.username", profile["username"]),
+                display_name=profile["display_name"],
+                email=f"{profile['username']}@demo.adapt",
+                email_index=blind_index_for("student.email", f"{profile['username']}@demo.adapt"),
+                password_hash=hash_password("demo_password_123"),
+                onboarding_complete=True,
+                diagnostic_complete=True,
+                consent_analytics=True,
+                consent_share_with_llm=True,
+            )
+            s.add(student)
+            s.flush()
+
+            # Create a session with synthetic attempts
+            session = LearningSession(
+                student_id=student.id,
+                mode="practice",
+                started_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            )
+            s.add(session)
+            s.flush()
+
+            # Create attempts against real items if available, else skip
+            used_items = [it for it in items if it.topic_id in topic_ids][:8]
+            if not used_items:
+                # No curriculum items; create minimal synthetic records
+                created.append({
+                    "student_id": student.id,
+                    "username": profile["username"],
+                    "display_name": profile["display_name"],
+                    "style": profile["style"],
+                    "label": "synthetic demo learner (no curriculum items for attempts)",
+                })
+                continue
+
+            for item in used_items:
+                topic_key = "fraction" if "fraction" in (item.topic_id or "").lower() else "algebra"
+                strength = profile["topic_strength"].get(topic_key, 0.5)
+                correct = rng.random() < strength
+                attempt = Attempt(
+                    student_id=student.id,
+                    session_id=session.id,
+                    item_id=item.id,
+                    topic_id=item.topic_id,
+                    first_answer={"text": "demo answer"},
+                    final_answer={"text": "demo answer"},
+                    correct=correct,
+                    score=1.0 if correct else 0.0,
+                    time_on_item_ms=int(rng.uniform(20000, 120000)),
+                    hints_used=rng.randint(0, 2),
+                    pilot=True,  # mark as pilot/demo data
+                )
+                s.add(attempt)
+
+            created.append({
+                "student_id": student.id,
+                "username": profile["username"],
+                "display_name": profile["display_name"],
+                "style": profile["style"],
+                "label": "synthetic demo learner",
+            })
+        s.commit()
+
+    return {
+        "created": len(created),
+        "learners": created,
+        "note": (
+            "These learners are clearly marked as synthetic (display name contains "
+            "'(demo, synthetic)'). Their histories are deterministic (seeded) for "
+            "reproducible demos. Attempts are flagged as pilot data."
+        ),
+    }
+
 if __name__ == "__main__":  # pragma: no cover
     app()

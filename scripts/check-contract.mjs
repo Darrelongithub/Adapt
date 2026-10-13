@@ -78,7 +78,12 @@ function frontendCalls() {
     // `get`/`post`/`del` are the wrappers every page actually uses, so a scan of
     // `api|useApi` alone left most of the app unchecked: the paths below `post(` were
     // neither matched against the API nor against a fixture row.
-    const CALL = /\b(api|apiPost|apiVoid|useApi|get|post|del)\s*(?:<[^()]*(?:\([^)]*\)[^()]*)*>)?\s*\(\s*(`[^`]*`|"[^"]*"|'[^']*')/g;
+    // The generic-argument part is deliberately narrow (`<[^()<>]*>`): it used to be a
+    // paren-balanced run, which is greedy, so `post<BaselineView>("/api/v1/baseline", {})`
+    // followed by another generic call on a later line matched as ONE call whose "path" was the
+    // later string and whose method was the earlier function. A type argument in this repo is
+    // always a bare name, so nothing legitimate is lost by refusing to cross a bracket.
+    const CALL = /\b(api|apiPost|apiVoid|useApi|get|post|del)\s*(?:<[^()<>]*>)?\s*\(\s*(`[^`]*`|"[^"]*"|'[^']*')/g;
     for (const m of src.matchAll(CALL)) {
       const fn = m[1];
       const literal = m[2].slice(1, -1);

@@ -15,6 +15,7 @@ export const NAV = [
   { href: "/proposals", label: "Changes" },
   { href: "/review", label: "Review" },
   { href: "/progress", label: "Progress" },
+  { href: "/evidence", label: "Evidence" },
   { href: "/voice", label: "Voice" },
   { href: "/settings", label: "Settings" },
 ];

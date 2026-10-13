@@ -426,3 +426,34 @@ area. What changed, and what a phone still has to confirm:
   this phase was caused by a *plain* `sqlite3` client touching the SQLCipher file while the server
   held it open; a clean shutdown cleared it and the data was intact. What an operator sees after a
   hard kill (SIGKILL, power loss) with a WAL left behind has not been tested.
+
+
+## Round: functionality (Phase 2, section 5, the mind baseline) - 2026-10-13
+
+Verified here (see the phase 2 report in `docs/FUNCTIONALITY_ROUND.md` for the numbers): the engine
+and its 40 tests, the flow order end to end, the HTTP surface, the screens driven in jsdom against
+the live API (25 checks) and against `?mock=1`, the contract linter and `next build`.
+
+**Not verified here: the screens in a real browser.** Chromium cannot be installed in this sandbox
+(`npx playwright install` ends in `ECONNRESET`), so nothing below has been seen with eyes or with a
+real timer. jsdom exercises state, fetch traffic and keyboard handlers; it does not paint, and it
+does not run a real 45-second clock.
+
+To check on a machine with a browser (any of these that fails is a bug worth reporting):
+
+1. `cd backend && ../.venv/bin/python -m uvicorn adapt.api.app:app --port 8000` and
+   `cd frontend && npm run dev`, then open `/baseline`.
+2. **The flash is watchable.** On the vault, the nine tiles light one at a time; on a phone-sized
+   viewport the grid must not scroll during the flash. `prefers-reduced-motion: reduce` shortens
+   the flash rather than removing it - check in devtools that the sequence is still shown.
+3. **The study clock.** The study screen counts down from 45s and the ready button works at any
+   point. Then answer "timers stress me" on the questions screen in a *new* run and confirm no
+   clock appears anywhere in the baseline (latency is still measured - that is stated on screen).
+4. **Keyboard only.** Tab to the vault grid, arrow to a tile, press Enter; then press the number
+   keys 1-9. Both must tap. The machine and locked-box text fields must submit on Enter.
+5. **Coins.** A 0-3 coin control appears on scored question tasks (cued recall, quick taps, traps)
+   and never on a practice trial or the study screen.
+6. **Stopping.** Press "Stop here" mid-vault and confirm the snapshot arrives; reload `/baseline`
+   and confirm the resume line names the stage and does not restart the games.
+7. **The snapshot screen reads correctly at 360px wide**, and no factor row overflows its card.
+8. **Audio/latency claims**: none are made - the baseline is silent.

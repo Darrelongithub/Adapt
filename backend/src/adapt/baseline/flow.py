@@ -113,20 +113,15 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
                 return task
         return None
     if stage == "locked_box":
-        if any(t.game == "locked_box" for t in trials):
-            # One puzzle per sitting. The measurement is the *first* attempt at something hard;
-            # replaying it after seeing the answer would measure something else.
-            already = [t for t in trials if t.game == "locked_box"]
-            started = any(t.task.get("action") == "start" for t in already)
-            finished = any(t.task.get("action") in ("walk_away", "solve") for t in already)
-            if finished or (started and len(already) >= 6):
-                return None
-            if any(t.task.get("action") == "attempt" for t in already):
-                return None
-        task = locked_box_task(seed)
-        if any(t.game == "locked_box" for t in trials):
+        # One puzzle per sitting, and three ways out: solve it, walk away, or run out of attempts.
+        # The measurement is the *first* attempt at something hard — replaying it after seeing the
+        # answer would measure something else — so the stage ends rather than looping.
+        done = [t for t in trials if t.game == "locked_box"]
+        if any(t.task.get("action") == "walk_away" for t in done) or any(t.correct for t in done):
             return None
-        return task
+        if len([t for t in done if t.task.get("action") == "attempt"]) >= 3:
+            return None
+        return locked_box_task(seed)
     if stage in QUICK_BUDGET:
         used = quick_index(trials, stage)
         if used >= QUICK_BUDGET[stage]:
@@ -154,7 +149,7 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
                     "max_latency_ms": 30000,
                 }
             return free
-        return codewords_delayed(seed, [t for t in trials if t.task.get("kind") == "recognition"], kind="recognition")
+        return codewords_delayed(seed, [t for t in trials if t.task.get("kind") in ("free", "recognition")], kind="recognition")
     return None
 
 
@@ -231,6 +226,7 @@ def next_day_tasks(seed: int, trials: Sequence[Trial]) -> list[dict[str, Any]]:
     It is a separate call rather than part of the flow: the point of the check is the *gap*, and a
     flow that ended yesterday cannot serve it today.
     """
+    trials = [t for t in trials if t.game == "codewords_next_day"]
     out: list[dict[str, Any]] = []
     for _ in range(3):
         task = codewords_next_day(seed, [*trials, *[_trial_from(t) for t in out]])
