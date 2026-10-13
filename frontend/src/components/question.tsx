@@ -58,35 +58,29 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
   const [question, setQuestion] = useState("");
   const [reply, setReply] = useState<ExplainReply | null>(null);
   const [askBusy, setAskBusy] = useState(false);
-  const startedRef = useRef(false);
-
-  // Deliberate fix: new-question answer state is cleared during render, never in a useEffect,
-  // because clearing in an effect reintroduced a real intermittent bug (`numeric-state-reset`,
-  // ~1-in-10 diagnose runs) where a keystroke inside the commit→effect window got wiped.
-  // Restyle JSX only; do not move this logic into an effect.
-  const prevIdRef = useRef<string | null>(null);
-  if (prevIdRef.current !== item.id) {
-    prevIdRef.current = item.id;
-    // Reset synchronously during render - not in effect
-    if (picked !== null) setPicked(null);
-    if (typed !== "") setTyped("");
-    if (teach !== "") setTeach("");
-    if (receipt !== null) setReceipt(null);
-    if (hints.length) setHints([]);
-    if (example !== null) setExample(null);
-    if (revealed !== null) setRevealed(null);
-    if (reply !== null) setReply(null);
-    if (error !== null) setError(null);
-    // Avoid infinite loop: schedule state reset via queueMicrotask for complex state
-    // Instead, use direct assignment for derived hintState
-    const expectedAvailable = item.hint_count ?? 0;
-    if (hintState.available !== expectedAvailable || hintState.exhausted !== false) {
-      queueMicrotask(() => setHintState({ available: expectedAvailable, exhausted: false, max: null }));
-    }
-    startedRef.current = false;
-  }
-
+  const startedItemIdRef = useRef<string | null>(null);
   const roving = useRovingTabIndex(choices.length, "vertical");
+
+  // Deliberate fix: new-question answer state is cleared during render via React's derived-key
+  // state reset pattern, never in a passive useEffect (`numeric-state-reset` wiped fast input
+  // inside the commit→effect window) and without mutating refs during render.
+  const itemKey = `${item.id}|${item.hint_count ?? 0}`;
+  const [shownKey, setShownKey] = useState(itemKey);
+  if (shownKey !== itemKey) {
+    setShownKey(itemKey);
+    setPicked(null);
+    setTyped("");
+    setTeach("");
+    setReceipt(null);
+    setHints([]);
+    setHintState({ available: item.hint_count ?? 0, exhausted: false, max: null });
+    setExample(null);
+    setRevealed(null);
+    setQuestion("");
+    setReply(null);
+    setError(null);
+    roving.setActiveIndex(0);
+  }
 
   const answer = useMemo(() => {
     if (isChoice) return picked;
@@ -98,8 +92,8 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
   const canSubmit = isChoice ? picked !== null : item.kind === "worked_example" ? true : typed.trim().length > 0;
 
   const touch = () => {
-    if (startedRef.current) return;
-    startedRef.current = true;
+    if (startedItemIdRef.current === item.id) return;
+    startedItemIdRef.current = item.id;
     onInteract(item);
   };
 

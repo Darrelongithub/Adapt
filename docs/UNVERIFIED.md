@@ -221,15 +221,17 @@ session is the expected result, not a bug.
   and screens are judged while the limiter holds them. The limiter is verified at its real ceiling
   elsewhere (failure matrix, and the probe's own flood check, which reads the effective bucket from
   `GET /api/v1/quotas`). A paced whole-suite run's screen-by-screen behaviour is *not* verified.
-* **Two of the three whole-suite flakes were harness races, now fixed; the third is a known
-  unknown.** (a) The proposals check read the "On right now" panel while it was still loading and
-  reported an applied change as missing — it now waits for the panel. (b) The "clearly struggling"
-  learner answered 14 items spread across topics while the detectors need 8 attempts on *one*
-  topic, so the evidence the check claimed did not exist — it now concentrates its wrong answers.
-  (c) The placement answer box was seen read back empty once, with the element still connected,
-  in a default-limits run; it has not reproduced in isolation (21/21 alone, 43/43 with its
-  predecessors) or in any rehearsal-ceiling run since. Treat (c) as a known unknown rather than a
-  repaired defect — what is known is that a heavily paced run can catch a screen mid-render.
+* **All three whole-suite flakes were races, now fixed.** (a) The proposals check read the "On
+  right now" panel while it was still loading and reported an applied change as missing — it now
+  waits for the panel. (b) The "clearly struggling" learner answered 14 items spread across
+  topics while the detectors need 8 attempts on *one* topic, so the evidence the check claimed did
+  not exist — it now concentrates its wrong answers. (c) The placement answer box (`numeric-state-reset`
+  in `diagnose`) was seen read back empty when `Question` cleared its answer state inside a
+  passive `useEffect([item.id, item.hint_count])`, which ran after mount commit and wiped fast
+  keystrokes entered during the commit→effect window. `frontend/src/components/question.tsx` now
+  resets answer, hint, question and roving-focus state synchronously during render via a derived
+  `shownKey` (`${item.id}|${item.hint_count ?? 0}`), verified 10/10 on `probe-fresh.sh diagnose`
+  and 5/5 with `PROBE_FIRST_ITEM_KIND=numeric`.
 * **The 0002 collision is a real-world migration hazard for anyone who ran the pre-merge branch.**
   A database stamped `0002` by *this* branch before the merge (item calibration) cannot be told
   apart from one stamped `0002` by `main` (learning engine); the merged chain reads it as the

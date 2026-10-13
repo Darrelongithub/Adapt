@@ -91,25 +91,20 @@ accounts, so two walks started back to back can cross a window. That is the app 
 designed; the knob the API itself names is `ADAPT_RATE_LIMIT_MULTIPLIER`. A run that fails at a
 *different* check each time, with the limiter line absent, is not pacing -- it is a finding.
 
-## Open: the diagnostic walk can lose a selection
+## Closed: the diagnostic walk selection loss (`numeric-state-reset`)
 
-`diagnose` sometimes fails its submit checks -- at a different question each time -- while every
-API call in the run answers 200 (measured: 40 requests, zero non-200s, so this is not the limiter
-and not backend latency). The submit control goes back to `disabled` after a click, so the press
-does nothing and the walk stops there.
+`diagnose` previously failed its submit checks intermittently (~1 in 10 runs) while every API call
+answered 200. Two separate React effects were wiping the learner's in-progress answer:
 
-One cause is fixed: the load effect set `loading` again, and `if (loading) return <Spinner/>`
-unmounts the question card, which is where the ticked answer lives. Both `/diagnose` and `/learn`
-now blank only a screen that is still empty (`painted` ref), because React's dev-mode StrictMode
-runs the effect twice and the second pass was wiping a card the learner was mid-answer on.
-
-That reduced the failures in a four-run sample from two runs to one; **it did not remove them**,
-and the remaining path is unidentified. Anyone picking this up should start from the answer draft
-in `src/components/question.tsx` and what re-creates it, not from the network layer. A four-run
-sample is also too thin to hang a number on: run `npm run probe -- --only diagnose` five or ten
-times before believing any percentage.
-
-Not an option: making the probe click twice. That would hide the exact state worth seeing.
+1. Both `/diagnose` and `/learn` now blank only a screen that is still empty (`painted` ref), so a
+   re-running load effect never unmounts a question card mid-answer.
+2. `src/components/question.tsx` previously cleared `picked`, `typed`, `teach` and `hintState`
+   inside a passive `useEffect([item.id, item.hint_count])`. When the probe (or a fast learner)
+   typed into the newly mounted `<input>` inside the commit→effect window, the passive effect fired
+   afterwards and wiped the input back to `""`. `Question` now resets its per-item state
+   synchronously during render using a derived `shownKey` (`${item.id}|${item.hint_count ?? 0}`)
+   and keys `startedItemIdRef` by `item.id` without mutating refs during render (10/10 passes on
+   `bash scripts/probe-fresh.sh diagnose` and 5/5 with `PROBE_FIRST_ITEM_KIND=numeric`).
 
 ## `npm run test:server` leaves `tsconfig.json` modified, on purpose-free bad terms
 
