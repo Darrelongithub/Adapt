@@ -184,53 +184,6 @@ kbd {
   }
 }
 
-/* ========== Shell chrome - status readout ========== */
-/* The readout is `pointer-events: none` on purpose: it floats over content, and without
- * this it silently eats taps aimed at whatever sits underneath — on a phone (where it used
- * to be a wide fixed bar over the bottom of every screen) that meant the primary buttons
- * of the practice screen were the ones "not working". */
-.status-corner {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  max-width: 100%;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  align-items: center;
-  pointer-events: none;
-}
-.status-corner .d {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  display: inline-block;
-  margin-right: 5px;
-}
-.status-corner .d.good {
-  background: var(--good);
-}
-.status-corner .d.warn {
-  background: var(--warn);
-}
-/* Wide *mouse* screens keep the designed "fixed bottom-left status corner" (the prototype's
- * spot). Phones — portrait or landscape — and tablets get the same text in the footer flow
- * instead: a fixed overlay across the bottom of a small viewport is exactly what made this
- * UI unusable there — it covered content, covered buttons and forced a sideways scroll.
- * `hover: hover` is the load-bearing half: a landscape phone is 844px wide and still must
- * not get the overlay. */
-@media (min-width: 641px) and (hover: hover) {
-  .status-corner {
-    position: fixed;
-    bottom: 16px;
-    bottom: max(16px, env(safe-area-inset-bottom));
-    left: 18px;
-    left: max(18px, env(safe-area-inset-left));
-    z-index: 50;
-    max-width: min(420px, calc(100vw - 36px));
-    padding-right: 12px;
-  }
-}
 /* ========== Home ========== */
 .page-practice {
   padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 140px;
