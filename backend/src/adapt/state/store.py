@@ -794,6 +794,62 @@ class LearnerState:
                 s.close()
 
     # ------------------------------------------------------------------ #
+    # stated preferences (the learner's own words, not a measurement)
+    # ------------------------------------------------------------------ #
+    def set_preference(
+        self,
+        learner_id: str,
+        key: str,
+        value: Any,
+        *,
+        source: str = "baseline",
+        note: str | None = None,
+        session: Any = None,
+        module: str = "code",
+    ) -> dict[str, Any]:
+        """Store one *stated* preference.
+
+        Only the code layer may write this row, and it writes what the learner said rather than what
+        a module inferred — ``source`` records which screen asked, so the settings page can show
+        where a value came from. The value is stored as JSON exactly as given; interpreting it is
+        the reader's job, which keeps one opinion about what "timers help" means instead of two.
+        """
+        PERM.check_write(module, "preferences")
+        own = session is None
+        s = session or self.sf()
+        try:
+            row = s.get(StudentPreference, (learner_id, key))
+            if row is None:
+                row = StudentPreference(student_id=learner_id, key=key, value=value, source=source, note=note)
+                s.add(row)
+            else:
+                row.value = value
+                row.source = source
+                row.note = note
+                row.updated_at = utcnow()
+            if own:
+                s.commit()
+            else:
+                s.flush()
+            return {"key": key, "value": value, "source": source}
+        finally:
+            if own:
+                s.close()
+
+    def preferences(self, learner_id: str, *, session: Any = None) -> dict[str, Any]:
+        """Everything the learner has told us, as ``{key: value}``."""
+        own = session is None
+        s = session or self.sf()
+        try:
+            rows = s.execute(
+                select(StudentPreference).where(StudentPreference.student_id == learner_id)
+            ).scalars().all()
+            return {r.key: r.value for r in rows}
+        finally:
+            if own:
+                s.close()
+
+    # ------------------------------------------------------------------ #
     # snapshots
     # ------------------------------------------------------------------ #
 

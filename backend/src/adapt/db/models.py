@@ -1157,6 +1157,85 @@ class SessionState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+# --------------------------------------------------------------------------- #
+# the baseline (round brief section 5): games, trials, and the mind snapshot
+# --------------------------------------------------------------------------- #
+# Three tables rather than one. A run is *when* a learner sat the baseline; a trial is one scored
+# attempt inside it (and is the only place a measurement lives — one row per tap, one row per
+# machine probe); a snapshot is the derived mind map, stored with the run that produced it so
+# "which baseline is this reading from?" is answerable years later.
+#
+# Trials are the same shape as the shared evidence log (brief 2A) on purpose: the baseline is
+# evidence, so it is ingested into ``state_evidence`` as well, with its own event ids, which is what
+# makes a partial baseline usable by the rest of the app instead of a special case.
+
+
+class BaselineRun(Base):
+    """One sitting of the mind baseline: skippable at any point, resumable at any point."""
+
+    __tablename__ = "baseline_runs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("base"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="in_progress")  # in_progress|complete|abandoned
+    #: The seed everything in this run derives from. Stored, not inferred: the same learner must get
+    #: the same codewords and the same machine rules on a second device mid-run.
+    seed: Mapped[int] = mapped_column(Integer, default=0)
+    format_pick: Mapped[str | None] = mapped_column(String(24))
+    stage: Mapped[str | None] = mapped_column(String(32), default="format")
+    completion: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (Index("ix_baseline_runs_student", "student_id", "started_at"),)
+
+
+class BaselineTrial(Base):
+    """One task attempt: what was asked, what was answered, how long it took, how sure they were."""
+
+    __tablename__ = "baseline_trials"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("btrial"))
+    run_id: Mapped[str] = mapped_column(ForeignKey("baseline_runs.id", ondelete="CASCADE"), nullable=False)
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    game: Mapped[str] = mapped_column(String(32), nullable=False)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    index: Mapped[int] = mapped_column(Integer, default=0)
+    phase: Mapped[str] = mapped_column(String(12), default="measure")  # practice|measure|show
+    correct: Mapped[bool | None] = mapped_column(Boolean)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    #: Confidence, 0-3 coins. Nullable because most trials are not wagered on.
+    wager: Mapped[int | None] = mapped_column(Integer)
+    task: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    response: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    score: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        # The idempotency rule, the same one the evidence log uses: a re-sent trial is one row.
+        UniqueConstraint("run_id", "task_id", "index", name="uq_baseline_trial_task"),
+        Index("ix_baseline_trials_run", "run_id", "index"),
+        Index("ix_baseline_trials_student_game", "student_id", "game"),
+    )
+
+
+class MindSnapshot(Base):
+    """The eight factors, their ranges and n, and the levers derived from them."""
+
+    __tablename__ = "mind_snapshots"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("mind"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("baseline_runs.id", ondelete="SET NULL"))
+    factors: Mapped[Any] = mapped_column(EncryptedJSON, default=list)
+    levers: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    completion: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    taken_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (Index("ix_mind_snapshots_student", "student_id", "taken_at"),)
+
+
 __all__ = [
     "Base",
     "utcnow",
@@ -1165,6 +1244,9 @@ __all__ = [
     "AuthSession",
     "AuditLog",
     "StudentPreference",
+    "BaselineRun",
+    "BaselineTrial",
+    "MindSnapshot",
     "Course",
     "Topic",
     "TopicPrerequisite",

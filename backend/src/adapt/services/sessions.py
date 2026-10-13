@@ -60,6 +60,22 @@ PREFERENCE_KEYS = {
     "push_me": bool,
     "want_voice": bool,
     "want_review_reminders": bool,
+    # --- answers from the mind baseline (round brief section 5.3) ------------------ #
+    # These are *stated*, so they live here rather than in the measured tables. Note what is still
+    # absent: there is no "learning_style" key, and there will not be one. A learner saying they
+    # like diagrams is an instruction about what to show first; a system deciding they are "a visual
+    # learner" and teaching them only that way is the thing this whole app refuses to do.
+    "preferred_format": str,       # diagram | text | worked_example  (asked before the games)
+    "feedback_style": str,         # straight | gentle | just show the answer
+    "challenge_first": str,        # challenge me first | safe success first
+    "study_days": int,
+    "study_when": str,
+    "motivation": list,
+    "quit_trigger": list,
+    "when_stuck": str,
+    "device_context": list,
+    "anything_else": str,
+    "timers_help": bool,           # shows or hides the clock; the app still measures quietly
 }
 
 # Onboarding answers that map straight onto a catalog strategy live in

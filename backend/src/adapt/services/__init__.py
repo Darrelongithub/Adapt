@@ -20,6 +20,7 @@ from typing import Any, Callable, Iterator
 
 from sqlalchemy.orm import Session
 
+from ..baseline import Baseline
 from ..state import LearnerState, Orchestrator
 from ..ai.ai1 import LearningIntelligence
 from ..ai.ai2 import EducationalIntelligence
@@ -44,6 +45,8 @@ class AppServices:
     state: LearnerState
     #: The deterministic turn cycle: ingest → model → content → plan → deliver.
     orchestrator: Orchestrator
+    #: The mind baseline (round brief section 5): six games, code-scored, one snapshot.
+    baseline: Baseline
     ai1: LearningIntelligence
     ai2: EducationalIntelligence
     ai3: SceneNarrator | None
@@ -231,11 +234,14 @@ def build(
     # The Orchestrator is the only place a turn is sequenced (brief 2A). It is built from the
     # services rather than the other way round: the intelligences never reach for the orchestrator.
     orchestrator = Orchestrator(state=state, settings=settings, ai1=ai1, ai2=ai2, ai3=ai3)
+    # The baseline talks to the store (its trials are evidence) and to nobody else.
+    baseline = Baseline(database.sessionmaker, state=state, settings=settings)
     return AppServices(
         settings=settings,
         db=database,
         state=state,
         orchestrator=orchestrator,
+        baseline=baseline,
         ai1=ai1,
         ai2=ai2,
         ai3=ai3,
