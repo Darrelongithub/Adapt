@@ -211,8 +211,8 @@ def _attention(trials: Sequence[Trial]) -> Factor:
     correct_traps = sum(1 for t in traps if t.correct)
     # Report successful resistance separately from all trap pauses. A paused
     # intuitive error is still retained, not mistaken for successful resistance.
-    pauses = [int(t.latency_ms) for t in traps if t.latency_ms and t.correct]
-    all_pauses = [int(t.latency_ms) for t in traps if t.latency_ms]
+    successful_pauses = [int(t.latency_ms) for t in traps if t.latency_ms and t.correct]
+    pauses = [int(t.latency_ms) for t in traps if t.latency_ms]
     return Factor(
         key="attention_self_control",
         title=FACTOR_TITLES["attention_self_control"],
@@ -241,7 +241,7 @@ def _attention(trials: Sequence[Trial]) -> Factor:
             "traps_correct": correct_traps,
             "traps_intuitive": intuitive,
             "median_pause_ms": int(median(pauses)) if pauses else None,
-            "median_all_trap_pause_ms": int(median(all_pauses)) if all_pauses else None,
+            "median_successful_trap_pause_ms": int(median(successful_pauses)) if successful_pauses else None,
         },
     )
 
@@ -314,7 +314,7 @@ def _reasoning(trials: Sequence[Trial]) -> Factor:
         high=min(1.0, rate + 0.15),
         summary=f"{falsifying}/{len(probes)} tests tried to break your idea, {len(solved)}/{len(guesses)} guesses right",
         statement=(
-            f"About {rate:.0%} of the inputs you tested were ones that could prove you wrong"
+            f"About {rate:.0%} of the inputs you tested were ones that could have proved you wrong"
             + (", which is a good habit" if rate >= 0.4 else ", so the app will prompt you to test the awkward case first")
             + "."
         ),
@@ -372,22 +372,22 @@ def _persistence(trials: Sequence[Trial]) -> Factor:
     hints = [t for t in box if t.task.get("action") == "hint"]
     quit_trial = next((t for t in box if t.task.get("action") == "walk_away"), None)
     n = len(attempts) + len(hints) + (1 if quit_trial else 0)
-    starter = next((t for t in box if t.task.get("action") == "start"), None)
-    if n < MIN_N["persistence_help_seeking"] or starter is None:
+    if n < MIN_N["persistence_help_seeking"]:
         return _not_measured("persistence_help_seeking", need=MIN_N["persistence_help_seeking"], n=n, what="trying the locked box")
-    first_hint_ms = None
-    if hints and starter:
-        first_hint_ms = int(hints[0].latency_ms or 0) or None
+    # Time to first help is everything the learner did *before* the first hint: summing the trials
+    # before it, rather than reading the hint screen's own latency, which measures reading a hint.
+    first_hint_ms: int | None = None
+    if hints:
+        # List order is the order they were measured in; trial.index is not filled in every path.
+        first_hint = box.index(hints[0])
+        first_hint_ms = sum(int(t.latency_ms or 0) for t in box[:first_hint]) or None
     wrong_attempts = [a for a in attempts if a.correct is False]
     after_wrong_retry = None
     if wrong_attempts:
         last_wrong = wrong_attempts[-1]
         after = [t for t in box if t.index > last_wrong.index and t.task.get("action") == "attempt"]
         after_wrong_retry = len(after) > 0
-    minutes = None
-    if starter and (quit_trial or attempts or hints):
-        last = max([t for t in box if t.index >= starter.index], key=lambda t: t.index)
-        minutes = round(((last.latency_ms or 0) + sum(int(t.latency_ms or 0) for t in box if t.index <= last.index)) / 60000, 2)
+    minutes = round(sum(int(t.latency_ms or 0) for t in box) / 60000, 2) if box else None
     return Factor(
         key="persistence_help_seeking",
         title=FACTOR_TITLES["persistence_help_seeking"],
@@ -543,7 +543,11 @@ def levers(factors: Mapping[str, Factor], *, preferences: Mapping[str, Any] | No
         why_pace = f"median {pace.detail.get('median_ms')}ms per quick tap, drift {drift:+.0%} across the session (n={pace.n})"
 
     return {
-        "step_size": {"value": step_size, "why": why_step, "source": "measured" if wm.state == "measured" else "default"},
+        "step_size": {
+            "value": step_size,
+            "why": why_step,
+            "source": "measured" if wm.state == "measured" else "default",
+        },
         "lead_format_prior": {"value": lead_format_prior, "why": why_lead, "source": "stated" if stated_format else "default"},
         "pace": {"value": pace_lever, "why": why_pace, "source": "measured" if pace.state == "measured" else "default"},
         "review_halflife_prior": {"value": halflife, "why": why_hl, "source": "measured" if ltm.state == "measured" else "default"},

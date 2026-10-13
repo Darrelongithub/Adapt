@@ -349,7 +349,9 @@ class Baseline:
                 # The shared store, so a lesson built tomorrow reads the same choice. Provenance is
                 # ``stated``: this is the learner's instruction, not a measurement.
                 try:
-                    self.state.set_preference(student_id, "preferred_format", value, source="baseline")
+                    self.state.set_preference(
+                        student_id, "preferred_format", value, source="baseline", session=s
+                    )
                 except Exception:  # pragma: no cover - a preference write must never block the flow
                     log.exception("baseline: could not write the format preference to the store")
         return self.view(student_id, run_id)
@@ -379,7 +381,7 @@ class Baseline:
                     if not mapped:
                         continue
                     try:
-                        self.state.set_preference(student_id, mapped, value, source="baseline")
+                        self.state.set_preference(student_id, mapped, value, source="baseline", session=s)
                     except Exception:  # pragma: no cover
                         log.exception("baseline: could not write preference %s to the store", key)
         out = self.view(student_id, run_id)
@@ -425,13 +427,20 @@ class Baseline:
 
             response = dict(response or {})
             scored = self._score(task, response, trials, seed=int(run.seed or 0))
+            # What the learner *did* with the task is part of the trial, not just what the server
+            # asked: a machine round is finished when probes and wrong guesses run out, and the
+            # locked box is measured by hints bought and attempts made. Both read this back, and
+            # without it the machine round had no ending at all (it re-served the same task forever)
+            # and the persistence factor saw no attempts — two bugs from one omission.
+            action = response.get("action") or task.get("action")
+            if action:
+                task = {**task, "action": action}
             index = len(trials)
             if scored.get("action"):
                 task["action"] = scored["action"]
             correct = scored.get("correct")
             if task.get("phase") == "practice":
                 correct = None  # practice never enters measured correctness
-                scored["correct"] = None
             row = BaselineTrial(
                 run_id=run_id,
                 student_id=student_id,
@@ -454,11 +463,17 @@ class Baseline:
             # measurement (brief 2A's idempotency rule, applied here).
             if self.state is not None and row.phase == "measure":
                 try:
+                    # ``session=s`` matters more than it looks. One SQLite file allows one writer,
+                    # so a store call that opened its *own* session here would block on the write
+                    # transaction this method is already holding and, after the 5-second busy
+                    # timeout, fail with "database is locked" — mid-baseline, on a learner's answer.
+                    # The trial and its evidence row are one transaction, which is also the truth:
+                    # if the trial did not land, the evidence should not either.
                     self.state.ingest(
                         student_id,
                         self._event(run_id, task, scored, correct),
-                        session=s,
                         module="code",
+                        session=s,
                     )
                 except Exception:  # pragma: no cover - the baseline must never fail on the store
                     log.exception("baseline: could not ingest a trial into the evidence log")
@@ -542,6 +557,9 @@ class Baseline:
     # ------------------------------------------------------------------ #
     def finish(self, student_id: str, run_id: str) -> dict[str, Any]:
         """Seal the run: an immutable mind snapshot, whatever was and was not measured."""
+        # Read the learner's model first, on its own connection: a read that opens a second session
+        # while a write transaction is open on the same file waits on the writer's lock.
+        model = self.state.get_snapshot(student_id).model if self.state is not None else {}
         with self._sess() as s:
             run = self._run(s, run_id)
             trials = self.trials_of(run_id, session=s)
@@ -552,7 +570,6 @@ class Baseline:
                 questions_done=bool((run.completion or {}).get("questions")),
             )
             prefs = dict((run.completion or {}).get("answers") or {})
-            model = self.state.get_snapshot(student_id).model if self.state is not None else {}
             built = F.build_factors(trials, model=model, preferences=prefs)
             levers = F.levers(built, preferences=prefs)
             payload = F.snapshot_payload(
@@ -581,6 +598,7 @@ class Baseline:
 
     def snapshot(self, student_id: str, *, run_id: str | None = None) -> dict[str, Any]:
         """The latest stored snapshot, or one computed now from the log if none was ever sealed."""
+        model = self.state.get_snapshot(student_id).model if self.state is not None else {}
         with self._sess() as s:
             query = s.query(MindSnapshot).filter(MindSnapshot.student_id == student_id)
             if run_id:
@@ -608,7 +626,6 @@ class Baseline:
                 return {"student_id": student_id, "state": "not_started", "factors": [], "levers": {}}
             trials = self.trials_of(run.id, session=s)
             prefs = dict((run.completion or {}).get("answers") or {})
-            model = self.state.get_snapshot(student_id).model if self.state is not None else {}
             built = F.build_factors(trials, model=model, preferences=prefs)
             levers = F.levers(built, preferences=prefs)
             report = flow.stage_report(

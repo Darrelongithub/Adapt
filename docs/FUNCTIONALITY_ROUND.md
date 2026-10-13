@@ -84,7 +84,7 @@ and `scripts/teaching_quality_eval.py` writing `QUALITY_REPORT.md`.
 - [ ] Phase 1.1–1.10 fixes, with tests
 - [ ] Phase 1.4.2 BKT calibration
 - [x] Phase 1.4.3 shared state, orchestrator, `adapt rebuild-model`
-- [ ] Phase 2 baseline
+- [x] Phase 2 baseline (backend + screens; browser checks pending, see `docs/UNVERIFIED.md`)
 - [ ] Phase 3 subject round
 - [ ] Phase 4 content engine + `QUALITY_REPORT.md`
 - [ ] Phase 5 adaptation layer + contrast demo
@@ -319,3 +319,89 @@ inspecting the schema with the app's own `Database`), which is the path a return
    `evidence` *and* to the new log. Removing the old writes would break the phase-4 tests that
    read them; the brief says not to weaken tests, so the migration is additive and the remaining
    work (AI 1's analysis reading its inputs from the store) is recorded rather than half-done.
+
+
+---
+
+## Phase 2 report - the universal mind baseline (section 5)
+
+Status: **complete on everything this environment can execute.** The engine is 40/40 green, the
+whole suite is green, the screens exist and were driven in jsdom against the real API, and the
+browser-level and live-model claims are in `docs/UNVERIFIED.md` as pending checks with steps.
+
+### Files changed in this phase
+
+* `backend/src/adapt/baseline/{service,flow,games,factors}.py` - the engine (this phase started
+  here; the earlier checkpoint commit has the first half).
+* `backend/src/adapt/api/routes/baseline.py` - the eight routes, with the ownership check that
+  opens its own short-lived session.
+* `backend/tests/test_baseline.py` - 40 tests.
+* `backend/migrations/versions/0008_baseline_tables.py` - the run/trial tables.
+* `frontend/src/lib/baseline.ts` - the typed client and the pure presentation helpers.
+* `frontend/src/app/baseline/page.tsx` - every screen of the flow.
+* `frontend/src/lib/mock.ts` - the baseline fixtures (the run advances, so `?mock=1` walks it).
+* `frontend/scripts-ui-probe.mjs` - the `baseline` scenario: 25 checks.
+* `scripts/check-contract.mjs` - see deviation 2.
+
+### Commands run, with results
+
+```
+cd backend && ../.venv/bin/python -m pytest -q
+  765 passed, 1 warning in 55.74s
+
+cd backend && ../.venv/bin/python -m pytest -q tests/test_baseline.py
+  40 passed, 1 warning in 5.29s
+
+cd frontend && npm run lint          # contract + tsc
+  contract ok: every path the frontend calls exists, ?mock=1 covers them, ...
+
+cd frontend && npm run build
+  compiled; /baseline  8.27 kB
+
+scripts/probe-fresh.sh baseline      # jsdom + live API + real encrypted DB
+  25/25 checks passed
+```
+
+The full synthetic play-through (a perfect learner) now reaches every stage in the brief's order:
+study, cued recall, quick taps, vault, shopkeeper, quick taps, machine, locked box, quick taps,
+traps, delayed codewords, snapshot.
+
+### What was actually wrong (each one found by a test or by the play-through)
+
+1. **The run "hung" on SQLite write-lock contention, not an infinite loop.** `Baseline.submit` held
+   a write transaction while `state.ingest` opened a *second* session on the same file: every submit
+   waited out `busy_timeout = 5000` and then raised `database is locked`. Fixed by passing the
+   caller's session to `ingest`/`set_preference` and reading the learner model before the write
+   session opens. The route ownership check now uses its own session and nothing holds a request
+   session across a service call.
+2. **The shopkeeper stage never ran.** `shopkeeper_next` counted *every* trial in the run rather
+   than its own game's, so the stage looked complete the moment anything else had been measured: it
+   was reported "complete, 0 trials", the learner never saw the distraction task, and "recall under
+   distraction" was silently missing from the working-memory factor.
+3. **Two routes had an undefined session.** `GET /baseline/snapshot?run_id=...` and
+   `GET /baseline/next-day?run_id=...` called `_owned(s, ...)` with a session that no longer existed
+   - a `NameError` behind a branch no test entered. Both covered now.
+4. **The locked box re-served itself forever** and recorded nothing about what the learner did: the
+   trial never stored the action (probe/hint/attempt/walk away). Both fixed; the box now ends on a
+   solve, a walk-away, or three attempts.
+5. **`step_size` claimed "measured"** with no working-memory measurement behind it, and the
+   machine's "noticed the switch" read a typed sentence instead of the scored probe output.
+
+### Deviations (and why)
+
+1. **The vault tiles accept number keys (1-9) as well as arrows and Enter.** The brief requires
+   keyboard operation, which the tiles have. The number keys were added because the jsdom probe
+   cannot drive a React synthetic key handler, and because they are genuinely faster for a keyboard
+   learner. Asserted in the probe.
+2. **`scripts/check-contract.mjs`'s generic-argument matcher was narrowed** from a paren-balanced
+   run to `<[^()<>]*>`. The old pattern was greedy and matched across lines, so
+   `post<BaselineView>("/api/v1/baseline", {})` followed by another generic call parsed as one call
+   whose path was the *later* string - which meant real call sites were never checked against the
+   route table or the mock table. After the fix the checker sees 72 frontend calls instead of 53.
+3. **The study screen is labelled "looking time - not scored", not "measured".** A `phase: "show"`
+   task is looking time; calling it measured would claim a trial that was never scored.
+
+### Still open in this phase
+
+The browser checks in `docs/UNVERIFIED.md` (flash on a real device, 45-second clock, 360px layout),
+and screenshots into `docs/screens/` - both need a browser, which cannot be installed here.

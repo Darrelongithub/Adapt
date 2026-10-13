@@ -420,3 +420,40 @@ no PR checks; these are local regression results. The sole pytest warning is Sta
 TestClient deprecation. No browser automation, screenshots, live model call, symbolic formula
 verification or teaching-quality validation is claimed. The user has explicitly authorized
 merging PR #9; GitHub is the authoritative record of the merge result.
+
+### Merge with the advanced base branch (phases 2 and 7 landed while this PR was open)
+
+GitHub reported `CONFLICTING` after the base gained Agent 1's baseline screens/fixes and Agent 6's
+security work. Resolved locally with `git merge` of the base head `2010b98`, keeping both sides:
+
+- `baseline/factors.py`: the base's test defines `median_pause_ms` as the median over **all** trap
+  pauses (26 500 in its fixture); kept that contract and exposed successful-resistance pauses as a
+  separate `median_successful_trap_pause_ms` detail. Restored the base's exact falsifying-test
+  sentence, which its test asserts verbatim. Lever `step_size` is `default` when unmeasured (both
+  sides agreed).
+- `baseline/service.py`: the base already shares the trial transaction with the evidence log and
+  persists the learner's machine/locked-box action; kept its version plus this branch's scored-action
+  stamp, measured-only wagers and the frozen real preference/performance comparison. Dropped this
+  branch's suppression of practice `scored.correct` in the HTTP body: the base's test states that a
+  practice tap is still graded as feedback while the **stored** measurement stays `None`.
+- `frontend/src/lib/mock.ts`: both new row groups kept (evidence rows first, then baseline rows).
+- `frontend/src/app/baseline/page.tsx`: the sealed comparison now carries `sentence` from the
+  evidence report; the screen reads it (falling back to the older `statement`) and links to `/evidence`.
+- Agent 6's `test_config_secrecy.py` was left exactly as merged: its `/status` test deliberately
+  skips when the route requires authentication, so the unrestricted run reports **1 skipped**.
+
+Post-merge verification on the merged tree:
+
+```text
+cd backend && ../.venv/bin/python -m pytest -q -rs --tb=short
+874 passed, 1 skipped, 1 warning in 83.37s (0:01:23)
+SKIPPED [1] tests/test_config_secrecy.py:309: /status requires authentication
+
+cd frontend && npm run lint
+contract ok: 87 backend routes against 78 frontend calls; tsc --noEmit exited 0
+
+cd frontend && npm run test:lib   -> 18 pass / 0 fail
+cd frontend && npm run test:engine -> 15 pass / 0 fail
+cd frontend && npm run test:server -> 2 pass / 0 fail
+cd frontend && NEXT_TELEMETRY_DISABLED=1 npm run build -> 15/15 pages, /evidence 4.79 kB / 133 kB
+```
