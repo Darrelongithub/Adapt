@@ -1129,6 +1129,8 @@ async function main() {
           await page3.click(revokeBtn);
           await waitFor(async () => (await activeOf(accept.cookie)).active?.length === 0, { timeout: 15_000, label: "the revocation to be recorded" });
           check("proposals", "turning it off from the page actually turns it off", (await activeOf(accept.cookie)).active?.length === 0, JSON.stringify(await activeOf(accept.cookie)).slice(0, 180));
+          const revokedBox = [...page3.find(".ledger-log")].find((x) => /Decisions made this session/i.test(x.textContent ?? ""));
+          check("proposals", "a change of mind is written down beside the decision it undid", /revoked/i.test(String(revokedBox?.textContent ?? "")), String(revokedBox?.textContent ?? "").slice(0, 200));
         } else {
           check("proposals", "the applied change can be withdrawn from the same screen", false, "no turn-off control beside the applied row");
         }
@@ -1158,6 +1160,12 @@ async function main() {
       const mine = (hist.body.decisions ?? hist.body.entries ?? hist.body.history ?? []).find((r) => String(r.decision ?? r.status ?? "").includes("modif"));
       check("proposals", "a modified approval is recorded as the learner's modification, not the model's proposal", !!mine, blob.slice(0, 240));
       check("proposals", "and the reason the learner typed is kept with it", /lose the thread|two, not four/i.test(blob), blob.slice(-200));
+      // The log beside the buttons, in the buttons' own words: reading back what you decided is
+      // the point of it, so it is checked against the box and not against the whole page (where
+      // the button's own label would make the check pass on an empty log).
+      const logBox = [...page4.find(".ledger-log")].find((x) => /Decisions made this session/i.test(x.textContent ?? ""));
+      const logText = String(logBox?.textContent ?? "");
+      check("proposals", "the decision is written into the log the learner can read back", /Yes, but change it/i.test(logText), logText.slice(0, 200));
       const applied = await activeOf(modify.cookie);
       const arow = (applied.active ?? [])[0];
       check("proposals", "the version that takes effect is the learner's edited one", !!arow && JSON.stringify(arow.payload ?? {}).includes("2"), JSON.stringify(applied).slice(0, 220));
@@ -1202,6 +1210,55 @@ async function main() {
     const dash = await api("/api/v1/dashboard", { headers: { cookie: jar.getCookieStringSync(BASE) } });
     const shown = JSON.stringify(dash.body);
     check("progress", "what the page shows exists in the API response", shown.length > 60, shown.slice(0, 140));
+
+    /* ---- the snapshot's progress chart, which the app shipped the styles for and never drew ----
+     * `.topo`, `.topo-table` and `.pg-note` sat in globals.css with nothing rendering them, and
+     * Progress answered with a list of coloured band pills — which flattens three different
+     * claims into one: where the estimate is, how wide the uncertainty around it is, and how
+     * many answers it rests on. The encoding is the honesty, so each part of it is checked: the
+     * drawing, its description for a screen reader, the words that say what each dimension
+     * means, and a row of exact figures per lane (a chart nobody can read as numbers is a chart
+     * nobody can check). */
+    const drawn = page.text();
+    const masteryRows = (dashN.body || {}).mastery || [];
+    const topo = page.find('svg.topo[role="img"]');
+    const lanes = page.find("table.topo-table tbody tr");
+    const topoLabel = String(topo[0]?.getAttribute("aria-label") ?? "");
+    check("progress", "the estimate is drawn, not only listed", !masteryRows.length || topo.length === 1, `charts found: ${topo.length} for ${masteryRows.length} topics`);
+    check("progress", "the drawing is described for a screen reader instead of being decoration", !masteryRows.length || topoLabel.length > 80, topoLabel.slice(0, 140));
+    check("progress", "the page says what each dimension of the chart means", !masteryRows.length || (/position is the estimate/i.test(drawn) && /more confident one/i.test(drawn)), drawn.slice(0, 160));
+    check("progress", "every lane has a row of exact figures underneath it", !masteryRows.length || lanes.length === masteryRows.length, `${lanes.length} rows drawn for ${masteryRows.length} topics in the response`);
+    check("progress", "the interval around the estimate is named as an interval", !masteryRows.length || /uncertainty/i.test(drawn), drawn.slice(0, 140));
+    // The corner tab says which section you are in, as the snapshot does, rather than the brand
+    // on every screen — with an accessible name that still says it is the index.
+    const tab = page.find("button.index-tab");
+    const tabText = String(tab[0]?.textContent ?? "");
+    check("progress", "the corner tab names the section it is standing on", /§\s*05\s*·\s*Progress/.test(tabText), tabText || "(no tab)");
+    check("progress", "and still says what pressing it would do", /section index/i.test(String(tab[0]?.getAttribute("aria-label") ?? "")), String(tab[0]?.getAttribute("aria-label") ?? "(no name)"));
+
+    /* ---- the same chart on mock data, where the numbers are known exactly ----
+     * Live, this learner may have no mastery rows at all, and every check above is gated on
+     * having some — a gate that can quietly become "never runs". The mock dashboard carries two
+     * lanes on purpose: an estimate from four answers with a wide interval, and one from fourteen
+     * with a narrow one. That is the encoding being checked *as* an encoding: if the small sample
+     * does not get the wider line, the chart is decoration and the honest thing is a list. */
+    const mockProgress = await open("/progress?mock=1", "progress");
+    await waitFor(() => mockProgress.find("table.topo-table tbody tr").length >= 2, { timeout: 15_000, label: "the mock chart" }).catch(() => {});
+    await sleep(300);
+    const mockRows = mockProgress.find("table.topo-table tbody tr");
+    const mockText = mockProgress.text();
+    check("progress", "mock: both lanes are drawn, with a row of exact figures each", mockRows.length === 2, `${mockRows.length} table rows`);
+    // The estimate ticks and the interval end-caps are vertical (zero width), so the only lines
+    // with a width in them are the two uncertainty intervals.
+    const spans = mockProgress
+      .find("svg.topo line")
+      .map((l) => Math.abs(Number(l.getAttribute("x2")) - Number(l.getAttribute("x1"))))
+      .filter((w) => w > 1);
+    check("progress", "mock: the four-answer estimate carries the wider interval", spans.length === 2 && spans[0] > spans[1], `interval widths, first lane then second: ${spans.map((w) => w.toFixed(0)).join(", ")}`);
+    check("progress", "mock: the small sample is called an early signal beside its own number", /n=4\b/i.test(mockText) && /early signal/i.test(mockText), mockText.slice(0, 200));
+    check("progress", "mock: the estimates on screen are the ones the fixture sent", /62%/.test(mockText) && /29%/.test(mockText), mockText.slice(0, 160));
+    check("progress", "mock: the evidence count sizes the circle, and the page says so", /bigger circle is not a better score/i.test(mockText), mockText.slice(0, 160));
+    closePage(mockProgress);
     closePage(page);
   }
 
@@ -1218,6 +1275,18 @@ async function main() {
       await sleep(700);
       check("review", "a review control does something visible", page.requests.length > 0 || page.text() !== body, page.requests.join(", "));
     }
+    // A self-report that leaves no trace on the screen is one the learner cannot check. The live
+    // region says each rating once and is gone; the snapshot keeps a running list, and Changes
+    // already had one.
+    const reviewBody = page.text();
+    check(
+      "review",
+      "what was rated stays readable after the announcement is gone",
+      /Reviews completed this session/i.test(reviewBody) && (/Nothing reviewed yet/i.test(reviewBody) || /rated/i.test(reviewBody)),
+      reviewBody.slice(0, 160),
+    );
+    const reviewTab = String(page.find("button.index-tab")[0]?.textContent ?? "");
+    check("review", "the corner tab names this section too", /§\s*04\s*·\s*Review/.test(reviewTab), reviewTab || "(no tab)");
     closePage(page);
   }
 

@@ -1002,6 +1002,17 @@ kbd {
   font-size: 10.5px;
   text-transform: uppercase;
 }
+.topo-legend {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 18px;
+  max-width: 680px;
+  line-height: 1.9;
+}
+.topo-legend b {
+  color: var(--ink);
+}
 
 /* ========== Lessons - filmstrip ========== */
 .page-lessons {

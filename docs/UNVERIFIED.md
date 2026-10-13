@@ -304,6 +304,15 @@ area. What changed, and what a phone still has to confirm:
   filmstrip pan on `/lesson`, no sideways scroll on `/settings` (audit table) and `/review`,
   the fixed status corner absent (footer copy present instead), and first paint being immediate
   with the right serif/mono faces even in airplane mode after the first visit.
+* **The progress chart is new and has not been seen on glass either.** `/progress` now draws the
+  estimate chart from the design snapshot (position = estimate, line width = the server's 90%
+  interval, circle size = answers behind it) with a table of the exact figures underneath. Its
+  styles had shipped in `globals.css` with nothing rendering them. The drawing scales by
+  `viewBox` and the table sits in the same `.table-scroll` box as the audit tables, so the
+  reasoning says a portrait phone gets a legible chart and no sideways page scroll — on glass,
+  check that the lane labels are still readable at 375px wide (they are clipped at 27 characters,
+  and the full title is in the table) and that the interval lines are distinguishable from the
+  estimate ticks without colour.
 * **To check (~5 minutes, same rehearsal as `adapt host`):** open the LAN address on a phone in
   portrait *and* landscape, walk Practise → answer → Check it (the button must respond on the
   first tap), open Settings and Review and try to scroll the page sideways (it must not), then

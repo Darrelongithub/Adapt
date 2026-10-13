@@ -403,7 +403,7 @@ in `docs/UNVERIFIED.md`, not here.
 
 Fifteen defects, fixed against the user's own specification of the fix. The table is the map:
 what was wrong, where the fix lives, and what fails if the fix is removed. Every test named here
-runs in the 625-test suite; the UI claims are checked by `scripts/probe-fresh.sh all` (181 checks).
+runs in the 640-test suite; the UI claims are checked by `scripts/probe-fresh.sh all` (199 checks).
 
 | # | Defect | Root cause | Fix (where) | Guard |
 |---|---|---|---|---|

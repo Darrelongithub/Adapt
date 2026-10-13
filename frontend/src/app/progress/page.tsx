@@ -9,13 +9,23 @@
  */
 import { useState } from "react";
 
-import { EvidenceBadge, MethodReport, type MethodRow } from "@/components/evidence";
-import { Band, Btn, Card, Err, humanize, Notice, Tag } from "@/components/ui";
+import { MethodReport, type MethodRow } from "@/components/evidence";
+import { TopicTopo, TopoNote } from "@/components/topo";
+import { Btn, Card, Err, humanize, Notice, Tag } from "@/components/ui";
 import { get, post, useApi } from "@/lib/api";
 import type { Journey } from "@/lib/types";
 
 type Dashboard = {
-  mastery?: { topic_id: string; title: string; p_know: number; band?: string; observations?: number; due_at?: string | null }[];
+  mastery?: {
+    topic_id: string;
+    title: string;
+    p_know: number;
+    band?: string;
+    observations?: number;
+    /** The 90% interval the server computes from the observation count — the chart's width. */
+    ci?: [number, number] | null;
+    due_at?: string | null;
+  }[];
   band_summary?: Record<string, number>;
   weakest?: { topic_id: string; title: string; p_know: number }[];
   knowledge_gaps?: { topic_id: string; topic_title?: string; blocking_prerequisite_title?: string; severity?: number }[];
@@ -94,18 +104,13 @@ export default function Progress() {
               observation count next to it, because one data point is not a level.
             </p>
           ) : (
-            <ul className="space-y-2">
-              {(d.mastery ?? []).map((m) => (
-                <li key={m.topic_id} className="flex flex-wrap items-center gap-2">
-                  <span className="w-full shrink-0 text-sm sm:w-44">{m.title}</span>
-                  <Band band={m.band ?? "unknown"} pKnow={m.p_know} />
-                  {/* The count and the caveat travel together: a band from two answers is a
-                      direction, and the screen has to say which one it is looking at. */}
-                  <EvidenceBadge n={m.observations ?? 0} />
-                  {m.due_at ? <Tag tone="warn">review {new Date(m.due_at).toLocaleDateString()}</Tag> : null}
-                </li>
-              ))}
-            </ul>
+            <>
+              {/* Position is the estimate, width is the uncertainty the server sent, and the
+                  circle is the evidence count: three things a coloured band pill flattened into
+                  one. The count and its caveat still travel together, in the table underneath. */}
+              <TopoNote />
+              <TopicTopo rows={d.mastery ?? []} />
+            </>
           )}
           {Object.keys(d.band_summary ?? {}).length ? (
             <div className="mt-3 flex flex-wrap gap-1 border-t border-[var(--line)] pt-2 text-xs text-[var(--muted)]">

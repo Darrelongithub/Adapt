@@ -40,7 +40,12 @@ the shape of it:
    how it would be judged. Nothing applies until the learner answers — and "no" is recorded too.
 5. **Which teaching works** (`/progress`): actual minus expected per method, each row carrying
    `n` and the words `early signal` under eight observations. If a number comes from the pre-demo
-   pilot it says **pilot data — not evidence of efficacy** next to it.
+   pilot it says **pilot data — not evidence of efficacy** next to it. Above it, every topic
+   estimate is drawn the way it was measured: position is the estimate, the width of the line
+   through it is the uncertainty the server computed, and the size of the circle is how many
+   answers it rests on — *a bigger circle is not a better score, it is a more confident one* — with
+   the exact figures in a table underneath, because a chart nobody can read as numbers is a chart
+   nobody can check.
 
 **Do not demo the plumbing.** Voice, the Numbas import/export, the encryption internals, the
 SQLCipher story and the resource providers are all real and all in `docs/` — showing them spends
