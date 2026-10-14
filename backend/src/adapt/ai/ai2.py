@@ -49,7 +49,7 @@ from ..db.models import (
 from ..learning.profile import to_llm_payload
 from ..security.redact import redact_payload
 from . import local_tutor as LT
-from .prompts import AI2_SYSTEM, RESOURCE_CURATION_SYSTEM, TEACHBACK_GRADER_SYSTEM
+from . import static_context as SC
 
 log = logging.getLogger("adapt.ai2")
 
@@ -665,7 +665,7 @@ class EducationalIntelligence:
         out["feedback_source"] = "rules"
         out["misconceptions_source"] = "rules"
         if self.llm is not None and getattr(self.llm, "configured", False):
-            system = TEACHBACK_GRADER_SYSTEM + "\n" + TB.judge_prompt(criteria)
+            system = TB.judge_checklist(criteria)
             user = TB.as_data(text)
             safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
             res = await self.llm.complete(
@@ -674,6 +674,7 @@ class EducationalIntelligence:
                 purpose="ai2_teachback",
                 role="ai2",
                 student_id=student_id,
+                cache_prefix=SC.block("grader"),
                 temperature=0.0,
                 max_output_tokens=420,
                 response_spec=TB.MODEL_SPEC,
@@ -1038,18 +1039,17 @@ class EducationalIntelligence:
                 "grading": {k: g.get(k) for k in ("correct", "score", "method", "partial")},
                 "p_know": ctx.get("p_know"),
                 "adaptations": [d["strategy"] for d in ctx["directives"]],
-                "task": "Write 2-3 sentences of feedback: name the misconception, give the exact next step. "
-                "No praise padding. Plain text.",
             },
             separators=(",", ":"),
         )
         safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=4000)
         res = await self.llm.complete(
-            system=AI2_SYSTEM,
+            system="",
             user=safe["q"],
             purpose="ai2_feedback",
             role="ai2",
             student_id=student_id,
+            cache_prefix=SC.block("feedback"),
             temperature=0.3,
             max_output_tokens=320,
         )
@@ -1108,30 +1108,18 @@ class EducationalIntelligence:
             "concepts": ("array", {"type": "STRING"}),
             "params_json": "str",
         }
-        system = {
-            "role": "ai2",
-            "task": (
-                "Write ONE interactive scene specification for the request. You are describing data "
-                "for a simulation the server already implements; you are not writing code, markup, "
-                "HTML, JavaScript, templates, or a renderer. Choose kind from the list, keep every "
-                "text field plain prose, and give params as a JSON object of the names that kind "
-                "declares. Reply JSON with keys: kind, title, intent, intro, outro, concepts, params_json."
-            ),
-            "kinds": {k: {"summary": v["summary"], "params": sorted(v["params"]), "max_frames": v["max_frames"]} for k, v in catalogue.items()},
-            "rules": [
-                "binary_search.params.values must be strictly increasing with no repeats; or omit values and give n and seed",
-                "sorting.params.values may be any order, 2 to 20 numbers",
-                "cpu_cycle.params.program is an array of lines like 'LOAD 3'; data cells sit after the program",
-                "logic_gates.params.gate is one of AND, OR, XOR, NAND, NOR, XNOR, NOT, BUFFER",
-                "titles under 120 characters, intent under 400, framing under 600 each, at most 6 concepts",
-            ],
-        }
+        # The task, the catalogue of kinds and the parameter rules used to be built here and
+        # sent with every authoring request -- and again with the retry. They are the static
+        # head now (`static_context.block("scene_author")`), so what is left in the request is
+        # only what differs: the request, the preferred kind, and the validator's reasons from
+        # a previous attempt.
         user = json.dumps({"request": text[:600], "prefer_kind": wanted or None, "previous_rejections": hints[:6]}, separators=(",", ":"))
         safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=4000)
         res = await self.llm.complete(
-            system=json.dumps(system, separators=(",", ":")) + "\n\n" + AI2_SYSTEM,
+            system="",
             user=safe["q"],
             purpose="ai2_scene_spec",
+            cache_prefix=SC.block("scene_author"),
             role="ai2",
             student_id=student_id or "anon",
             temperature=0.2,
@@ -1172,9 +1160,10 @@ class EducationalIntelligence:
         )
         safe2, dropped2, redacted_kinds2 = redact_payload({"q": retry_user}, max_chars=5000)
         res2 = await self.llm.complete(
-            system=json.dumps(system, separators=(",", ":")) + "\n\n" + AI2_SYSTEM,
+            system="",
             user=safe2["q"],
             purpose="ai2_scene_fix",
+            cache_prefix=SC.block("scene_author"),
             role="ai2",
             student_id=student_id or "anon",
             temperature=0.0,
@@ -1293,20 +1282,16 @@ class EducationalIntelligence:
             },
             "spoken": want_spoken,
             "in_the_moment_ask": intent,
-            "task": (
-                "Teach this. Use the source material as the ground truth: correct or extend it, do not "
-                "contradict it or invent facts. Respect the presentation rules. Return JSON: answer, "
-                "sections[{label,text}], next_action, adaptations_applied[], ask_teachback, resource_hint."
-            ),
         }
         user = json.dumps(payload, separators=(",", ":"))[:9000]
         safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=9000)
         res = await self.llm.complete(
-            system=AI2_SYSTEM,
+            system="",
             user=safe["q"],
             purpose=purpose,
             role="ai2",
             student_id=student_id,
+            cache_prefix=SC.block("tutor"),
             temperature=0.45 if not want_spoken else 0.3,
             max_output_tokens=900 if not want_spoken else 420,
             response_spec=REPLY_SPEC,
@@ -1380,11 +1365,12 @@ class EducationalIntelligence:
         safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
         try:
             res = await self.llm.complete(
-                system=RESOURCE_CURATION_SYSTEM,
+                system="",
                 user=safe["q"],
                 purpose="ai2_curate",
                 role="ai2",
                 student_id=student_id or "anon",
+                cache_prefix=SC.block("curator"),
                 temperature=0.2,
                 max_output_tokens=520,
                 response_spec=CUR.CURATION_SPEC,
@@ -1427,28 +1413,17 @@ class EducationalIntelligence:
                 "topic_id": topic_id,
                 "count": want,
                 "note": note[:200],
-                "task": (
-                    "Write new practice questions in the style of this bank. Each item is stored "
-                    "against this learner's record, so it must be exactly checkable: "
-                    "answer_value is the final answer; check_expr is the pure arithmetic you used "
-                    "to get there, built from the numbers that appear in the stem, with no '=' and "
-                    "no units, and it must equal answer_value; every wrong choice needs why_wrong "
-                    "(the mistake that leads a learner to pick it); difficulty is your honest "
-                    "estimate from 0.1 (easy) to 0.9 (hard) for this topic. "
-                    "JSON with key items: [{topic_id, kind(numeric|mcq|text), stem, answer_value, "
-                    "check_expr, difficulty, est_seconds, solution_steps:[str], hints:[str], "
-                    "choices:[{text, why_wrong}], correct_index}]."
-                ),
             },
             separators=(",", ":"),
         )[:4000]
         safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=4000)
         res = await self.llm.complete(
-            system=AI2_SYSTEM,
+            system="",
             user=safe["q"],
             purpose="ai2_generate_practice",
             role="ai2",
             student_id=student_id,
+            cache_prefix=SC.block("practice_author"),
             temperature=0.7,
             max_output_tokens=1200,
             response_spec={"items": ("array", {"type": "OBJECT"})},
@@ -1552,6 +1527,8 @@ class EducationalIntelligence:
                         latency_ms=res.latency_ms,
                         redacted_fields=dropped,
                         prompt_chars=prompt_chars,
+                        tier=getattr(res, "tier", None),
+                        cached_tokens=int(getattr(res, "cached_tokens", 0) or 0),
                         day=utcnow().date().isoformat(),
                     )
                 )

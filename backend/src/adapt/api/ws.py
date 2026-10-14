@@ -21,6 +21,9 @@ server -> client
   * {"t":"tts_chunk", "index", "text"} : which words this audio was
   * {"t":"speak_unavailable", "reason", "text"} : no local TTS -> use browser voice
   * {"t":"error", "where", "detail", "recoverable"}
+  * {"t":"throttle", "scope", "retry_after_s", "recoverable"}  : too many frames too fast
+  * {"t":"deduped", "reason", "recoverable"}                   : the same frame, twice
+  * {"t":"busy", "state", "recoverable"}                       : a turn is already running
 
 Three properties of the real world shaped this file:
 
@@ -50,6 +53,7 @@ from starlette.websockets import WebSocketState
 from ..config import get_settings
 from ..db.models import LearningSession
 from ..security import auth
+from ..security.ratelimit import DuplicateWindow, realtime_guard
 from ..services import current
 
 log = logging.getLogger("adapt.ws")
@@ -115,6 +119,32 @@ async def voice(
         await websocket.close(code=4401, reason="authentication required")
         return
     await websocket.accept()
+    # One socket is one slot in the process-wide in-flight guard. A tab that reconnects in a
+    # loop -- which is what a crashed audio context or a proxy hiccup looks like from here --
+    # is a burst of sockets, and each one can start a turn. Four per learner, and the burst
+    # detector notices a loop before the learner sees a queue of half-finished answers.
+    guard = realtime_guard(st)
+    dedupe = DuplicateWindow(int(getattr(st, "ws_duplicate_window_ms", 900) or 900))
+    socket_key = f"ws:{student_id}"
+    admitted, why, wait = guard.begin(socket_key)
+    if not admitted:
+        log.info("voice socket refused: learner=%s reason=%s", student_id[-8:], why)
+        await send_text_frame(
+            websocket,
+            {
+                "t": "error",
+                "where": "admission",
+                "detail": (
+                    "too many voice sessions at once for this learner"
+                    if why == "in_flight"
+                    else "reconnecting too fast"
+                ),
+                "retry_after_s": round(wait, 2),
+                "recoverable": True,
+            },
+        )
+        await websocket.close(code=1013, reason="too many concurrent sessions")
+        return
     sample_rate = sr or int(getattr(st, "sample_rate", 16000))
 
     async def send(msg: dict[str, Any]) -> None:
@@ -185,23 +215,59 @@ async def voice(
             raw = msg.get("text")
             if raw is None:
                 continue
+            # Control frames used to be unmetered: only binary microphone audio went through
+            # a bucket, so a page that sent one text frame per keystroke could start one turn
+            # per keystroke. Every control frame is metered now, and a repeat of the last
+            # frame inside `ws_duplicate_window_ms` is dropped rather than acted on twice.
+            ok, retry = current().limiter.allow("ws_control", f"voice:{student_id}")
+            if not ok:
+                await send({"t": "throttle", "scope": "control", "retry_after_s": round(retry, 2), "recoverable": True})
+                await asyncio.sleep(min(0.25, retry))
+                continue
+            if dedupe.seen(socket_key, raw):
+                await send(
+                    {
+                        "t": "deduped",
+                        "reason": "the same message arrived twice inside the duplicate window",
+                        "recoverable": True,
+                    }
+                )
+                continue
             try:
                 payload = json.loads(raw)
             except json.JSONDecodeError:
                 await send({"t": "error", "where": "control", "detail": "expected one JSON object", "recoverable": True})
                 continue
-            await _control(payload, conv, send)
+            await _control(payload, conv, send, student_id=student_id)
     finally:
         await conv.stop()
+        guard.end(socket_key)
         _record_session(sid, len(conv.turns))
         log.info("voice socket closed: learner=%s turns=%d frames=%d bytes=%d", student_id[-8:], len(conv.turns), frames, conv.bytes_in)
 
 
-async def _control(payload: dict[str, Any], conv: Any, send: Any) -> None:
+async def _control(payload: dict[str, Any], conv: Any, send: Any, *, student_id: str) -> None:
     kind = str(payload.get("t") or payload.get("type") or "")
     if kind in ("text", "say", "typed"):
         text_in = str(payload.get("text") or "")[:2000]
         if text_in.strip():
+            # A turn is the expensive thing on this socket, so it gets its own bucket and a
+            # gate: a page that fires a message per keystroke gets one answer at a time
+            # instead of a queue of model calls, and it is told which limit it met.
+            ok, retry = current().limiter.allow("ws_turn", f"voice:{student_id}")
+            if not ok:
+                await send({"t": "throttle", "scope": "turn", "retry_after_s": round(retry, 2), "recoverable": True})
+                return
+            if getattr(conv, "busy", False):
+                await send(
+                    {
+                        "t": "busy",
+                        "state": getattr(getattr(conv, "state", None), "value", "working"),
+                        "detail": "a turn is already running - stop it or wait for it instead of sending another",
+                        "recoverable": True,
+                    }
+                )
+                return
             # Started, not awaited: this loop also reads the microphone, and a turn must
             # not block the learner's ability to interrupt it.
             conv.start_text(text_in)
@@ -235,6 +301,13 @@ async def _control(payload: dict[str, Any], conv: Any, send: Any) -> None:
         await send({"t": "pong"})
         return
     await send({"t": "error", "where": "control", "detail": f"unknown message '{kind}'", "recoverable": True, "known": ["text", "listen", "config", "stop", "status", "ping"]})
+
+
+async def send_text_frame(websocket: WebSocket, message: dict[str, Any]) -> None:
+    """Best-effort frame send for the paths that run before the loop's own helpers exist."""
+    if websocket.client_state is not WebSocketState.CONNECTED:
+        return
+    await websocket.send_text(json.dumps(message, separators=(",", ":")))
 
 
 def _record_session(session_id: str | None, turns: int) -> None:

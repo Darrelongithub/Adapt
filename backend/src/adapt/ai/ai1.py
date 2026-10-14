@@ -69,7 +69,8 @@ from ..learning import strategies as ST
 from ..learning.effect import evaluate_change, retention_calibration
 from ..learning.profile import Directive, LearnerProfile, TopicTrace, to_llm_payload
 from ..security.redact import redact_payload
-from .prompts import RETENTION_CHECK_SYSTEM, fill_approval_script
+from . import static_context as SC
+from .prompts import fill_approval_script
 
 log = logging.getLogger("adapt.ai1")
 
@@ -1338,11 +1339,12 @@ class LearningIntelligence:
         safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
         try:
             res = await self.llm.complete(
-                system=RETENTION_CHECK_SYSTEM,
+                system="",
                 user=safe["q"],
                 purpose="ai1_retention_check",
                 role="ai1",
                 student_id=student_id,
+                cache_prefix=SC.block("retention"),
                 temperature=0.3,
                 max_output_tokens=300,
                 response_spec=RETENTION_SPEC,
@@ -1581,11 +1583,15 @@ class LearningIntelligence:
         return result
 
     def _llm_prompt(self, drafts: Sequence[H.Draft], evidence: list[dict[str, Any]], profile: dict[str, Any]) -> tuple[str, str]:
-        from .prompts import AI1_SYSTEM
+        """The user half of the proposal call. Returns ``("", user)``.
 
+        The system half is now the static ``proposer`` block (system prompt + the five-part
+        output contract), which is the same for every learner and is what the context cache
+        holds. Returning an empty system string is not a placeholder: it is the statement that
+        nothing about *this* proposal belongs in the system role.
+        """
         top = drafts[0]
         strategy = ST.get(top.strategy)
-        system = AI1_SYSTEM
         user = json.dumps(
             {
                 "observed_evidence": evidence[:4],
@@ -1614,15 +1620,10 @@ class LearningIntelligence:
                         ],
                     )
                 ),
-                "task": (
-                    "Write the five-part proposal (facts_text, pattern_text, hypothesis_text, change_text, "
-                    "ask_text) plus caveat_text and expected_effect, and pick at most 2 tunable knobs in "
-                    "action_payload. Reply with JSON only."
-                ),
             },
             separators=(",", ":"),
         )[:7000]
-        return system, user
+        return "", user
 
     async def _phrase_with_llm(self, student_id: str, drafts: Sequence[H.Draft], evidence: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         profile = self.profile_dict(student_id)
@@ -1634,6 +1635,7 @@ class LearningIntelligence:
             purpose="ai1_propose",
             role="ai1",
             student_id=student_id,
+            cache_prefix=SC.block("proposer"),
             temperature=0.25,
             max_output_tokens=700,
             response_spec=PROPOSAL_SPEC,

@@ -226,9 +226,20 @@ class VoiceConversation:
             task.cancel()
         await self._finish_speaking(cancelled=True)
 
+    @property
+    def busy(self) -> bool:
+        """True while a turn is being transcribed, thought about or spoken.
+
+        Public because the socket's control loop needs to answer "one at a time" *before*
+        starting another turn, and reaching into ``_turn_task`` from the router to ask would
+        make this file's internals part of the wire protocol.
+        """
+        return self._turn_task is not None and not self._turn_task.done()
+
     def status(self) -> dict[str, Any]:
         return {
             "state": self.state.value,
+            "busy": self.busy,
             "session_id": self.session_id,
             "turns": len(self.turns),
             "buffered_s": round(self._buf.size / max(1, self.sample_rate), 2),

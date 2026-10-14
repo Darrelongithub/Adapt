@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EventQueue, useEventQueue } from "@/components/ui";
 import { api, get, post } from "@/lib/api";
+import { createDeduper, createInflight, type Deduper, type Inflight } from "@/lib/debounce";
 import { clearAllDrafts } from "@/lib/drafts";
 import type { PlanEntry, Receipt } from "@/lib/types";
 
@@ -37,6 +38,15 @@ export function useFlow(mode: "practice" | "diagnostic") {
   // appeared, not from the start of the session, or every timing metric is a lie that
   // grows with the length of the session.
   const shownAt = useRef<Record<string, number>>({});
+  // -- one request per intention ------------------------------------------------------- #
+  // `submit` is reachable from three places: the answer card's button, a keyboard shortcut,
+  // and the teach-back box. Two of those can fire for one intention (a held Enter, a
+  // double-click, a pointer plus a keyboard), and a second submission is not a wasted
+  // request -- it is a second attempt recorded in the learner's evidence. The guards live
+  // here rather than in the card so that every caller shares them.
+  const inflight = useRef<Inflight | null>(null);
+  const repeats = useRef<Deduper | null>(null);
+  const lastSent = useRef<{ key: string; out: Receipt } | null>(null);
   const since = (id: string) => Math.max(0, Date.now() - (shownAt.current[id] ?? Date.now()));
 
   useEffect(() => {
@@ -142,23 +152,36 @@ export function useFlow(mode: "practice" | "diagnostic") {
       answer: unknown,
       extra: { teachback_text?: string; attempt_no?: number } = {},
     ): Promise<Receipt> => {
-      const id = await ready();
-      // Support openings must reach the server before attribution, not after it.
-      await queue.flush();
-      const body: Record<string, unknown> = { session_id: id, item_id: itemId, answer, ...extra };
-      const out = await api<Receipt>("/api/v1/attempts", { method: "POST", json: body });
-      push(
-        "answer_submitted",
-        {
-          correct: out.correct,
-          value: short(answer),
-          changed_times: changes.current[itemId] ?? 0,
-          ms_since_shown: since(itemId),
-        },
-        { item_id: itemId, topic_id: out.topic_id },
-      );
-      await queue.flush();
-      return out;
+      // The key is what makes two submissions "the same intention": this item, this answer,
+      // this attempt number. `attempt_no` is in it on purpose -- a learner who retries the
+      // same wrong answer on purpose is not a double-click, and their retry has to count.
+      const key = `${itemId}|${short(answer)}|${extra.teachback_text?.slice(0, 80) ?? ""}|${extra.attempt_no ?? 1}`;
+      if ((repeats.current ??= createDeduper(1200)).seen(key) && lastSent.current?.key === key) {
+        // The same answer again, inside the window: a held key or a double click. The
+        // learner's evidence must not count it twice, and the caller still needs something
+        // to render -- so the first receipt is handed back rather than a second request made.
+        return lastSent.current.out;
+      }
+      return (inflight.current ??= createInflight()).share(`attempt:${key}`, async () => {
+        const id = await ready();
+        // Support openings must reach the server before attribution, not after it.
+        await queue.flush();
+        const body: Record<string, unknown> = { session_id: id, item_id: itemId, answer, ...extra };
+        const out = await api<Receipt>("/api/v1/attempts", { method: "POST", json: body });
+        push(
+          "answer_submitted",
+          {
+            correct: out.correct,
+            value: short(answer),
+            changed_times: changes.current[itemId] ?? 0,
+            ms_since_shown: since(itemId),
+          },
+          { item_id: itemId, topic_id: out.topic_id },
+        );
+        await queue.flush();
+        lastSent.current = { key, out };
+        return out;
+      });
     },
     [push, queue, ready, sessionId],
   );

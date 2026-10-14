@@ -252,6 +252,9 @@ has been seen on real glass from inside the sandbox — at rehearsal, walk one q
 backend/src/adapt/
   ai/        ai1.py (analysis, hypotheses, proposals, plan) · ai2.py (tutor, grading, feedback)
              local_tutor.py (fallback teacher, item rendering) · providers (gemini, resources)
+             routing.py (which class of work each task is, and which model that class uses)
+             static_context.py (the ten static prompt heads) · context_cache.py (how they are
+             cached) · chain.py (one prompt, several answers) · llm.py (client + budget)
   learning/  bkt · spacing · selector · patterns · hypotheses · strategies (the proposal catalog)
              telemetry (allowlist + derived metrics) · gaps · effect (did it help?) · profile
              sims/ (one module per scene kind: run() -> frames, each carrying its own prompt or
@@ -265,6 +268,7 @@ backend/src/adapt/
 frontend/src/
   lib/engine/     player.ts (the gate, the reducer, the timing floor) · types.ts · its own tests
   lib/api.ts      one fetch wrapper: /api/v1 prefix, CSRF from the cookie, {data,error} returns
+  lib/debounce.ts the client-side guards: debounce, throttle, repeat window, one-at-a-time submit
   lib/flow.ts     the loop in one hook: session, event queue, attempts, finish + analyse
   lib/mock.ts     the ?mock=1 fixtures (recorded shapes, never a substitute for the API)
   components/     ui.tsx (primitives + EventQueue) · question.tsx (the item) · chrome.tsx
@@ -273,7 +277,9 @@ frontend/src/
   app/            onboarding · diagnose · learn · lesson (the interactive engine) · proposals ·
                   review · progress · settings · voice
 scripts/demo.mjs  the loop driven over HTTP, with the contract checks the UI relies on
-docs/             ENGINE.md (the interaction engine, end to end) · UNVERIFIED.md · VOICE.md · PILOT.md
+docs/             ENGINE.md (the interaction engine, end to end) · EFFICIENCY.md (what a model
+                  call costs: merged prompts, cached heads, model tiers, request guards)
+                  UNVERIFIED.md · VOICE.md · PILOT.md
 frontend/README.md  the web app: ports, dev origins, probes, and what the player guarantees
 ```
 
@@ -285,6 +291,30 @@ and stays in `local` mode. Prefix `ADAPT_`: `DATA_DIR`, `KEYFILE`, `DB_ENCRYPTIO
 `RATE_LIMIT_MULTIPLIER`, `MODE` (`local|tunnel`), `DEMO_PASSPHRASE`, `VOICE_ENABLED`,
 `WHISPER_MODEL_SIZE`, `TTS_ENGINE`, `ALLOWED_ORIGINS`, `FRONTEND_ORIGIN`.
 `GET /api/v1/status` reports the effective values, including which encryption you got.
+
+Four kinds of setting decide what a model call costs, and every one of them has a safe default
+([docs/EFFICIENCY.md](docs/EFFICIENCY.md) is the whole story, including which of them are
+inert on a free tier because the provider's floor is higher than the prompt):
+
+* **which model, by class** — `GEMINI_MODEL_LIGHT` / `_STANDARD` / `_DEEP`
+  (defaults: flash-lite / flash / pro). `ai/routing.py` says which task is in which class and
+  why; `adapt doctor` prints the table. To pin one task, `GEMINI_TASK_MODELS` takes
+  `'{"ai2_explain": "<model>"}'` or `ai2_explain=<model>`; `GEMINI_MODEL_AI1` / `_AI2` pin every
+  task a role performs. Precedence is explicit argument → task pin → role pin → class.
+* **how many calls** — `AI_SINGLE_CALL` (default `true`). `false` restores the two-call
+  placement path, so the merge can be measured against what it replaced rather than believed.
+* **how much of the prompt is re-sent** — `GEMINI_CONTEXT_CACHE` and friends (on by default):
+  `_MIN_TOKENS` is the provider's floor, `_TTL_S` their lifetime, `_MAX_ENTRIES` / `_MAX_TOKENS`
+  the bound. A cache that cannot be created is one full prompt, never a failed answer.
+* **how much runs at once** — `REALTIME_MAX_INFLIGHT`, `REALTIME_BURST_MAX`,
+  `REALTIME_BURST_WINDOW_MS` (defaults 4, 20, 1000) cap what one learner may have *running* on a
+  real-time route; `WS_DUPLICATE_WINDOW_MS` (900) collapses identical websocket frames.
+  `RATE_LIMIT_MULTIPLIER` scales all of these with the rest of the table.
+
+A merged prompt, a cached head and a light model are all *attempts*: if any of them is refused,
+the answer comes from the local path and says so. `adapt doctor` prints which of them are in
+force, and `adapt doctor --json` includes the routing table, the per-block token sizes, the
+merge step by step and the concurrency guard's counters.
 
 ## Schema changes
 

@@ -148,18 +148,49 @@ class AppServices:
         return st
 
     def quotas(self) -> dict[str, Any]:
-        """Today's Gemini spending vs. the free-tier budget, from the audit table."""
+        """Today's spending against the configured budget, from the audit table.
+
+        Operator-facing (``adapt status``). Three things the numbers have to be able to
+        answer, because they are the only way to tell an optimisation from a change:
+
+        * *what did we spend on* -- ``by_purpose``, per audit purpose;
+        * *which class carried it* -- ``by_class``, the tier the call was routed as, read from
+          the rows rather than recomputed from today's routing table;
+        * *what did the cache save* -- ``context_reuse``, input tokens the provider served
+          from a registered static prefix instead of resending it.
+        """
         from sqlalchemy import func, select
 
+        from ..ai import llm as from_llm
         from ..db.models import LlmCall
 
         day = utcnow_day()
+        by_class: list[dict[str, Any]] = []
         with self.db.session() as s:
             rows = s.execute(
                 select(LlmCall.purpose, LlmCall.status, func.count(), func.sum(LlmCall.tokens_in + LlmCall.tokens_out))
                 .where(LlmCall.day == day)
                 .group_by(LlmCall.purpose, LlmCall.status)
             ).all()
+            class_rows = s.execute(
+                select(
+                    LlmCall.tier,
+                    func.count(),
+                    func.sum(LlmCall.tokens_in + LlmCall.tokens_out),
+                    func.sum(LlmCall.cached_tokens),
+                )
+                .where(LlmCall.day == day)
+                .group_by(LlmCall.tier)
+            ).all()
+        for tier, n, tok, served in class_rows:
+            by_class.append(
+                {
+                    "class": tier or "unclassified",
+                    "calls": int(n or 0),
+                    "tokens": int(tok or 0),
+                    "served_from_static_context": int(served or 0),
+                }
+            )
         by_purpose: dict[str, dict[str, Any]] = {}
         total_calls = 0
         total_tokens = 0
@@ -170,15 +201,18 @@ class AppServices:
             entry["by_status"][status or "?"] = entry["by_status"].get(status or "?", 0) + int(n or 0)
             total_calls += int(n or 0)
             total_tokens += int(tok or 0)
+        client = getattr(self.ai1, "llm", None)
         return {
             "day": day,
             "budget": {
                 "calls": self.settings.gemini_daily_call_budget,
                 "tokens": self.settings.gemini_daily_token_budget,
-                "models": [self.settings.gemini_model_ai1, self.settings.gemini_model_ai2],
+                "models": from_llm.effective_models(self.settings),
             },
             "used": {"calls": total_calls, "tokens": total_tokens},
             "by_purpose": by_purpose,
+            "by_class": by_class,
+            "context_reuse": getattr(client, "cache", None).report() if getattr(client, "cache", None) else None,
             "calls_left": max(0, self.settings.gemini_daily_call_budget - total_calls),
         }
 
