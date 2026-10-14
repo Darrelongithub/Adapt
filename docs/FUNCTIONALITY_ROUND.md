@@ -86,8 +86,10 @@ and `scripts/teaching_quality_eval.py` writing `QUALITY_REPORT.md`.
 - [x] Phase 1.4.3 shared state, orchestrator, `adapt rebuild-model`
 - [x] Phase 2 baseline (backend + screens; browser checks pending, see `docs/UNVERIFIED.md`)
 - [x] Phase 3 subject round (agent 2, PR #15) - merged and wired
-- [~] Phase 4 content engine: the deterministic half and the §7 gate (`scripts/teaching_quality_eval.py`
-      + `QUALITY_REPORT.md`, zero flags); the generative half never landed - see the final report
+- [x] Phase 4 content engine: the deterministic half and the §7 gate (`scripts/teaching_quality_eval.py`
+      + `QUALITY_REPORT.md`, zero flags), and the engine behind a screen - the subject round's
+      "What we'd teach" panel, with the matched pair graded server-side. The generative half
+      (a model-written pack) never landed and still has not run; see the final report
 - [x] Phase 5 adaptation layer + contrast demo (agent 4) - ported in from `main`, see the addendum
 - [x] All six agent PRs integrated: #9, #10, #12, #14, #15 merged; #11/#13 read off `main`;
       the frozen-file wiring from agents 2, 4 and 6 applied by the integrator
@@ -711,3 +713,64 @@ was actually meant, that nothing is *forcing* the method.
 
 The gate's question count rose from 199 to 273 because the engine's matched pairs are now walked too:
 37 concepts × 2 legs, all checked for the same five flags.
+
+## Closing report — the content engine gets a screen (2026-10-14)
+
+The audit found one gap: phase 4's engine assembled packs that only the probe and the tests
+could reach, because nothing in the UI called `/api/v1/content/*`. A pack a learner cannot open
+is not teaching material, it is a fixture. This closes it.
+
+**What landed**
+
+* `POST /api/v1/content/grade` — grades one leg of a matched pair server-side. The browser holds
+  the question with its options shuffled and its key stripped, so it sends back the *text* of the
+  option it picked; the server maps that text back to the authored position and grades it with
+  `subjects.games.score_task`, the same deterministic scorer the skill round uses. The key never
+  leaves the server. A string this question never offered is refused rather than scored against a
+  guess. The authored explanation travels *with the verdict*, not with the question, because it
+  names the answer and a learner who has not answered yet must not be able to read it.
+* `frontend/src/lib/content.ts` — the only place the UI talks to `/api/v1/content/*`.
+* The subject round's "What we'd teach" panel (`frontend/src/app/subject/page.tsx`): a topic in,
+  the engine's own breakdown resolves it to a concept, and the three variants, the matched pair,
+  the hint ladder and the self-check come back.
+
+**Four things the panel refuses to smooth over.** These are the engine's honesty rules, not
+presentation choices, and each was a place where the obvious UI would have quietly overridden one:
+
+1. A concept with no authored kit shows the engine's own `reason` — not a placeholder, a
+   "coming soon", or a made-up card.
+2. `rejections` are rendered *where the missing part would have been*. A worked example that
+   failed its own gate is a decision the engine made; hiding it makes the pack look broken.
+3. The pair's own note that it is **not** matched on difficulty is shown, so nobody reads the two
+   legs as a like-for-like comparison — rung 3 and rung 4 are different demands by design.
+4. Grading is the server's. The browser sends option text, never an index, and never learns which
+   option is right until it has answered.
+
+**One design decision worth naming.** The panel has its own topic field rather than borrowing the
+resolve card's. The pack is about a topic, not about the round that measures it, and a learner who
+has not resolved anything yet can still ask what we would teach. It follows the resolve card when
+that one has an answer.
+
+**The mock fixtures moved to `lib/mock.ts`**, the shared table, so there is one copy of each
+recorded shape and `?mock=1` never 404s on a real route. The grade row cannot read a POST body
+(mock rows are handed the URL, which a POST does not carry) and says exactly that; `lib/content.ts`
+grades the mock answer properly because it does know which option was picked.
+
+### Results
+
+| command | result |
+|---|---|
+| `pytest -q` (backend, whole suite) | **1097 passed** / 1 skipped (was 1091) |
+| `scripts/probe-fresh.sh all` | **289/289 checks**, 210 API calls |
+| `scripts/probe-fresh.sh content` | **28/28** — the API walk *and* the screen walk |
+| `npm run lint` | contract ok — 107 routes, 92 calls |
+| `npm run build` | compiled successfully |
+
+The `content` scenario gained 13 checks, and its one new HTTP request is paced by the server's own
+retry number: a full walk already sits close to the per-connection ceiling, and an unretried 429
+there reads as a broken route rather than as the harness's own traffic.
+
+**Still not verified, and now named as such in `docs/UNVERIFIED.md`:** whether the panel is in the
+right *place* in the subject round. It sits below the resolve card and before the plan; whether a
+learner should meet the material before or after the round that measures them is a design
+judgement, not a defect, and it is a human's to make.
