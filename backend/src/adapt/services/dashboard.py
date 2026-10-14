@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -24,6 +25,9 @@ from ..db.models import (
     ActiveAdaptation,
     AdaptationProposal,
     Attempt,
+    BaselineRun,
+    LessonRun,
+    LessonScene,
     BktState,
     EvidenceRecord,
     Hypothesis,
@@ -126,6 +130,7 @@ def overview(services: Any, student_id: str) -> dict[str, Any]:
             "generated_at": now.isoformat(),
             "profile_taken_at": prof_snap.taken_at.isoformat() if prof_snap else None,
             "mastery": mastery,
+            "learning_activity": unfinished_activity(s, student_id),
             "band_summary": profile.get("band_summary") or _bands(mastery),
             "weakest": [m for m in mastery if m["band"] in ("new", "developing")][:5],
             "knowledge_gaps": gaps,
@@ -197,7 +202,7 @@ def overview(services: Any, student_id: str) -> dict[str, Any]:
                 "hints_used": int(recent[2] or 0),
                 "mean_seconds_on_question": round(float(recent[3]) / 1000, 1) if recent[3] else None,
             },
-            "data_volume": profile.get("data_volume") or _volume(s, student_id),
+            "data_volume": _volume(s, student_id),
             "open_questions": profile.get("open_questions") or [],
             # Two counts of rows, so they are counted here rather than carried in from the last
             # profile snapshot: a learner who has just pressed "check whether it helped" must not
@@ -281,3 +286,42 @@ def _volume(s: Session, student_id: str) -> dict[str, int]:
     ):
         counts[key] = int(s.execute(select(func.count()).select_from(model).where(model.student_id == student_id)).scalar_one())
     return counts
+
+
+def unfinished_activity(s: Session, student_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Read-only resume cards, scoped to the signed-in learner. Never open a run on GET."""
+    from ..subjects.models import SubjectRound
+
+    lessons = [
+        {
+            "id": run.id,
+            "title": scene.title,
+            "href": "/lesson?" + urlencode({"scene": scene.id}),
+            "detail": f"Saved at frame {run.frame_index + 1}",
+            "updated_at": run.last_seen_at.isoformat(),
+        }
+        for run, scene in s.execute(
+            select(LessonRun, LessonScene).join(LessonScene, LessonScene.id == LessonRun.scene_id)
+            .where(LessonRun.student_id == student_id, LessonRun.status == "active")
+            .order_by(LessonRun.last_seen_at.desc()).limit(4)
+        ).all()
+    ]
+    tests = []
+    for model, title, route in (
+        (BaselineRun, "Mind check", "/baseline"),
+        (SubjectRound, "Subject round", "/subject"),
+    ):
+        rows = s.scalars(
+            select(model).where(model.student_id == student_id, model.status == "in_progress")
+            .order_by(model.updated_at.desc()).limit(4)
+        ).all()
+        for row in rows:
+            tests.append({
+                "id": row.id,
+                "title": getattr(row, "topic_title", None) or title,
+                "href": route + "?" + urlencode({"run": row.id}),
+                "detail": title + " · " + (row.stage or "started").replace("_", " "),
+                "updated_at": row.updated_at.isoformat(),
+            })
+    tests.sort(key=lambda row: row["updated_at"], reverse=True)
+    return {"lessons": lessons, "tests": tests[:8]}

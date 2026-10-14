@@ -244,6 +244,12 @@ class Database:
     def create_all(self) -> None:
         Base.metadata.create_all(self.engine)
 
+    def upgrade_schema(self) -> None:
+        """Create/upgrade before any ORM reads, using this database's keyed engine."""
+        from .schema import upgrade_schema
+
+        upgrade_schema(self.engine)
+
     def drop_all(self) -> None:
         Base.metadata.drop_all(self.engine)
 

@@ -73,8 +73,13 @@ test("the journey shell and the sidebar both lead to the one path", () => {
   assert.match(chrome, /label: "Mind check"/, "a returning learner keeps the mind check as its own destination");
   assert.match(journey, /useJourney/);
   assert.match(journey, /journey\/state|useJourney/);
-  // A new account is handed to the path rather than to one screen of it.
-  assert.match(home, /\/journey\?\$\{carry\}/);
+  // The requested entry flow takes priority: first baseline, then returning home.
+  // The guided path remains available from both the dashboard and sidebar.
+  const gate = readFileSync(new URL("../components/account-gate.tsx", import.meta.url), "utf8");
+  const dashboard = readFileSync(new URL("../components/home-dashboard.tsx", import.meta.url), "utf8");
+  assert.match(gate, /profile\.baseline_started \? "\/" : "\/baseline"/);
+  assert.match(home, /HomeDashboard/);
+  assert.match(dashboard, /href="\/journey"/);
   assert.doesNotMatch(home, /onboarding\?\$\{carry\}/);
 });
 
@@ -96,5 +101,10 @@ test("a signed-out privacy list is not called unread while it is loading or afte
   assert.equal(showPrivacyUnread(false, 5), false);
   assert.equal(showPrivacyUnread(false, 0), true);
   const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(home, /showPrivacyUnread\(loading, recorded\.length\)/);
+  // Consent moved out of Home into the global entry card. That card uses a readable
+  // fallback while its privacy request loads, never an inaccurate "could not read" state.
+  assert.match(home, /HomeDashboard/);
+  const gate = readFileSync(new URL("../components/account-gate.tsx", import.meta.url), "utf8");
+  assert.match(gate, /privacy\.data\?\.telemetry\?\.note \?\?/);
+  assert.doesNotMatch(gate, /could not be read just now/);
 });
