@@ -88,8 +88,12 @@ export default function Home() {
         headers: passphrase ? { "x-adapt-demo-passphrase": passphrase } : undefined,
       });
       refresh();
+      // A new account goes to the path, not into one screen of it: the path reads the
+      // server's answer about which step is next (the questions, the games, ...) and the
+      // handoff parameter carries the consent answer this screen just collected. A
+      // learner who is already set up goes back to practising.
       const carry = `consent=${consent ? "yes" : "no"}&research=${research ? "yes" : "no"}`;
-      router.push(me?.onboarding_complete ? `/learn` : `/onboarding?${carry}`);
+      router.push(me?.onboarding_complete ? "/learn" : `/journey?${carry}`);
     } catch (err) {
       const e = err as { status?: number; shown?: string; detail?: unknown };
       if (e?.status === 403 && JSON.stringify(e.detail ?? "").includes("demo_passphrase_required")) setNeedsPassphrase(true);
@@ -443,7 +447,9 @@ function SignedIn({ me }: { me: Me }) {
   return (
     <div className="mt-8 space-y-5">
       <div className="home-cta-row">
-        <Btn kind="primary" href={placed ? "/learn" : "/diagnose"}>
+        {/* The one primary action: the path decides what that means for this learner, so a
+            new account is not dropped into placement (or the games) on its own. */}
+        <Btn kind="primary" href={placed ? "/learn" : "/journey"}>
           {placed ? "Continue practising" : "Start learning"}
         </Btn>
         {waiting ? (
@@ -452,7 +458,7 @@ function SignedIn({ me }: { me: Me }) {
           </Btn>
         ) : null}
         {dueCount ? <Btn href="/review">Review {dueCount} due</Btn> : null}
-        {!me.onboarding_complete ? <Btn kind="ghost" href="/onboarding">Finish setup</Btn> : null}
+        {!me.onboarding_complete ? <Btn kind="ghost" href="/journey">Finish setup</Btn> : null}
       </div>
 
       <div className="home-grid">

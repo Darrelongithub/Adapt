@@ -1,9 +1,11 @@
 /** Phrases that must not appear in learner-facing text.
-
-The crawl fails on a case-insensitive substring. Onboarding still contains three
-sentences that belong to Phase D; those exact strings are stripped before the
-check, and only on that route.
-*/
+ *
+ * The crawl fails on a case-insensitive substring, on every route, signed out and signed
+ * in. There are no exemptions left: the onboarding screen used to carry three sentences
+ * that named the machinery, and Phase D replaced that copy (twice over — the panel and
+ * the consent line), so a route-specific allowance would now only be a hole a regression
+ * could walk through. `learnerCopy.test.mjs` asserts that the exemption is gone.
+ */
 
 export const BANNED = [
   { id: "api-key", re: /API key/i },
@@ -21,21 +23,8 @@ export const BANNED = [
   { id: "token", re: /token/i },
 ];
 
-/** Exact learner-facing strings still on the onboarding page. Phase D owns that file. */
-export const ONBOARDING_DEFERRED = [
-  "Let a model read a summary when it would help",
-  "The summary is topic mastery, hypotheses and approved changes — never your name or contact details. With no API key configured this changes nothing, because nothing is sent anyway.",
-  "Anything else the client sends comes back in ignored_keys with a reason, rather than being stored as a string nobody can interpret.",
-];
-
-export function stripDeferred(text) {
-  let rest = String(text || "");
-  for (const phrase of ONBOARDING_DEFERRED) rest = rest.split(phrase).join(" ");
-  return rest;
-}
-
-/** Banned-phrase ids still present. Onboarding ignores only the deferred sentences. */
+/** Banned-phrase ids present in `text`. `route` is kept for call sites that still pass it. */
 export function bannedHits(text, route = "") {
-  const scanned = route === "/onboarding" ? stripDeferred(text) : String(text || "");
-  return BANNED.filter((item) => item.re.test(scanned)).map((item) => item.id);
+  void route; // every route is held to the same rule now
+  return BANNED.filter((item) => item.re.test(String(text || ""))).map((item) => item.id);
 }

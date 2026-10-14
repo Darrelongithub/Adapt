@@ -10,11 +10,18 @@ import type { Health, Status } from "@/lib/types";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 
 export const NAV = [
+  // First, because it is the one destination that says what the others are for. Every
+  // other entry is a place; this one is the route through them.
+  { href: "/journey", label: "Your path" },
   { href: "/learn", label: "Practise" },
   { href: "/lesson", label: "Lessons" },
   { href: "/proposals", label: "Changes" },
   { href: "/review", label: "Review" },
   { href: "/progress", label: "Progress" },
+  // "Mind check" stays its own destination for a returning learner: replaying the games
+  // is a thing somebody chooses later, not a first-run step. A new learner is never
+  // dropped into it on its own -- the path hands them to the same screen as step 2 and
+  // step 3, which is where the games belong in the order.
   { href: "/baseline", label: "Mind check" },
   { href: "/subject", label: "Subject round" },
   { href: "/contrast", label: "Compare lessons" },

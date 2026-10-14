@@ -88,6 +88,27 @@ async function waitFor(fn, { timeout = 8000, every = 60, label = "" } = {}) {
   }
 }
 
+/**
+ * Presses a controlled checkbox until it takes, and returns what it ended up as.
+ *
+ * jsdom + Next hydrate concurrently: `next-route-announcer` -- which `open()` waits for, and
+ * which is the only hydration marker this app leaves -- exists a beat before the subtree
+ * about to be pressed has any handlers. A press inside that window moves the DOM property
+ * with nothing listening and React snaps it back on its next render, which reads as "the
+ * switch does nothing" when it is really "the harness pressed early". So the press is
+ * repeated while it has not taken -- bounded, and the state the checks judge is the last one.
+ */
+async function tickBox(find, want = true, tries = 6) {
+  for (let i = 0; i < tries; i += 1) {
+    const box = find();
+    if (!box) return null;
+    if (box.checked === want) return box;
+    box.click();
+    await sleep(220);
+  }
+  return find() ?? null;
+}
+
 /* answer controls, per item kind: a choice list, a box, or a teach-back */
 function answerControl(page) {
   return (
@@ -606,14 +627,14 @@ async function main() {
     // destination itself is then loaded as a real document in the scenarios below.
     let arrived = false;
     try {
-      await waitFor(() => page.doc.location.pathname.startsWith("/onboarding") || /navigation to another Document/.test(page.errors.join(" ")), { timeout: 20_000, label: "registration to hand off to setup" });
+      await waitFor(() => page.doc.location.pathname.startsWith("/journey") || /navigation to another Document/.test(page.errors.join(" ")), { timeout: 20_000, label: "registration to hand off to the path" });
       arrived = true;
     } catch (err) {
       check("home", "registering moves the learner on instead of leaving them at the door", false, `requests: ${page.requests.join(" ; ").slice(0, 150)} | ${page.text().slice(-200)}`);
     }
     if (arrived) {
       const posted = page.requests.filter((r) => /POST \/api\/v1\/students/.test(r)).length;
-      check("home", "registering posts the account once, then hands off to setup", posted === 1 && page.appErrors().length === 0, `posts: ${posted}; errs: ${page.appErrors().slice(-1).join("")}`);
+      check("home", "registering posts the account once, then hands off to the path", posted === 1 && page.appErrors().length === 0, `posts: ${posted}; errs: ${page.appErrors().slice(-1).join("")}`);
     }
     const cookie = jar.getCookieStringSync(BASE);
     check("home", "the account came back with a session cookie", /adapt_session=/.test(cookie), cookie.slice(0, 80) || "no cookie on the jar");
@@ -657,7 +678,9 @@ async function main() {
     check(
       "home",
       "and it is the next step in the journey for this learner, not a link to a menu",
-      (primaries[0]?.getAttribute("href") ?? "") === "/diagnose" && /Start learning/i.test(primaries[0]?.textContent ?? ""),
+      // Round 2, part D: the path decides what "next" is (the questions, the games, or
+      // practice), so home hands over to it rather than picking one screen for the learner.
+      (primaries[0]?.getAttribute("href") ?? "") === "/journey" && /Start learning/i.test(primaries[0]?.textContent ?? ""),
       `${primaries[0]?.getAttribute("href") ?? "(none)"} "${(primaries[0]?.textContent ?? "").trim()}"`,
     );
     const statusText = homeIn.text();
@@ -675,46 +698,77 @@ async function main() {
     console.log("\n\x1b[1monboarding\x1b[0m");
     const page = await open("/onboarding", "onboarding");
     await waitFor(() => /Set up how this should run/.test(page.text()), { timeout: 15_000, label: "the setup form to render" });
-    check("onboarding", "the setup screen renders as a form, not an error", /Time and words/.test(page.text()) && page.find("input").length >= 3, page.text().slice(0, 140));
-    // the form is seeded from GET me/preferences; editing before that lands loses the edits
-    await waitFor(() => [...page.find("span")].some((el) => el.textContent?.trim() === "weekly_minutes"), { timeout: 15_000, label: "the allowed-key list from the server" });
-    // The screen does not raise the idea at all any more (the paragraph that explained the
-    // refusal was removed, at the user's instruction), so the check can be made about the whole
-    // screen rather than only its controls -- a stronger claim than the one it replaces.
-    const fieldText = [...page.find("label, .field, [data-field]")].map((el) => el.textContent ?? "").join(" ");
+    check("onboarding", "the setup screen renders as a form, not an error", /Time and words|§ Setup/.test(page.text()) && page.find("input").length >= 1, page.text().slice(0, 140));
+    // The form is seeded from GET me/preferences. Round 2, part D removed the panel that
+    // printed the server's key list ("Allowed preference keys — from the API"), so the wait
+    // can no longer be for a tag called weekly_minutes: it waits for the value to arrive in
+    // the field it seeds. A panel of key names was developer copy on a learner's screen, and
+    // the crawl that searches for exactly that would fail on it.
+    await waitFor(() => (page.find('input[type="number"]')[0]?.value ?? "") !== "", {
+      timeout: 15_000,
+      label: "the saved minutes to come from the server",
+    }).catch(() => {});
     check(
       "onboarding",
-      "no input asks the learner for a learning style",
-      !/learning styles?|visual learner|auditory|kinesthetic/i.test(page.text()) &&
-        page.find("input,select,textarea").every((el) => !/style/.test(el.name ?? "")),
-      fieldText.slice(0, 160),
+      "no developer panel: the server's key names are not printed at the learner",
+      !/Allowed preference keys|from the API|ignored_keys|weekly_minutes\b/.test(page.text()),
+      page.text().slice(0, 220),
     );
-    const goal = page.find("input[type='text']")[0];
-    if (goal) page.type(goal, "GCSE maths, higher tier");
+    check(
+      "onboarding",
+      "the questions about how you work are asked once, elsewhere — not on this screen",
+      // The 13 mind-check questions own these; a second copy here would ask twice.
+      !/minutes in one sitting|Which language|learning styles?|visual learner|auditory|kinesthetic/i.test(page.text()) &&
+        page.find("input").every((el) => !/style/.test(el.name ?? "")),
+      page.text().slice(0, 220),
+    );
     const numbers = page.find('input[type="number"]');
-    check("onboarding", "time and word-count settings are numeric fields", numbers.length >= 3, `${numbers.length} number inputs`);
+    check("onboarding", "the account-level time setting is a numeric field", numbers.length === 1, `${numbers.length} number inputs`);
     if (numbers[0]) page.type(numbers[0], "120");
-    if (numbers[1]) page.type(numbers[1], "25");
-    if (numbers[2]) page.type(numbers[2], "60");
-    const voiceToggle = [...page.find("label")].find((l) => /Use voice when I want it/.test(l.textContent ?? ""));
-    if (voiceToggle) {
-      await page.click(voiceToggle.querySelector("input") ?? voiceToggle);
-      await sleep(200);
+    // The two free-text requests are found by their placeholder rather than by `input[type="text"]`:
+    // the shared Input renders no `type` attribute at all, so an attribute selector matches nothing
+    // and the typing it guards silently stops happening.
+    const free = page.find('input[placeholder="diagrams before symbols"]')[0];
+    if (free) page.type(free, "diagrams before symbols");
+    const voiceToggle = () => [...page.find("label")].find((l) => /Use voice when I want it/.test(l.textContent ?? ""))?.querySelector("input") ?? null;
+    if (voiceToggle()) {
+      const box = await tickBox(voiceToggle, true);
+      check("onboarding", "the voice switch is a control that takes the press", !!box && box.checked === true, `checked=${box?.checked}`);
       const gender = page.find("select").find((s) => [...s.options].some((o) => o.value === "female"));
       check("onboarding", "asking for voice exposes the male/female choice rather than hiding it", !!gender && gender.options.length === 2, gender ? [...gender.options].map((o) => o.value).join(",") : "no select appeared");
       if (gender) page.pick(gender, "male");
     }
     const before = page.requests.length;
     await page.click("Save and continue", "button");
-    await waitFor(() => /Saved/.test(page.text()) || /not stored/.test(page.text()), { timeout: 15_000, label: "the saved confirmation" });
+    await waitFor(() => /Saved/.test(page.text()), { timeout: 15_000, label: "the saved confirmation" });
     const savedReq = page.requests.slice(before).find((r) => /POST \/api\/v1\/me\/onboarding/.test(r));
     check("onboarding", "what the learner typed is what the page sent", page.find('input[type="number"]')[0]?.value === "120", `field shows ${page.find('input[type="number"]')[0]?.value}`);
     check("onboarding", "clicking save really posted to the onboarding endpoint", !!savedReq, page.requests.slice(before).join(" ; ") || "no request at all");
     check("onboarding", "the page answers with what it stored", /Saved/.test(page.text()), page.text().slice(-260));
-    check("onboarding", "setup hands the learner on to placement", !!page.byText("Start placement", "button") || !!page.byText("Skip to practice", "button"), page.text().slice(-160));
+    check(
+      "onboarding",
+      "the saved card names no key and hands the learner to the path",
+      // `byText` defaults to any control, not just <button>: a Btn given an href renders an <a>,
+      // and asking for "button" here found nothing while the link sat on the screen.
+      !/not stored:/.test(visibleText(page)) &&
+        (!!page.byText("Continue to your path") || !!page.byText("Skip to practice")),
+      visibleText(page).slice(-200),
+    );
     const prefs = await api("/api/v1/me/preferences", { headers: { cookie: jar.getCookieStringSync(BASE) } });
     const p = prefs.body?.preferences ?? {};
-    check("onboarding", "the numbers are on the server, not just in the form", String(p.weekly_minutes) === "120" && String(p.session_minutes) === "25", JSON.stringify(p).slice(0, 220));
+    check("onboarding", "the minutes are on the server, not just in the form", String(p.weekly_minutes) === "120", JSON.stringify(p).slice(0, 220));
+    check(
+      "onboarding",
+      "the free text lands in the same preference store the rest of the app reads",
+      Array.isArray(p.encourage) && p.encourage.some((v) => /diagrams before symbols/.test(String(v))),
+      JSON.stringify(p.encourage ?? null),
+    );
+    check(
+      "onboarding",
+      "and this screen did not store a mind-check answer it does not ask",
+      p.session_minutes === undefined && p.language === undefined && p.preferred_format === undefined,
+      JSON.stringify({ session_minutes: p.session_minutes ?? null, language: p.language ?? null }),
+    );
     // voice settings live on the learner record (GET me), not in the preferences blob:
     // POST me/onboarding takes voice_enabled / voice_gender as their own fields.
     const meAfter = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
@@ -724,12 +778,104 @@ async function main() {
     // "the inputs exist" reads the pre-fill frame and reports a persistence bug that is not there
     await waitFor(() => /120/.test(page.find('input[type="number"]').map((i) => i.value).join(",")), {
       timeout: 20_000,
-      label: "the saved numbers to come back from the server",
+      label: "the saved minutes to come back from the server",
     }).catch(() => {});
     const reloaded = page.find('input[type="number"]').map((i) => i.value).join(",");
-    check("onboarding", "a refresh shows the same values (they were persisted, not cached in memory)", /120/.test(reloaded), reloaded);
+    check("onboarding", "a refresh shows the same value (it was persisted, not cached in memory)", /120/.test(reloaded), reloaded);
     const me2 = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
     check("onboarding", "the account is marked as onboarded", me2.status === 200 && Boolean(me2.body.onboarding_complete), JSON.stringify(me2.body).slice(0, 200));
+    closePage(page);
+  }
+
+  /* -------------------------------------------------------------- journey ---- */
+  if (run("journey")) {
+    console.log("\n\x1b[1mjourney\x1b[0m");
+    /* The path is the screen this phase exists for, and the thing worth proving in a DOM is
+     * that its state is the *server's*: a skip pressed here has to be readable from the
+     * endpoint afterwards, and the stage list has to come back different. A harness that
+     * only checked React state would pass on a page that never wrote anything. */
+    const page = await open("/journey", "journey");
+    await waitFor(() => /One path, eight steps/.test(page.text()), { timeout: 15_000, label: "the path to render" });
+    check("journey", "the path renders as a list of stages, not an error", page.find("[data-testid='journey-stages']").length === 1, page.text().slice(0, 160));
+    const bar = page.find("[role='progressbar']");
+    check("journey", "the progress bar states its count in words as well as in width", bar.length === 1 && /steps/.test(bar[0]?.getAttribute("aria-valuetext") ?? ""), bar[0]?.getAttribute("aria-valuetext") ?? "(no bar)");
+    // The list is drawn from an empty `<ol>` while the state is in flight, so "the rows exist"
+    // has to be waited for -- reading it a beat early reported "no stages" about a path that
+    // had all eight a moment later.
+    await waitFor(() => page.find("li[data-stage]").length === 8, { timeout: 15_000, label: "the eight steps to come back from the server" }).catch(() => {});
+    const rows = page.find("li[data-stage]");
+    const ids = rows.map((el) => el.getAttribute("data-stage")).filter(Boolean);
+    check(
+      "journey",
+      "and it names all eight frozen stages in order",
+      ["account", "preferences", "games", "subject", "subject_round", "snapshot", "first_lesson", "practice"].every((id, i) => ids[i] === id),
+      ids.join(" > ") || "(none)",
+    );
+    // The learner this scenario runs as has done nothing, so the first step is the questions.
+    const current = rows.find((el) => el.getAttribute("aria-current") === "step");
+    check("journey", "the step it marks is the first one still to do", (current?.getAttribute("data-stage") ?? "") === "preferences", current?.getAttribute("data-stage") ?? "(none marked)");
+    const server = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    check(
+      "journey",
+      "and that is what the server says, not what the page decided",
+      server.status === 200 && server.body?.stage === "preferences" && Array.isArray(server.body?.stages) && server.body.stages.length === 8,
+      JSON.stringify(server.body).slice(0, 200),
+    );
+    // Pressing "skip" on the games has to reach the server, and the server's answer is what
+    // the page redraws with — the whole point of a resumable path.
+    const skippable = rows.filter((li) => li.querySelector("button")).map((li) => li.getAttribute("data-stage"));
+    const skip = page.find("li[data-stage='games']")[0]?.querySelector("button") ?? null;
+    check(
+      "journey",
+      "every step but the first and last offers a skip",
+      !skippable.includes("account") && !skippable.includes("practice") && skippable.length === 6 && !!skip,
+      `skippable: ${skippable.join(",")}`,
+    );
+    if (skip) {
+      const before = page.requests.length;
+      await page.click(skip);
+      await sleep(400);
+      const posted = page.requests.slice(before).find((r) => /POST \/api\/v1\/journey\/advance/.test(r));
+      check("journey", "pressing skip posts the learner's own answer to the server", !!posted, page.requests.slice(before).join(" ; ") || "no request at all");
+      const after = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+      const games = (after.body?.stages ?? []).find((r) => r.id === "games");
+      check("journey", "and the skip is stored as skipped, not as a zero", games?.status === "skipped", JSON.stringify(after.body?.stages ?? null).slice(0, 200));
+      check("journey", "a skipped step is reported as not measured", (after.body?.not_measured ?? []).includes("games"), JSON.stringify(after.body?.not_measured ?? null));
+      check("journey", "and the path moves on to the next step", after.body?.stage === "preferences", String(after.body?.stage));
+      await waitFor(() => page.find("li[data-stage='games']")[0]?.getAttribute("data-status") === "skipped", {
+        timeout: 8_000,
+        label: "the page to redraw with the server's answer",
+      }).catch(() => {});
+      const drawn = page.find("li[data-stage='games']")[0];
+      check(
+        "journey",
+        "the page redraws with the server's answer rather than its own guess",
+        drawn?.getAttribute("data-status") === "skipped" && /skipped — not measured/.test(drawn?.textContent ?? ""),
+        (drawn?.textContent ?? "(no row)").replace(/\s+/g, " ").trim(),
+      );
+      // The gate: close that browser and come back. A second page, its own cookie jar seeded
+      // from this account, has to find the same step -- the point of recording the skip on the
+      // server rather than in the tab.
+      const resumed = await open("/journey", "journey", undefined, jar.getCookieStringSync(BASE));
+      await waitFor(() => resumed.find("li[data-stage]").length === 8, { timeout: 15_000, label: "the resumed path" }).catch(() => {});
+      const resumedGames = resumed.find("li[data-stage='games']")[0];
+      const resumedCurrent = resumed.find("li[data-stage][aria-current='step']")[0];
+      check(
+        "journey",
+        "a learner who closes the browser and comes back resumes on the stored step",
+        resumedGames?.getAttribute("data-status") === "skipped" && (resumedCurrent?.getAttribute("data-stage") ?? "") === "preferences",
+        `games=${resumedGames?.getAttribute("data-status")} current=${resumedCurrent?.getAttribute("data-stage") ?? "(none)"}`,
+      );
+      check("journey", "and the returning page says what was not measured", /What you skipped/.test(visibleText(resumed)) && /Mind games/.test(visibleText(resumed)), visibleText(resumed).slice(-220));
+      closePage(resumed);
+    }
+    // The eight unaided questions stay reachable from the path (brief §5), even though they
+    // are measurement rather than one of the eight stages.
+    check("journey", "placement is reachable from the path", !!page.byText("answer the placement questions", "a"), page.text().slice(-200));
+    // Mobile: the shell has to work at a phone width. jsdom has no layout, so what can be
+    // checked here is that the page does not depend on a fixed desktop width to be usable —
+    // the real viewport check lives in tests-e2e/journey.mjs, which needs a browser.
+    check("journey", "the path is not laid out for one viewport only", page.find(".sidebar").length === 1 && page.find(".topbar").length === 1, "the drawer and its control are both in the document");
     closePage(page);
   }
 
@@ -1434,7 +1580,7 @@ async function main() {
     // section *and* the sidebar must offer every other one in plain words.
     const here = page.find('.sidebar-item[aria-current="page"]');
     check("progress", "the sidebar names the section it is standing on", here.length === 1 && /Progress/i.test(here[0]?.textContent ?? ""), here.map((el) => el.textContent?.trim()).join(" | ") || "(nothing marked)");
-    check("progress", "and offers every other section in plain words", ["Practise", "Lessons", "Changes", "Review", "Progress", "Voice", "Settings"].every((l) => !!page.byText(l, ".sidebar-item")), page.find(".sidebar-item").map((el) => el.textContent?.trim()).join(" | ") || "(no sidebar)");
+    check("progress", "and offers every other section in plain words", ["Your path", "Practise", "Lessons", "Changes", "Review", "Progress", "Mind check", "Voice", "Settings"].every((l) => !!page.byText(l, ".sidebar-item")), page.find(".sidebar-item").map((el) => el.textContent?.trim()).join(" | ") || "(no sidebar)");
 
     /* ---- the same chart on mock data, where the numbers are known exactly ----
      * Live, this learner may have no mastery rows at all, and every check above is gated on
