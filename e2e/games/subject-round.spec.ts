@@ -1,6 +1,6 @@
 /**
  * The subject round, through the page: a topic, the plan and its "why these", the round itself, and
- * the subject map. Desktop only (the round's layout is a two-column card on the desktop).
+ * the subject map. Runs on the desktop and the phone viewport (the mouse, as a learner would use it).
  *
  * What it checks:
  * * the plan's "why these" text says what happened for each kind of topic (a written-down subject, a
@@ -11,12 +11,11 @@
  * * the map shows ranges with an n, never a label.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { newGuest, shot } from "./lib/driver";
+import { newGuest, noHorizontalScroll, shot, smallTapTargets } from "./lib/driver";
 import { FORBIDDEN_LABELS } from "./lib/driver";
 
-test.beforeEach(({}, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop", "the round is checked once, on the desktop");
-});
+/** The viewport this test runs on (desktop or mobile): screenshots go to its own folder. */
+const viewport = (): string => test.info().project.name;
 
 async function findSubject(page: Page, topic: string): Promise<void> {
   await page.goto("/subject");
@@ -40,7 +39,7 @@ test("the plan says why these skills, and the reason matches what was actually f
     for (const re of c.expect) expect(text, `${c.topic}: the reason should match ${re}`).toMatch(re);
     for (const re of c.not ?? []) expect(text, `${c.topic}: the reason should not match ${re}`).not.toMatch(re);
     void why;
-    await shot(page, "desktop", `subject-plan-${c.slug}`);
+    await shot(page, viewport(), `subject-plan-${c.slug}`);
     // Go back to the topic box for the next one (the plan is per topic; "Pick a topic" resets it).
     const again = page.getByRole("button", { name: "Pick a topic", exact: true });
     if (await again.count()) await again.click();
@@ -68,19 +67,19 @@ test("a whole subject round, answered by the bot, ends in a map that says what i
     if (acted) {
       idle = 0;
       shots += 1;
-      if (shots === 1) await shot(page, "desktop", "subject-round-first-task");
+      if (shots === 1) await shot(page, viewport(), "subject-round-first-task");
     } else {
       idle += 1;
       await page.waitForTimeout(300);
       if (idle >= 40) {
-        await shot(page, "desktop", "subject-round-stuck");
+        await shot(page, viewport(), "subject-round-stuck");
         const text = ((await page.locator("main").textContent()) ?? "").replace(/\s+/g, " ").slice(0, 900);
         throw new Error(`the bot found nothing it could answer on the round screen; the page says: ${text}`);
       }
     }
   }
   if (!done) {
-    await shot(page, "desktop", "subject-round-stuck");
+    await shot(page, viewport(), "subject-round-stuck");
     const text = (await page.locator("main").innerText()).replace(/\s+/g, " ").slice(0, 600);
     throw new Error(`the round did not reach its end; the page says: ${text}`);
   }
@@ -90,7 +89,11 @@ test("a whole subject round, answered by the bot, ends in a map that says what i
   expect(map, "the map names a learner type or a diagnosis").not.toMatch(FORBIDDEN_LABELS);
   // World history skips one of its skills: the map must say so, and must not show it as a result.
   expect(map, "the map says what the round did not reach").toMatch(/not measured/i);
-  await shot(page, "desktop", "subject-map");
+  await shot(page, viewport(), "subject-map");
+  await noHorizontalScroll(page, "the subject map");
+  if (viewport() === "mobile") {
+    expect(await smallTapTargets(page), "tap targets under 40px on the phone").toEqual([]);
+  }
 });
 
 /** Answer whatever the round is showing right now. Returns false when there is nothing to answer yet. */

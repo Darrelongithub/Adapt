@@ -69,7 +69,7 @@ export default defineConfig({
     },
     {
       name: "mobile",
-      testIgnore: [/keyboard\.spec/, /subject-round\.spec/],
+      testIgnore: [/keyboard\.spec/],
       use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, launchOptions },
     },
     {
