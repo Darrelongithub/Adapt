@@ -21,17 +21,22 @@ stays in the repo as documentation. Hand out the other five.
 
 ## Status (updated by the integrator session, 2026-10-13)
 
-Agents 3, 5 and 6 have landed (#9, #10, #12, #14) and their work is merged into
-`arena/06d446fc-adapt`, and phase 5 (agent 4's adaptation layer) was ported in from `main`, which
+**All six workstreams have landed. Nothing is left to hand out.**
+
+Agents 2, 3, 5 and 6 landed (#9, #10, #12, #14, #15) and are merged into
+`arena/06d446fc-adapt`; phase 5 (agent 4's adaptation layer) was ported in from `main`, which
 carries it as a snapshot; the merged tree is green (887 backend tests, 234 probe checks) after the
 integration described in `agent-notes/7-integration.md` and the integration report in
 `docs/FUNCTIONALITY_ROUND.md`. **Agent 2 (phase 3) is the one still outstanding** - hand that file
 out. PRs #11 and #13 landed on `main` rather than on the arena branch and are reconciled at the
 final merge, so hand agents the *arena* branch as their base, as the files say.
 
-If you are starting agent 4 or 5 now: the merged tip includes the §3 boundary and the route
-vocabulary it produced (see the integration note), so name it in the brief you paste - an adapter
-that publishes a provider name will fail the canary test.
+The merged tip is green end to end (1035 backend tests, a 265-check probe walk, the phase-4
+quality gate). The one phase with no landing is **phase 4's generative half** - the deterministic
+content and the §7 gate exist; see the audit table in `docs/FUNCTIONALITY_ROUND.md`. If a future
+agent picks it up, branch from the newest tip and read the integration notes first: §3 renamed the
+learner-facing vocabulary, so any new surface that publishes a provider or model name fails the
+canary test.
 
 ## How to run it
 
