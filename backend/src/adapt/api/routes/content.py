@@ -18,15 +18,16 @@ key is not sent" means the same thing here as there.
 from __future__ import annotations
 
 import random
-from typing import Any
+from typing import Any, Mapping
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from ...assessment import worked as W
 from ...content.breakdown import breakdown_for
 from ...content.pack import build_concept_pack
 from ...learning.seeds import stable_seed
-from ...subjects.games import public_task
+from ...subjects.games import public_task, score_task
 from ..deps import rate, student_from_request
 
 router = APIRouter(prefix="/api/v1/content", tags=["content"])
@@ -164,3 +165,83 @@ def graded_hint(
         "text": hint["text"],
         "source": hint.get("source", ""),
     }
+
+
+class GradeBody(BaseModel):
+    """One answer to one leg of a concept's matched pair.
+
+    The answer is the **text** of the option the learner picked, not its position. The pack the
+    browser holds has its options shuffled per learner, so an index would mean a different option to
+    the server than it did to the learner — the shuffle would have to be replayed exactly, and a
+    mismatch would mark a right answer wrong. The text needs no replay: the server maps it back to the
+    authored position and grades from there.
+    """
+
+    topic: str = Field(min_length=2, max_length=80)
+    concept: str = Field(min_length=2, max_length=80)
+    leg: str = Field(default="A", pattern="^[AB]$")
+    choice: str = Field(min_length=1, max_length=300)
+
+
+def _server_task(item: Mapping[str, Any]) -> dict[str, Any]:
+    """The bank-shaped pack item as the choice-task ``score_task`` grades.
+
+    ``score_task`` reads ``options`` (a list of strings) and ``answer`` (the authored index), which is
+    the shape :mod:`adapt.subjects.games` authors in. The pack carries ``choices`` and
+    ``answer_spec.correct_index`` because that is the bank's shape, so the conversion lives here and
+    the two shapes stay where they are.
+    """
+    choices = [c for c in (item.get("choices") or []) if isinstance(c, dict)]
+    answer = (item.get("answer_spec") or {}).get("correct_index")
+    return {
+        "kind": "choice",
+        "stem": str(item.get("stem") or ""),
+        "options": [str(c.get("text") or "") for c in choices],
+        "answer": int(answer) if isinstance(answer, int) else -1,
+        "why": str(item.get("why") or ""),
+    }
+
+
+@router.post("/grade", dependencies=[Depends(rate("content"))])
+def grade_pair(body: GradeBody, _student=Depends(student_from_request)) -> dict[str, Any]:
+    """Grade one leg of a matched pair. The key never leaves the server.
+
+    This is the route that makes the pack usable rather than merely readable: the browser holds the
+    question with its options shuffled and its key stripped, sends back the option it picked, and the
+    server — which still has the authored task — judges it with ``subjects.games.score_task``, the
+    same deterministic scorer the skill round uses. A client that sends a string that is not one of
+    the options is told so rather than being scored against a guess.
+    """
+    breakdown = breakdown_for(body.topic)
+    wanted = breakdown.concept(body.concept) if breakdown.available else None
+    if wanted is None:
+        raise HTTPException(status_code=404, detail=f"no concept {body.concept!r} for topic {body.topic!r}")
+    pack = build_concept_pack(wanted, topic_key=breakdown.topic_key, topic_title=breakdown.title)
+    item = pack.pair.get(body.leg)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"{body.concept!r} has no leg {body.leg}")
+    task = _server_task(item)
+    options = list(task.get("options") or [])
+    if body.choice not in options:
+        # Not a graded wrong answer: a string this question never offered. Saying so is more use than
+        # scoring it, and it is also the only honest answer to a client that sends something else.
+        verdict = {
+            "correct": False,
+            "status": "unparseable",
+            "points": 0,
+            "max_points": 1,
+            "why": f"{body.choice[:60]!r} is not one of the options this question offers",
+        }
+    else:
+        # The text is mapped back to the authored position here, which is why the browser sends text
+        # and not an index: the served options are shuffled per learner, so an index would mean a
+        # different option to the server than it did to the learner.
+        verdict = dict(score_task(task, {"choice": options.index(body.choice)}))
+    # The explanation travels with the verdict, not with the question: it names the answer, so a
+    # learner who has not answered yet must not be able to read it.
+    verdict["explanation"] = str(item.get("why") or "")
+    verdict["concept"] = wanted.id
+    verdict["leg"] = body.leg
+    verdict["rung"] = int(item.get("rung") or 3)
+    verdict["demand"] = str(item.get("demand") or "")
+    return verdict

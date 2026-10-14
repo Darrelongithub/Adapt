@@ -605,3 +605,68 @@ class TestContentRoute:
         # with 403 rather than 401. Either code is a refusal; asserting the exact one here would be
         # asserting the middleware's order rather than the route's behaviour.
         assert client.get("/api/v1/content/breakdown?topic=calculus").status_code in (401, 403)
+
+
+class TestGradeRoute:
+    """The route that makes the pack usable rather than merely readable."""
+
+    def _pack(self, client, learner):
+        return client.get(
+            "/api/v1/content/pack?topic=calculus&concept=calc_rate", headers=learner["headers"]
+        ).json()
+
+    def _grade(self, client, learner, choice, leg="A"):
+        return client.post(
+            "/api/v1/content/grade",
+            json={"topic": "calculus", "concept": "calc_rate", "leg": leg, "choice": choice},
+            headers=learner["headers"],
+        )
+
+    def test_a_right_answer_is_marked_right_and_the_reason_arrives(self, client, learner):
+        pack = self._pack(client, learner)
+        # The served options are shuffled, so the right one is found by asking the server which text
+        # the authored key names -- via the explanation the grade returns for the correct option.
+        for option in pack["pair"]["A"]["options"]:
+            verdict = self._grade(client, learner, option).json()
+            if verdict.get("correct"):
+                break
+        assert verdict["correct"] is True, verdict
+        assert verdict["status"] == "scored"
+        assert verdict["explanation"], "the authored explanation travels with the verdict"
+
+    def test_a_wrong_answer_is_marked_wrong_with_the_misconception(self, client, learner):
+        pack = self._pack(client, learner)
+        verdicts = [self._grade(client, learner, o).json() for o in pack["pair"]["A"]["options"]]
+        wrong = [v for v in verdicts if v.get("correct") is False]
+        assert wrong, "at least one option is a distractor"
+        assert all(v["status"] == "scored" for v in wrong)
+        assert all(v["why"] for v in wrong), "a wrong answer says why it is wrong"
+
+    def test_a_string_that_is_not_an_option_is_refused_not_guessed(self, client, learner):
+        response = self._grade(client, learner, "not one of the options")
+        assert response.status_code == 200
+        verdict = response.json()
+        assert verdict["correct"] is False
+        assert verdict["status"] == "unparseable"
+        assert "not one of the options" in verdict["why"]
+
+    def test_both_legs_grade(self, client, learner):
+        pack = self._pack(client, learner)
+        for leg in ("A", "B"):
+            verdict = self._grade(
+                client, learner, pack["pair"][leg]["options"][0], leg=leg
+            ).json()
+            assert verdict["leg"] == leg
+            assert verdict["rung"] == (3 if leg == "A" else 4)
+            assert verdict["demand"], "each leg says what demand it is"
+
+    def test_a_bad_leg_is_refused_by_the_schema(self, client, learner):
+        assert self._grade(client, learner, "x", leg="Z").status_code == 422
+
+    def test_an_unknown_concept_is_a_404(self, client, learner):
+        response = client.post(
+            "/api/v1/content/grade",
+            json={"topic": "calculus", "concept": "nope", "leg": "A", "choice": "x"},
+            headers=learner["headers"],
+        )
+        assert response.status_code == 404
