@@ -192,7 +192,7 @@ def vault_next(seed: int, trials: Sequence[Trial], direction: str) -> dict[str, 
             "direction": direction,
             "length": 3,
             "sequence": seq,
-            "answer_direction": "forward",
+            "answer_direction": direction,
             "prompt": (
                 "Watch the tiles light up, then tap them in the same order."
                 if direction == "forward"
@@ -227,7 +227,9 @@ def vault_next(seed: int, trials: Sequence[Trial], direction: str) -> dict[str, 
         attempt += 1
         if attempt >= 4:
             return None
-    wanted = "forward" if len(measured(done)) == 0 else "backward"
+    # The block's direction is the answer direction for every task in it. (It used to flip to
+    # "backward" after the first measured trial, so a "same order" block asked for reverse order.)
+    wanted = direction
     seq = _vault_sequence(seed, direction, length, attempt)
     return {
         "id": f"vault_{direction}_{length}_{attempt}",
@@ -417,14 +419,15 @@ def codewords_cued(seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None:
 def codewords_delayed(seed: int, trials: Sequence[Trial], *, kind: str) -> dict[str, Any] | None:
     """Delayed free recall, then recognition (brief §5.2).
 
-    The gap between free recall and recognition is itself the measurement — a learner who recognises
-    what they could not produce has a retrieval problem, not an encoding one, and that changes what
-    the app should do next.
+    The gap between free recall and recognition is itself the measurement: a learner who recognises
+    what they could not produce has a retrieval problem, not an encoding one. ``trials`` holds only
+    this game's free and recognition trials (the caller filters), so the recognition index is the
+    number of recognition trials -- the prediction and the free recall are not recognition items.
     """
-    done = [t for t in trials if t.game == "codewords_delayed" and t.phase == "measure"]
     pairs = codewords_pairs(seed)
+    free_done = any(t.task.get("kind") == "free" for t in trials)
     if kind == "free":
-        if done:
+        if free_done:
             return None
         return {
             "id": "codewords_delayed_free",
@@ -434,11 +437,9 @@ def codewords_delayed(seed: int, trials: Sequence[Trial], *, kind: str) -> dict[
             "prompt": "Type as many of the eight code words as you can remember, separated by commas.",
             "max_latency_ms": 90_000,
         }
-    if len(done) < 1:
+    if not free_done:
         return None
-    index = len(done) - 1
-    if index >= len(pairs) * 2:
-        return None
+    index = len([t for t in trials if t.task.get("kind") == "recognition"])
     if index >= len(pairs):
         return None
     pair = pairs[index]
@@ -578,8 +579,8 @@ def machine_next(seed: int, trials: Sequence[Trial], round_no: int) -> dict[str,
     right. All three endings are recorded, because "solved in one probe" and "solved after five"
     are different findings.
     """
-    done = [t for t in trials if t.task.get("round") == round_no]
-    if not done:
+    this_round = [t for t in trials if t.task.get("round") == round_no]
+    if not any(t.phase == "practice" for t in this_round):
         rule, second, switch_at = machine_rule(seed, round_no)
         return {
             "id": f"machine_r{round_no}_practice",
@@ -594,12 +595,21 @@ def machine_next(seed: int, trials: Sequence[Trial], round_no: int) -> dict[str,
             "warmup_inputs": [1, 2, 5],
             "max_latency_ms": 120000,
         }
+    # The practice round teaches the shape of the game and is never counted (brief §5.2): its probe
+    # must not use one of the five, or move the round-three switch.
+    done = [t for t in this_round if t.phase != "practice"]
     probes = [t for t in done if t.task.get("action") == "probe"]
     guesses = [t for t in done if t.task.get("action") == "guess"]
     wrong = [g for g in guesses if not g.correct]
     solved = any(g.correct for g in guesses)
     if solved or len(wrong) >= MACHINE_MAX_WRONG_GUESSES or len(probes) >= MACHINE_TEST_INPUTS:
         return None
+    # The machine's answers so far in this round, from the record. The page does not keep its own
+    # copy: a reload would lose the learner's evidence, and it is the server's record that counts.
+    history = []
+    for t in probes:
+        verdict = {**dict(t.response or {}), **dict((t.response or {}).get("scored") or {})}
+        history.append({"x": verdict.get("value"), "out": verdict.get("output"), "falsifying": bool(verdict.get("falsifying"))})
     return {
         "id": f"machine_r{round_no}_step{len(done)}",
         "game": "machine",
@@ -610,6 +620,7 @@ def machine_next(seed: int, trials: Sequence[Trial], round_no: int) -> dict[str,
         "max_wrong_guesses": MACHINE_MAX_WRONG_GUESSES,
         "probes_used": len(probes),
         "wrong_guesses": len(wrong),
+        "history": history,
         "max_latency_ms": 120000,
     }
 
@@ -623,8 +634,16 @@ def machine_respond(seed: int, round_no: int, task: Mapping[str, Any], response:
     the rule the code is holding.
     """
     rule_one, rule_two, switch_at = machine_rule(seed, round_no)
-    probes_done = len([t for t in trials if t.task.get("round") == round_no and t.task.get("action") == "probe"])
-    rule = rule_two if (rule_two is not None and probes_done >= switch_at + 1) else rule_one
+    probes_done = len(
+        [
+            t
+            for t in trials
+            if t.task.get("round") == round_no and t.task.get("action") == "probe" and t.phase != "practice"
+        ]
+    )
+    # "The rule silently switches after the third probe": probes 1-3 see the first rule, the fourth
+    # real probe sees the second. (It was off by one: the switch landed after the fourth.)
+    rule = rule_two if (rule_two is not None and probes_done >= switch_at) else rule_one
     action = str(response.get("action") or "probe")
     if action == "guess":
         text = str(response.get("text") or "")
@@ -694,34 +713,41 @@ def machine_switched(seed: int, round_no: int, trials: Sequence[Trial]) -> dict[
     rule_one, rule_two, switch_at = machine_rule(seed, round_no)
     if rule_two is None:
         return {"switched": False}
-    probes = [t for t in trials if t.task.get("round") == round_no and t.task.get("action") == "probe"]
+    probes = [
+        t
+        for t in trials
+        if t.task.get("round") == round_no and t.task.get("action") == "probe" and t.phase != "practice"
+    ]
     after = probes[switch_at:]
     # "Noticed" = a probe after the switch whose *output* matched the new rule. That is the moment
     # the learner's model of the machine had to change; a guess that happens to name the new rule
     # counts too. Reading it from the graded output (rather than from a typed sentence) means it is
     # true of probes as well as guesses — which is where noticing usually shows up first.
-    noticed_at: int | None = None
-    for t in after:
+    noticed_at: int | None = None  # position among the probes after the switch
+    for pos, t in enumerate(after):
         scored = t.response.get("scored") or {}
         value, output = scored.get("value"), scored.get("output")
         if value is None or output is None:
             continue
         try:
             if abs(float(rule_two.apply(float(value))) - float(output)) < 1e-9:
-                noticed_at = t.index
+                noticed_at = pos
                 break
         except (TypeError, ValueError):
             continue
     guessed_new = [
         t for t in trials
-        if t.task.get("round") == round_no and t.task.get("action") == "guess" and t.correct and str(t.response.get("rule") or "") == rule_two.name
+        if t.task.get("round") == round_no
+        and t.task.get("action") == "guess"
+        and t.correct
+        and str((t.response.get("scored") or {}).get("rule") or t.response.get("rule") or "") == rule_two.name
     ]
     return {
         "switched": True,
         "switch_after_probe": switch_at,
         "probes_after_switch": len(after),
         "noticed": bool(noticed_at is not None or guessed_new),
-        "probes_before_noticing": (noticed_at - switch_at) if noticed_at is not None else None,
+        "probes_before_noticing": noticed_at,
     }
 
 
@@ -749,9 +775,18 @@ LOCKED_BOX_HINTS: tuple[dict[str, Any], ...] = (
     },
 )
 LOCKED_BOX_HINT_SHOP = len(LOCKED_BOX_HINTS)
+#: The coins the learner starts the box with. The balance is the server's: a hint the learner cannot
+#: afford is refused here, not only greyed out on the page.
+LOCKED_BOX_COINS = 3
 
 
-def locked_box_task(seed: int) -> dict[str, Any]:
+def locked_box_coins_left(bought: Sequence[str]) -> int:
+    """Coins left after the hints in ``bought`` (ids from the shop)."""
+    spent = sum(int(h["cost"]) for h in LOCKED_BOX_HINTS if h["id"] in set(bought))
+    return max(0, LOCKED_BOX_COINS - spent)
+
+
+def locked_box_task(seed: int, step: int = 0, *, attempts_used: int = 0, bought_hints: Sequence[str] = ()) -> dict[str, Any]:
     """A hard puzzle generated in code, with a hint shop and a walk-away button.
 
     It is stated to be hard on purpose and it is *not* scored on correctness: the measurement is
@@ -759,14 +794,23 @@ def locked_box_task(seed: int) -> dict[str, Any]:
     """
     r = rng(seed, "lockedbox")
     start = r.choice([1, 2, 3])
-    step = r.choice([3, 5, 7])
+    diff = r.choice([3, 5, 7])  # not ``step``: that name is the action index parameter above
+
     def shape(n: int) -> int:
-        return start + step * (n - 1) * n // 2
+        return start + diff * (n - 1) * n // 2
     cases = [(1, shape(1)), (2, shape(2)), (3, shape(3)), (4, shape(4))]
     return {
-        "id": "locked_box",
+        # One id per action, not one per puzzle. The puzzle itself is the same at every step (it is a
+        # function of the seed), but a second action under the first's id was judged a duplicate and
+        # the box never reached its end.
+        "id": f"locked_box_{step}",
         "game": "locked_box",
         "phase": "measure",
+        # What the learner has already done here, so a reload shows the same box, not a fresh one.
+        "attempts_used": int(attempts_used),
+        "max_attempts": 3,
+        "bought_hints": list(bought_hints),
+        "coins_left": locked_box_coins_left(bought_hints),
         "prompt": (
             "A lock opens on a sequence of numbers. The first four are below. "
             "Work out the fifth. This one is hard on purpose — you can buy a hint, try again, "
@@ -834,7 +878,13 @@ MAX_WAGER = 3
 
 def wager_allowed(task: Mapping[str, Any]) -> bool:
     """A wager needs an answer that can be right or wrong, and not a practice trial."""
-    return task.get("phase") == "measure" and task.get("game") in ("codewords_cued", "codewords_delayed", "trap", "quick")
+    return task.get("phase") == "measure" and task.get("game") in (
+        "codewords_cued",
+        "codewords_delayed",
+        "codewords_next_day",
+        "trap",
+        "quick",
+    )
 
 
 def calibration(trials: Sequence[Trial]) -> dict[str, Any]:

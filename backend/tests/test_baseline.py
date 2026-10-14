@@ -116,6 +116,25 @@ def _correct_response(task: dict) -> dict:
     return {}
 
 
+def _with_answer_key(run_id: str, task: dict) -> dict:
+    """The task with the server's own answer key added back, for the learner-simulator only.
+
+    The page never receives answer keys (round 2, phase F): the served task has them removed. A
+    simulated learner that answers correctly still needs the key, and it reads it from the server's
+    internal view of the task on offer, which no route returns.
+    """
+    from adapt.services import current
+
+    secret = current().baseline.internal_task(run_id) or {}
+    if secret.get("id") != task.get("id"):
+        return task
+    merged = dict(task)
+    for key in ("answer", "intuitive", "explain", "distractors"):
+        if key in secret:
+            merged[key] = secret[key]
+    return merged
+
+
 def _play_until(client, learner, run_id: str, *, stop_stage: str | None = None, max_trials: int = 200) -> list[dict]:
     """Answer everything correctly until the flow reaches ``stop_stage`` (or the snapshot).
 
@@ -135,7 +154,7 @@ def _play_until(client, learner, run_id: str, *, stop_stage: str | None = None, 
             break
         if stop_stage and view["stage"] == stop_stage:
             break
-        task = view["task"]
+        task = _with_answer_key(run_id, view["task"])
         if task.get("game") == "codewords_delayed" and task.get("kind") == "free":
             # Free recall needs the words actually shown this run: read them from the study screen
             # the learner saw (the server re-derives them from the seed, so this is not a guess).
@@ -262,7 +281,7 @@ def test_the_stage_order_is_the_order_the_brief_asks_for(client, learner):
         task = view["task"]
         if not seen or seen[-1] != view["stage"]:
             seen.append(view["stage"])
-        response = _correct_response(task)
+        response = _correct_response(_with_answer_key(view["run_id"], task))
         if task.get("game") == "codewords_delayed" and task.get("kind") == "free":
             break
         out = _submit(client, learner, view["run_id"], task, response)
@@ -285,7 +304,7 @@ def test_every_game_opens_with_an_unscored_practice_trial(client, learner, servi
         task = view["task"]
         if task.get("game") in ("vault", "codewords_cued", "machine", "shopkeeper"):
             assert task["phase"] == "practice", f"{task['game']} did not open with a practice trial"
-            _submit(client, learner, view["run_id"], task, _correct_response(task))
+            _submit(client, learner, view["run_id"], task, _correct_response(_with_answer_key(view["run_id"], task)))
             # The *stored* correctness is what must be absent. The response still grades the tap,
             # because a learner practising needs to know whether they tapped it right — that is
             # feedback, not a measurement.
@@ -295,7 +314,7 @@ def test_every_game_opens_with_an_unscored_practice_trial(client, learner, servi
                 f"a practice trial was recorded as a measurement in {task['game']}: {stored.correct}"
             )
             break
-        _submit(client, learner, view["run_id"], task, _correct_response(task))
+        _submit(client, learner, view["run_id"], task, _correct_response(_with_answer_key(view["run_id"], task)))
 
 
 # --------------------------------------------------------------------------- #

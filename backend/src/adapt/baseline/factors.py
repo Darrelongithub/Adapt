@@ -101,6 +101,17 @@ def _not_measured(key: str, *, need: int, n: int, what: str) -> Factor:
     )
 
 
+def _verdict(t: Trial) -> dict[str, Any]:
+    """What the server decided about a trial: the learner's response, with the scorer's verdict on top.
+
+    The service stores a trial's verdict under ``response["scored"]`` (the falsifying flag, the
+    recalled count, the hint's cost, whether a switch was noticed). Reading those keys from the top
+    of ``response`` found nothing, so every such metric came out as zero or False in a real run.
+    """
+    raw = dict(t.response or {})
+    return {**raw, **dict(raw.get("scored") or {})}
+
+
 def _band_score(*pairs: tuple[float, bool]) -> float:
     return (sum(1 for _v, ok in pairs if ok) / len(pairs)) if pairs else 0.0
 
@@ -118,7 +129,7 @@ def _working_memory(trials: Sequence[Trial]) -> Factor:
     forward = max([int(t.task.get("length") or 0) for t in measured(trials) if t.game == "vault" and t.task.get("direction") == "forward" and t.correct] or [0])
     backward = max([int(t.task.get("length") or 0) for t in measured(trials) if t.game == "vault" and t.task.get("direction") == "backward" and t.correct] or [0])
     shop = [t for t in measured(trials) if t.game == "shopkeeper" and t.correct is not None]
-    recall_hits = [int((t.response.get("hits") if isinstance(t.response.get("hits"), int) else (t.response.get("scored") or {}).get("hits")) or 0) for t in shop]
+    recall_hits = [int(_verdict(t).get("hits") or 0) for t in shop]
     n = len(measured([t for t in trials if t.game in ("vault", "shopkeeper")]))
     if n < MIN_N["working_memory"] or not spans:
         return _not_measured("working_memory", need=MIN_N["working_memory"], n=n, what="a few more tile sequences")
@@ -127,8 +138,10 @@ def _working_memory(trials: Sequence[Trial]) -> Factor:
     # span measured once in one sitting is an estimate and saying "you hold exactly 5" would be a
     # false precision the brief explicitly forbids.
     low = max(2.0, best - 1)
-    high = min(9.0, best + 0.5)
-    distractor_accuracy = [t.response.get("distractor_accuracy") for t in shop if t.response.get("distractor_accuracy") is not None]
+    high = min(9.0, best + 1)  # one step either side, as the comment above says (was best + 0.5)
+    distractor_accuracy = [
+        _verdict(t).get("distractor_accuracy") for t in shop if _verdict(t).get("distractor_accuracy") is not None
+    ]
     return Factor(
         key="working_memory",
         title=FACTOR_TITLES["working_memory"],
@@ -138,7 +151,7 @@ def _working_memory(trials: Sequence[Trial]) -> Factor:
         high=high,
         summary=f"about {low:g}–{high:g} steps at once, {len(failures)} sequence(s) missed",
         statement=(
-            f"You currently hold about {low:g} steps at once, so lessons will use smaller steps "
+            f"You currently hold about {low:g}–{high:g} steps at once, so lessons will use smaller steps "
             f"and check between them."
         ),
         actions=(
@@ -146,6 +159,7 @@ def _working_memory(trials: Sequence[Trial]) -> Factor:
             "prefer a worked example split into short steps over one long paragraph",
         ),
         detail={
+            "best_span": best,
             "forward_span": forward,
             "backward_span": backward,
             "failures": len(failures),
@@ -218,9 +232,14 @@ def _attention(trials: Sequence[Trial]) -> Factor:
         title=FACTOR_TITLES["attention_self_control"],
         state="measured",
         n=len(drift_trials) + len(traps),
-        low=min(first_acc, last_acc),
-        high=max(first_acc, last_acc),
-        summary=f"{first_acc:.0%} right early, {last_acc:.0%} right late, {correct_traps}/{len(traps)} traps spotted",
+        # A band, not a point: two thirds of a short session can read the same, and a zero-width range
+        # would be a false precision. The same fixed +-0.1 band the recall factor uses.
+        low=max(0.0, min(first_acc, last_acc) - 0.1),
+        high=min(1.0, max(first_acc, last_acc) + 0.1),
+        summary=(
+            f"{first_acc:.0%} right early, {last_acc:.0%} right late"
+            + (f", {correct_traps}/{len(traps)} traps spotted" if traps else ", traps not reached")
+        ),
         statement=(
             "Your accuracy "
             + ("held up" if last_acc >= first_acc - 0.1 else "dropped")
@@ -255,7 +274,7 @@ def _long_term_memory(trials: Sequence[Trial]) -> Factor:
     if n < MIN_N["long_term_memory"]:
         return _not_measured("long_term_memory", need=MIN_N["long_term_memory"], n=n, what="finishing the codeword round")
     immediate_score = _band_score(*[(0.0, bool(t.correct)) for t in immediate])
-    free_hits = [int(t.response.get("hits") or 0) for t in free]
+    free_hits = [int(_verdict(t).get("hits") or 0) for t in free]
     free_score = (max(free_hits) / 8.0) if free_hits else None
     recog_score = _band_score(*[(0.0, bool(t.correct)) for t in recog]) if recog else None
     gap = None
@@ -266,7 +285,7 @@ def _long_term_memory(trials: Sequence[Trial]) -> Factor:
         title=FACTOR_TITLES["long_term_memory"],
         state="measured",
         n=n,
-        low=immediate_score - 0.1,
+        low=max(0.0, immediate_score - 0.1),  # a score cannot be below zero, so neither can its band
         high=min(1.0, immediate_score + 0.1),
         summary=f"{immediate_score:.0%} recalled straight away" + (f", {free_score:.0%} later" if free_score is not None else ""),
         statement=(
@@ -297,7 +316,7 @@ def _reasoning(trials: Sequence[Trial]) -> Factor:
     n = len(probes) + len(guesses)
     if n < MIN_N["reasoning"]:
         return _not_measured("reasoning", need=MIN_N["reasoning"], n=n, what="finishing a machine round")
-    falsifying = sum(1 for t in probes if t.response.get("falsifying"))
+    falsifying = sum(1 for t in probes if _verdict(t).get("falsifying"))
     first_guess_wrong = [g for g in guesses[:3] if not g.correct]
     solved = [g for g in guesses if g.correct]
     tries_to_first_guess = None
@@ -329,7 +348,7 @@ def _reasoning(trials: Sequence[Trial]) -> Factor:
             "first_guess_correct": bool(guesses and guesses[0].correct),
             "tries_before_first_guess": tries_to_first_guess,
             "rounds_solved": len(solved),
-            "noticed_the_switch": bool([t for t in machines if t.response.get("noticed")]),
+            "noticed_the_switch": any(bool(_verdict(t).get("noticed")) for t in machines),
         },
     )
 
@@ -407,7 +426,7 @@ def _persistence(trials: Sequence[Trial]) -> Factor:
         ),
         detail={
             "hints_used": len(hints),
-            "hint_cost": sum(int(h.response.get("cost") or 0) for h in hints),
+            "hint_cost": sum(int(_verdict(h).get("cost") or 0) for h in hints),
             "wrong_attempts": len(wrong_attempts),
             "time_to_first_hint_ms": first_hint_ms,
             "walked_away": bool(quit_trial),
@@ -426,7 +445,7 @@ def _prior_knowledge(trials: Sequence[Trial], *, model: Mapping[str, Any] | None
     """
     topics = list((model or {}).get("topics") or [])
     if not topics:
-        return _not_measured("prior_knowledge", need=MIN_N["prior_knowledge"], n=0, what="the subject round (next step)")
+        return _not_measured("prior_knowledge", need=MIN_N["prior_knowledge"], n=0, what="the subject round")
     n = sum(int(t.get("n") or 0) for t in topics)
     best = max(topics, key=lambda t: float(t.get("p_know") or 0))
     worst = min(topics, key=lambda t: float(t.get("p_know") or 0))
@@ -487,12 +506,16 @@ def levers(factors: Mapping[str, Factor], *, preferences: Mapping[str, Any] | No
     step_size = "medium"
     why_step = "no working-memory measurement yet"
     if wm.state == "measured" and wm.high is not None:
-        if wm.high <= 4.5:
-            step_size, why_step = "small", f"holds about {wm.high:g} steps at once (n={wm.n})"
-        elif wm.high >= 6.5:
-            step_size, why_step = "large", f"holds about {wm.high:g} steps at once (n={wm.n})"
+        # The step size is read from the best span itself, not from the top of the range: the range
+        # is a band around it, and a band's edge is not the measurement.
+        best = int(wm.detail.get("best_span") or round(((wm.low or 0) + (wm.high or 0)) / 2))
+        band = f"holds about {wm.low:g}–{wm.high:g} steps at once (n={wm.n})"
+        if best <= 4:
+            step_size, why_step = "small", band
+        elif best >= 6:
+            step_size, why_step = "large", band
         else:
-            step_size, why_step = "medium", f"holds about {wm.high:g} steps at once (n={wm.n})"
+            step_size, why_step = "medium", band
 
     stated_format = str(prefs.get("preferred_format") or "")
     lead_format_prior = stated_format or "worked_example"
