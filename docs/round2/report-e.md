@@ -107,7 +107,12 @@ phase needs a merge decision beyond its own new files.
 
 Parts A–F were specified to run on `r2/phase-<letter>` branches. This session is pinned to
 `arena/4b39a527-adapt`, so `r2/phase-e` does not exist and could not be created here; every change
-in this report is on that one branch, and this commit contains only the seven Phase E files listed
-above. The parked Phase A work already sitting uncommitted in the same working tree (24 modified
+in this report is on that one branch, and its commits contain only the eight Phase E files listed
+above.
+
+The work is open as **PR #21** (`arena/4b39a527-adapt` → `main`), which GitHub reports as mergeable
+with a clean state and a diff of exactly those eight files. Note for Phase G: `main` has moved past
+this branch's point since it was created — PRs #18 and #20 landed other sessions' work — so the
+reconciliation happens at integration time as it does for every phase. The parked Phase A work already sitting uncommitted in the same working tree (24 modified
 files plus `docs/round2/handoff-a.md`, `docs/round2/unverified-a.md`,
 `backend/tests/test_bank_concept_ideas.py`) was **not** touched, staged or committed by this phase.
