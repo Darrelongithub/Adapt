@@ -289,7 +289,7 @@ class Page {
     // httpOnly session cookie travels exactly as it does in the browser (jsdom has no fetch).
     const nativeFetch = globalThis.fetch;
     win.fetch = async (input, init = {}) => {
-      const href = new URL(typeof input === "string" ? input : input.url, BASE).toString();
+      const href = new URL(typeof input === "string" ? input : input.url ?? String(input), BASE).toString();
       const headers = new Headers(init.headers ?? (typeof input === "object" ? input.headers : undefined));
       const cookie = jar.getCookieStringSync(href);
       if (cookie) headers.set("cookie", cookie);
@@ -303,8 +303,13 @@ class Page {
       // Node's own Response, not jsdom's: the app router reads the RSC payload as a *stream*
       // (res.body.getReader()) and jsdom's Response has no usable body stream, which stalls
       // client-side navigation in the harness only.
-      return new globalThis.Response(body, { status: res.status, statusText: res.statusText, headers: [...res.headers] });
+      const response = new globalThis.Response(body, { status: res.status, statusText: res.statusText, headers: [...res.headers] });
+      // The router fetches URL objects and uses Response.url to resolve RSC navigation.
+      Object.defineProperty(response, "url", { value: res.url });
+      return response;
     };
+    win.TextEncoder ??= globalThis.TextEncoder;
+    win.TextDecoder ??= globalThis.TextDecoder;
     win.Request ??= globalThis.Request;
     win.Headers ??= globalThis.Headers;
     win.Response ??= globalThis.Response;
@@ -529,145 +534,81 @@ async function main() {
     console.log(`\n\x1b[2m(fixture\x1b[0m signed in as ${learner.email}\x1b[2m)\x1b[0m`);
   }
   /* ---------------------------------------------------------------- home ---- */
-  // Signed out. Everything the learner can do starts here, so this scenario is also the
-  // one that establishes the session the rest of the probe drives with.
   if (run("home")) {
-    console.log("\x1b[1mhome\x1b[0m");
+    console.log("\n\x1b[1mentry gate and home\x1b[0m");
+    const markup = await (await fetch(BASE + "/")).text();
+    const ssr = new JSDOM(markup);
+    check("home", "server HTML covers the app before hydration (no dashboard flash)",
+      !!ssr.window.document.querySelector(".opening-overlay") && ssr.window.document.querySelector("[data-app-shell]")?.hasAttribute("hidden"));
+    ssr.window.close();
     const page = await open("/", "home");
-    await waitFor(() => !/Checking the session/.test(page.text()), { label: "the session check to finish" });
-    check("home", "renders the product's own words, not a placeholder", /proposes what to change/.test(page.text()), page.text().slice(0, 120));
-    const hrefs = page.find("a[href]").map((a) => a.getAttribute("href"));
-    // A skip link points at `#main-content`, which is correct accessibility and not an external
-    // link; the rule this check exists for is that nothing sends the learner off the app.
-    const offsite = hrefs.filter((h) => !h.startsWith("/") && !h.startsWith("#"));
-    check("home", "every link is a route inside the app", hrefs.length > 3 && offsite.length === 0, `offsite: ${offsite.join(" ")} | all: ${hrefs.join(" ")}`);
-    check("home", "no uncaught error during hydration", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 200));
-
-    /* ---- consent stands in front of account creation (brief 2.4) ----
-     * Nothing may be created — not by email, and not by the guest path — before a learner has
-     * answered the required consent box themselves. So the form is not even on the page yet,
-     * and these checks are about that ordering: two separate boxes, neither pre-ticked, the
-     * primary control closed until the required one is, and a decline that explains itself
-     * without creating anything. */
-    const consentBoxes = page.find('.check-row input[type="checkbox"]');
-    const agree = page.byText("Agree & continue", "button");
-    check(
-      "home",
-      "consent is asked before any account can be created",
-      consentBoxes.length === 2 && page.find('input[type="password"]').length === 0 && !!agree,
-      `${consentBoxes.length} boxes, ${page.find('input[type="password"]').length} password fields, agree: ${agree ? "present" : "missing"}`,
-    );
-    check("home", "neither consent box is pre-ticked", consentBoxes.length === 2 && consentBoxes.every((b) => b.checked === false), consentBoxes.map((b) => b.checked).join(","));
-    check("home", "the primary control is closed until the required box is ticked", !!agree && agree.disabled, agree ? `disabled=${agree.disabled}` : "no agree control");
-    if (consentBoxes[0]) page.checkInput(consentBoxes[0]);
-    await sleep(150);
-    check("home", "ticking the required box opens the way forward", !!agree && !agree.disabled, agree ? `disabled=${agree.disabled}` : "no agree control");
-    check(
-      "home",
-      "the optional research box is a separate question and stays unticked",
-      consentBoxes.length === 2 && consentBoxes[0].checked === true && consentBoxes[1].checked === false,
-      consentBoxes.map((b) => b.checked).join(","),
-    );
-    const decline = page.byText("Decline", "button");
-    if (decline) {
-      await page.click(decline);
-      await sleep(150);
-      check(
-        "home",
-        "declining explains what will not work instead of dead-ending",
-        /without that consent|cannot record answers/i.test(page.text()) &&
-          page.requests.every((r) => !/POST \/api\/v1\/students/.test(r)),
-        page.text().slice(-220),
-      );
-    }
-    await page.click(agree);
-    await sleep(200);
-
-    check("home", "a signed-out visitor is offered both ways in", !!page.byText("Continue as guest", "button") && !!page.byText("Sign in", "button"), page.text().slice(0, 180));
-    await page.click("Create account", "button");
-    // The form is two identity fields and no email: the account is found again by username.
-    await waitFor(() => page.find('input[autocomplete="username"]').length > 0, { label: "the create-account form" });
-    check(
-      "home",
-      "the create-account tab asks for a username and a password, and no email",
-      page.find('input[autocomplete="username"]').length === 1 &&
-        page.find('input[type="password"]').length === 1 &&
-        page.find('input[type="email"]').length === 0,
-      `${page.find("input").length} inputs, types: ${page.find("input").map((i) => i.type || i.getAttribute("autocomplete")).join(", ")}`,
-    );
+    const dismissWelcome = async p => {
+      const skip = p.doc.querySelector(".opening-skip");
+      if (skip) await p.click(skip);
+      await waitFor(() => !p.doc.querySelector(".opening-overlay"), { label: "welcome dismissal" });
+    };
+    const accept = async p => {
+      await waitFor(() => p.find('[data-account-gate] input[type="checkbox"]').length === 2, { label: "consent gate" });
+      p.checkInput(p.find('[data-account-gate] input[type="checkbox"]')[0]);
+      await p.click("Agree and continue", "button");
+    };
+    await dismissWelcome(page);
+    await waitFor(() => !!page.doc.querySelector("[data-account-gate]"), { label: "mandatory account card" });
+    check("home", "welcome is neutral rather than a time-of-day greeting", /Welcome/.test(page.text()) && !/Good morning|Good afternoon|Good evening/.test(page.text()));
+    check("home", "navigation and learning pages are not mounted before entry", page.find(".sidebar").length === 0 && page.find("[data-dashboard]").length === 0 && !page.requests.some(r => /baseline|dashboard|practice/.test(r)));
+    const boxes = page.find('[data-account-gate] input[type="checkbox"]');
+    check("home", "both consent boxes are unchecked and entry is disabled", boxes.length === 2 && boxes.every(box => !box.checked) && page.byText("Agree and continue", "button")?.disabled);
+    const gate = page.doc.querySelector("[data-account-gate]");
+    const enabled = [...gate.querySelectorAll("button, input, select, textarea, a[href]")].filter(el => !el.disabled);
+    const tab = (node, shiftKey = false) => node.dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true }));
+    enabled.at(-1).focus();
+    tab(enabled.at(-1));
+    check("home", "Tab stays inside the mandatory card", page.doc.activeElement === enabled[0]);
+    tab(enabled[0], true);
+    check("home", "Shift-Tab wraps without landing on a disabled control", page.doc.activeElement === enabled.at(-1));
+    page.doc.querySelector("[data-account-gate]").dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await page.click(page.doc.querySelector(".access-screen"));
+    check("home", "Escape and outside clicks cannot dismiss the card", !!page.doc.querySelector("[data-account-gate]"));
+    await page.click("Decline", "button");
+    check("home", "decline keeps the app locked without creating an account", /cannot enter the app/.test(page.text()) && !page.requests.some(r => r === "POST /api/v1/students"));
+    await accept(page);
+    await page.click("Create account", '[role="tab"]');
     page.type(page.find('input[autocomplete="username"]')[0], learner.username);
     page.type(page.find('input[type="password"]')[0], learner.password);
-    const submit = page.find('button[type="submit"]')[0];
-    check("home", "the submit button is enabled once the fields are filled", !!submit && !submit.disabled, submit ? "enabled" : "not found");
-    await page.click(submit);
-    // jsdom refuses cross-document navigation, so a router.push that leaves the document
-    // shows up as its "not implemented" notice rather than a new URL. Both are accepted here:
-    // what is being proven is that a successful registration *moves the learner on*, and the
-    // destination itself is then loaded as a real document in the scenarios below.
-    let arrived = false;
-    try {
-      await waitFor(() => page.doc.location.pathname.startsWith("/onboarding") || /navigation to another Document/.test(page.errors.join(" ")), { timeout: 20_000, label: "registration to hand off to setup" });
-      arrived = true;
-    } catch (err) {
-      check("home", "registering moves the learner on instead of leaving them at the door", false, `requests: ${page.requests.join(" ; ").slice(0, 150)} | ${page.text().slice(-200)}`);
-    }
-    if (arrived) {
-      const posted = page.requests.filter((r) => /POST \/api\/v1\/students/.test(r)).length;
-      check("home", "registering posts the account once, then hands off to setup", posted === 1 && page.appErrors().length === 0, `posts: ${posted}; errs: ${page.appErrors().slice(-1).join("")}`);
-    }
-    const cookie = jar.getCookieStringSync(BASE);
-    check("home", "the account came back with a session cookie", /adapt_session=/.test(cookie), cookie.slice(0, 80) || "no cookie on the jar");
-    const m = /adapt_csrf=([^;]+)/.exec(page.doc.cookie ?? "");
-    csrf = m ? m[1] : "";
-    check("home", "and a csrf token the page can read (by design, that one is not httpOnly)", csrf.length > 8, page.doc.cookie?.slice(0, 120) ?? "no document.cookie");
-    const after = await api("/api/v1/me", { headers: { cookie } });
-    check("home", "the session the browser got really authenticates", after.status === 200 && after.body.email === undefined ? true : after.status === 200, JSON.stringify(after.body).slice(0, 160));
-    // The account has to be findable by the identifier the door asked for, or the next visit
-    // cannot get back in: this signs out, signs back in with the typed username, and checks
-    // the same learner row answers.
-    const back = await api("/api/v1/login", { method: "POST", body: { username: learner.username, password: learner.password } });
-    check(
-      "home",
-      "and the username it was made with signs back into the same account",
-      back.status === 200 && back.body.student_id === after.body.student_id,
-      `${back.status} ${JSON.stringify(back.body).slice(0, 120)}`,
-    );
+    await page.click(page.doc.querySelector('button[type="submit"]'));
+    await waitFor(() => page.doc.location.pathname === "/baseline" && page.find('[role="radio"]').length > 0, { timeout: 20000, label: "first account enters baseline" });
+    check("home", "first-time registration enters baseline and removes the consent card", !page.doc.querySelector("[data-account-gate]") && page.requests.filter(r => r === "POST /api/v1/students").length === 1);
+    const me = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    check("home", "consent was saved at creation; model sharing was not silently enabled", me.body.consent_analytics === true && me.body.consent_share_with_ai === false && me.body.baseline_started === true);
+    csrf = /adapt_csrf=([^;]+)/.exec(page.doc.cookie ?? "")?.[1] ?? "";
+    const baselineStarts = page.requests.filter(r => r === "POST /api/v1/baseline").length;
+    await page.click("sign out", "button");
+    await accept(page);
+    page.type(page.find('input[autocomplete="username"]')[0], learner.username);
+    page.type(page.find('input[type="password"]')[0], learner.password);
+    await page.click(page.doc.querySelector('button[type="submit"]'));
+    await waitFor(() => !!page.doc.querySelector("[data-dashboard]") && page.doc.location.pathname === "/", { timeout: 20000, label: "returning sign-in opens dashboard" });
+    await waitFor(() => page.find(".stat-value").length === 4 && page.find(".stat-value").every(n => n.textContent !== "—"), { label: "dashboard data" });
+    check("home", "returning sign-in goes to dashboard without starting another baseline", page.requests.filter(r => r === "POST /api/v1/baseline").length === baselineStarts);
+    check("home", "unfinished baseline is a real resume link on the dashboard", !!page.doc.querySelector('a[href^="/baseline?run="]'));
+    check("home", "dashboard has real empty states and no consent form", /No answers yet/.test(page.text()) && /Not measured yet/.test(page.text()) && !page.doc.querySelector("[data-account-gate]"));
+    check("home", "no uncaught entry or navigation errors", page.appErrors().length === 0, page.appErrors().join(" | "));
+    closePage(page);
 
-    /* ---- signed in, home is status and one way forward (brief 2.5) ----
-     * The screen this redesign replaced carried a word-field menu of every section: a second
-     * navigation surface, and the reason a whole screen could go missing from a room. Signed
-     * in, home has to behave like a status page — one primary action, and anything not
-     * measured yet said in words rather than printed as a confident zero. */
-    const homeIn = await open("/", "home");
-    await waitFor(() => !/Checking the session/.test(homeIn.text()), { label: "the session check to finish" });
-    // The cards read three endpoints; waiting for the dashes to go is waiting for the data,
-    // not a fixed sleep that would read the loading frame and call it an empty state.
-    await waitFor(
-      () => homeIn.find(".stat-card").length === 4 && homeIn.find(".stat-value").every((el) => (el.textContent ?? "").trim() !== "\u2014"),
-      { timeout: 20_000, label: "the status cards to answer" },
-    ).catch(() => {});
-    const row = homeIn.find(".home-cta-row")[0];
-    const primaries = row ? [...row.querySelectorAll(".btn-primary")] : [];
-    check(
-      "home",
-      "signed in, home offers exactly one primary action and no word-field menu",
-      primaries.length === 1 && homeIn.find(".word-field").length === 0,
-      `${primaries.length} primary control(s), ${homeIn.find(".word-field").length} word-field(s)`,
-    );
-    check(
-      "home",
-      "and it is the next step in the journey for this learner, not a link to a menu",
-      (primaries[0]?.getAttribute("href") ?? "") === "/diagnose" && /Start learning/i.test(primaries[0]?.textContent ?? ""),
-      `${primaries[0]?.getAttribute("href") ?? "(none)"} "${(primaries[0]?.textContent ?? "").trim()}"`,
-    );
-    const statusText = homeIn.text();
-    check(
-      "home",
-      "nothing measured yet is said in words rather than shown as a zero",
-      ["Nothing due yet", "Nothing waiting", "Not measured yet", "No answers yet"].every((w) => statusText.includes(w)),
-      homeIn.find(".stat-card").map((c) => (c.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 70)).join(" | "),
-    );
-    closePage(homeIn);
+    // An unauthenticated deep link is gated too, and guest is a real first-use session.
+    const guest = await open("/subject", "home", undefined, "");
+    await waitFor(() => !!guest.doc.querySelector("[data-account-gate]"), { label: "deep link gate" });
+    check("home", "a direct subject URL cannot bypass the consent/login gate", guest.find(".sidebar").length === 0 && !guest.requests.some(r => /subjects\//.test(r)));
+    await accept(guest);
+    await guest.click("Continue as guest", "button");
+    await waitFor(() => guest.doc.location.pathname === "/baseline" && guest.find('[role="radio"]').length > 0, { timeout: 20000, label: "guest baseline" });
+    check("home", "first guest goes straight to baseline, not back to consent", !guest.doc.querySelector("[data-account-gate]"));
+    await guest.click("Stop here", "button");
+    await waitFor(() => !!guest.byText("Go to your dashboard", "a"), { timeout: 15000, label: "baseline completion" });
+    await guest.click("Go to your dashboard", "a");
+    await waitFor(() => !!guest.doc.querySelector("[data-dashboard]"), { label: "guest dashboard" });
+    check("home", "guest can use the dashboard after the first assessment", guest.find(".sidebar").length === 1 && !guest.doc.querySelector("[data-account-gate]"));
+    closePage(guest);
   }
 
   /* ----------------------------------------------------------- onboarding ---- */
@@ -2283,6 +2224,111 @@ async function main() {
     check("baseline", "the mock answers with the questions screen, not an error frame", /What are you learning this for\?/.test(mocked.text()), mocked.text().slice(0, 160));
     check("baseline", "and no uncaught error on the mocked walk", mocked.appErrors().length === 0, mocked.appErrors().join(" | ").slice(0, 160));
     closePage(mocked);
+  }
+
+  /* ------------------------------------------------------- subject-outline ---- */
+  if (run("subject-outline")) {
+    console.log("\n\x1b[1msubject outline\x1b[0m");
+    const page = await open("/subject", "subject-outline");
+    await waitFor(() => !!page.doc.querySelector('input[aria-label="Subject"]'), { label: "subject form" });
+    page.type(page.doc.querySelector('input[aria-label="Subject"]'), "Mathematics");
+    page.type(page.doc.querySelector('input[aria-label="Specific topic"]'), "calculus");
+    await page.click("Preview outline", "button");
+    await waitFor(() => page.find('fieldset input[type="checkbox"]').length > 0, { timeout: 15000, label: "reviewable outline" });
+    check("subject-outline", "subject and optional topic lead to an outline before starting", !page.requests.some(r => r === "POST /api/v1/subjects/round"));
+    const checks = page.find('fieldset input[type="checkbox"]');
+    for (const box of checks) if (box.checked) await page.click(box);
+    check("subject-outline", "an empty selection cannot start a round", page.byText("Confirm outline and start", "button")?.disabled);
+    await page.click(checks[0]);
+    const selected = checks[0].value;
+    const comment = "This looks right; start with the first check.";
+    page.type(page.find("textarea")[0], comment);
+    await page.click("Confirm outline and start", "button");
+    await waitFor(() => /Your outline comments/.test(page.text()), { timeout: 15000, label: "confirmed round" });
+    const dash = await api("/api/v1/dashboard", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    const saved = dash.body.learning_activity.tests.find(row => row.href.startsWith("/subject?"));
+    check("subject-outline", "confirmed round appears in the learner's unfinished assessments", !!saved);
+    const id = new URL(saved.href, BASE).searchParams.get("run");
+    const record = await api(`/api/v1/subjects/round/${id}`, { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    check("subject-outline", "only the checked skill is included in the saved plan", record.body.plan.tested.length === 1 && record.body.plan.tested[0].id === selected);
+    check("subject-outline", "comments are saved on the server, not just in a textbox", record.body.plan.learner_review.comments === comment);
+    await page.click(page.doc.querySelector('.sidebar-item[href="/"]'));
+    await waitFor(() => !!page.doc.querySelector(`a[href="${saved.href}"]`), { label: "home resume link" });
+    const starts = page.requests.filter(r => r === "POST /api/v1/subjects/round").length;
+    await page.click(page.doc.querySelector(`a[href="${saved.href}"]`));
+    await waitFor(() => /Your outline comments/.test(page.text()) && page.text().includes(comment), { label: "resume reviewed outline" });
+    check("subject-outline", "resume keeps the saved outline without creating another round", page.requests.filter(r => r === "POST /api/v1/subjects/round").length === starts);
+    check("subject-outline", "no uncaught subject navigation errors", page.appErrors().length === 0, page.appErrors().join(" | "));
+    closePage(page);
+  }
+
+  /* ------------------------------------------------------------ navigation ---- */
+  if (run("navigation")) {
+    console.log("\n\x1b[1mnavigation (06 → 07 → 11)\x1b[0m");
+    let releaseSubject;
+    const subjectGate = new Promise(resolve => { releaseSubject = resolve; });
+    let delaySubject = true;
+    const page = await open("/baseline", "navigation", win => {
+      // No eager viewport prefetch in this scenario: exercise a genuinely cold click.
+      win.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
+      win.TextEncoder ??= globalThis.TextEncoder;
+      win.TextDecoder ??= globalThis.TextDecoder;
+      const fetch = win.fetch;
+      win.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input.url ?? String(input), BASE);
+        if (delaySubject && url.pathname === "/subject") await subjectGate;
+        return fetch(input, init);
+      };
+    });
+    try {
+      await waitFor(() => page.find('[role="radio"]').length > 0 || /How you work/.test(page.text()),
+        { timeout: 15000, label: "baseline data" });
+      if (page.find('[role="radio"]').length) {
+        await page.click("a written explanation", '[role="radio"]');
+        await waitFor(() => /How you work/.test(page.text()), { label: "baseline questions saved" });
+      }
+      const sidebar = page.doc.querySelector("#adapt-sidebar");
+      const document = page.doc;
+      const sessionReads = () => page.requests.filter(r => r === "GET /api/v1/me").length;
+      const readsBefore = sessionReads();
+      const go = async path => {
+        await page.click(page.doc.querySelector(`.sidebar-item[href="${path}"]`));
+        await waitFor(() => page.doc.location.pathname === path &&
+          page.doc.querySelector('.sidebar-item[aria-current="page"]')?.getAttribute("href") === path,
+          { timeout: 15000, label: `client navigation to ${path}` });
+      };
+      await page.click(page.doc.querySelector('.sidebar-item[href="/subject"]'));
+      await waitFor(() => page.find(".navigation-pending").length || /Opening page/.test(page.text()),
+        { label: "immediate route loading feedback" });
+      check("navigation", "a cold sidebar click immediately shows loading feedback", true);
+      // Choose a different page before the slower route returns. It must not take over later.
+      await go("/settings");
+      await waitFor(() => !!page.byText("Save consent", "button"), { label: "saved consent loaded" });
+      delaySubject = false;
+      releaseSubject();
+      await sleep(500);
+      check("navigation", "latest click wins over a slower previous navigation", page.doc.location.pathname === "/settings");
+      check("navigation", "Settings reuses the shell session instead of refetching me", sessionReads() === readsBefore,
+        `${readsBefore} → ${sessionReads()}`);
+      check("navigation", "page 11 is labelled consistently with the sidebar", /§ 11 · Settings/.test(page.text()));
+      await go("/subject");
+      await waitFor(() => /Pick a subject/.test(page.text()), { label: "subject screen" });
+      await go("/settings");
+      await go("/baseline");
+      await waitFor(() => /How you work/.test(page.text()), { label: "baseline resumes saved progress" });
+      check("navigation", "returning to 06 resumes the saved baseline step", /How you work/.test(page.text()));
+      check("navigation", "switches preserve the document and shared sidebar", page.doc === document && page.doc.querySelector("#adapt-sidebar") === sidebar);
+      check("navigation", "one main landmark and one skip-link target", page.find("main").length === 1 && page.find("#main-content").length === 1);
+      check("navigation", "no stuck pending marker", page.find(".navigation-pending").length === 0);
+      check("navigation", "no uncaught navigation or hydration errors", page.appErrors().length === 0, page.appErrors().join(" | "));
+    } catch (error) {
+      console.error("navigation diagnostic", page.doc.location.href, page.appErrors(), page.requests.slice(-20));
+      throw error;
+    } finally {
+      delaySubject = false;
+      releaseSubject();
+      closePage(page);
+    }
   }
 
   /* --------------------------------------------------------------- summary ---- */

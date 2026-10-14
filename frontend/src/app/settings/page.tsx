@@ -8,10 +8,10 @@
  * the database is encrypted at rest, `GET /audit` for every action the system took on your
  * account. Toggles do not merely store a wish: turning consent off stops the write.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Select, Tag, useSession } from "@/components/ui";
-import { del, get, post, useApi } from "@/lib/api";
+import { del, post, useApi } from "@/lib/api";
 
 type PrefReply = { accepted?: Record<string, unknown>; rejected_keys?: string[]; rejected_reasons?: Record<string, string>; note?: string };
 type Allowlist = { allowed: Record<string, string[]>; forbidden_keys: string[]; rule: string };
@@ -44,7 +44,7 @@ function toPhrases(value: string): string[] {
 }
 
 export default function Settings() {
-  const { refresh } = useSession();
+  const { me, refresh, unknown, loading: sessionLoading } = useSession();
   const prefs = useApi<{ preferences: Record<string, unknown>; allowed_keys: string[] }>("me/preferences");
   const privacy = useApi<Privacy>("privacy");
   const allow = useApi<Allowlist>("events/allowlist");
@@ -52,7 +52,8 @@ export default function Settings() {
   const audit = useApi<{ entries: { action: string; object?: string; outcome?: string; created_at?: string | null }[] }>("audit", { limit: 50 });
   const [form, setForm] = useState<Record<string, string | boolean>>({});
   const [reply, setReply] = useState<PrefReply | null>(null);
-  const [consent, setConsent] = useState({ analytics: true, llm: true, voice: false, gender: "female" });
+  const [consent, setConsent] = useState<{ analytics: boolean; llm: boolean; voice: boolean; gender: string } | null>(null);
+  const consentOwner = useRef<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState("");
@@ -72,18 +73,25 @@ export default function Settings() {
   }, [JSON.stringify(prefs.data?.allowed_keys ?? [])]);
 
   useEffect(() => {
-    get<{ consent_analytics?: boolean; consent_share_with_ai?: boolean; voice_enabled?: boolean; voice_gender?: string }>("me").then((r) => {
-      if (!r.data) return;
-      setConsent({
-        analytics: Boolean(r.data.consent_analytics),
-        llm: Boolean(r.data.consent_share_with_ai),
-        voice: Boolean(r.data.voice_enabled),
-        gender: r.data.voice_gender || "female",
-      });
+    // Reuse the session already loaded by the shell. Never render made-up consent values
+    // or let a late request overwrite switches the learner has just edited.
+    if (!me) {
+      consentOwner.current = null;
+      setConsent(null);
+      return;
+    }
+    if (consentOwner.current === me.student_id) return;
+    consentOwner.current = me.student_id;
+    setConsent({
+      analytics: Boolean(me.consent_analytics),
+      llm: Boolean(me.consent_share_with_ai),
+      voice: Boolean(me.voice_enabled),
+      gender: String(me.voice_gender || "female"),
     });
-  }, []);
+  }, [me]);
 
   async function savePrefs() {
+    if (prefs.loading || !prefs.data || busy) return;
     setBusy(true);
     setError(null);
     setReply(null);
@@ -108,6 +116,7 @@ export default function Settings() {
   }
 
   async function saveConsent() {
+    if (!consent || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -132,12 +141,13 @@ export default function Settings() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 06 · Settings</div>
+      <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 11 · Settings</div>
       <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>Settings, and what is kept</h1>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Your preferences" right={<span>{allowed.length} keys the server accepts</span>}>
           {prefs.error ? <Err error={prefs.error} status={prefs.status} /> : null}
+          {prefs.loading ? <p role="status" className="text-sm text-[var(--muted)]">Loading your preferences…</p> : null}
           <div className="space-y-2">
             {allowed.map((k) => (
               <Field key={k} label={k.replace(/_/g, " ")} hint={hintFor(k)}>
@@ -166,7 +176,7 @@ export default function Settings() {
             ))}
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <Btn kind="primary" onClick={savePrefs} disabled={busy}>
+            <Btn kind="primary" onClick={savePrefs} disabled={busy || prefs.loading || !prefs.data}>
               {busy ? "…" : "Save"}
             </Btn>
             <span className="text-xs text-[var(--muted)]">These apply straight away and need no approval, because they are requests you made.</span>
@@ -192,30 +202,34 @@ export default function Settings() {
 
         <div className="space-y-4">
           <Card title="Consent" tone="warn">
-            <div className="space-y-3">
+            {!consent ? (
+              <p role="status" className="text-sm text-[var(--muted)]">
+                {unknown ? "Could not load your consent settings. Use the session retry above." : sessionLoading || me ? "Loading your consent settings…" : "Your consent settings will appear once you are signed in."}
+              </p>
+            ) : <div className="space-y-3">
               <Check
                 label="Keep the interaction log"
                 checked={consent.analytics}
-                onChange={(v) => setConsent((c) => ({ ...c, analytics: v }))}
+                onChange={(v) => setConsent((c) => c && ({ ...c, analytics: v }))}
                 hint="Off means the server rejects the events, so no proposals can be built and no schedule can be derived. Practice keeps working."
               />
               <Check
                 label="Allow a model summary when it would help"
                 checked={consent.llm}
-                onChange={(v) => setConsent((c) => ({ ...c, llm: v }))}
+                onChange={(v) => setConsent((c) => c && ({ ...c, llm: v }))}
                 hint={`Currently: ${humanize(status.data?.llm ?? {}) || "no model configured"}`}
               />
               <Check
                 label="Voice"
                 checked={consent.voice}
-                onChange={(v) => setConsent((c) => ({ ...c, voice: v }))}
+                onChange={(v) => setConsent((c) => c && ({ ...c, voice: v }))}
                 hint="Off means no microphone access at all. The keyboard path teaches the same thing."
               />
               {consent.voice ? (
                 <Field label="Voice for replies">
                   <Select
                     value={consent.gender}
-                    onChange={(e) => setConsent((c) => ({ ...c, gender: e.target.value }))}
+                    onChange={(e) => setConsent((c) => c && ({ ...c, gender: e.target.value }))}
                   >
                     <option value="female">female</option>
                     <option value="male">male</option>
@@ -230,7 +244,7 @@ export default function Settings() {
               <Btn onClick={saveConsent} disabled={busy} kind="primary">
                 Save consent
               </Btn>
-            </div>
+            </div>}
           </Card>
 
           <Card title="This instance" tone="muted" right={<Tag>{String(status.data?.mode ?? "?")}</Tag>}>

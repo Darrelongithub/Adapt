@@ -66,6 +66,51 @@ travels with them ("14 of 41 scored answers are pilot data"). See `docs/PILOT.md
 
 ## Run it
 
+One-time setup (Python 3.11+ and Node 20.11+):
+
+```bash
+cd ~/Adapt
+python3 -m venv .venv
+.venv/bin/python -m pip install -e "./backend[dev]"
+cd frontend && npm ci
+```
+
+Then, **one terminal, one command** for development:
+
+```bash
+cd ~/Adapt/frontend
+npm run dev
+```
+
+For normal use or sharing on Wi-Fi, prefer the production-mode launcher:
+
+```bash
+npm run host
+```
+
+This builds first, then runs both services without page-by-page development compilation.
+Stop `npm run dev` before running it; both use `.next`. Use `npm run dev` when editing code.
+
+This finds `../.venv` automatically (no activation needed), starts the API and Next in
+development mode, upgrades the database before seeding, and prints `share this:` with
+the address for other devices on your Wi-Fi. **Ctrl+C stops both servers.** Open
+`http://localhost:3000` on the laptop; open the printed LAN address on your phone.
+Stop any old frontend/backend processes before starting this launcher.
+
+If a VPN chooses the wrong interface, use `npm run dev -- --ip 192.168.1.20` with your
+actual Wi-Fi IP. `PORT=3001 npm run dev` changes the web port. Only share on a trusted
+network; allow that web port through your firewall if necessary, and disable guest-network
+client isolation if devices cannot reach each other. Phone microphones need HTTPS, not
+plain LAN HTTP (`npm run dev -- --tunnel` opts into a public tunnel).
+
+`ADAPT_PYTHON=/path/to/python` selects another installed Python environment. The launcher
+uses the existing `adapt host --dev` supervisor; it never installs dependencies automatically.
+For a frontend-only session with a separately managed API, use `npm run dev:web` instead.
+For fixture-only previews: `ADAPT_API=offline npm run dev:web`, then open `/?mock=1`.
+`npm run start` remains frontend-only production serving.
+
+### Advanced / separate services and checks
+
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e "./backend[dev]"          # fastapi, sqlalchemy, numpy, cryptography, argon2…
@@ -74,7 +119,8 @@ adapt demo --turns 3                     # the whole loop, in a terminal, on a t
 adapt pilot --student-id <id> --seed     # the pre-demo pilot, written and labelled
 
 uvicorn adapt.api.app:app --port 8000    # the API (docs at /api, health at /healthz)
-cd ../frontend && npm ci && npm run dev  # the app at :3000, proxying /api and /ws to :8000
+# In a second terminal:
+cd ~/Adapt/frontend && npm run dev:web  # frontend only, proxying to :8000
 node ../scripts/demo.mjs                 # the same loop driven through the HTTP surface
 
 cd ../frontend
@@ -86,7 +132,7 @@ npm run probe       # the real UI in jsdom: click, answer, reload, and read what
 npm run probe:mock  # the same screen on ?mock=1, with nothing but its own refusals asserted
 ```
 
-`npm run dev` and `npm run start` both run `frontend/server.mjs`, a small Node server that
+The frontend child (`npm run dev:web` or `npm run start`) runs `frontend/server.mjs`, a small Node server that
 binds `0.0.0.0`, serves Next, and proxies `/api/*`, `/healthz` and `Upgrade /ws/*` to
 `ADAPT_API` (default `http://127.0.0.1:8000`). Set `ADAPT_API=offline` to run the interface
 against nothing.
@@ -96,14 +142,20 @@ destination is visible in plain words on every screen, with the current page mar
 (`aria-current="page"`), and below 860px the same list slides in as a drawer behind a
 labelled Menu button. Navigation is never hidden behind a corner control.
 
-Account creation — including "continue as guest", which also writes a learner row — is
-gated behind a consent step on `/`: two separate checkboxes, neither pre-ticked, with the
-primary action closed until the required one is ticked and a Decline that explains what
-will not work rather than dead-ending. The required box becomes `consent_analytics`. The
-optional *research* box has no field on this instance yet and the screen says so; it is
-deliberately **not** written to `consent_share_with_llm`, which means sharing a summary
-with the model. See `docs/UNVERIFIED.md` — "no decision" is still recorded as `true` by
-the database default until a tri-state column or migration lands.
+Signed-out users first see the welcome sentence and then a **non-dismissible consent/login
+card**. No sidebar or learning page mounts behind it. Accepting consent unlocks sign-in,
+account creation or guest entry—not the rest of the app. A new learner goes to the mind baseline;
+a learner with saved baseline history goes to the dashboard on subsequent sign-ins. The dashboard
+shows real progress and links to unfinished lessons and checks, without restarting the baseline.
+
+The consent boxes start unchecked. Registration stores the analytics choice; model sharing starts
+off and remains a separate setting. Optional research interest is explicitly not stored or acted
+on yet. Returning login preserves the learner's existing privacy settings.
+
+On **Subject round**, choose a subject and an optional specific topic. Review the assessment
+outline, tick/untick proposed checks, and optionally comment before confirming it. The saved round
+uses those checks; excluded ones remain “not measured”. Comments are saved with the encrypted
+plan, not automatically treated as instructions to rewrite it.
 
 Every control that submits, decides, rates, selects or advances state wears one of three
 button classes (`globals.css`, "the button contract"), so nothing that acts is styled as
@@ -236,10 +288,19 @@ and stays in `local` mode. Prefix `ADAPT_`: `DATA_DIR`, `KEYFILE`, `DB_ENCRYPTIO
 
 ## Schema changes
 
-A **new** database is built by `Base.metadata.create_all` during startup. An **existing** one —
-the only kind that matters once a learner has history — is moved with Alembic. There is no second
-copy of the path to drift: `env.py` asks the app for its engine, so `ADAPT_DATA_DIR` /
-`ADAPT_DB_PATH` decide what gets migrated.
+API startup and `adapt init` now run Alembic **before any ORM query or curriculum seeding**.
+This repairs errors such as `no such column: items.verification` without deleting learner data.
+Fresh databases run the full migration chain. Unversioned databases from older `create_all`
+boots get missing tables created, are adopted at the `0002` baseline, and replay the
+existence-aware revisions from there. Already-versioned databases only upgrade forward.
+If required columns are still missing, startup refuses and rolls back the upgrade.
+
+The upgrade uses the application's already-keyed connection, including SQLCipher and custom
+`ADAPT_DB_PATH` settings. **Keep a backup of your data directory and encryption key before
+upgrading an existing installation**, with both servers stopped. Never delete the database
+or key to fix a missing column. No manual `stamp` is needed for normal startup now.
+
+For manual maintenance (stop the app first):
 
 ```bash
 cd backend
@@ -269,7 +330,7 @@ every index name and uniqueness flag:
 Read every autogenerated revision before you ship it: autogenerate cannot see a data migration,
 and the encrypted column types are rendered through a `render_item` hook so a revision does not
 turn `EncryptedJSON(context="audit.detail")` into a bare `Text`. The connection Alembic uses is
-the application's engine (`connectable = _engine` in `migrations/env.py`), not one rebuilt from
+the application's engine in `migrations/env.py`, not one rebuilt from
 `alembic.ini`: a URL carries neither `module=sqlcipher3` nor the `PRAGMA key` listener, so
 rebuilding it means an existing encrypted database cannot be opened and a fresh directory quietly
 gets a *plaintext* file the app can never read. `test_migrations.py` pins both directions, with

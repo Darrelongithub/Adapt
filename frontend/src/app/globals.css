@@ -1230,6 +1230,13 @@ kbd {
   color: var(--accent);
   font-weight: 600;
 }
+.sidebar-item:has(.navigation-pending) {
+  background: var(--accent-dim);
+}
+.navigation-pending {
+  margin-left: auto;
+  color: var(--accent);
+}
 .sidebar-num {
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -1390,3 +1397,36 @@ kbd {
   color: var(--ink);
   border-bottom-color: var(--accent);
 }
+
+/* Emphasis follows the same blue accent throughout the app. */
+strong, b, .font-bold, .font-semibold { color: var(--accent); }
+.access-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  padding: 72px 20px 32px;
+  background: radial-gradient(ellipse at 50% 0%, var(--accent-dim), transparent 65%), var(--bg);
+}
+.access-wordmark {
+  text-align: center;
+  font: italic 27px var(--font-serif);
+  color: var(--accent);
+  margin-bottom: 24px;
+}
+.access-card {
+  width: min(100%, 590px);
+  margin-inline: auto;
+  padding: clamp(24px, 5vw, 42px);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 22px 75px rgb(0 0 0 / 0.12);
+}
+.access-step { font: 11px var(--font-mono); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.access-title { margin-top: 12px; font: 500 clamp(27px, 5vw, 38px)/1.15 var(--font-serif); color: var(--accent); }
+.dashboard-welcome { border-bottom: 1px solid var(--line); padding-bottom: 24px; }
+
+.home-greet { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+.home-title { font-family: var(--font-serif); font-size: clamp(27px, 4vw, 42px); line-height: 1.15; max-width: 750px; }
+.stat-value { color: var(--accent); }

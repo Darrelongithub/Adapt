@@ -34,10 +34,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <a href="#main-content" className="skip-link">Skip to content</a>
         <div className="grain" aria-hidden="true" />
         <div aria-live="polite" className="sr-only" id="adapt-live-region" />
-        <Opening />
-        <SessionGate>
-          <Chrome>{children}</Chrome>
-        </SessionGate>
+        <Opening>
+          <SessionGate>
+            <Chrome>{children}</Chrome>
+          </SessionGate>
+        </Opening>
       </body>
     </html>
   );

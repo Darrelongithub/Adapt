@@ -61,11 +61,9 @@ override_dir = context.get_x_argument(as_dictionary=True).get("data_dir") or os.
 if override_dir:
     os.environ["ADAPT_DATA_DIR"] = override_dir
 
-settings = get_settings()
-_engine, driver = create_db_engine(settings)
-
 
 def run_migrations_offline() -> None:
+    _engine, _driver = create_db_engine(get_settings())
     context.configure(
         url=_engine.url,
         target_metadata=target_metadata,
@@ -79,7 +77,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    # Connect with the engine ``create_db_engine`` just built -- the one carrying
+    # Connect with the application engine -- the one carrying
     # ``module=sqlcipher3``, the ``connect`` listener that issues ``PRAGMA key`` and the
     # cipher pragmas, and the keyring the encrypted column types need.
     #
@@ -92,7 +90,7 @@ def run_migrations_online() -> None:
     # database the app had already created failed with "file is not a database". The
     # migration path was unusable in both directions while the comment beside it promised
     # the opposite.
-    with _engine.connect() as connection:
+    def migrate(connection):
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
@@ -102,7 +100,19 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
-    _engine.dispose()
+
+    # Startup supplies its already-keyed connection. Do not construct another engine or
+    # reload settings: Database may have a custom db_file or Settings instance.
+    connection = config.attributes.get("connection")
+    if connection is not None:
+        migrate(connection)
+    else:
+        engine, _driver = create_db_engine(get_settings())
+        try:
+            with engine.connect() as connection:
+                migrate(connection)
+        finally:
+            engine.dispose()
 
 
 if context.is_offline_mode():

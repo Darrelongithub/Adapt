@@ -1,15 +1,17 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { AccountGate } from "./account-gate";
 import { SessionProvider, useSession } from "./ui";
 import { get, isMock, logout, type Me } from "@/lib/api";
 import type { Health, Status } from "@/lib/types";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 
 export const NAV = [
+  { href: "/", label: "Home" },
   { href: "/learn", label: "Practise" },
   { href: "/lesson", label: "Lessons" },
   { href: "/proposals", label: "Changes" },
@@ -157,10 +159,11 @@ export function Chrome({ children }: { children: ReactNode }) {
                 href={n.href}
                 className={`sidebar-item${here ? " active" : ""}`}
                 aria-current={here ? "page" : undefined}
-                onClick={() => setOpen(false)}
+                onNavigate={() => setOpen(false)}
               >
-                <span className="sidebar-num">{String(i + 1).padStart(2, "0")}</span>
+                <span className="sidebar-num">{i === 0 ? "⌂" : String(i).padStart(2, "0")}</span>
                 <span className="sidebar-label">{n.label}</span>
+                <NavigationPending label={n.label} />
               </Link>
             );
           })}
@@ -194,8 +197,20 @@ export function Chrome({ children }: { children: ReactNode }) {
   );
 }
 
-/** Which NAV entry the current route belongs to. `/lesson` marks Lessons; `/` marks nothing,
- *  because home is not a section — the sidebar still shows it as the brand. */
+/** Next owns the pending state, including cancelled/rapid consecutive navigations.
+ * A click-local boolean would get stuck on back/forward or when a later click wins. */
+function NavigationPending({ label }: { label: string }) {
+  const { pending } = useLinkStatus();
+  if (!pending) return null;
+  return (
+    <span className="navigation-pending" role="status">
+      <span aria-hidden="true">…</span>
+      <span className="sr-only">Opening {label}…</span>
+    </span>
+  );
+}
+
+/** Which NAV entry the current route belongs to, including the explicit Home link. */
 export function activeHref(pathname: string): string | null {
   const hit = NAV.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
   return hit ? hit.href : null;
@@ -229,7 +244,6 @@ function Who() {
         className="btn-ctl btn-ghost"
         onClick={async () => {
           await signOut();
-          refresh();
         }}
       >
         sign out
@@ -241,6 +255,9 @@ function Who() {
 /** Owns the only copy of "who is this browser". Every page reads it from context, so a
  *  sign-in on one screen cannot leave another one showing a stale name. */
 export function SessionGate({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const [landing, setLanding] = useState<string | null>(null);
+  useEffect(() => { if (pathname === landing) setLanding(null); }, [pathname, landing]);
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   // `unknown` is not an error to show, it is a *state*: the server has not said this browser
@@ -248,9 +265,13 @@ export function SessionGate({ children }: { children: ReactNode }) {
   const [unknown, setUnknown] = useState<string | null>(null);
   const attempt = useRef(0);
   const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generation = useRef(0);
   const refresh = useCallback(() => {
+    const request = ++generation.current;
+    if (retry.current) clearTimeout(retry.current);
     setLoading(true);
     get<Me>("me").then((r) => {
+      if (request !== generation.current) return;
       const refused = r.status === 401 || r.status === 403;
       if (r.data) {
         setMe(r.data);
@@ -279,9 +300,22 @@ export function SessionGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh();
     return () => {
+      generation.current += 1;
       if (retry.current) clearTimeout(retry.current);
     };
   }, [refresh]);
+
+  const establish = useCallback((profile: Record<string, unknown>) => {
+    // Invalidate any older /me request (including a pre-login 401) before accepting
+    // the profile returned with the new session cookie. No second network round trip.
+    generation.current += 1;
+    if (retry.current) clearTimeout(retry.current);
+    attempt.current = 0;
+    setLanding(profile.baseline_started ? "/" : "/baseline");
+    setMe(profile as Me);
+    setUnknown(null);
+    setLoading(false);
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -289,13 +323,22 @@ export function SessionGate({ children }: { children: ReactNode }) {
       loading,
       unknown,
       refresh,
+      establish,
       signOut: async () => {
         await logout();
         refresh();
       },
     }),
-    [me, loading, unknown, refresh],
+    [me, loading, unknown, refresh, establish],
   );
-  return <SessionProvider value={value}>{children}</SessionProvider>;
+  return <SessionProvider value={value}>
+    {me && (!landing || pathname === landing) ? children : !me && !loading && !unknown ? <AccountGate /> : (
+      <div className="access-screen"><section id="main-content" className="access-card" aria-busy={loading}>
+        <h1 className="access-title">Welcome to <b>ADAPT</b>.</h1>
+        <p className="mt-3" role="status">{unknown ? "Your session could not be checked. Please retry; you do not need another account." : landing === "/baseline" ? "Opening your first mind check…" : "Checking your session…"}</p>
+        {unknown ? <button className="btn-ctl btn-primary mt-4" onClick={refresh}>Retry session check</button> : null}
+      </section></div>
+    )}
+  </SessionProvider>;
 }
 

@@ -67,6 +67,9 @@ class RegisterBody(BaseModel):
     password: str | None = Field(default=None, min_length=10, max_length=200)
     age_band: str | None = Field(default=None, max_length=16)
     as_guest: bool = False
+    # Older API clients omit these; the web door sends the explicit choice at creation.
+    consent_analytics: bool | None = None
+    consent_share_with_llm: bool | None = None
 
 
 class LoginBody(BaseModel):
@@ -164,6 +167,11 @@ def create_student(body: RegisterBody, request: Request, response: Response, s: 
         password=body.password,
         age_band=body.age_band,
     )
+    if body.consent_analytics is not None:
+        student.consent_analytics = body.consent_analytics
+    if body.consent_share_with_llm is not None:
+        student.consent_share_with_llm = body.consent_share_with_llm
+    s.flush()
     login = issue_login(response, s, student, request=request)
     audit_event(
         request,
@@ -171,7 +179,7 @@ def create_student(body: RegisterBody, request: Request, response: Response, s: 
         actor=student.id,
         detail={"guest": guest, "email_set": bool(body.email), "username_set": bool(username)},
     )
-    return {**login, "created": True, "onboarding_complete": student.onboarding_complete, "mode": get_settings().mode}
+    return {**S.profile_summary(s, student.id), **login, "created": True, "onboarding_complete": student.onboarding_complete, "mode": get_settings().mode}
 
 
 @router.post("/login")
@@ -202,7 +210,7 @@ def login(body: LoginBody, request: Request, response: Response, s: Session = De
         _spend("auth_fail", ip_key)
         audit_event(request, action="login_failed", outcome="denied", detail={"reason": "bad credentials"})
         raise HTTPException(status_code=401, detail="wrong username or password")
-    return {**issue_login(response, s, student, request=request), "created": False}
+    return {**S.profile_summary(s, student.id), **issue_login(response, s, student, request=request), "created": False}
 
 
 @router.post("/logout")
