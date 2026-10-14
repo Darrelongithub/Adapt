@@ -58,6 +58,33 @@ type Contrast = {
   note: string;
 };
 
+/* ------------------------------------------------------------- wording ---- */
+
+/**
+ * How the evidence behind a "why" is labelled (Round 2, Phase A, task 7).
+ * A stated choice was never measured, so it must not wear a measurement
+ * count: stated items read "stated", never "(n=0)". A measured item keeps
+ * its count, because that count is the honesty of the claim.
+ */
+function evidenceLabel(source: string, n: number): string {
+  if (source === "stated") return "stated";
+  if (n > 0) return `${source}, n=${n}`;
+  return "no evidence behind it yet";
+}
+
+/** The demo-profile provenance line, in plain words. */
+function provenanceLabel(modelVersion: number | null, evidenceN: number): string {
+  if (!modelVersion && evidenceN === 0) {
+    return "planned for this demo profile from the choices shown above, not from a real learner's evidence";
+  }
+  return `planned from the ${evidenceN} piece${evidenceN === 1 ? "" : "s"} of evidence behind this profile`;
+}
+
+/** Learner-safe wording for how these lessons were produced. */
+function lessonsLabel(modeNote: string): string {
+  return modeNote.toLowerCase().includes("simple mode") ? "Lessons: simple mode" : "Lessons: written for this profile";
+}
+
 /* ------------------------------------------------------- demo profiles ---- */
 
 const lever = (value: unknown, why: string, source: string) => ({ value, why, source });
@@ -270,7 +297,7 @@ export default function Contrast() {
       ) : null}
       {loading && !data ? (
         <Card title="building both lessons">
-          <p className="text-[13px] text-[var(--muted)]">Asking the backend to adapt the same content to both profiles.</p>
+          <p className="text-[13px] text-[var(--muted)]">Building the same content two ways, one for each profile.</p>
         </Card>
       ) : null}
 
@@ -343,7 +370,7 @@ function BlockView({ block }: { block: Block }) {
       <div className="mb-1.5 flex items-center gap-2">
         <Tag tone="line">{block.kind.replaceAll("_", " ")}</Tag>
         <span className="text-[11px] text-[var(--muted)]">
-          why: {block.why.text} <span className="font-mono">(n={block.why.n})</span>
+          why: {block.why.text} <span className="font-mono">({evidenceLabel(block.why.source, block.why.n)})</span>
         </span>
       </div>
       {block.kind === "visual" ? (
@@ -388,8 +415,8 @@ function WhyPanel({ plan }: { plan: Plan }) {
           <li key={i}>
             <span className="font-medium">{row.decision}.</span> {row.text}{" "}
             <span className="font-mono text-[var(--muted)]">
-              ({row.source}, n={row.n}
-              {row.evidence_ids.length ? `, from ${row.evidence_ids.join(", ")}` : ""})
+              ({evidenceLabel(row.source, row.n)}
+              {row.n > 0 && row.evidence_ids.length ? `, from ${row.evidence_ids.join(", ")}` : ""})
             </span>
           </li>
         ))}
@@ -408,8 +435,7 @@ function WhyPanel({ plan }: { plan: Plan }) {
         </ul>
       ) : null}
       <p className="mt-2 text-[11px] text-[var(--muted)]">
-        {panel.mode_note} · planned from profile version {plan.provenance.model_version ?? 0},{" "}
-        {plan.provenance.evidence_n} piece{plan.provenance.evidence_n === 1 ? "" : "s"} of evidence behind it.
+        {lessonsLabel(panel.mode_note)} · {provenanceLabel(plan.provenance.model_version, plan.provenance.evidence_n)}.
       </p>
     </section>
   );

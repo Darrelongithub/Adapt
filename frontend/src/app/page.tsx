@@ -149,14 +149,14 @@ export default function Home() {
         <Tag tone="good">no learning styles question</Tag>
         <Tag tone="think">hypotheses, not labels</Tag>
         <Tag tone="accent">keystrokes never recorded</Tag>
-        <Tag>{health?.lessons?.says ?? (health?.ok ? "the API is answering" : "the API is not answering")}</Tag>
+        <Tag>{health?.lessons?.says ?? (health?.ok ? "Lessons: ready" : "this app cannot be reached just now")}</Tag>
         {mock ? <Tag tone="bad">showing demo data</Tag> : null}
       </div>
       {mock ? (
         <div className="mt-3 max-w-[640px]">
           <Notice>
-            You are looking at fixtures. <Link className="link-inline" href="/" onClick={() => window.sessionStorage.removeItem("adapt-mock")}>clear it</Link>{" "}
-            and the same screens read the real API.
+            You are looking at demo data. <Link className="link-inline" href="/" onClick={() => window.sessionStorage.removeItem("adapt-mock")}>clear it</Link>{" "}
+            and the same screens show your real work.
           </Notice>
         </div>
       ) : null}
@@ -199,7 +199,7 @@ export default function Home() {
                 <a className="link-inline" href="#what-is-recorded">
                   Read what is recorded
                 </a>{" "}
-                — the list comes from the same endpoint the server enforces it with.
+                — the list comes from the same place the app enforces it.
               </p>
 
               <div className="mt-4 flex flex-col gap-3">
@@ -355,8 +355,8 @@ export default function Home() {
                 {error ? <Err error={error} status={null} /> : null}
               </form>
               <p className="mt-3 text-xs text-[var(--muted)]">
-                A guest keeps the same data and the same rights as an account, including the delete button. Nothing is sent to a
-                model that you have not agreed to, and{" "}
+                A guest keeps the same data and the same rights as an account, including the delete button. Nothing is shared
+                outside this app that you have not agreed to, and{" "}
                 <Link href="/settings" className="link-inline">
                   the settings screen lists every field that is stored
                 </Link>
@@ -520,7 +520,7 @@ function RecordedPanel({ privacy, loading }: { privacy: Privacy | null; loading:
   const never = privacy?.telemetry?.never_recorded ?? [];
   return (
     <div id="what-is-recorded" className="mt-8 max-w-[720px]">
-      <Card title="What is recorded about you" tone="muted" right={<span>GET /privacy</span>}>
+      <Card title="What is recorded about you" tone="muted">
         {loading ? <p className="text-sm text-[var(--muted)]">…</p> : null}
         {recorded.length ? (
           <ul className="list-disc space-y-1 pl-5 text-sm">
@@ -529,7 +529,7 @@ function RecordedPanel({ privacy, loading }: { privacy: Privacy | null; loading:
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-[var(--muted)]">The server owns this list, and could not be read just now.</p>
+          <p className="text-sm text-[var(--muted)]">This list could not be read just now. Try again in a moment.</p>
         )}
         {never.length ? (
           <p className="mt-2 text-xs text-[var(--muted)]">

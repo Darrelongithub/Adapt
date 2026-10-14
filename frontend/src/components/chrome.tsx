@@ -66,23 +66,30 @@ export function StatusChip() {
   // being produced right now and what protects the file. The service, its model and its budget
   // live in the console (`adapt status`), not here.
   const lessons = status?.lessons ?? health?.lessons;
-  const tutor = !status && !health ? "tutor: not reported" : (lessons?.says ?? "tutor: not reported");
+  // Learner-safe status wording only (Round 2, Phase A, task 2): how
+  // lessons are being made right now, in the words the status reply
+  // itself supplies ("Lessons: simple mode" / "Lessons: ready"). There
+  // is no "not reported" fallback: while nothing has been reported the
+  // chip simply says it is checking, and the protection half is left
+  // out entirely until there is a protection fact to state.
+  const tutor = lessons?.says ?? "Lessons: checking";
   const protection = status?.data_protection;
   const enc = !status
-    ? "protection: not reported"
+    ? null
     : protection?.file_encrypted
       ? "whole file encrypted"
       : protection?.protected?.length
         ? "answers and notes encrypted"
-        : "protection: not reported";
+        : null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
       {error ? (
-        <span className="text-[var(--bad)]">the API is unreachable</span>
+        <span className="text-[var(--bad)]">this app cannot be reached just now</span>
       ) : (
         <>
-          <span title={lessons?.note ?? "the API did not report yet"}>
-            {health == null ? "checking the API…" : health.ok ? "API up" : "API down"} · {tutor} · {enc}
+          <span title={lessons?.note ?? ""}>
+            {health == null ? "checking…" : health.ok ? "ready" : "not reachable"} · {tutor}
+            {enc ? ` · ${enc}` : ""}
           </span>
           {status?.version ? <span>v{status.version}</span> : null}
           {status?.demo_mode ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}

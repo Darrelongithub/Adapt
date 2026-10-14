@@ -220,28 +220,38 @@ def quotas(s: Session = Depends(db_session), student: Student = Depends(student_
 
 
 @router.get("/privacy")
-def privacy(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
-    st = get_settings()
+def privacy() -> dict[str, Any]:
+    """The static, non-personal list of what may be recorded.
+
+    Public and read-only on purpose: the consent screen shows this list
+    *before* anyone has an account, so requiring a signed-in learner made
+    that screen answer 401 and print "could not be read just now" for the
+    one list a person needs in order to decide. Nothing here is about an
+    individual learner, so there is nothing to protect by gating it; every
+    route that returns a learner's own rows still requires a session.
+    The wording is learner-facing, so it names no service, route or
+    internal mechanism (Round 2, Phase A, task 1 and 2).
+    """
     return {
         "telemetry": TEL.privacy_summary(),
         "sent_to_model": {
-            "when": "only when a model is configured and the learner consented to sharing a summary",
-            "identity": "a keyed pseudonym, never the name or email",
-            "redaction": "emails, phone numbers, URLs, addresses and anything shaped like an ID are stripped before sending",
-            "on_refusal": "if any of that cannot be honoured, the answer is written locally instead and the reply says so",
+            "when": "only when a written-for-you answer is available and you consented to sharing a summary",
+            "identity": "a made-up name for you, never your real name or email",
+            "redaction": "emails, phone numbers, web addresses, postal addresses and anything shaped like an ID are stripped before anything is shared",
+            "on_refusal": "if any of that cannot be honoured, the answer is put together here instead and the reply says so",
         },
         "voice": {
-            "stt": "local faster-whisper running in the server process; audio is decoded in memory and discarded",
-            "tts": "local Kokoro; audio is streamed to the browser and not stored",
-            "stored": "transcript text for the turns the learner chose to record, plus latency and interruption flags",
+            "heard": "speech is turned into text as you speak; the sound itself is not kept",
+            "spoken": "spoken replies are played to you and not stored",
+            "stored": "transcript text for the turns you chose to record, plus timing and interruption notes",
             "off_means": "voice off = no microphone access at all; the keyboard path is identical",
         },
         "storage": data_protection(),
         "learner_controls": [
-            "answer or refuse every adaptation proposal",
-            "revoke an applied adaptation at any time",
-            "delete your history (DELETE /api/v1/me)",
-            "see every event recorded about you (GET /api/v1/journey)",
+            "answer or refuse every change that is proposed to you",
+            "revoke an applied change at any time",
+            "delete your history",
+            "see every event recorded about you",
         ],
     }
 
