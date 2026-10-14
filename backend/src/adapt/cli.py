@@ -41,8 +41,10 @@ app = typer.Typer(
 )
 db_app = typer.Typer(help="database lifecycle and inspection", no_args_is_help=True)
 voice_app = typer.Typer(help="speech engine checks", no_args_is_help=True)
+config_app = typer.Typer(help="console-only provider credentials and budgets", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(voice_app, name="voice")
+app.add_typer(config_app, name="config")
 
 
 def _settings():
@@ -1021,6 +1023,366 @@ def token_cmd(student_id: str = typer.Option(..., "--for"), hours: int = typer.O
         typer.echo(f"csrf:  {issued.csrf}")
         typer.echo(f"expires: {issued.session.expires_at.isoformat()}")
         typer.echo('use:  curl -H "Cookie: adapt_session=<token>" -H "X-CSRF-Token: <csrf>" ...')
+
+@config_app.command("set-key")
+def config_set_key(
+    service: str = typer.Option(
+        "gemini",
+        "--service",
+        help=(
+            "Credential to store. Enter it at the hidden prompt, never as an argument; "
+            "shell history records arguments."
+        ),
+        case_sensitive=False,
+    ),
+) -> None:
+    """Store a key at a hidden prompt; never pass it on the command line or in shell history."""
+    from .config_secrets import ConfigSecretError, set_key
+
+    st = _settings()
+    chosen = service.strip().lower()
+    if chosen not in {"gemini", "youtube"}:
+        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    secret = typer.prompt("API key (input is hidden)", hide_input=True, confirmation_prompt=True)
+    try:
+        set_key(st.data_dir, chosen, secret)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"Stored the {chosen} credential in the owner-only console settings file.")
+    typer.echo("Restart the application process to load the new configuration.")
+
+
+@config_app.command("status")
+def config_status() -> None:
+    """Show credential state and, when set, at most the final four characters."""
+    from .config_secrets import ConfigSecretError, status_rows
+
+    try:
+        for row in status_rows(_settings()):
+            if row["configured"]:
+                typer.echo(f"{row['service']}: configured · {row['masked']}")
+            else:
+                typer.echo(f"{row['service']}: not configured")
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+
+
+@config_app.command("test")
+def config_test() -> None:
+    """Make one minimal connection check and print only pass or fail."""
+    from .config_secrets import ConfigSecretError, settings_with_managed_values
+    from .security.secrecy import install_log_redaction
+
+    st = _settings()
+    try:
+        st = settings_with_managed_values(st)
+    except ConfigSecretError as exc:
+        typer.echo("Connection test failed. Check the console settings file.")
+        raise typer.Exit(code=1) from None
+    if not st.gemini_api_key:
+        typer.echo("Connection test failed. No credential is configured.")
+        raise typer.Exit(code=1)
+
+    # Do not retain upstream exception text in logs while testing a live credential.
+    install_log_redaction(st)
+    from .ai.llm import GeminiLLM
+
+    # The command promises one minimal request: no retries, delays, learner text, or
+    # configured budget figures are exposed by its output.
+    st = st.model_copy(update={"gemini_max_retries": 0, "gemini_min_interval_ms": 0})
+    llm = GeminiLLM(st)
+
+    async def one_minimal_request():
+        try:
+            return await llm.complete(
+                system="Reply with the single word OK.",
+                user="Connection check.",
+                purpose="console_connection_test",
+                role="ai2",
+                temperature=0.0,
+                max_output_tokens=8,
+            )
+        finally:
+            await llm.aclose()
+
+    try:
+        result = _run(one_minimal_request())
+    except Exception:
+        typer.echo("Connection test failed. Check connectivity and the console settings.")
+        raise typer.Exit(code=1) from None
+    if result.ok:
+        typer.echo("Connection test passed.")
+    else:
+        typer.echo("Connection test failed. Check connectivity and the console settings.")
+        raise typer.Exit(code=1)
+
+
+@config_app.command("rotate")
+def config_rotate(
+    service: str = typer.Option(
+        "gemini", "--service", help="Credential to rotate.", case_sensitive=False
+    ),
+) -> None:
+    """Replace a credential using a hidden prompt; the new value is never a shell argument."""
+    from .config_secrets import ConfigSecretError, set_key
+
+    chosen = service.strip().lower()
+    if chosen not in {"gemini", "youtube"}:
+        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    secret = typer.prompt(
+        "Replacement API key (input is hidden)",
+        hide_input=True,
+        confirmation_prompt=True,
+    )
+    try:
+        set_key(_settings().data_dir, chosen, secret)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"Rotated the {chosen} credential in the owner-only console settings file.")
+    typer.echo("Restart the application process to load the new configuration.")
+
+
+@config_app.command("remove")
+def config_remove(
+    service: str = typer.Option(
+        "gemini", "--service", help="Credential to remove.", case_sensitive=False
+    ),
+) -> None:
+    """Remove a stored credential without printing it."""
+    from .config_secrets import ConfigSecretError, remove_key
+
+    chosen = service.strip().lower()
+    if chosen not in {"gemini", "youtube"}:
+        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if not typer.confirm(f"Remove the stored {chosen} credential?", default=False):
+        typer.echo("No changes made.")
+        return
+    try:
+        remove_key(_settings().data_dir, chosen)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(
+        f"Removed the stored {chosen} credential. An environment override may still be active."
+    )
+
+
+@config_app.command("set-budget")
+def config_set_budget(
+    calls: int | None = typer.Option(
+        None, "--calls", min=0, help="Daily call limit; omitted values are requested interactively."
+    ),
+    tokens: int | None = typer.Option(
+        None,
+        "--tokens",
+        min=0,
+        help="Daily token limit; omitted values are requested interactively.",
+    ),
+) -> None:
+    """Set the optional daily service limits in console settings, never in learner records."""
+    from .config_secrets import ConfigSecretError, set_budgets, settings_with_managed_values
+
+    st = _settings()
+    try:
+        current = settings_with_managed_values(st)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    calls = calls if calls is not None else typer.prompt(
+        "Daily call limit", default=current.gemini_daily_call_budget, type=int
+    )
+    tokens = tokens if tokens is not None else typer.prompt(
+        "Daily token limit", default=current.gemini_daily_token_budget, type=int
+    )
+    try:
+        set_budgets(st.data_dir, calls=calls, tokens=tokens)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo("Saved the daily service limits in the owner-only console settings file.")
+    typer.echo("Restart the application process to load the new configuration.")
+
+
+@app.command("demo-seed")
+def demo_seed_cmd(
+    count: int = typer.Option(3, "--count", help="number of demo learners to create"),
+    reset: bool = typer.Option(False, "--reset", help="remove existing demo-seeded learners first"),
+) -> None:
+    """Create labelled pilot/demo learners with realistic synthetic histories.
+
+    Each learner is clearly marked as synthetic in every view. Their histories
+    are deterministic (seeded) so the contrast demo and evidence screens always
+    show the same shapes.
+    """
+    from .services import build
+
+    svcs = build()
+    result = demo_seed(svcs, count=count, reset=reset)
+    _echo(result)
+
+
+def demo_seed(svcs: Any, *, count: int = 3, reset: bool = False) -> dict[str, Any]:
+    """Create synthetic demo learners. Called by the CLI and by tests."""
+    import random
+    from datetime import datetime, timezone, timedelta
+
+    from .db.engine import get_db
+    from .db.models import Student, Attempt, LearningSession, Item, Topic
+    from .security.auth import hash_password
+    from .crypto.fields import blind_index_for
+    from sqlalchemy import select as sa_select
+
+    db = svcs.db
+    created: list[dict[str, str]] = []
+
+    profiles = [
+        {
+            "username": "demo_alice",
+            "display_name": "Alice (demo, synthetic)",
+            "topic_strength": {"fraction": 0.85, "algebra": 0.70},
+            "style": "methodical",
+        },
+        {
+            "username": "demo_ben",
+            "display_name": "Ben (demo, synthetic)",
+            "topic_strength": {"fraction": 0.30, "algebra": 0.60},
+            "style": "intuitive",
+        },
+        {
+            "username": "demo_clara",
+            "display_name": "Clara (demo, synthetic)",
+            "topic_strength": {"fraction": 0.55, "algebra": 0.90},
+            "style": "visual",
+        },
+        {
+            "username": "demo_david",
+            "display_name": "David (demo, synthetic)",
+            "topic_strength": {"fraction": 0.45, "algebra": 0.35},
+            "style": "mixed",
+        },
+        {
+            "username": "demo_elena",
+            "display_name": "Elena (demo, synthetic)",
+            "topic_strength": {"fraction": 0.75, "algebra": 0.80},
+            "style": "verbal",
+        },
+    ]
+
+    rng = random.Random(42)
+    chosen = profiles[: min(count, len(profiles))]
+
+    with db.session() as s:
+        if reset:
+            # Remove existing demo learners by username prefix
+            for p in profiles:
+                existing = s.execute(
+                    sa_select(Student).where(Student.username_index == blind_index_for("student.username", p["username"]))
+                ).scalars().first()
+                if existing:
+                    s.delete(existing)
+            s.commit()
+
+        # Ensure we have topics and items to reference
+        topics = s.execute(sa_select(Topic)).scalars().all()
+        topic_ids = {t.id for t in topics}
+        items = s.execute(sa_select(Item)).scalars().all()
+        item_ids = {it.id for it in items}
+
+        for profile in chosen:
+            # Skip if already exists
+            existing = s.execute(
+                sa_select(Student).where(Student.username_index == blind_index_for("student.username", profile["username"]))
+            ).scalars().first()
+            if existing:
+                created.append({
+                    "student_id": existing.id,
+                    "username": profile["username"],
+                    "display_name": profile["display_name"],
+                    "style": profile["style"],
+                    "label": "synthetic demo learner (already existed)",
+                })
+                continue
+
+            student = Student(
+                username=profile["username"],
+                username_index=blind_index_for("student.username", profile["username"]),
+                display_name=profile["display_name"],
+                email=f"{profile['username']}@demo.adapt",
+                email_index=blind_index_for("student.email", f"{profile['username']}@demo.adapt"),
+                password_hash=hash_password("demo_password_123"),
+                onboarding_complete=True,
+                diagnostic_complete=True,
+                consent_analytics=True,
+                consent_share_with_llm=True,
+            )
+            s.add(student)
+            s.flush()
+
+            # Create a session with synthetic attempts
+            session = LearningSession(
+                student_id=student.id,
+                mode="practice",
+                started_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            )
+            s.add(session)
+            s.flush()
+
+            # Create attempts against real items if available, else skip
+            used_items = [it for it in items if it.topic_id in topic_ids][:8]
+            if not used_items:
+                # No curriculum items; create minimal synthetic records
+                created.append({
+                    "student_id": student.id,
+                    "username": profile["username"],
+                    "display_name": profile["display_name"],
+                    "style": profile["style"],
+                    "label": "synthetic demo learner (no curriculum items for attempts)",
+                })
+                continue
+
+            for item in used_items:
+                topic_key = "fraction" if "fraction" in (item.topic_id or "").lower() else "algebra"
+                strength = profile["topic_strength"].get(topic_key, 0.5)
+                correct = rng.random() < strength
+                attempt = Attempt(
+                    student_id=student.id,
+                    session_id=session.id,
+                    item_id=item.id,
+                    topic_id=item.topic_id,
+                    first_answer={"text": "demo answer"},
+                    final_answer={"text": "demo answer"},
+                    correct=correct,
+                    score=1.0 if correct else 0.0,
+                    time_on_item_ms=int(rng.uniform(20000, 120000)),
+                    hints_used=rng.randint(0, 2),
+                    pilot=True,  # mark as pilot/demo data
+                )
+                s.add(attempt)
+
+            created.append({
+                "student_id": student.id,
+                "username": profile["username"],
+                "display_name": profile["display_name"],
+                "style": profile["style"],
+                "label": "synthetic demo learner",
+            })
+        s.commit()
+
+    return {
+        "created": len(created),
+        "learners": created,
+        "note": (
+            "These learners are clearly marked as synthetic (display name contains "
+            "'(demo, synthetic)'). Their histories are deterministic (seeded) for "
+            "reproducible demos. Attempts are flagged as pilot data."
+        ),
+    }
 
 if __name__ == "__main__":  # pragma: no cover
     app()

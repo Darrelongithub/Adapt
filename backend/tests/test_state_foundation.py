@@ -108,8 +108,10 @@ def test_a_submitted_attempt_is_in_the_evidence_log(client, services, learner):
     receipt = _answer_one(client, learner, _plan_items(client, learner)[0])
     attempt_id = receipt["attempt_id"]
     rows = services.state.evidence_rows(learner["student_id"])
-    assert len(rows) == before + 1
-    row = rows[-1]
+    assert len(rows) >= before + 1
+    scored = [row for row in rows if row["kind"] == "attempt"]
+    assert len(scored) == 1, "recovery metadata must not duplicate the scored answer"
+    row = scored[0]
     assert row["event_id"] == f"att_{attempt_id}"
     assert row["kind"] == "attempt"
     assert row["source_type"] == "controlled"
@@ -672,9 +674,12 @@ def test_learner_facing_copy_has_no_internal_component_names(client, learner):
 
 def test_the_status_payload_shows_three_named_components_with_their_roles(client):
     """The names are allowed *internally* — the operator's status view is where they belong."""
-    status = client.get("/api/v1/status")
-    assert status.status_code == 200, status.text
-    payload = status.json()
+    # This is the operator's view and it still exists -- `current().status()`, which `adapt status`
+    # prints on the console. It is deliberately not the HTTP payload any more: §3 makes the public
+    # surface learner-safe, and the component's internal name is exactly what it must not carry.
+    from adapt.services import current
+
+    payload = current().status()
     assert "narration" in payload, "the operator's status view should report the narrator"
     assert payload["narration"]["component"] == "scene narrator"
     # the audit label stays for continuity with rows already written; the human-facing name is
@@ -740,7 +745,10 @@ def test_the_profile_endpoint_exposes_one_shared_snapshot(client, learner, servi
     shared = response.json()["shared_state"]
     assert shared["learner_id"] == sid
     assert shared["model_version"] == services.state.latest_version(sid)
-    assert shared["model"]["topics"], "the profile must show what the store actually holds"
+    # The store's own key is "model" -- it *is* the learner model. On the public boundary that
+    # key name is reserved for a runtime model identifier and is stripped (§3), so the snapshot
+    # travels as `learner_model`: same object, same version.
+    assert shared["learner_model"]["topics"], "the profile must show what the store actually holds"
 
 
 # --------------------------------------------------------------------------- #
@@ -823,7 +831,7 @@ def test_the_practice_queue_records_what_it_served(client, learner, services):
 
     response = client.get("/api/v1/practice?count=3", headers=learner["headers"])
     assert response.status_code == 200, response.text
-    served = [p.get("item_id") or p.get("id") for p in response.json()["items"]]
+    served = [p["item"]["id"] for p in response.json()["items"]]
     assert served
     with services.db.session() as s:
         rows = (

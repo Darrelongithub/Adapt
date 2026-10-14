@@ -1,659 +1,557 @@
-"""The "why did I fail" loop, with its update rules written as code.
+"""Evidence-driven failure recovery, callable without AppServices.
 
-Round brief §9.5. On a failed attempt the loop runs, in order:
-
-a. **Prerequisite check** — one question on the *direct* prerequisite, using
-   the chain. Not a mastery guess: a question, whose result is data.
-b. **Fatigue check** — the last two answers took more than 1.5× the session
-   median latency *and* accuracy is falling. That specific rule, not a vibe:
-   slow-and-slipping reads as tired, not as untaught.
-c. **Reteach + matched B** — the same sub-concept taught with the next-best
-   method (best measured residual; ties broken by a seeded random draw, so
-   "random on ties" is reproducible rather than atmospheric), then a second
-   question of the **same format** as the first. A comparison that changes
-   the answer format along with the method measures the format.
-d. **Compare** — the second attempt against the first, actual against
-   expected under each method, shown with a range and an ``n``.
-
-And then the part that decides what the loop is allowed to *conclude* — the
-update rule, with its weights:
-
-| diagnosis | attributed to | method-evidence weight | break suggested |
-|---|---|---|---|
-| prerequisite check failed | the prerequisite | **0** (the method is not penalised) | no |
-| fatigue fired | fatigue | **0.5** | yes |
-| neither | the method | **1.0** | no |
-
-Two honesty rules are part of the mechanism, not the copy deck:
-
-* A reteach comparison is *stronger* evidence than watching alone, but it
-  is **not a controlled experiment**: the second attempt is a second
-  exposure, so some improvement would be expected either way
-  (:data:`SECOND_EXPOSURE_CONFOUND`, carried on every outcome payload).
-* Self-selected observations (the learner *chose* to open the example) are
-  labelled observational and weighted **0.4** wherever they are shown, next
-  to the number, and are never presented as proof. Assigned comparisons
-  weigh 1.0. That is §9.4, and it is the same pair of numbers the Learner
-  State Store already stamps on its evidence log.
-
-This module is deliberately callable standalone: it takes plain data (the
-failed attempt, candidate questions, the prerequisite chain, session
-latencies, method history) and returns plain data. Wiring it into
-``services/attempts.py`` — replacing the thinner ``_reteach_step`` diagnosis
-with these rules — is a call-site change, specified exactly in
-``agent-notes/5-evidence.md``; nothing here reaches into a session, which is
-what lets the simulation tests drive it directly.
+All transitions live in LearnerState's append-only log. Private, code-validated
+matched pairs are supplied by the content engine; a merely similar question is
+NOT a matched B. Reteach outcomes are observational (second exposure confound),
+not a controlled experiment. The attribution multiplier is distinct from the
+source weight: prerequisite=0, fatigue=0.5, otherwise=1.
 """
 
 from __future__ import annotations
 
-import random
+import math
 import statistics
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
-from . import effect as EFFECT
-from . import methods as M
+from ..assessment.grading import grade
+from ..assessment.selector import gradeable
+from ..baseline.factors import preference_vs_performance
+from ..state import EvidenceEvent, LearnerState
+from .methods import METHODS, _wilson, question_format
 from .seeds import stable_seed
+from .strategies import StrategyModel
 
-#: The weights of the update rule (brief §9.4–9.5). Controlled, assigned
-#: evidence weighs 1.0; an observation the learner selected into weighs 0.4;
-#: a fatigued attempt counts at half weight *as method evidence*; a miss
-#: explained by a missing prerequisite counts for nothing against the method.
-WEIGHT_CONTROLLED = 1.0
-WEIGHT_OBSERVATIONAL = 0.4
-WEIGHT_FATIGUE = 0.5
-WEIGHT_PREREQUISITE = 0.0
-
-#: The sentence that has to travel with every reteach comparison.
-SECOND_EXPOSURE_CONFOUND = (
-    "this is stronger evidence than watching alone, but it is not a controlled experiment: "
-    "the second question was your second time meeting this idea, so some improvement "
-    "would be expected either way"
+CAVEAT = (
+    "This matched reteach comparison is stronger evidence than a self-selected opening, "
+    "but not a controlled experiment: a second exposure can help on its own."
 )
 
-#: Fatigue, exactly as the brief states it (§9.5b).
-FATIGUE_LATENCY_RATIO = 1.5
+
+class FailureError(ValueError):
+    pass
 
 
-# --------------------------------------------------------------------------- #
-# (b) fatigue
-# --------------------------------------------------------------------------- #
-
-def fatigue_check(latencies_ms: Sequence[float | None], correct: Sequence[bool | None]) -> dict[str, Any]:
-    """Last two answers > 1.5× the session median, with accuracy falling.
-
-    Both halves are required. Slow *and accurate* is a careful learner, not
-    a tired one; fast-and-wrong is a different signal (effort, see
-    ``reteach.fatigue_check``) and is deliberately not this one. Fewer than
-    four timed answers cannot fire it — a median of two is a coin flip, and
-    this verdict spends the learner's trust when it suggests a break.
-    """
-    timed = [(float(lat), bool(ok)) for lat, ok in zip(latencies_ms, correct) if lat is not None and ok is not None]
-    if len(timed) < 4:
-        return {"fired": False, "median_ms": None, "why": f"only {len(timed)} timed answers this session; four are needed before slowness can be read as fatigue"}
-    median = statistics.median(lat for lat, _ok in timed)
-    last_two = timed[-2:]
-    earlier = timed[:-2]
-    slow = all(lat > FATIGUE_LATENCY_RATIO * median for lat, _ok in last_two)
-    falling = (sum(ok for _lat, ok in last_two) / 2.0) < (sum(ok for _lat, ok in earlier) / len(earlier))
-    fired = slow and falling
-    return {
-        "fired": fired,
-        "median_ms": round(median, 1),
-        "last_two_ms": [lat for lat, _ok in last_two],
-        "ratio_threshold": FATIGUE_LATENCY_RATIO,
-        "accuracy_earlier": round(sum(ok for _lat, ok in earlier) / len(earlier), 3),
-        "accuracy_last_two": round(sum(ok for _lat, ok in last_two) / 2.0, 3),
-        "why": (
-            "the last two answers each took over 1.5 times your usual time and the accuracy fell with them — that reads as tiredness, not as not knowing"
-            if fired
-            else "either the last two answers were not unusually slow, or accuracy held while they slowed"
-        ),
-    }
-
-
-# --------------------------------------------------------------------------- #
-# (a) the prerequisite check
-# --------------------------------------------------------------------------- #
-
-def direct_prerequisites(topic_id: str, prereqs: Mapping[str, Sequence[str]] | None) -> list[str]:
-    """The direct prerequisites of a topic, in chain order. Nothing transitive:
-    the check asks about the step immediately underneath, not the whole tree."""
-    return [str(p) for p in ((prereqs or {}).get(topic_id) or ())]
-
-
-def select_prerequisite_question(
-    topic_id: str,
-    prereqs: Mapping[str, Sequence[str]] | None,
-    candidates_by_topic: Mapping[str, Sequence[Mapping[str, Any]]] | None,
-    *,
-    learner_id: str = "",
-    exclude_ids: Sequence[str] = (),
-) -> tuple[str | None, Mapping[str, Any] | None]:
-    """One question on a direct prerequisite — the first prerequisite that has one.
-
-    Deterministic per learner (seeded ordering across prerequisites), so the
-    same learner is asked about the same gap first on a reload.
-    """
-    direct = direct_prerequisites(topic_id, prereqs)
-    ordered = sorted(direct, key=lambda p: stable_seed(learner_id, topic_id, p, "prereq-check"))
-    skip = {str(i) for i in exclude_ids}
-    for prereq in ordered:
-        pool = [c for c in ((candidates_by_topic or {}).get(prereq) or ()) if str(c.get("id") or "") not in skip and c.get("active", True)]
-        if pool:
-            pool.sort(key=lambda c: stable_seed(learner_id, prereq, str(c.get("id") or "")))
-            return prereq, pool[0]
-    return (ordered[0] if ordered else None), None
-
-
-# --------------------------------------------------------------------------- #
-# serve-time assignment: counterbalanced, seeded, never authored
-# --------------------------------------------------------------------------- #
-
-def counterbalanced_assignment(
-    *,
-    learner_id: str,
-    concept_id: str,
-    exposure: int = 0,
-    methods: Sequence[str] = M.METHOD_CYCLE,
-) -> dict[str, Any]:
-    """The method for one exposure, assigned by code at serve time.
-
-    Counterbalanced two ways at once: the starting offset is seeded per
-    learner (two learners meet the same concept in different orders), and
-    the method advances with exposure (one learner cycles through every
-    method across attempts). Nothing about the *item* chooses — an authored
-    ``experience_mode`` on an item is a label on the content, and a label
-    cannot run an experiment.
-    """
-    allowed = [m for m in methods if m in M.METHODS] or list(M.METHOD_CYCLE)
-    offset = stable_seed(learner_id, concept_id, "counterbalance") % len(allowed)
-    method = allowed[(offset + int(exposure)) % len(allowed)]
-    return {
-        "method": method,
-        "method_label": M.METHODS[method].label,
-        "design": "counterbalanced",
-        "source": "assigned at serve time (seeded per learner, rotating with exposure)",
-        "weight": WEIGHT_CONTROLLED,
-        "exposure": int(exposure),
-        "seed": stable_seed(learner_id, concept_id, str(int(exposure)), "counterbalance"),
-        "why": f"exposure {int(exposure) + 1} on this concept for this learner lands on {method} in their seeded rotation",
-    }
-
-
-# --------------------------------------------------------------------------- #
-# (c) reteach: next-best method, random on ties; matched B, same format
-# --------------------------------------------------------------------------- #
-
-def choose_reteach_method(
-    method_rows: Sequence[Mapping[str, Any]],
-    *,
-    failed_method: str | None,
-    learner_id: str,
-    topic_id: str,
-) -> dict[str, Any]:
-    """The next method to try: best actual-vs-expected, seeded-random on ties.
-
-    Only methods with at least :data:`~adapt.learning.methods.EARLY_SIGNAL_N`
-    observations are ranked — below that the honest state is "no measured
-    best", and every other method is an equal candidate for the seeded draw.
-    The failed method is always excluded: reteaching in the method that just
-    failed is not a reteach.
-    """
-    candidates = [m for m in M.METHOD_CYCLE if m != failed_method]
-    report = M.method_report(method_rows, methods=candidates) if method_rows else {"methods": []}
-    ranked = [r for r in report["methods"] if int(r.get("n") or 0) >= M.EARLY_SIGNAL_N]
-    if ranked:
-        best_residual = max(float(r.get("residual") or 0.0) for r in ranked)
-        tied = [str(r["method"]) for r in ranked if abs(float(r.get("residual") or 0.0) - best_residual) < 1e-9]
-        evidence_n = int(next(r["n"] for r in ranked if str(r["method"]) == tied[0]))
-    else:
-        tied = list(candidates)
-        best_residual = None
-        evidence_n = 0
-    rng = random.Random(stable_seed(learner_id, topic_id, str(failed_method), "reteach-tie"))
-    chosen = tied[rng.randrange(len(tied))] if len(tied) > 1 else tied[0]
-    return {
-        "method": chosen,
-        "method_label": M.METHODS[chosen].label,
-        "tied": tied,
-        "tie_broken_by": "seeded random draw among equals" if len(tied) > 1 else "measured best",
-        "residual": best_residual,
-        "n": evidence_n,
-        "design": "counterbalanced",
-        "why": (
-            f"{M.METHODS[chosen].label.lower()} is the best measured alternative "
-            f"({best_residual:+.2f} against expectation over {evidence_n} questions)"
-            if best_residual is not None and len(tied) == 1
-            else f"no method has enough measured evidence to rank yet, so {M.METHODS[chosen].label.lower()} was drawn from the {len(tied)} untried alternatives"
-            if len(tied) > 1
-            else f"{M.METHODS[chosen].label.lower()} is the measured best alternative"
-        ),
-    }
-
-
-def select_matched_question(
-    candidates: Sequence[Mapping[str, Any]],
-    first_item: Mapping[str, Any],
-    *,
-    learner_id: str = "",
-) -> tuple[Mapping[str, Any] | None, str, bool]:
-    """Question B: same format as A, closest difficulty, never A itself.
-
-    Returns ``(item, format, format_held)``. ``format_held`` is False rather
-    than quietly borrowing another format when no same-format question
-    exists: a comparison that could not hold the format fixed says so, and
-    the loop does not count it.
-    """
-    fmt = M.question_format(first_item)
-    picked = M.matched_question(
-        candidates,
-        format=fmt,
-        difficulty=float(first_item.get("difficulty", 0.5) or 0.5),
-        exclude=[str(first_item.get("id") or "")],
-        seed=learner_id,
+def _unit_number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and 0 <= value <= 1
+        and math.isfinite(value)
     )
-    return picked, fmt, picked is not None
 
 
-# --------------------------------------------------------------------------- #
-# the update rule
-# --------------------------------------------------------------------------- #
+def _nonempty(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
-def attribution_for(*, prereq_status: str, fatigue_fired: bool) -> dict[str, Any]:
-    """What a failed attempt is allowed to blame, and at what weight.
 
-    Priority is the brief's order: a failed prerequisite check explains the
-    miss without the method being involved; fatigue next (half weight, and
-    a break is the intervention, not a different worksheet); the method
-    last, at full weight, only when neither explanation fired.
+def validate_question(q: Mapping[str, Any]) -> None:
+    """Structural guard in addition to the content validator's semantic checks."""
+    if (
+        not isinstance(q, Mapping)
+        or not all(_nonempty(q.get(k)) for k in ("id", "topic_id", "stem"))
+        or not isinstance(q.get("answer_spec", {}), Mapping)
+    ):
+        raise FailureError("recovery question has malformed identity or grading data")
+    if q.get("kind") == "numeric":
+        spec = q.get("answer_spec", {})
+        try:
+            if spec.get("value") is not None and (
+                isinstance(spec["value"], bool) or not math.isfinite(float(spec["value"]))
+            ):
+                raise ValueError
+            tolerance = spec.get("tolerance", 1e-6)
+            if isinstance(tolerance, bool) or not math.isfinite(float(tolerance)) or tolerance < 0:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise FailureError("recovery numeric key or tolerance is malformed") from exc
+    if q.get("kind") == "mcq":
+        choices = q.get("choices")
+        if (
+            not isinstance(choices, list)
+            or len(choices) < 2
+            or not all(isinstance(c, Mapping) and _nonempty(c.get("text")) for c in choices)
+        ):
+            raise FailureError("recovery choices must contain at least two readable options")
+        flagged = [i for i, c in enumerate(choices) if c.get("correct") is True]
+        key = q.get("answer_spec", {}).get("correct_index")
+        if key is None and len(flagged) == 1:
+            key = flagged[0]
+        if (
+            not isinstance(key, int)
+            or isinstance(key, bool)
+            or not 0 <= key < len(choices)
+            or len(flagged) > 1
+            or (flagged and flagged != [key])
+        ):
+            raise FailureError("recovery choice key is invalid or ambiguous")
+    try:
+        ready = gradeable(q)
+    except (TypeError, AttributeError, ValueError):
+        ready = False
+    if not ready:
+        raise FailureError("recovery question is not gradeable")
+
+
+def fatigue_flag(recent: Sequence[Mapping[str, Any]]) -> bool:
+    """Chronological session answers: both final latencies >1.5 times median, accuracy falls.
+
+    Need at least two earlier answers. Missing/unscored latencies cannot establish fatigue.
+    Compare the last-two accuracy with the preceding answers (a binary final pair need not
+    be strictly decreasing within itself). This is a signal, never a diagnosis.
     """
-    if prereq_status == "failed":
-        return {
-            "attributed_to": "prerequisite",
-            "method_weight": WEIGHT_PREREQUISITE,
-            "counts_against_method": False,
-            "suggest_break": False,
-            "explanation": "the prerequisite check was failed, so this miss is attributed to the missing prior skill and does not count against the teaching method",
-        }
-    if fatigue_fired:
-        return {
-            "attributed_to": "fatigue",
-            "method_weight": WEIGHT_FATIGUE,
-            "counts_against_method": True,
-            "suggest_break": True,
-            "explanation": "the fatigue check fired, so this attempt counts at half weight as evidence about the method, and a break is suggested before any reteach",
-        }
-    return {
-        "attributed_to": "method",
-        "method_weight": WEIGHT_CONTROLLED,
-        "counts_against_method": True,
-        "suggest_break": False,
-        "explanation": (
-            "the prerequisite check was passed, so the miss is attributed to the teaching method at full weight"
-            if prereq_status == "passed"
-            else "neither a prerequisite failure nor fatigue explains this miss, so it is attributed to the teaching method at full weight"
-        ),
-    }
 
-
-# --------------------------------------------------------------------------- #
-# (d) compare
-# --------------------------------------------------------------------------- #
-
-def compare_attempts(
-    first: Mapping[str, Any],
-    second: Mapping[str, Any],
-    *,
-    reteach_rows: Sequence[Mapping[str, Any]] = (),
-) -> dict[str, Any]:
-    """First attempt vs reteach attempt, actual against expected, with a range.
-
-    The range is a Wilson interval over the reteach method's own attempts
-    (its history plus this one), and ``n`` is printed with it everywhere
-    this payload is shown — an improvement measured on one learner's two
-    answers is a signal about *this* pair, and the honest sentence says so.
-    """
-    def residual(row: Mapping[str, Any]) -> float:
-        return (1.0 if row.get("correct") else 0.0) - float(row.get("expected_success", 0.5) or 0.5)
-
-    history = [r for r in reteach_rows if r.get("correct") is not None]
-    n = len(history) + 1
-    successes = sum(1 for r in history if r.get("correct")) + (1 if second.get("correct") else 0)
-    lo, hi = EFFECT.proportion_ci(successes, n)
-    return {
-        "first": {"correct": bool(first.get("correct")), "expected_success": first.get("expected_success"), "residual": round(residual(first), 3)},
-        "reteach": {"correct": bool(second.get("correct")), "expected_success": second.get("expected_success"), "residual": round(residual(second), 3)},
-        "improved": bool(second.get("correct")) and not bool(first.get("correct")),
-        "residual_difference": round(residual(second) - residual(first), 3),
-        "range": [round(lo, 3), round(hi, 3)],
-        "n": n,
-        "evidence": M.evidence_label(n),
-        "verdict_label": EFFECT.verdict_label("insufficient_evidence") if n < M.EARLY_SIGNAL_N else "measured",
-        "confound": SECOND_EXPOSURE_CONFOUND,
-        "note": "the range is over the reteach method's attempts so far, this one included; it is not a verdict on the method",
-    }
-
-
-# --------------------------------------------------------------------------- #
-# the loop itself
-# --------------------------------------------------------------------------- #
-
-def run_failure_loop(
-    *,
-    learner_id: str,
-    topic_id: str,
-    first_item: Mapping[str, Any],
-    first_method: str | None,
-    first_expected: float | None = None,
-    candidates: Sequence[Mapping[str, Any]] = (),
-    prereqs: Mapping[str, Sequence[str]] | None = None,
-    prereq_candidates: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
-    prereq_correct: bool | None = None,
-    session_latencies_ms: Sequence[float | None] = (),
-    session_correct: Sequence[bool | None] = (),
-    method_rows: Sequence[Mapping[str, Any]] = (),
-    matched_correct: bool | None = None,
-    matched_expected: float | None = None,
-) -> dict[str, Any]:
-    """Run (a)–(d) over plain data and return the whole outcome as data.
-
-    ``prereq_correct`` / ``matched_correct`` are the results of the two
-    questions the loop asks, when the caller has already asked them; with
-    neither, the return value is the *plan* (which prerequisite question,
-    which method, which matched question) plus the diagnosis so far. The
-    same function therefore serves the live path (ask, then re-call with
-    the answers) and the tests (all answers supplied at once).
-    """
-    prereq_topic, prereq_question = select_prerequisite_question(
-        topic_id, prereqs, prereq_candidates, learner_id=learner_id, exclude_ids=[str(first_item.get("id") or "")]
-    )
-    prereq_status = "failed" if prereq_correct is False else "passed" if prereq_correct is True else "not_checked"
-    fatigue = fatigue_check(session_latencies_ms, session_correct)
-    attribution = attribution_for(prereq_status=prereq_status, fatigue_fired=bool(fatigue["fired"]))
-
-    reteach: dict[str, Any] | None = None
-    matched: Mapping[str, Any] | None = None
-    fmt = M.question_format(first_item)
-    format_held = False
-    comparison: dict[str, Any] | None = None
-
-    if prereq_status != "failed":
-        choice = choose_reteach_method(method_rows, failed_method=first_method, learner_id=learner_id, topic_id=topic_id)
-        matched, fmt, format_held = select_matched_question(candidates, first_item, learner_id=learner_id)
-        reteach = {
-            **choice,
-            "deferred_until_after_break": bool(attribution["suggest_break"]),
-            "question": (
-                {"item_id": matched.get("id"), "topic_id": matched.get("topic_id") or topic_id, "format": M.question_format(matched), "difficulty": matched.get("difficulty")}
-                if matched is not None
-                else None
-            ),
-            "format": fmt,
-            "format_held_fixed": format_held,
-        }
-        # The reteach is taught in the chosen method, full stop — the
-        # counterbalanced assignment above records *how the loop serves*
-        # (seeded, at serve time); the choice of method is the diagnosis.
-        reteach["assignment"] = {
-            "method": choice["method"],
-            "design": "counterbalanced",
-            "source": "chosen by the failure loop from measured evidence, never authored into the item",
-            "weight": attribution["method_weight"],
-        }
-        if matched is not None and matched_correct is not None:
-            reteach_rows = [r for r in method_rows if str(r.get("method")) == choice["method"]]
-            comparison = compare_attempts(
-                {"correct": False, "expected_success": first_expected if first_expected is not None else 0.5},
-                {"correct": matched_correct, "expected_success": matched_expected if matched_expected is not None else 0.5},
-                reteach_rows=reteach_rows,
-            )
-
-    result: dict[str, Any] = {
-        "needed": True,
-        "topic_id": topic_id,
-        "first": {"item_id": first_item.get("id"), "method": first_method, "format": fmt, "correct": False},
-        "steps": {
-            "prerequisite": {
-                "topic_id": prereq_topic,
-                "question": (
-                    {"item_id": prereq_question.get("id"), "format": M.question_format(prereq_question)}
-                    if prereq_question is not None
-                    else None
-                ),
-                "status": prereq_status,
-                "chain": direct_prerequisites(topic_id, prereqs),
-            },
-            "fatigue": fatigue,
-        },
-        "attribution": attribution,
-        "reteach": reteach,
-        "comparison": comparison,
-        "evidence": {
-            "kind": "failure_loop",
-            "source_type": "controlled",
-            "design": "reteach_comparison",
-            "method_weight": attribution["method_weight"],
-            "from_method": first_method,
-            "to_method": (reteach or {}).get("method"),
-            "format": fmt,
-            "format_held_fixed": format_held,
-            "confound": SECOND_EXPOSURE_CONFOUND if comparison else None,
-        },
-    }
-    result["learner_sentence"] = learner_sentence(result)
-    return result
-
-
-def learner_sentence(result: Mapping[str, Any]) -> str:
-    """The outcome in one honest paragraph: result, range, n, and the caveat."""
-    attribution = result.get("attribution") or {}
-    if attribution.get("attributed_to") == "prerequisite":
-        topic = (result.get("steps", {}).get("prerequisite") or {}).get("topic_id")
+    def usable_time(r: Mapping[str, Any]) -> bool:
+        value = r.get("time_on_item_ms")
         return (
-            f"The check on the step before this one ({topic}) did not hold, so that gap — not the way this was "
-            "taught — is the likely reason for the miss. It does not count against this teaching method. "
-            "Next: practise that earlier step, then come back to this one."
+            r.get("correct") is not None
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value > 0
         )
-    if attribution.get("attributed_to") == "fatigue":
-        return (
-            "Your last answers slowed down and started slipping together, which reads as tiredness rather than "
-            "not knowing. This attempt counts at half weight as evidence about the teaching, and a short break "
-            "will hold better than pushing on — the reteach is here when you come back."
-        )
-    comparison = result.get("comparison")
-    reteach = result.get("reteach") or {}
-    if comparison:
-        improved = "you got the matched question right" if comparison["improved"] else "the matched question did not come right this time"
-        return (
-            f"We taught it a different way ({reteach.get('method_label', reteach.get('method'))}) and asked the same kind of question: {improved}. "
-            f"So far that way of teaching sits between {comparison['range'][0]:.0%} and {comparison['range'][1]:.0%} on questions like these, from {comparison['n']} attempt(s) — "
-            f"{str(comparison['evidence']).replace('_', ' ')}. Remember: {SECOND_EXPOSURE_CONFOUND}."
-        )
-    if reteach:
-        return (
-            f"Nothing before this step explains the miss, so it counts against the way it was taught. "
-            f"Next it will be taught as {reteach.get('method_label', reteach.get('method'))}, with the same kind of question, so the comparison is fair."
-        )
-    return "This miss has been recorded with its context. Nothing is concluded from one answer."
+
+    if len(recent) < 4 or not all(usable_time(r) for r in recent[-2:]):
+        return False
+    usable = [r for r in recent if usable_time(r)]
+    if len(usable) < 4:
+        return False
+    median = statistics.median(r["time_on_item_ms"] for r in usable)
+    tail, prior = usable[-2:], usable[:-2]
+    return all(r["time_on_item_ms"] > 1.5 * median for r in tail) and sum(
+        bool(r["correct"]) for r in tail
+    ) / 2 < sum(bool(r["correct"]) for r in prior) / len(prior)
 
 
-# --------------------------------------------------------------------------- #
-# weights, detectors, posteriors — the surfaces §9.3/§9.4/§9.6 ask for
-# --------------------------------------------------------------------------- #
-
-def row_weight(row: Mapping[str, Any]) -> float:
-    """The weight one evidence row carries: assigned 1.0, self-selected 0.4,
-    and a failure-loop method weight (0 / 0.5 / 1) multiplies either."""
-    design = str(row.get("design") or row.get("mapping_design") or "")
-    base = WEIGHT_OBSERVATIONAL if design == "observational" else WEIGHT_CONTROLLED
-    method_weight = row.get("method_weight")
-    if method_weight is not None:
-        return base * float(method_weight)
-    return base
+def attribution(prerequisite_ok: bool | None, fatigue: bool) -> dict[str, Any]:
+    if prerequisite_ok is False:
+        return {"cause": "prerequisite", "multiplier": 0.0, "suggest_break": False}
+    if prerequisite_ok is None:
+        return {"cause": "unchecked_prerequisite", "multiplier": 0.0, "suggest_break": False}
+    if fatigue:
+        return {"cause": "fatigue", "multiplier": 0.5, "suggest_break": True}
+    return {"cause": "method_comparison", "multiplier": 1.0, "suggest_break": False}
 
 
-def weighted_method_summary(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Per method: raw n, weighted (effective) n, and where the weight came from.
+def validate_pair(a: Mapping[str, Any], b: Mapping[str, Any]) -> None:
+    """Fail closed unless explicitly matched on concept, format, pair id and difficulty."""
+    validate_question(a)
+    validate_question(b)
+    if (
+        not all(_nonempty(q.get(k)) for q in (a, b) for k in ("pair_id", "concept_id"))
+        or not all(_unit_number(q.get("difficulty")) for q in (a, b))
+        or not a.get("pair_id")
+        or a.get("pair_id") != b.get("pair_id")
+        or not a.get("concept_id")
+        or a.get("concept_id") != b.get("concept_id")
+        or a.get("topic_id") != b.get("topic_id")
+        or a.get("id") == b.get("id")
+        or a.get("pair_role") != "A"
+        or b.get("pair_role") != "B"
+        or question_format(a) != question_format(b)
+        or a.get("kind") != b.get("kind")
+        or a.get("difficulty") != b.get("difficulty")
+        or not gradeable(a)
+        or not gradeable(b)
+    ):
+        raise FailureError("a validated same-concept, same-format matched A/B pair is required")
 
-    The raw count and the effective count are both shown, because showing
-    only the weighted one would hide how many observations were discounted
-    and why. Topic-agnostic by construction: rows from every topic are
-    accumulated, which is what makes "all topics" a real filter value.
+
+def choose_alternative(
+    learner: str, loop_id: str, failed: str, variants: Mapping[str, Any], report: Mapping[str, Any]
+) -> str:
+    available = [m for m in METHODS if m != failed and variants.get(m)]
+    if not available:
+        raise FailureError("no validated alternate teaching variant for this concept")
+    rows = {r["method"]: r for r in report.get("methods", []) if r.get("effective_n", r["n"]) >= 8}
+    if report.get("format_comparable") is False:
+        rows = {}
+    best = max((rows[m]["residual"] for m in available if m in rows), default=None)
+    tied = [m for m in available if best is None or (m in rows and rows[m]["residual"] == best)]
+    return min(tied, key=lambda m: stable_seed(learner, loop_id, m, "reteach-tie"))
+
+
+def outcome_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Weighted actual-minus-expected per method across ALL topics; rebuilt from the log.
+
+    Missing predictions are excluded, not replaced by 50%. Intervals are conservative
+    Wilson intervals on weighted accuracy, shifted by the fixed mean prediction.
+    Effective n = sum of weights; it never exceeds raw n. Reteach and controlled
+    sources are visible separately; no point estimate is presented as proof.
     """
-    buckets: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        method = str(row.get("method") or "unassigned")
-        bucket = buckets.setdefault(method, {"method": method, "n": 0, "n_controlled": 0, "n_observational": 0, "effective_n": 0.0})
-        bucket["n"] += 1
-        if str(row.get("design") or "") == "observational":
-            bucket["n_observational"] += 1
-        else:
-            bucket["n_controlled"] += 1
-        bucket["effective_n"] += row_weight(row)
-    out = []
-    for bucket in buckets.values():
-        bucket["effective_n"] = round(bucket["effective_n"], 2)
-        bucket["weights"] = {"controlled": WEIGHT_CONTROLLED, "observational": WEIGHT_OBSERVATIONAL}
-        bucket["source"] = (
-            "assigned at serve time (controlled)"
-            if bucket["n_observational"] == 0
-            else "self-selected (observational)"
-            if bucket["n_controlled"] == 0
-            else "a mix of assigned and self-selected"
-        )
-        out.append(bucket)
-    out.sort(key=lambda b: -b["effective_n"])
-    return out
-
-
-def self_selection_detectors(attempts: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """The detectors that watch what the learner *chose* to do (§9.4).
-
-    They stay — "opened an example, then got it right" is worth noticing —
-    but every payload is stamped observational with its 0.4 weight, its
-    source, and the reason it is not proof: the learner who opens help is
-    usually the learner who was stuck, so the comparison is confounded by
-    construction and no honest surface may present it as anything else.
-    """
-    def one(name: str, label: str, opened_key: str) -> dict[str, Any]:
-        opened = [a for a in attempts if a.get(opened_key)]
-        closed = [a for a in attempts if not a.get(opened_key) and a.get("correct") is not None]
-        opened = [a for a in opened if a.get("correct") is not None]
-        base: dict[str, Any] = {
-            "detector": name,
-            "label": label,
-            "design": "observational",
-            "source": "self-selected: the learner chose to do this",
-            "weight": WEIGHT_OBSERVATIONAL,
-            "is_proof": False,
-            "note": "not proof: learners who open help are usually the ones who were stuck, so this can inform and cannot decide",
-        }
-        if len(opened) < 3 or len(closed) < 3:
-            return {**base, "status": EFFECT.verdict_label("insufficient_evidence"), "n": len(opened), "n_baseline": len(closed)}
-        rate_open = sum(1 for a in opened if a.get("correct")) / len(opened)
-        rate_closed = sum(1 for a in closed if a.get("correct")) / len(closed)
-        lo, hi = EFFECT.proportion_ci(sum(1 for a in opened if a.get("correct")), len(opened))
-        return {
-            **base,
-            "status": "measured",
-            "n": len(opened),
-            "n_baseline": len(closed),
-            "value": round(rate_open, 3),
-            "baseline": round(rate_closed, 3),
-            "range": [round(lo, 3), round(hi, 3)],
-        }
-
-    return [
-        one("opened_example", "Opened a worked example before answering", "examples_opened"),
-        one("opened_explanation", "Opened the explanation before answering", "explanation_opened"),
-    ]
-
-
-def strategy_posteriors(rows: Sequence[Mapping[str, Any]], *, seed: int = 20260101) -> dict[str, Any]:
-    """Thompson behind the scenes, posterior means on screen (§9.6).
-
-    The sampling stays where it belongs — inside the model, seeded so a
-    demo can reproduce it — and what any surface receives is, per method's
-    strategy: the posterior mean, the interval around it, and the ``n``.
-    A mean without its interval and count is exactly the claim this round
-    keeps refusing to make.
-    """
-    from . import strategies as ST
-
-    model = ST.StrategyModel()
-    for row in rows:
-        method = str(row.get("method") or "")
-        if method not in M.METHODS or row.get("correct") is None:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    excluded, elsewhere = 0, 0
+    for r in rows:
+        if r.get("kind") != "method_outcome":
             continue
-        expected = float(row.get("expected_success", 0.5) or 0.5)
-        lift = (1.0 if row.get("correct") else 0.0) - expected
-        model.record(M.METHODS[method].strategy, lift=lift, weight=row_weight(row))
-    import numpy as np
-
-    rng = np.random.default_rng(seed)
-    sampled, _value = model.sample(rng=rng) if model.stats else (None, None)
+        payload = r.get("payload")
+        if not isinstance(payload, Mapping):
+            excluded += 1
+            continue
+        p = dict(payload)
+        source = r.get("source_type", "observational")
+        source_weight = 1.0 if source == "controlled" else 0.4
+        multiplier = p.get("multiplier", 1)
+        logged_weight = r.get("weight", source_weight)
+        if (
+            p.get("method") not in METHODS
+            or not isinstance(p.get("correct"), bool)
+            or not _unit_number(p.get("expected"))
+            or not _unit_number(multiplier)
+            or not _unit_number(logged_weight)
+            or logged_weight != source_weight
+            or source not in ("controlled", "observational")
+        ):
+            excluded += 1
+            continue
+        if multiplier == 0:
+            elsewhere += 1
+            continue
+        p.update(weight=source_weight * multiplier, source_type=source)
+        groups.setdefault(p["method"], []).append(p)
+    out, model = [], StrategyModel()
+    for method, group in groups.items():
+        n, effective = len(group), math.fsum(p["weight"] for p in group)
+        actual = math.fsum(float(p["correct"]) * p["weight"] for p in group) / effective
+        expected = math.fsum(float(p["expected"]) * p["weight"] for p in group) / effective
+        lo, hi = _wilson(actual * effective, effective)
+        sources = []
+        for source in sorted({p["source_type"] for p in group}):
+            part = [p for p in group if p["source_type"] == source]
+            sources.append(
+                {
+                    "source": source,
+                    "n": len(part),
+                    "weight": 1.0 if source == "controlled" else 0.4,
+                    "effective_n": round(math.fsum(p["weight"] for p in part), 3),
+                }
+            )
+        for p in group:
+            model.record(
+                METHODS[method].strategy,
+                lift=float(p["correct"]) - p["expected"],
+                weight=p["weight"],
+            )
+        out.append(
+            {
+                "method": method,
+                "label": METHODS[method].label,
+                "n": n,
+                "effective_n": round(effective, 3),
+                "actual": round(actual, 3),
+                "expected": round(expected, 3),
+                "residual": round(actual - expected, 3),
+                "ci": [round(lo - expected, 3), round(hi - expected, 3)],
+                "sources": sources,
+                "formats": sorted({p.get("question_kind", "unknown") for p in group}),
+                "evidence": "insufficient evidence" if effective < 8 else "signal",
+            }
+        )
+    format_comparable = len({tuple(m["formats"]) for m in out}) <= 1
     return {
-        "strategies": [
-            {**stat.as_dict(), "posterior_mean": stat.as_dict()["p_helps"]}
-            for stat in sorted(model.stats.values(), key=lambda s: -s.p_helps)
-        ],
-        "thompson_sample": {"strategy": sampled, "seed": seed, "note": "the draw the model would act on next; seeded, so this demo can be re-run and get the same draw"},
-        "note": "Thompson sampling chooses behind the scenes; what is shown is the posterior mean with its interval and n, never the draw alone",
+        "excluded_n": excluded,
+        "attributed_elsewhere_n": elsewhere,
+        "format_comparable": format_comparable,
+        "methods": sorted(out, key=lambda p: -p["residual"]),
+        "strategies": [st.as_dict() for st in model.ranked()],
+        "note": "Actual minus predicted success across all topics; associations, not proof.",
+        "min_effective_n": 8,
     }
 
 
-def record_failure_outcome(state: Any, learner_id: str, result: Mapping[str, Any], *, event_id: str) -> Any:
-    """Append one failure-loop outcome to the evidence log (code writes).
+class FailureLoop:
+    def __init__(self, state: LearnerState):
+        self.state = state
 
-    The event is controlled (the loop ran it), and carries the attribution
-    weight in its payload, so the weighted summaries above — and a rebuild
-    of the learner model — can reproduce exactly what the loop concluded.
-    Idempotent by event id, like every write to that log.
-    """
-    from ..state import EvidenceEvent
+    def _transitions(self, learner: str, loop_id: str) -> list[dict[str, Any]]:
+        return [
+            r["payload"]
+            for r in self.state.evidence_rows(learner)
+            if r["kind"] == "failure_transition" and r["payload"].get("loop_id") == loop_id
+        ]
 
-    evidence = dict(result.get("evidence") or {})
-    return state.ingest(
-        learner_id,
-        EvidenceEvent(
-            event_id=event_id,
-            kind="failure_loop",
-            source_type="controlled",
-            topic_id=str(result.get("topic_id") or "") or None,
-            payload={
-                "attribution": dict(result.get("attribution") or {}),
-                "method_weight": evidence.get("method_weight"),
-                "from_method": evidence.get("from_method"),
-                "to_method": evidence.get("to_method"),
-                "format": evidence.get("format"),
-                "design": evidence.get("design"),
-                "learner_sentence": result.get("learner_sentence"),
+    def _save(
+        self, learner: str, p: dict[str, Any], step: str, outcomes: Sequence[EvidenceEvent] = ()
+    ) -> None:
+        # One batch transaction: outcome and completed transition cannot diverge on retry.
+        self.state.ingest(
+            learner,
+            [
+                EvidenceEvent(
+                    event_id=f"failure:{p['loop_id']}:{step}",
+                    kind="failure_transition",
+                    source_type="observational",
+                    session_id=p["session_id"],
+                    payload=p,
+                ),
+                *outcomes,
+            ],
+            module="code",
+        )
+
+    def start(
+        self,
+        learner: str,
+        *,
+        attempt_id: str,
+        session_id: str,
+        a: dict[str, Any],
+        b: dict[str, Any],
+        method: str,
+        expected_a: float,
+        expected_b: float,
+        variants: Mapping[str, Any],
+        prerequisite: dict[str, Any] | None,
+        prerequisite_required: bool,
+        recent: Sequence[Mapping[str, Any]],
+        model_version: int | None = None,
+        content_ids: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        if self._transitions(learner, attempt_id):
+            return self.view(learner, attempt_id)
+        validate_pair(a, b)
+        if model_version is not None and (
+            not isinstance(model_version, int)
+            or isinstance(model_version, bool)
+            or model_version < 0
+        ):
+            raise FailureError("invalid source model version")
+        if isinstance(content_ids, str) or not all(_nonempty(cid) for cid in content_ids):
+            raise FailureError("invalid source content identities")
+        if method not in METHODS or not all(_unit_number(x) for x in (expected_a, expected_b)):
+            raise FailureError("unknown method or invalid frozen prediction")
+        next_method = choose_alternative(
+            learner, attempt_id, method, variants, self.report(learner)
+        )
+        if prerequisite_required and prerequisite is None:
+            raise FailureError(
+                "a question on the direct prerequisite is unavailable; no method attribution"
+            )
+        if prerequisite is not None:
+            validate_question(prerequisite)
+            if (
+                prerequisite["id"] in (a["id"], b["id"])
+                or prerequisite["topic_id"] == a["topic_id"]
+            ):
+                raise FailureError(
+                    "the prerequisite must be a distinct question on a different topic"
+                )
+        p = {
+            "loop_id": attempt_id,
+            "session_id": session_id,
+            "model_version": model_version,
+            "content_ids": list(content_ids),
+            "a": a,
+            "b": b,
+            "method_a": method,
+            "method_b": next_method,
+            "expected_a": expected_a,
+            "expected_b": expected_b,
+            "teaching": variants[next_method],
+            "prerequisite": prerequisite,
+            "prerequisite_ok": None if prerequisite_required else True,
+            "fatigue": fatigue_flag(recent),
+            "stage": "prerequisite" if prerequisite_required else "matched_b",
+        }
+        self._save(learner, p, "start")
+        return self.view(learner, attempt_id)
+
+    def view(self, learner: str, loop_id: str) -> dict[str, Any]:
+        transitions = self._transitions(learner, loop_id)
+        if not transitions:
+            raise KeyError(loop_id)
+        # Stage ordering is semantic, not dependent on concurrent timestamps.
+        p = max(
+            transitions,
+            key=lambda t: {"prerequisite": 0, "matched_b": 1, "complete": 2}[t["stage"]],
+        )
+        result = {
+            "loop_id": loop_id,
+            "why": {
+                "model_version": p.get("model_version"),
+                "content_ids": p.get("content_ids", []),
             },
-        ),
-        module="code",
-    )
+            "stage": p["stage"],
+            "note": CAVEAT,
+            "fatigue": p["fatigue"],
+            "suggest_break": p["fatigue"],
+        }
+        if p["stage"] == "complete":
+            result["outcome"] = p["outcome"]
+            return result
+        q = p["prerequisite"] if p["stage"] == "prerequisite" else p["b"]
+        # Whitelist, not a shallow blacklist: nested private grading data never leaks.
+        result["question"] = {
+            k: q[k] for k in ("id", "topic_id", "kind", "stem", "difficulty") if k in q
+        }
+        if q.get("kind") == "mcq":
+            result["question"]["choices"] = [
+                {"text": c.get("text", "")} if isinstance(c, dict) else {"text": str(c)}
+                for c in q.get("choices", [])
+            ]
+        if p["stage"] == "matched_b":
+            result.update(
+                method=p["method_b"],
+                teaching=p["teaching"],
+                attribution=attribution(p["prerequisite_ok"], p["fatigue"]),
+            )
+        return result
 
+    def answer(
+        self, learner: str, loop_id: str, *, question_id: str, answer: Any
+    ) -> dict[str, Any]:
+        transitions = self._transitions(learner, loop_id)
+        if not transitions:
+            raise KeyError(loop_id)
+        p = dict(
+            max(
+                transitions,
+                key=lambda t: {"prerequisite": 0, "matched_b": 1, "complete": 2}[t["stage"]],
+            )
+        )
+        if p["stage"] == "complete":
+            return self.view(learner, loop_id)
+        q = p["prerequisite"] if p["stage"] == "prerequisite" else p["b"]
+        if q["id"] != question_id:
+            # Replayed prerequisite submission after a successful transition is a no-op.
+            if p["prerequisite"] and p["prerequisite"]["id"] == question_id:
+                return self.view(learner, loop_id)
+            raise FailureError("answer the question currently on offer")
+        scored = grade(q, answer)
+        if p["stage"] == "prerequisite":
+            p.update(prerequisite_ok=scored.correct, stage="matched_b")
+            event = EvidenceEvent(
+                event_id=f"failure:{loop_id}:prerequisite-score",
+                kind="attempt",
+                topic_id=q["topic_id"],
+                item_id=q["id"],
+                correct=scored.correct,
+                score=scored.score,
+                session_id=p["session_id"],
+                payload={"question_kind": q["kind"]},
+            )
+            self._save(learner, p, "prerequisite", [event])
+        else:
+            rule = attribution(p["prerequisite_ok"], p["fatigue"])
+            # One paired observation cannot estimate a population effect: use a conservative
+            # bounded range [-2,2], never a degenerate bootstrap interval from one pair.
+            delta = float(scored.correct) - p["expected_b"] + p["expected_a"]
+            p.update(
+                stage="complete",
+                outcome={
+                    **rule,
+                    "n": 1,
+                    "interval": [-2.0, 2.0],
+                    "before_correct": False,
+                    "after_correct": scored.correct,
+                    "residual_difference": round(delta, 3),
+                    "source": "observational",
+                    "source_weight": 0.4,
+                    "effective_weight": 0.4 * rule["multiplier"],
+                    "evidence": "insufficient evidence",
+                    "note": CAVEAT,
+                },
+            )
+            events = [
+                EvidenceEvent(
+                    event_id=f"failure:{loop_id}:outcome:{role}",
+                    kind="method_outcome",
+                    source_type="observational",
+                    topic_id=p["a"]["topic_id"],
+                    session_id=p["session_id"],
+                    payload={
+                        "method": p[f"method_{role}"],
+                        "correct": correct,
+                        "expected": p[f"expected_{role}"],
+                        "multiplier": rule["multiplier"],
+                        "question_kind": p["a"]["kind"],
+                        "comparison": "matched_reteach",
+                    },
+                )
+                for role, correct in (("a", False), ("b", scored.correct))
+            ]
+            events.append(
+                EvidenceEvent(
+                    event_id=f"failure:{loop_id}:matched-b-score",
+                    kind="attempt",
+                    topic_id=q["topic_id"],
+                    item_id=q["id"],
+                    correct=scored.correct,
+                    score=scored.score,
+                    session_id=p["session_id"],
+                    payload={"question_kind": q["kind"], "attribution": rule},
+                )
+            )
+            self._save(learner, p, "complete", events)
+        return self.view(learner, loop_id)
 
-__all__ = [
-    "SECOND_EXPOSURE_CONFOUND",
-    "WEIGHT_CONTROLLED",
-    "WEIGHT_FATIGUE",
-    "WEIGHT_OBSERVATIONAL",
-    "WEIGHT_PREREQUISITE",
-    "attribution_for",
-    "choose_reteach_method",
-    "compare_attempts",
-    "counterbalanced_assignment",
-    "direct_prerequisites",
-    "fatigue_check",
-    "learner_sentence",
-    "record_failure_outcome",
-    "row_weight",
-    "run_failure_loop",
-    "select_matched_question",
-    "select_prerequisite_question",
-    "self_selection_detectors",
-    "strategy_posteriors",
-    "weighted_method_summary",
-]
+    def record_outcome(
+        self,
+        learner: str,
+        *,
+        event_id: str,
+        method: str,
+        correct: bool,
+        expected: float,
+        topic_id: str,
+        question_kind: str,
+        design: str = "observational",
+        multiplier: float = 1.0,
+    ) -> None:
+        """Code-only ingestion hook for assigned attempts and self-selected observations.
+
+        A failed first attempt must be deferred until its diagnostic attribution is known;
+        use answer() for the matched failure pair, not this hook a second time.
+        """
+        if method not in METHODS or not _unit_number(expected) or not isinstance(correct, bool):
+            raise FailureError("invalid method or prediction")
+        if not _unit_number(multiplier):
+            raise FailureError("invalid attribution multiplier")
+        if design == "placement":
+            raise FailureError("placement is not evidence about teaching methods")
+        source = "controlled" if design in ("randomised", "counterbalanced") else "observational"
+        self.state.ingest(
+            learner,
+            EvidenceEvent(
+                event_id=event_id,
+                kind="method_outcome",
+                source_type=source,
+                topic_id=topic_id,
+                payload={
+                    "method": method,
+                    "correct": correct,
+                    "expected": expected,
+                    "question_kind": question_kind,
+                    "multiplier": multiplier,
+                },
+            ),
+            module="code",
+        )
+
+    def report(self, learner: str) -> dict[str, Any]:
+        result = outcome_report(self.state.evidence_rows(learner))
+        # Reuse the baseline's stated-vs-measured contract, but rank the actual-minus-expected
+        # evidence (not raw accuracy) and carry ranges, weights and minimum n into the copy.
+        methods = result["methods"]
+        usable = [m for m in methods if m["effective_n"] >= 8]
+        outcomes = {
+            "by_format": {
+                m["method"]: {"n": m["n"], "correct": m["actual"] * m["n"]} for m in usable
+            }
+        }
+        pref = preference_vs_performance({}, self.state.preferences(learner), outcomes=outcomes)
+        if pref and len(usable) >= 2 and result["format_comparable"]:
+            pref.update(
+                measured=usable,
+                sentence=(
+                    f"You picked {str(pref['stated']).replace('_', ' ')}. "
+                    "The largest actual-minus-expected signal so far is "
+                    f"{usable[0]['label'].lower()}; "
+                    "the ranges and evidence sources below matter more than the ranking."
+                ),
+                note=CAVEAT,
+            )
+        else:
+            pref = None
+        result["preference_vs_performance"] = pref
+        return result

@@ -69,8 +69,18 @@ from ..learning import strategies as ST
 from ..learning.effect import evaluate_change, retention_calibration
 from ..learning.profile import Directive, LearnerProfile, TopicTrace, to_llm_payload
 from ..security.redact import redact_payload
+from .prompts import RETENTION_CHECK_SYSTEM, fill_approval_script
 
 log = logging.getLogger("adapt.ai1")
+
+#: Master prompt 5's output contract: the check, what a good answer covers, and why
+#: now. The rationale is capped at 140 chars by the prompt; everything is validated
+#: before use (:meth:`LearningIntelligence.design_retention_check`).
+RETENTION_SPEC: dict[str, Any] = {
+    "question": "str",
+    "expectedAnswerNotes": "str",
+    "rationale": "str",
+}
 
 PROPOSAL_SPEC: dict[str, Any] = {
     "strategy": "str",
@@ -264,6 +274,8 @@ class LearningIntelligence:
         self_explain: float = 0.0,
         opportunity: bool = True,
         active_strategies: Sequence[str] = (),
+        expected_success: float | None = None,
+        strategy_weight: float = 1.0,
         kind: str | None = None,
         choices: int | None = None,
     ) -> dict[str, Any]:
@@ -337,7 +349,11 @@ class LearningIntelligence:
                         s.add(row)
                         s.flush()
                     model = ST.StrategyModel.from_rows([row])
-                    model.record(strat, lift=delta if score is None else float(score) - 0.5)
+                    lift = (
+                        float(correct) - expected_success if expected_success is not None
+                        else delta if score is None else float(score) - 0.5
+                    )
+                    model.record(strat, lift=lift, weight=strategy_weight)
                     upd = model.stats[strat]
                     row.alpha, row.beta, row.n, row.mean_lift = upd.alpha, upd.beta, upd.n, upd.mean_lift
                     row.last_updated_at = utcnow()
@@ -1060,6 +1076,7 @@ class LearningIntelligence:
 
     def _proposal_text(self, draft: H.Draft, strategy: ST.Strategy, llm_text: dict[str, Any] | None) -> dict[str, str]:
         """Local rendering by default; the LLM version is used only if it is valid."""
+        script = _approval_ask(draft, strategy)
         local = {
             "facts_text": draft.statement,
             "pattern_text": _pattern_sentence(draft, strategy),
@@ -1067,7 +1084,10 @@ class LearningIntelligence:
             "caveat_text": "Other explanations we cannot rule out: "
             + "; ".join(draft.alternatives if draft.alternatives else ["sampling noise"]),
             "change_text": f"{strategy.what} {strategy.caveat}".strip(),
-            "ask_text": "Want me to try that? You can say no, or change it — I will not change how you learn without asking.",
+            # Prompt 6's exact script, filled with the draft's own measured facts,
+            # wherever the sentence shape fits it; the standing ask otherwise.
+            "ask_text": script
+            or "Want me to try that? You can say no, or change it — I will not change how you learn without asking.",
             "expected_effect": (
                 f"We will watch {strategy.watch_metric.replace('_', ' ')} over the next several items and "
                 "compare it with how you have been doing. " + draft.falsification
@@ -1251,6 +1271,183 @@ class LearningIntelligence:
             "after": retention_calibration(after),
             "note": "calibration of predicted vs actual recall, before and after the change",
         }
+
+    async def design_retention_check(
+        self, student_id: str, topic_id: str, *, use_llm: bool = False
+    ) -> dict[str, Any] | None:
+        """Master prompt 5: the spaced-repetition check for a topic coming due.
+
+        The deterministic path is the floor and always answers when a schedule
+        exists: the question is grounded in the learner's own last item for the
+        topic (rendered with their variant seed, so the numbers are the ones they
+        practised), the notes say what a good answer covers, and the rationale is
+        the *measured* timing -- the projected recall from the half-life model at
+        this lag, which is what puts the check now rather than a quote from
+        Ebbinghaus. A model may rewrite all three fields, and is refused wholesale
+        when it returns anything unusable; the reply says which path produced it.
+        Returns ``None`` when the topic has no schedule -- nothing to check yet.
+        """
+        with self.sf() as s:
+            sched = s.get(RetentionSchedule, (student_id, topic_id))
+            topic = s.get(Topic, topic_id)
+            if sched is None or topic is None:
+                return None
+            lag_hours = 0.0
+            expected: float | None = None
+            if sched.last_recall_at:
+                lag_hours = max(0.0, (utcnow() - sched.last_recall_at).total_seconds() / 3600.0)
+                if sched.half_life_hours and sched.half_life_hours > 0:
+                    expected = SP.expected_recall(float(sched.half_life_hours), lag_hours)
+
+            question, notes, grounded_item = self._ground_check(s, student_id, topic)
+            if expected is not None:
+                if lag_hours >= 24:
+                    lag_text = f"{lag_hours / 24:.1f} days"
+                else:
+                    lag_text = f"{max(1, round(lag_hours)):.0f} hours"
+                rationale = (
+                    f"Forgetting curve: projected recall is about {round(expected * 100)}% after {lag_text}. "
+                    "Checking here tests the memory at its most informative point."
+                )
+            else:
+                rationale = "First spaced check: the first interval after practice is where recall falls fastest."
+
+        out: dict[str, Any] = {
+            "topic_id": topic_id,
+            "title": topic.title,
+            "question": question,
+            "expected_answer_notes": notes,
+            "rationale": rationale[:140],
+            "lag_hours": round(lag_hours, 2),
+            "expected_recall": round(expected, 3) if expected is not None else None,
+            "grounded_item_id": grounded_item,
+            "source": "rules",
+        }
+        if not (use_llm and self.llm is not None and getattr(self.llm, "configured", False)):
+            return out
+        user = json.dumps(
+            {
+                "topic_title": topic.title,
+                "material_excerpt": (topic.description or "")[:400],
+                "days_since_practice": round(lag_hours / 24, 1),
+                "projected_recall": out["expected_recall"],
+                "draft_question": question,
+            },
+            separators=(",", ":"),
+        )
+        safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
+        try:
+            res = await self.llm.complete(
+                system=RETENTION_CHECK_SYSTEM,
+                user=safe["q"],
+                purpose="ai1_retention_check",
+                role="ai1",
+                student_id=student_id,
+                temperature=0.3,
+                max_output_tokens=300,
+                response_spec=RETENTION_SPEC,
+            )
+        except Exception as exc:  # a check generator must never break the review screen
+            log.info("retention check llm skipped: %s", exc.__class__.__name__)
+            out["llm_status"] = "error"
+            return out
+        with self.sf() as s:
+            s.add(
+                LlmCall(
+                    student_id=student_id,
+                    purpose="ai1_retention_check",
+                    role="ai1",
+                    model=res.model or "?",
+                    status=res.status,
+                    tokens_in=res.tokens_in,
+                    tokens_out=res.tokens_out,
+                    latency_ms=res.latency_ms,
+                    redacted_fields=(res.redacted_fields or 0) + dropped,
+                    prompt_chars=len(user),
+                    day=utcnow().date().isoformat(),
+                )
+            )
+            s.commit()
+        out["llm_status"] = res.status
+        data = res.data if res.ok and isinstance(res.data, dict) else None
+        if data is None:
+            out["llm_check"] = "no_model_answer"
+            return out
+        q = str(data.get("question") or "").strip()
+        n = " ".join(str(data.get("expectedAnswerNotes") or "").split())
+        r = " ".join(str(data.get("rationale") or "").split())
+        if not q or not n or not r:
+            out["llm_check"] = "missing_fields"
+            return out
+        out.update(
+            {
+                "question": q[:300],
+                "expected_answer_notes": n[:400],
+                "rationale": r[:140],
+                "source": "model",
+                "llm_check": "accepted",
+            }
+        )
+        return out
+
+    def _ground_check(self, s, student_id: str, topic: Topic) -> tuple[str, str, str | None]:
+        """Question and notes from the learner's own last item for this topic.
+
+        Re-asking the question they actually practised (rendered with their variant
+        seed, so the numbers match what they saw) is a fairer delayed test than a
+        fresh phrasing a generator invented, and the notes can then be the item's
+        own steps. With no item on file, the check falls back to a teach-back style
+        prompt on the topic's title, with the material's first line as the notes.
+        """
+        attempt = s.execute(
+            select(Attempt)
+            .where(Attempt.student_id == student_id, Attempt.topic_id == topic.id, Attempt.item_id.is_not(None))
+            .order_by(Attempt.submitted_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        item = s.get(Item, attempt.item_id) if attempt is not None else None
+        if item is None:
+            material = (topic.description or "").strip()
+            first = material.split(". ")[0].strip().rstrip(".")
+            if first:
+                notes = f"A good answer mentions: {first[0].lower() + first[1:]}"
+            else:
+                notes = "A good answer names the main idea and one place it applies."
+            return (
+                f"Without checking your notes: in your own words, what is the key idea of {topic.title}, "
+                "and one place where it is used?",
+                notes,
+                None,
+            )
+        raw = {
+            "id": item.id,
+            "kind": item.kind,
+            "stem": item.stem,
+            "stem_template": getattr(item, "stem_template", None),
+            "choices": item.choices,
+            "answer_spec": item.answer_spec,
+            "solution_steps": item.solution_steps,
+            "prompt_context": item.prompt_context,
+        }
+        stem = raw["stem"]
+        steps, spec = raw["solution_steps"], raw["answer_spec"]
+        try:
+            from ..assessment.bank import render_item_for, variant_seed
+
+            rendered = render_item_for(raw, seed=variant_seed(student_id, item.id))
+            stem = str(rendered.get("stem") or stem)
+            steps = rendered.get("solution_steps") or steps
+            spec = rendered.get("answer_spec") or spec
+        except Exception:  # an unrenderable template still leaves the stored stem
+            pass
+        if steps:
+            notes = "A good answer: " + "; ".join(str(x) for x in steps[:2])
+        else:
+            accepted = (spec or {}).get("accepted") if isinstance(spec, dict) else None
+            notes = "A good answer: " + (
+                ", ".join(str(a) for a in accepted[:2]) if accepted else "the result, with the step that gets there"
+            )
+        return f"Last time you worked on {topic.title}. Without looking anything up: {stem}", notes, item.id
 
     def record_retention_check(
         self,
@@ -1764,6 +1961,28 @@ def decay(p: float, hours: float | None, half_life: float | None) -> float:
     if not hours or not half_life or half_life <= 0:
         return 1.0
     return float(0.5 ** (max(0.0, hours) / float(half_life)) + (1 - 0.5 ** (max(0.0, hours) / float(half_life))) * 0.02)
+
+
+def _approval_ask(draft: H.Draft, strategy: ST.Strategy) -> str:
+    """Prompt 6's exact script, filled from the draft's own facts when the shape fits.
+
+    The template's grammar ("we noticed you did {A}") needs a clause, not a
+    sentence: the templates that open with "You ..." give one by keeping only the
+    first -- measured -- sentence and dropping the pronoun, so the interpretation
+    that follows ("One explanation that fits...") never rides along inside the ask.
+    Statements in any other shape keep the standing ask rather than being bent
+    until they read badly. {X} is "the current approach": true whatever is active
+    today; the concrete change is ``change_text``, which the screen shows beside it.
+    """
+    statement = (draft.statement or "").strip()
+    if not statement.lower().startswith("you "):
+        return ""
+    first = statement.split(". ")[0].strip().rstrip(".")
+    clause = first[4:].strip()
+    if not clause:
+        return ""
+    clause = clause[0].lower() + clause[1:]
+    return fill_approval_script([clause], "the current approach", strategy.label)
 
 
 def _pattern_sentence(draft: H.Draft, strategy: ST.Strategy) -> str:

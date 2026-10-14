@@ -23,13 +23,13 @@ from . import flow
 from .games import (
     Trial,
     choice_score,
+    codewords_pairs,
     locked_box_score,
     machine_respond,
     machine_switched,
     recall_score,
     seed_of,
     shopkeeper_score,
-    trial_action,
     vault_score,
     wager_allowed,
 )
@@ -203,81 +203,6 @@ def normalise_answer(key: str, value: Any) -> Any:
     return str(value or "").strip()[:120]
 
 
-def _public_task(task: Mapping[str, Any]) -> dict[str, Any]:
-    """Project a generated task into the stimulus the learner needs, not the answer key."""
-    out = dict(task)
-    game = str(out.get("game") or "")
-    if game in ("quick", "trap", "codewords_cued", "codewords_delayed", "codewords_next_day", "locked_box"):
-        out.pop("answer", None)
-    if game == "trap":
-        out.pop("intuitive", None)
-        out.pop("explain", None)
-    if game == "machine":
-        # The third round's switch is supposed to be silent.
-        out.pop("switches", None)
-    if game == "shopkeeper":
-        out["distractors"] = [
-            {key: value for key, value in dict(row).items() if key != "answer"}
-            for row in out.get("distractors", [])
-        ]
-    return out
-
-
-def _public_score(task: Mapping[str, Any], scored: Mapping[str, Any]) -> dict[str, Any]:
-    """Do not let a task response disclose a hidden rule or a solution before the learner acts."""
-    game = str(task.get("game") or "")
-    action = str(scored.get("action") or task.get("action") or "")
-    if task.get("phase") == "practice":
-        if game == "machine":
-            return {key: scored[key] for key in ("action", "value", "output") if key in scored}
-        if game == "locked_box":
-            return {"action": action} if action else {}
-        return {key: scored[key] for key in ("action", "seconds_seen") if key in scored}
-    if game == "machine":
-        keys = ("action", "value", "output") if action == "probe" else ("action", "given", "correct")
-        return {key: scored[key] for key in keys if key in scored}
-    if game == "locked_box":
-        if action == "hint":
-            return {key: scored[key] for key in ("action", "cost", "hint") if key in scored}
-        if action == "attempt":
-            keys = ("action", "given", "correct")
-            if scored.get("correct") is True:
-                keys += ("expected",)
-            return {key: scored[key] for key in keys if key in scored}
-        return {"action": action} if action else {}
-    return dict(scored)
-
-
-def _public_history_row(trial: Trial) -> dict[str, Any]:
-    """Small, answer-safe history needed to resume multi-action games on another device."""
-    stored = trial.response if isinstance(trial.response, Mapping) else {}
-    raw_score = stored.get("scored", {})
-    raw_score = raw_score if isinstance(raw_score, Mapping) else {}
-    action = trial_action(trial)
-    score = _public_score(trial.task, raw_score)
-    row: dict[str, Any] = {
-        "task_id": trial.task_id,
-        "game": trial.game,
-        "phase": trial.phase,
-        "action": action,
-        "correct": trial.correct,
-        "latency_ms": trial.latency_ms,
-        "wager": trial.wager,
-        "scored": score,
-    }
-    if trial.game == "machine":
-        if action == "probe":
-            row["input"] = score.get("value")
-            row["output"] = score.get("output")
-        elif action == "guess":
-            row["guess"] = str(stored.get("text") or "")
-    if trial.game == "locked_box" and action == "hint":
-        row["hint_id"] = stored.get("hint_id")
-        row["hint"] = score.get("hint")
-        row["cost"] = score.get("cost")
-    return row
-
-
 class Baseline:
     """The run lifecycle. Constructed with a session factory and the shared state store."""
 
@@ -316,7 +241,6 @@ class Baseline:
                 .order_by(BaselineRun.started_at.desc())
                 .first()
             )
-            resumed = existing is not None
             if existing is not None:
                 run = existing
             else:
@@ -330,9 +254,7 @@ class Baseline:
                 s.add(run)
                 s.flush()
             run_id = run.id
-        out = self.view(student_id, run_id)
-        out["resumed"] = resumed
-        return out
+        return self.view(student_id, run_id)
 
     def _run(self, s: Any, run_id: str) -> BaselineRun:
         run = s.get(BaselineRun, run_id)
@@ -393,15 +315,13 @@ class Baseline:
                 "stage": step.stage,
                 "stage_title": next((x["title"] for x in flow.STAGES if x["key"] == step.stage), step.stage),
                 "kind": step.kind,
-                "task": _public_task(step.task) if step.task else None,
+                "task": dict(step.task) if step.task else None,
                 "progress": step.progress,
                 "note": step.note,
                 "format_pick": run.format_pick,
                 "format_options": [dict(o) for o in FORMAT_OPTIONS],
                 "questions": [dict(q) for q in QUESTIONS] if step.kind == "questions" else [],
                 "answers": prefs,
-                "timers_visible": bool(prefs.get("timers_help", True)),
-                "history": [_public_history_row(t) for t in trials],
                 "completion": report,
                 "measured_trials": len([t for t in trials if t.measured and t.correct is not None]),
                 "started_at": run.started_at.isoformat() if run.started_at else None,
@@ -429,7 +349,9 @@ class Baseline:
                 # The shared store, so a lesson built tomorrow reads the same choice. Provenance is
                 # ``stated``: this is the learner's instruction, not a measurement.
                 try:
-                    self.state.set_preference(student_id, "preferred_format", value, source="baseline")
+                    self.state.set_preference(
+                        student_id, "preferred_format", value, source="baseline", session=s
+                    )
                 except Exception:  # pragma: no cover - a preference write must never block the flow
                     log.exception("baseline: could not write the format preference to the store")
         return self.view(student_id, run_id)
@@ -459,7 +381,7 @@ class Baseline:
                     if not mapped:
                         continue
                     try:
-                        self.state.set_preference(student_id, mapped, value, source="baseline")
+                        self.state.set_preference(student_id, mapped, value, source="baseline", session=s)
                     except Exception:  # pragma: no cover
                         log.exception("baseline: could not write preference %s to the store", key)
         out = self.view(student_id, run_id)
@@ -492,7 +414,7 @@ class Baseline:
                 # Re-sent (a flaky tap, a reload): report the original score, do not record again.
                 return {
                     **self.view(student_id, run_id),
-                    "scored": _public_score(already.task, already.response.get("scored") or {}),
+                    "scored": dict(already.response.get("scored") or {}),
                     "duplicate": True,
                 }
             task = dict(step.task or {})
@@ -504,18 +426,21 @@ class Baseline:
                 raise BaselineError(f"stage {step.stage} does not take answers")
 
             response = dict(response or {})
-            answers = dict((run.completion or {}).get("answers") or {})
-            timers_visible = bool(answers.get("timers_help", True))
-            action = str(response.get("action") or task.get("action") or "") or None
-            if wager is not None and (
-                not timers_visible or not wager_allowed(task, action=action)
-            ):
-                raise BaselineError("a coin wager is only accepted on an eligible question when visible timers are on")
             scored = self._score(task, response, trials, seed=int(run.seed or 0))
+            # What the learner *did* with the task is part of the trial, not just what the server
+            # asked: a machine round is finished when probes and wrong guesses run out, and the
+            # locked box is measured by hints bought and attempts made. Both read this back, and
+            # without it the machine round had no ending at all (it re-served the same task forever)
+            # and the persistence factor saw no attempts — two bugs from one omission.
+            action = response.get("action") or task.get("action")
+            if action:
+                task = {**task, "action": action}
             index = len(trials)
+            if scored.get("action"):
+                task["action"] = scored["action"]
             correct = scored.get("correct")
             if task.get("phase") == "practice":
-                correct = None  # a practice trial is not a measurement, and is never reported as one
+                correct = None  # practice never enters measured correctness
             row = BaselineTrial(
                 run_id=run_id,
                 student_id=student_id,
@@ -525,7 +450,7 @@ class Baseline:
                 phase=str(task.get("phase") or "measure"),
                 correct=correct,
                 latency_ms=int(latency_ms) if latency_ms is not None else None,
-                wager=int(wager) if wager is not None else None,
+                wager=int(wager) if wager is not None and correct is not None and wager_allowed(task) else None,
                 task=task,
                 response={**response, "scored": scored},
                 score=scored,
@@ -538,6 +463,12 @@ class Baseline:
             # measurement (brief 2A's idempotency rule, applied here).
             if self.state is not None and row.phase == "measure":
                 try:
+                    # ``session=s`` matters more than it looks. One SQLite file allows one writer,
+                    # so a store call that opened its *own* session here would block on the write
+                    # transaction this method is already holding and, after the 5-second busy
+                    # timeout, fail with "database is locked" — mid-baseline, on a learner's answer.
+                    # The trial and its evidence row are one transaction, which is also the truth:
+                    # if the trial did not land, the evidence should not either.
                     self.state.ingest(
                         student_id,
                         self._event(run_id, task, scored, correct),
@@ -548,7 +479,7 @@ class Baseline:
                     log.exception("baseline: could not ingest a trial into the evidence log")
             s.flush()
         out = self.view(student_id, run_id)
-        out["scored"] = _public_score(task, scored)
+        out["scored"] = scored
         out["duplicate"] = False
         return out
 
@@ -591,13 +522,6 @@ class Baseline:
                 hint = next((h for h in task.get("hint_shop") or [] if h["id"] == response.get("hint_id")), None)
                 if hint is None:
                     raise BaselineError("that hint is not in this shop")
-                if any(
-                    t.game == "locked_box"
-                    and trial_action(t) == "hint"
-                    and t.response.get("hint_id") == hint["id"]
-                    for t in trials
-                ):
-                    raise BaselineError("you have already used that hint")
                 return {"correct": None, "action": "hint", "cost": hint["cost"], "hint": hint["text"]}
             if action == "walk_away":
                 return {"correct": None, "action": "walk_away"}
@@ -632,59 +556,49 @@ class Baseline:
     # finishing
     # ------------------------------------------------------------------ #
     def finish(self, student_id: str, run_id: str) -> dict[str, Any]:
-        """Seal the run: an immutable mind snapshot, whatever was and was not measured.
-
-        Repeated clicks/retries are idempotent: one run has one sealed snapshot, and finishing it
-        again returns that snapshot instead of adding another row.
-        """
+        """Seal the run: an immutable mind snapshot, whatever was and was not measured."""
+        # Read the learner's model first, on its own connection: a read that opens a second session
+        # while a write transaction is open on the same file waits on the writer's lock.
+        model = self.state.get_snapshot(student_id).model if self.state is not None else {}
         with self._sess() as s:
             run = self._run(s, run_id)
-            existing = (
-                s.query(MindSnapshot)
-                .filter(MindSnapshot.student_id == student_id, MindSnapshot.run_id == run_id)
-                .order_by(MindSnapshot.taken_at.desc())
-                .first()
+            trials = self.trials_of(run_id, session=s)
+            report = flow.stage_report(
+                trials,
+                seed=int(run.seed or 0),
+                format_done=bool(run.format_pick),
+                questions_done=bool((run.completion or {}).get("questions")),
             )
-            if existing is not None and run.status == "complete":
-                snapshot_id = existing.id
-            else:
-                trials = self.trials_of(run_id, session=s)
-                report = flow.stage_report(
-                    trials,
-                    seed=int(run.seed or 0),
-                    format_done=bool(run.format_pick),
-                    questions_done=bool((run.completion or {}).get("questions")),
-                )
-                prefs = dict((run.completion or {}).get("answers") or {})
-                model = self.state.get_snapshot(student_id).model if self.state is not None else {}
-                built = F.build_factors(trials, model=model, preferences=prefs)
-                levers = F.levers(built, preferences=prefs)
-                payload = F.snapshot_payload(
-                    built,
-                    levers_data=levers,
-                    preferences=prefs,
-                    completion=report,
-                    preference_row=F.preference_vs_performance(built, prefs),
-                )
-                row = MindSnapshot(
-                    student_id=student_id,
-                    run_id=run_id,
-                    factors=payload["factors"],
-                    levers=payload["levers"],
-                    completion=report,
-                )
-                s.add(row)
-                run.status = "complete"
-                run.stage = "snapshot"
-                run.finished_at = utcnow()
-                s.flush()
-                snapshot_id = row.id
-        out = self.snapshot(student_id, run_id=run_id)
+            prefs = dict((run.completion or {}).get("answers") or {})
+            built = F.build_factors(trials, model=model, preferences=prefs)
+            levers = F.levers(built, preferences=prefs)
+            payload = F.snapshot_payload(
+                built,
+                levers_data=levers,
+                preferences=prefs,
+                completion=report,
+                preference_row=self._method_comparison(student_id),
+            )
+            row = MindSnapshot(
+                student_id=student_id,
+                run_id=run_id,
+                factors=payload["factors"],
+                levers=payload["levers"],
+                completion={**report, "preference_vs_performance": payload["preference_vs_performance"]},
+            )
+            s.add(row)
+            run.status = "complete"
+            run.stage = "snapshot"
+            run.finished_at = utcnow()
+            s.flush()
+            snapshot_id = row.id
+        out = self.snapshot(student_id)
         out["snapshot_id"] = snapshot_id
         return out
 
     def snapshot(self, student_id: str, *, run_id: str | None = None) -> dict[str, Any]:
         """The latest stored snapshot, or one computed now from the log if none was ever sealed."""
+        model = self.state.get_snapshot(student_id).model if self.state is not None else {}
         with self._sess() as s:
             query = s.query(MindSnapshot).filter(MindSnapshot.student_id == student_id)
             if run_id:
@@ -700,6 +614,7 @@ class Baseline:
                     "levers": dict(row.levers or {}),
                     "completion": dict(row.completion or {}),
                     "state": "sealed",
+                    "preference_vs_performance": (row.completion or {}).get("preference_vs_performance"),
                 }
             run = (
                 s.query(BaselineRun)
@@ -711,7 +626,6 @@ class Baseline:
                 return {"student_id": student_id, "state": "not_started", "factors": [], "levers": {}}
             trials = self.trials_of(run.id, session=s)
             prefs = dict((run.completion or {}).get("answers") or {})
-            model = self.state.get_snapshot(student_id).model if self.state is not None else {}
             built = F.build_factors(trials, model=model, preferences=prefs)
             levers = F.levers(built, preferences=prefs)
             report = flow.stage_report(
@@ -726,8 +640,16 @@ class Baseline:
                 "snapshot_id": None,
                 "taken_at": None,
                 "state": "in_progress",
-                **F.snapshot_payload(built, levers_data=levers, preferences=prefs, completion=report),
+                **F.snapshot_payload(built, levers_data=levers, preferences=prefs, completion=report,
+                                     preference_row=self._method_comparison(student_id)),
             }
+
+    def _method_comparison(self, student_id: str) -> dict[str, Any] | None:
+        if self.state is None:
+            return None
+        from ..learning.failure import FailureLoop
+
+        return FailureLoop(self.state).report(student_id)["preference_vs_performance"]
 
     def next_day(self, student_id: str, *, run_id: str | None = None) -> dict[str, Any]:
         """The codeword check for a learner who has come back (brief §5.2)."""
@@ -743,17 +665,16 @@ class Baseline:
             if run is None:
                 return {"student_id": student_id, "tasks": [], "note": "no baseline yet"}
             trials = self.trials_of(run.id, session=s)
-            studied = any(t.game == "codewords_study" and t.phase == "show" for t in trials)
-            tasks = flow.next_day_tasks(int(run.seed or 0), trials) if studied else []
+            tasks = flow.next_day_tasks(int(run.seed or 0), trials)
             return {
                 "student_id": student_id,
                 "run_id": run.id,
-                "tasks": [_public_task(task) for task in tasks],
-                "studied": studied,
+                "tasks": tasks,
+                "studied": codewords_pairs(int(run.seed or 0))[:1] and len([t for t in trials if t.game == "codewords_study"]) > 0,
                 "note": (
                     "these are the pairs you learned last time, asked again with no new study"
                     if tasks
-                    else "no codeword pairs were studied in this run, or nothing is left to re-check"
+                    else "nothing left to re-check"
                 ),
             }
 

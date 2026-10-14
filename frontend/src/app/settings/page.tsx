@@ -17,9 +17,17 @@ type PrefReply = { accepted?: Record<string, unknown>; rejected_keys?: string[];
 type Allowlist = { allowed: Record<string, string[]>; forbidden_keys: string[]; rule: string };
 type Privacy = {
   telemetry?: { allowed_event_types?: string[]; forbidden_keys?: string[]; note?: string } & Record<string, unknown>;
-  sent_to_gemini?: Record<string, string>;
+  sent_to_model?: Record<string, string>;
   voice?: Record<string, string>;
   storage?: Record<string, unknown>;
+  /** §3: the file-level claim plus what is and is not protected -- no paths, keys or drivers. */
+  data_protection?: {
+    file_level?: string;
+    underlying_engine?: string;
+    protected?: string[];
+    not_protected?: string[];
+    note?: string;
+  };
   learner_controls?: string[];
 };
 
@@ -262,7 +270,7 @@ export default function Settings() {
           </div>
         </div>
         <div className="mt-3 grid gap-2 text-xs text-[var(--muted)] md:grid-cols-2">
-          {Object.entries(privacy.data?.sent_to_gemini ?? {}).map(([k, v]) => (
+          {Object.entries(privacy.data?.sent_to_model ?? {}).map(([k, v]) => (
             <p key={k}>
               <span className="text-ink-2">to the model · {k.replace(/_/g, " ")}:</span> {v}
             </p>
@@ -275,7 +283,21 @@ export default function Settings() {
         </div>
         <div className="mt-3 text-xs">
           <p className="uppercase text-[var(--muted)]">storage</p>
-          <p className="mt-1 text-[var(--muted)]">{humanize(privacy.data?.storage ?? {})}</p>
+          <p className="mt-1 text-[var(--muted)]">
+            {privacy.data?.data_protection?.file_level ?? humanize(privacy.data?.storage ?? {})}
+          </p>
+          {(privacy.data?.data_protection?.protected ?? []).length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {(privacy.data?.data_protection?.protected ?? []).map((f) => (
+                <Tag key={f} tone="good">
+                  {f}
+                </Tag>
+              ))}
+              {(privacy.data?.data_protection?.not_protected ?? []).map((f) => (
+                <Tag key={f}>{f}</Tag>
+              ))}
+            </div>
+          ) : null}
           <p className="mt-2 uppercase text-[var(--muted)]">what you can always do</p>
           <ul className="mt-1 list-disc pl-4 text-[var(--muted)]">
             {(privacy.data?.learner_controls ?? []).map((c) => (

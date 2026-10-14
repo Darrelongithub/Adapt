@@ -49,7 +49,7 @@ from ..db.models import (
 from ..learning.profile import to_llm_payload
 from ..security.redact import redact_payload
 from . import local_tutor as LT
-from .prompts import AI2_SYSTEM
+from .prompts import AI2_SYSTEM, RESOURCE_CURATION_SYSTEM, TEACHBACK_GRADER_SYSTEM
 
 log = logging.getLogger("adapt.ai2")
 
@@ -380,8 +380,10 @@ class EducationalIntelligence:
     async def turn(self, text: str, *, student_id: str, session_id: str | None = None, **kw: Any) -> tuple[str, dict[str, Any]]:
         """Adapter used by the voice pipeline: (reply_text, meta)."""
         reply = await self.explain(student_id, text, session_id=session_id, want_spoken=True, **kw)
+        # The voice frame says where the words came from in the learner's own terms, never the
+        # service's name or its spend (brief §3, and the canary test walks this frame).
         meta = {
-            "provider": reply.provider,
+            "served_by": "your own material" if reply.provider != "gemini" else "written for you",
             "intent": reply.intent,
             "level": reply.level,
             "adaptations": reply.adaptations_applied,
@@ -632,15 +634,24 @@ class EducationalIntelligence:
         """Score a teach-back against a fixed three-point checklist.
 
         The rule grader decides. A model may read the same answer as a **second
-        opinion**, and its output is only used when it is structurally valid *and its
-        quotes are verbatim* (:func:`adapt.assessment.teachback.accept_model_grading`);
-        otherwise the rejection is recorded and the rule result stands. Two properties
-        matter more than the score itself:
+        opinion**, running under master prompt 3
+        (:func:`adapt.ai.prompts.TEACHBACK_GRADER_SYSTEM`) plus the checklist task
+        prompt; its output is only used when it is structurally valid *and its quotes
+        are verbatim* (:func:`adapt.assessment.teachback.accept_judgement`); otherwise
+        the rejection is recorded and the rule result stands. Two properties matter
+        more than the score itself:
 
         * the learner's text is *data* — ``as_data`` strips instruction-shaped lines and
           tags what is left, and the judge prompt says so;
         * a point can only be met by a sentence the learner actually wrote, so listing
           the rubric's words no longer passes and a good paraphrase no longer fails.
+
+        The reply always carries master prompt 3's learner-facing contract —
+        ``score`` (0..1), ``feedback`` (<=220 chars, second person, kind and
+        specific) and ``misconceptions`` — on the model path and off it. An accepted
+        judgement may replace the feedback and name misconceptions, and its own
+        ``score`` is recorded as ``model_score`` for the trace; the recorded score
+        stays the one the quoted points add up to.
         """
         from ..assessment import teachback as TB
 
@@ -651,8 +662,10 @@ class EducationalIntelligence:
         out["matched"] = [p.statement for p in scored.points if p.met]
         out["missing"] = [p.statement for p in scored.points if not p.met]
         out["coverage"] = round(scored.score, 3)
+        out["feedback_source"] = "rules"
+        out["misconceptions_source"] = "rules"
         if self.llm is not None and getattr(self.llm, "configured", False):
-            system = AI2_SYSTEM + "\n" + TB.judge_prompt(criteria)
+            system = TEACHBACK_GRADER_SYSTEM + "\n" + TB.judge_prompt(criteria)
             user = TB.as_data(text)
             safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
             res = await self.llm.complete(
@@ -668,18 +681,26 @@ class EducationalIntelligence:
             await self._log_llm(
                 "ai2_teachback", "ai2", res, student_id, len(user), dropped, kinds=redacted_kinds
             )
-            points, reason = (None, "no_model_answer")
+            judgement, reason = (None, "no_model_answer")
             if res.ok and res.data:
-                points, reason = TB.accept_model_grading(res.data, text=text, criteria=criteria)
+                judgement, reason = TB.accept_judgement(res.data, text=text, criteria=criteria)
             out["llm_status"] = res.status
             out["llm_checklist"] = reason
-            if points is not None:
-                merged = TB.merge_model_result(scored, points)
+            if judgement is not None:
+                merged = TB.merge_model_result(scored, judgement.points)
                 out.update(merged.as_dict())
                 out["method"] = "checklist_3_point+model"
                 out["matched"] = [p.statement for p in merged.points if p.met]
                 out["missing"] = [p.statement for p in merged.points if not p.met]
                 out["coverage"] = round(merged.score, 3)
+                if judgement.feedback:
+                    out["feedback"] = judgement.feedback
+                    out["feedback_source"] = "model"
+                if judgement.misconceptions:
+                    out["misconceptions"] = list(judgement.misconceptions)
+                    out["misconceptions_source"] = "model"
+                if judgement.score is not None:
+                    out["model_score"] = round(judgement.score, 3)
         return out
 
     def _teaching_material(self, s) -> tuple[dict[str, str], dict[str, str]]:
@@ -802,6 +823,74 @@ class EducationalIntelligence:
             rendered = render_item_for(pick.item, seed=bank_seed(student_id, pick.item.get("id")))
             out.append({**pick.as_dict(), "item": public_item(rendered), "position": i + 1, "of": len(picks)})
         return out
+
+    # ------------------------------------------------------------------ #
+    # phase 4: the content engine
+    # ------------------------------------------------------------------ #
+
+    def content_pack(
+        self,
+        *,
+        concept: str,
+        kind: str = "variant_set",
+        topic_id: str | None = None,
+        context: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Generate one concept's teaching pack: three variants, a matched pair, hints, a checklist.
+
+        This is the hook the orchestrator's turn cycle looks for
+        (``state/orchestrator.py`` step 3 calls ``ai2.content_pack``), and it is the only place in the
+        app that authors content. The deterministic engine in :mod:`adapt.content` does the work; this
+        method exists so the call arrives with AI 2's identity and the write matrix keeps its promise
+        that authoring belongs to the AI and validating belongs to code.
+
+        ``topic_id`` is the topic key (``calculus``, ``kiswahili``), not a database row id: the engine
+        reads the authored chain by key, which is what makes it usable with no database at all — the
+        same reason the quality gate can run it in a sandbox with no server.
+
+        Returns the payload the registry stores, with ``concept``/``kind``/``payload`` keys the
+        orchestrator reads. A topic with no authored chain returns a payload that says so, because
+        "we have nothing for this concept" is a result and an invented concept is not.
+        """
+        from ..content.pipeline import generate
+
+        result = generate(str(topic_id or concept), concept_id=str(concept), p_know=context.get("p_know") if context else None)
+        if not result.available or not result.packs:
+            return {
+                "payload": {
+                    "concept": str(concept),
+                    "available": False,
+                    "reason": result.reason,
+                    "spec": result.spec,
+                    "packs": [],
+                },
+                "notes": [result.reason, *result.notes],
+            }
+        pack = result.packs[0]
+        payload = pack.as_dict()
+        payload["spec"] = result.spec
+        payload["available"] = True
+        payload["reason"] = result.reason
+        return {"payload": payload, "notes": list(result.notes) + list(result.rejections and [f"rejected: {r['code']}" for r in result.rejections] or [])}
+
+    def validate_pack(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """The deterministic §7.3 check on a pack payload, in the orchestrator's verdict shape.
+
+        Exposed on AI 2 because the orchestrator asks the *generator* to validate what it made, and the
+        honest implementation of that is to hand the payload to the code that has no stake in it. The
+        write matrix still holds where it matters: the store's ``set_validation`` accepts only
+        ``module="code"``, so an AI can never bless its own content in the registry — this verdict
+        travels with the pack as a claim, and the store records it as one.
+        """
+        from ..content.validation import validate_pack
+
+        return validate_pack(payload)
+
+    def breakdown(self, topic_key: str, *, level: str | None = None) -> dict[str, Any]:
+        """A topic's concepts, prerequisites, misconceptions and objectives (§7.1)."""
+        from ..content.breakdown import breakdown_for
+
+        return breakdown_for(topic_key, level=level).as_dict()
 
     @staticmethod
     def _item_dict(it: Any) -> dict[str, Any]:
@@ -1257,6 +1346,63 @@ class EducationalIntelligence:
         except Exception as exc:  # resource lookup must never break an answer
             log.info("resource hint skipped: %s", exc.__class__.__name__)
             return None
+
+    async def curate_resources(
+        self,
+        *,
+        query: str,
+        results: Sequence[Mapping[str, Any]],
+        level_hint: str = "",
+        student_id: str | None = None,
+        limit: int = 4,
+    ) -> dict[str, Any]:
+        """Master prompt 4: the search results, curated down to the picks for this learner.
+
+        The deterministic path is the floor and always answers: the upstream rank
+        order with a level-appropriate sentence each. The model is the upgrade, and
+        its whole output is refused unless every pick's ``url`` is one it was actually
+        given (:func:`adapt.resources.curation.accept_picks`) -- a curator that could
+        add a plausible URL would be a curator that could recommend a source that does
+        not exist. The reply says which path produced it.
+        """
+        from ..resources import curation as CUR
+
+        out: dict[str, Any] = {
+            "picks": CUR.deterministic_picks(results, level_hint=level_hint, limit=limit),
+            "picks_source": "rules",
+        }
+        if not results:
+            out["note"] = "nothing returned by the search, so there is nothing to curate"
+            return out
+        if self.llm is None or not getattr(self.llm, "configured", False):
+            return out
+        user = CUR.curation_task(query, level_hint, results)
+        safe, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
+        try:
+            res = await self.llm.complete(
+                system=RESOURCE_CURATION_SYSTEM,
+                user=safe["q"],
+                purpose="ai2_curate",
+                role="ai2",
+                student_id=student_id or "anon",
+                temperature=0.2,
+                max_output_tokens=520,
+                response_spec=CUR.CURATION_SPEC,
+            )
+        except Exception as exc:  # curation decorates a search; it must not break one
+            log.info("resource curation skipped: %s", exc.__class__.__name__)
+            out["llm_status"] = "error"
+            return out
+        await self._log_llm("ai2_curate", "ai2", res, student_id or "anon", len(user), dropped, kinds=redacted_kinds)
+        out["llm_status"] = res.status
+        picks, reason = (None, "no_model_answer")
+        if res.ok and res.data:
+            picks, reason = CUR.accept_picks(res.data, results=results, limit=limit)
+        out["llm_picks"] = reason
+        if picks is not None:
+            out["picks"] = picks
+            out["picks_source"] = "model"
+        return out
 
     async def _llm_practice(
         self, *, student_id: str, topics: dict[str, Any], want: int, topic_id: str | None, note: str

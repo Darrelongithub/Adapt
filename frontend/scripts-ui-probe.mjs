@@ -51,7 +51,7 @@ function check(scenario, label, ok, detail = "") {
 // Objects must not reach a learner as JSON. Several screens used to stringify a payload into
 // visible text -- a measured effect, the privacy statement, the voice capability list -- so the
 // tripwire runs on every screen that has ever done it, at the moment the page is inspected.
-const JSON_FREE = new Set(["/learn", "/lesson", "/proposals", "/settings", "/voice", "/progress", "/baseline", "/baseline/snapshot"]);
+const JSON_FREE = new Set(["/learn", "/lesson", "/proposals", "/settings", "/voice", "/progress", "/baseline"]);
 
 function visibleText(page) {
   const doc = page?.dom?.window?.document;
@@ -63,7 +63,7 @@ function visibleText(page) {
 
 function closePage(page) {
   const path = String(page?.path ?? "").split("?")[0];
-  if (path && (JSON_FREE.has(path) || path.startsWith("/baseline/"))) {
+  if (path && JSON_FREE.has(path)) {
     const blob = visibleText(page).match(/\{"[^"]+"\s*:[^}]{0,90}/)?.[0] ?? "";
     check(CURRENT || "probe", "no raw JSON object is shown to the learner on this screen", blob === "", blob);
   }
@@ -289,8 +289,7 @@ class Page {
     // httpOnly session cookie travels exactly as it does in the browser (jsdom has no fetch).
     const nativeFetch = globalThis.fetch;
     win.fetch = async (input, init = {}) => {
-      const rawInput = typeof input === "string" ? input : (input?.url ?? input?.href ?? String(input));
-      const href = new URL(rawInput, BASE).toString();
+      const href = new URL(typeof input === "string" ? input : input.url, BASE).toString();
       const headers = new Headers(init.headers ?? (typeof input === "object" ? input.headers : undefined));
       const cookie = jar.getCookieStringSync(href);
       if (cookie) headers.set("cookie", cookie);
@@ -1089,14 +1088,19 @@ async function main() {
         await waitFor(() => page.requests.slice(askBefore).some((r) => /POST \/api\/v1\/explain/.test(r)), { timeout: 12_000, label: "the explain request" });
         let replied = true;
         try {
-          await waitFor(() => /reciprocal|denominator|invert|multiply|bottom|out loud|no local model|not connected|ask your tutor later|course material|model:/i.test(tutorBlock(page)), { timeout: 20_000, label: "a tutor reply" });
+          // The provenance line under the answer is what proves a reply arrived rather than a
+          // hanging box, so the words it may use belong to brief §3: "your own material" (the
+          // built-in tutor, nothing left the machine) and "written for you" (a model wrote it).
+          // The old list looked for "course material" and "no local model", which is the
+          // pre-§3 copy -- the panel no longer names a model at all.
+          await waitFor(() => /reciprocal|denominator|invert|multiply|bottom|out loud|not connected|ask your tutor later|your own material|written for you/i.test(tutorBlock(page)), { timeout: 20_000, label: "a tutor reply" });
         } catch (err) {
           replied = false;
           check("learn", "asking the tutor produces an answer instead of a hanging box", false, `requests: ${page.requests.slice(askBefore).join(" ; ")} | box: ${tutorBlock(page).slice(0, 400)}`);
         }
         const reply = tutorBlock(page);
         if (replied) {
-          check("learn", "asking the tutor in plain words gets an answer on screen", /flip|denominator|fraction|multiply|reciprocal|bottom|invert|course material|model:/i.test(reply), reply.slice(0, 240));
+          check("learn", "asking the tutor in plain words gets an answer on screen", /flip|denominator|fraction|multiply|reciprocal|bottom|invert|your own material|written for you/i.test(reply), reply.slice(0, 240));
           // the reply used to quote the item's template ("1. {a} - {b} = {ab}") straight at
           // the learner; this is the check that would have caught it from the browser side
           check("learn", "the tutor reply contains no unrendered item template", !/\{[a-zA-Z_][a-zA-Z0-9_]*\}/.test(reply), reply.slice(0, 240));
@@ -1484,6 +1488,31 @@ async function main() {
     const reviewHere = page.find('.sidebar-item[aria-current="page"]');
     check("review", "the sidebar names this section too", reviewHere.length === 1 && /Review/i.test(reviewHere[0]?.textContent ?? ""), reviewHere.map((el) => el.textContent?.trim()).join(" | ") || "(nothing marked)");
     closePage(page);
+
+    // The retention check (master prompt 5). Driven against the fixtures because a fresh learner
+    // has nothing scheduled: a due row offers "Show me the check", the question arrives with the
+    // reason it is worth asking now, and -- the honesty property -- the answer key is not on
+    // screen until an answer exists.
+    const rated = await open("/review?mock=1", "review");
+    await sleep(700);
+    const checkBtn = rated.byText("Show me the check", "button");
+    check("review", "a due row offers the retention check", Boolean(checkBtn), rated.text().slice(0, 160));
+    if (checkBtn) {
+      await rated.click(checkBtn);
+      await sleep(500);
+      const asked = rated.text();
+      check("review", "the check arrives with the question and the reason it is asked now", /Without looking anything up/i.test(asked) && /projected recall|Forgetting curve/i.test(asked), asked.slice(0, 220));
+      check("review", "the answer key is not shown before an answer", !/how many equal parts the whole is cut into/i.test(asked), asked.slice(0, 220));
+      const rateBtn = rated.byText("I still know it", "button");
+      if (rateBtn) {
+        await rated.click(rateBtn);
+        await sleep(800);
+        const after = rated.text();
+        check("review", "after rating, the key opens and the next check is scheduled", /what it should have covered/i.test(after) && /equal parts the whole is cut into/i.test(after) && /next check/i.test(after), after.slice(0, 240));
+      }
+    }
+    check("review", "and no uncaught error on the mocked review walk", rated.appErrors().length === 0, rated.appErrors().slice(0, 2).join(" ; "));
+    closePage(rated);
   }
 
   /* -------------------------------------------------------------- settings ---- */
@@ -1584,10 +1613,22 @@ async function main() {
     const page = await open("/voice", "voice");
     await sleep(700);
     const body = page.text();
-    check("voice", "voice page states what is and is not installed", /whisper|kokoro|speech|voice|microphone|model/i.test(body), body.slice(0, 180));
+    // §3: the page no longer names the engines at all (they were "whisper" and "kokoro" here
+    // until the boundary reshape), so the check looks for the learner-facing wording instead.
+    check("voice", "voice page states what is and is not installed", /on this machine|browser dictation|speechSynthesis|microphone|voice/i.test(body), body.slice(0, 180));
     check("voice", "the engine status is honest, not 'ready' with no engine", !/\bready\b/i.test(body) || /not installed|unavailable|browser/i.test(body), body.slice(0, 200));
     const cap = await api("/api/v1/voice/capabilities", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    check("voice", "capabilities endpoint answers and names the backends", cap.status === 200 && JSON.stringify(cap.body).length > 40, JSON.stringify(cap.body).slice(0, 180));
+    // §3: the capabilities payload says what is available on this machine, never which product
+    // provides it. This is the same rule the backend canary test enforces from the inside.
+    const capText = JSON.stringify(cap.body).toLowerCase();
+    check(
+      "voice",
+      "capabilities answers, and names no engine to a signed-in learner",
+      cap.status === 200 &&
+        capText.length > 40 &&
+        !/faster-whisper|whisper|kokoro|gemini|openalex|arxiv|youtube|google/.test(capText),
+      JSON.stringify(cap.body).slice(0, 180),
+    );
     const mic = page.byText(/mic|speak|listen|talk/i, "button");
     if (mic) {
       await page.click(mic);
@@ -1605,6 +1646,46 @@ async function main() {
       break;
     }
     closePage(page);
+  }
+
+  /* -------------------------------------------------------------- contrast ---- */
+  // Phase 5's contrast demo: one concept, two stored profiles, two lessons, and a table of what
+  // actually differs between them. The screen must be reachable from the nav (it was not, before
+  // the integration), must say whether the profiles produced different lessons, and must not
+  // invent a difference - the API's own note is printed under the table.
+  if (run("contrast")) {
+    console.log("\n\x1b[1mcontrast\x1b[0m");
+    const page = await open("/contrast", "contrast");
+    await sleep(500);
+    const before = page.text();
+    const runIt = page.byText(/compare|show|build|contrast/i, "button");
+    if (runIt) {
+      const calls = page.requests.length;
+      await page.click(runIt);
+      await waitFor(() => page.requests.slice(calls).some((r) => /POST \/api\/v1\/lesson-plan\/contrast/.test(r)), { timeout: 15_000, label: "the contrast request" });
+      await sleep(600);
+    }
+    const body = page.text();
+    check("contrast", "the screen asks the API for two lessons rather than inventing them", /lesson-plan\/contrast/.test(page.requests.join(" ")), page.requests.slice(-3).join(" ; "));
+    check("contrast", "both profiles get a lesson of their own", (body.match(/step size|opens with|worked example|visual/gi) ?? []).length >= 4, body.slice(0, 220));
+    check("contrast", "the differences table names what differs, with both sides", /what actually differs|opens with|step size/i.test(body), body.slice(0, 200));
+    check("contrast", "the screen says whether they differ at all, from the API's own note", /profiles produced the same lesson|every difference above is read off|visibly/i.test(body) || /differs/i.test(body), body.slice(0, 220));
+    check("contrast", "every block carries why it is there (n included)", /why:/i.test(body) && /\(n=\d+\)/.test(body), body.slice(0, 220));
+    check("contrast", "no raw JSON object is shown to the learner on this screen", !/\{"[a-z_]+":/.test(body), body.slice(0, 200));
+    if (!before.trim()) check("contrast", "the screen renders before any request", false, "empty body");
+    closePage(page);
+
+    const mockPage = await open("/contrast?mock=1", "contrast");
+    await sleep(500);
+    const mockBtn = mockPage.byText(/compare|show|build|contrast/i, "button");
+    if (mockBtn) {
+      await mockPage.click(mockBtn);
+      await sleep(600);
+    }
+    const mockBody = mockPage.text();
+    check("contrast", "?mock=1 answers with two lessons and no backend", /adding fractions|step size|opens with/i.test(mockBody) && !/Internal Server Error/.test(mockBody), mockBody.slice(0, 200));
+    check("contrast", "and the mocked screen raises no uncaught error", mockPage.appErrors().length === 0, mockPage.appErrors().slice(0, 2).join(" ; "));
+    closePage(mockPage);
   }
 
   /* ---------------------------------------------------------------- lesson ---- */
@@ -1770,353 +1851,97 @@ async function main() {
     closePage(page);
   }
 
-  /* ------------------------------------------------ baseline_screen ---- */
-  // The "baseline" UI walk is registered as baseline_screen so it can run alone with
-  // `npm run probe -- --only baseline_screen`. It uses the real backend for generated tasks;
-  // frozen mock.ts intentionally has no baseline fixtures (the merge instructions are in
-  // agent-notes/1-baseline.md).
-  if (run("baseline_screen")) {
-    console.log("\n\x1b[1mbaseline_screen\x1b[0m");
-    const baselineCookie = jar.getCookieStringSync(BASE);
-    const baselineRequest = (method, suffix, body) => api(`/api/v1/baseline${suffix}`, {
-      method,
-      body,
-      cookie: baselineCookie,
-      headers: { "x-csrf-token": csrf },
-    });
-    const requireBaseline = (res, label) => {
-      if (res.status !== 200) throw new Error(`${label}: ${res.status} ${JSON.stringify(res.body).slice(0, 240)}`);
-      return res.body;
-    };
-    const baselinePages = new Set();
-    const closedBaselinePages = new Set();
-    const openBaseline = async (path, intercept) => {
-      const page = await open(path, "baseline_screen", intercept);
-      baselinePages.add(page);
-      return page;
-    };
-    const closeBaseline = (page) => {
-      if (!page || closedBaselinePages.has(page)) return;
-      closedBaselinePages.add(page);
-      closePage(page);
-    };
-    const verifyStop = (page, screen) => check(
-      "baseline_screen",
-      `stop-to-snapshot is available on ${screen}`,
-      Boolean(page?.byText("Stop here and see my snapshot", "button")),
-      page?.text().slice(0, 180) ?? "page did not open",
-    );
-    const taskResponse = (task) => {
-      if (task.game === "codewords_study") return { seconds_seen: 45 };
-      if (task.game === "codewords_cued") return { text: "" };
-      if (task.game === "quick" || task.game === "trap") return { value: task.options?.[0] ?? "" };
-      if (task.game === "vault") return { taps: [] };
-      if (task.game === "shopkeeper") return { items: [], distractors: {} };
-      if (task.game === "machine") return { action: "probe", value: 1 };
-      if (task.game === "locked_box") return { action: task.phase === "practice" ? "start" : "walk_away" };
-      if (task.game === "codewords_delayed" && task.action === "predict") return { value: 4 };
-      if (task.game === "codewords_delayed" && task.kind === "recognition") return { text: task.options?.[0] ?? "" };
-      if (task.game === "codewords_delayed") return { text: "" };
-      throw new Error(`no synthetic response for ${task.game}/${task.phase}`);
-    };
-    const advanceBaseline = async (runId, predicate, answers = {}) => {
-      const id = encodeURIComponent(runId);
-      let view = requireBaseline(await baselineRequest("GET", `/${id}`), "read baseline view");
-      for (let step = 0; step < 140; step += 1) {
-        if (predicate(view)) return view;
-        if (view.kind === "format") {
-          view = requireBaseline(await baselineRequest("POST", `/${id}/format`, { value: view.format_options?.[0]?.value ?? "diagram" }), "choose synthetic format");
-        } else if (view.kind === "questions") {
-          view = requireBaseline(await baselineRequest("POST", `/${id}/questions`, { answers }), "save synthetic context");
-        } else if (view.kind === "task" && view.task) {
-          view = requireBaseline(await baselineRequest("POST", `/${id}/trial`, {
-            task_id: view.task.id,
-            response: taskResponse(view.task),
-            latency_ms: 25,
-          }), `submit ${view.stage}/${view.task.phase}`);
-        } else {
-          break;
-        }
+  /* ---------------------------------------------------------------- subject ----
+   * §6's screen, driven against its `?mock=1` fixtures: the subjects router is wired into
+   * the app by the integrator (see agent-notes/2-subject-round.md), so until that merge the
+   * live API cannot answer these calls and asserting against it would test the wiring, not
+   * the screen. What is under test here is the screen itself: that the reason travels with
+   * the skill set, that "calculus" and "government" produce visibly different rounds, that
+   * skipped skills render as "not measured yet" with no number attached, and that a whole
+   * round can be clicked through to a subject map whose ladder positions are per sub-area.
+   * The backend half of every one of these claims is asserted in
+   * backend/tests/test_subjects.py against the real service and the real router. */
+  if (run("subject")) {
+    console.log("\n\x1b[1msubject\x1b[0m");
+    const page = await open("/subject?mock=1", "subject");
+    const input = await waitFor(() => page.find('input[aria-label="Topic"]')[0], { label: "the topic box" }).catch(() => null);
+    check("subject", "the screen opens on a topic box, not a dashboard", !!input, page.text().slice(0, 160));
+    if (input) {
+      page.type(input, "calculus");
+      await page.click("Find my subject");
+      await waitFor(() => /What we will check for Calculus/.test(page.text()), { label: "the calculus plan" }).catch(() => {});
+      const planText = page.text();
+      check("subject", "the plan says why these skills, in so many words", /Why these\?/.test(planText) && /leans hardest on symbol fluency/i.test(planText), planText.slice(0, 200));
+      check("subject", "calculus chooses symbol fluency, graph sense and checking, plus a cross-check", /Symbol fluency/.test(planText) && /Graph sense/.test(planText) && /cross-check/i.test(planText), planText.slice(0, 200));
+      check("subject", "the skills the round skips are already listed as not measured, before anything is answered", /not measured yet/i.test(planText) && /Number sense/.test(planText), planText.slice(0, 220));
+      check("subject", "nothing unmeasured is wearing a number", !/Number sense[^.]*\d+\s?%/.test(planText), planText.slice(0, 220));
+
+      // The other half of §6's gate, on a second page so the first round stays open:
+      // government must not look like calculus with the title changed.
+      const gov = await open("/subject?mock=1", "subject");
+      const govInput = await waitFor(() => gov.find('input[aria-label="Topic"]')[0], { label: "the government topic box" }).catch(() => null);
+      if (govInput) {
+        gov.type(govInput, "government and civics");
+        await gov.click("Find my subject");
+        await waitFor(() => /What we will check for Government/.test(gov.text()), { label: "the government plan" }).catch(() => {});
+        const govText = gov.text();
+        check("subject", "government chooses a visibly different set: sources, argument, the other side", /Source analysis/.test(govText) && /Supporting a claim with evidence/.test(govText) && /Seeing the other side/.test(govText), govText.slice(0, 200));
+        check("subject", "and does not borrow calculus's skills or its reason", !/Symbol fluency/.test(govText) && !/leans hardest on symbol fluency/i.test(govText), govText.slice(0, 200));
       }
-      throw new Error(`baseline did not reach its requested screen (last=${view.kind}/${view.stage}/${view.task?.phase ?? "-"})`);
-    };
+      closePage(gov);
 
-    try {
-      // Start through the learner-facing flow; choose a format, leave context blank, and arrive
-      // at the timed study screen. Then load a second page and exercise the actual resume button.
-      const startReplies = [];
-      const startPage = await openBaseline("/baseline", (win) => {
-        const realFetch = win.fetch.bind(win);
-        win.fetch = async (input, init = {}) => {
-          const response = await realFetch(input, init);
-          const href = typeof input === "string" ? input : (input?.url ?? "");
-          if (init.method === "POST" && new URL(href, BASE).pathname === "/api/v1/baseline") {
-            try { startReplies.push(await response.clone().json()); } catch { startReplies.push({ unreadable: true }); }
-          }
-          return response;
-        };
-      });
-      await waitFor(() => !/Checking your saved progress/.test(startPage.text()) && /Start the mind check/.test(startPage.text()), {
-        timeout: 15_000, label: "the baseline start screen",
-      });
-      check("baseline_screen", "the landing screen says the check is optional, non-comparative, and can be stopped", /not a grade/i.test(startPage.text()) && /stop on any screen/i.test(startPage.text()) && /not measured yet/i.test(startPage.text()), startPage.text().slice(0, 240));
-      await startPage.click("Start the mind check", "button");
-      await waitFor(() => startReplies.length > 0, { timeout: 10_000, label: "the baseline start response" });
-      check("baseline_screen", "the start response contains a run id for the resume URL", typeof startReplies[0]?.run_id === "string" && startReplies[0].run_id.length > 0, JSON.stringify(startReplies[0]).slice(0, 220));
-      await sleep(500);
-      const startPath = `/baseline/${encodeURIComponent(startReplies[0]?.run_id ?? "")}`;
-      check("baseline_screen", "the UI requests the exact route for the returned run id", startPage.requests.includes(`GET ${startPath}`) && /Before the games/.test(startPage.text()), `${startPage.requests.slice(-8).join(" | ")} · ${startPage.appErrors().join(" | ")}`);
-      await waitFor(() => /Before the games/.test(startPage.text()), { timeout: 15_000, label: "the format choice screen" });
-      check("baseline_screen", "starting creates a saved run and shows an accessible format choice", startPage.requests.some((r) => /POST \/api\/v1\/baseline$/.test(r)) && startPage.find('input[name="baseline-format"]').length === 3 && /Choose a way to meet a new topic/.test(startPage.text()), startPage.requests.slice(-4).join(" | "));
-      check("baseline_screen", "the format is clearly a stated preference, not a measurement", /stated preference, not a measurement/i.test(startPage.text()), startPage.text().slice(120, 340));
-      check("baseline_screen", "the stop-to-snapshot control is present before the games begin", !!startPage.byText("Stop here and see my snapshot", "button"), startPage.text().slice(0, 200));
-      const formatChoice = startPage.find('input[name="baseline-format"]')[0];
-      if (formatChoice) startPage.checkInput(formatChoice);
-      await startPage.click("Continue", "button");
-      await waitFor(() => /A few questions about what suits you/.test(startPage.text()), { label: "the optional context questions" });
-      check("baseline_screen", "context answers are optional and distinguished from measurements", /Answer any you want to/i.test(startPage.text()) && /not measurements/i.test(startPage.text()) && /Skip these questions/.test(startPage.text()), startPage.text().slice(0, 260));
-      verifyStop(startPage, "optional context questions");
-      check("baseline_screen", "the preference screen does not ask for a learning-style label", !/learning styles?|visual learner|auditory learner|kinesthetic/i.test(startPage.text()), startPage.text().slice(0, 200));
-      await startPage.click("Save answers and start", "button");
-      await waitFor(() => /Learn these pairs/.test(startPage.text()), { timeout: 15_000, label: "the codeword study screen" });
-      check("baseline_screen", "the study screen shows all eight pairs and the 45-second window", startPage.find("dl div").length === 8 && /45 seconds/.test(startPage.text()) && /Study time remaining/.test(startPage.text()), startPage.text().slice(-240));
-      const ready = startPage.byText("Ready", "button");
-      check("baseline_screen", "the study cannot be submitted before its timer has elapsed", !!ready && ready.disabled, ready ? `disabled=${ready.disabled}` : startPage.text().slice(-140));
-      check("baseline_screen", "the study stage is not wager-eligible", startPage.find('input[name="baseline-wager"]').length === 0, startPage.text().slice(-120));
-      verifyStop(startPage, "codeword study");
-
-      const resumePage = await openBaseline("/baseline");
-      await waitFor(() => !!resumePage.byText("Continue where I left off", "button"), { timeout: 15_000, label: "the saved-run resume action" });
-      check("baseline_screen", "the landing screen identifies a saved run and offers resume", /Your check-in is saved/.test(resumePage.text()) && /in progress/.test(resumePage.text()) && /Continue from there/.test(resumePage.text()), resumePage.text().slice(0, 260));
-      await resumePage.click("Continue where I left off", "button");
-      await waitFor(() => /Learn these pairs/.test(resumePage.text()), { timeout: 15_000, label: "the same study task to resume" });
-      check("baseline_screen", "resume returns to the saved task, without restarting the format questions", /Learn these pairs/.test(resumePage.text()) && !/Before the games/.test(resumePage.text()) && resumePage.requests.some((r) => /POST \/api\/v1\/baseline$/.test(r)), resumePage.requests.slice(-5).join(" | "));
-      await resumePage.click("Stop here and see my snapshot", "button");
-      await waitFor(() => /What we have measured so far/.test(resumePage.text()), { timeout: 15_000, label: "the partial snapshot after stopping" });
-      const partialRunId = new URL(resumePage.dom.window.location.href).searchParams.get("run_id");
-      const partial = requireBaseline(await baselineRequest("GET", `/snapshot?run_id=${encodeURIComponent(partialRunId ?? "")}`), "read the partial snapshot");
-      const partialHonest = partial.state === "sealed" && partial.factors?.length === 8 && partial.factors.every((factor) => factor.state !== "measured" && factor.range === null && factor.n === 0) && partial.completion?.stages?.length >= 10;
-      check("baseline_screen", "stopping seals the run but keeps every unmeasured factor honest", partialHonest && /This is the snapshot saved when you stopped/.test(resumePage.text()) && /Not measured yet/.test(resumePage.text()), JSON.stringify({ state: partial.state, factor_count: partial.factors?.length, measured_factors: partial.factors?.filter((f) => f.state === "measured").length, stages: partial.completion?.stages?.length, factors: partial.factors?.map((f) => [f.key, f.state, f.n, f.range]) }).slice(0, 220));
-      check("baseline_screen", "the UI prints no invented zero-width range for this partial run", resumePage.find('section[aria-label="Baseline factors"] article').length === 8 && !/estimated range/.test(resumePage.text()), resumePage.text().slice(0, 240));
-      check("baseline_screen", "the stop action reached the backend finish endpoint", resumePage.requests.some((r) => /POST \/api\/v1\/baseline\/[^/]+\/finish/.test(r)), resumePage.requests.slice(-5).join(" | "));
-      const firstRunId = partial.run_id;
-      closeBaseline(startPage);
-      closeBaseline(resumePage);
-
-      // A second run is driven through every stage with deterministic, deliberately synthetic
-      // responses. This is a UI reachability and termination check, not evidence about a learner.
-      const second = requireBaseline(await baselineRequest("POST", "", {}), "start the synthetic play-through");
-      const runId = second.run_id;
-      check("baseline_screen", "a sealed run can be followed by a fresh run", Boolean(runId) && second.status === "in_progress", JSON.stringify({ firstRunId, runId, status: second.status }));
-
-      const cuePractice = await advanceBaseline(runId, (v) => v.stage === "codewords_cued" && v.task?.phase === "practice");
-      const cuePracticePage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => !!cuePracticePage.byText("Check answer", "button"), { label: "codeword practice" });
-      check("baseline_screen", "codeword practice is marked unmeasured and has no wager", cuePractice.task?.phase === "practice" && /practice · not measured/.test(cuePracticePage.text()) && cuePracticePage.find('input[name="baseline-wager"]').length === 0, cuePracticePage.text().slice(-180));
-      verifyStop(cuePracticePage, "codeword practice");
-      closeBaseline(cuePracticePage);
-
-      const cueView = await advanceBaseline(runId, (v) => v.stage === "codewords_cued" && v.task?.phase === "measure");
-      const wagerRequests = [];
-      const cuePage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`, (win) => {
-        const realFetch = win.fetch.bind(win);
-        win.fetch = async (input, init = {}) => {
-          const href = typeof input === "string" ? input : (input?.url ?? "");
-          if (href.includes(`/api/v1/baseline/${runId}/trial`)) wagerRequests.push({ body: init.body ?? "" });
-          return realFetch(input, init);
-        };
-      });
-      await waitFor(() => !!cuePage.byText("Check answer", "button"), { label: "the immediate codeword answer screen" });
-      await sleep(120); // the task's initial effects must not race the first controlled wager
-      verifyStop(cuePage, "measured codeword recall");
-      check("baseline_screen", "a measured codeword task offers the optional wager", cueView.timers_visible && cuePage.find('input[name="baseline-wager"]').length === 4 && /Confidence wager \(optional\)/.test(cuePage.text()), cuePage.text().slice(-240));
-      check("baseline_screen", "the codeword cue does not expose its answer key", !/\banswer\s*:/i.test(cuePage.text()) && /Which (place|code word) went with/.test(cuePage.text()), cuePage.text().slice(0, 180));
-      const cueWager = cuePage.find('input[name="baseline-wager"]').find((input) => input.value === "2");
-      if (cueWager) cuePage.checkInput(cueWager);
-      await sleep(100);
-      check("baseline_screen", "choosing a wager updates the controlled radio selection", cuePage.find('input[name="baseline-wager"]').find((input) => input.checked)?.value === "2", cuePage.find('input[name="baseline-wager"]').map((input) => `${input.value}:${input.checked}`).join(","));
-      const cueInput = cuePage.find("input").find((input) => input.type === "text");
-      if (cueInput) cuePage.type(cueInput, "harbour");
-      await cuePage.click("Check answer", "button");
-      await waitFor(() => wagerRequests.some((row) => Boolean(row.body)), { timeout: 10_000, label: "the wagered codeword answer to be sent" });
-      let sentCue = {};
-      try { sentCue = JSON.parse(wagerRequests.at(-1).body); } catch { /* reported below */ }
-      check("baseline_screen", "the chosen wager is submitted with the answer on an eligible task", sentCue.wager === 2 && sentCue.task_id === cueView.task.id, JSON.stringify(sentCue).slice(0, 180));
-      closeBaseline(cuePage);
-
-      const quickView = await advanceBaseline(runId, (v) => v.stage === "quick_a" && v.kind === "task");
-      const quickPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => /Quick taps/.test(quickPage.text()) && quickPage.find('input[type="radio"]').length >= (quickView.task?.options?.length ?? 1), { label: "the quick-tap choices" });
-      verifyStop(quickPage, "quick taps");
-      const quickChoices = quickPage.find('input[type="radio"]').filter((input) => input.name.startsWith("quick-"));
-      check("baseline_screen", "quick taps are a distinct choice screen with eligible optional wagers", quickView.task?.phase === "measure" && quickChoices.length === quickView.task?.options?.length && quickPage.find('input[name="baseline-wager"]').length === 4 && /Quick taps/.test(quickPage.text()), `${quickChoices.length} choices · ${quickPage.text().slice(0, 180)}`);
-      closeBaseline(quickPage);
-
-      const vaultPractice = await advanceBaseline(runId, (v) => v.stage === "vault" && v.task?.phase === "practice");
-      const vaultPracticePage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => vaultPracticePage.find('[role="group"][aria-label^="Nine-tile vault"]').length === 1, { label: "the vault practice grid" });
-      verifyStop(vaultPracticePage, "vault practice");
-      check("baseline_screen", "vault practice uses nine labeled, keyboard-operable tiles and is not wager-eligible", vaultPractice.task?.phase === "practice" && vaultPracticePage.find('button[aria-label^="Tile "]').length === 9 && /Use arrow keys to move and Enter to tap/.test(vaultPracticePage.find('[role="group"]')[0]?.getAttribute("aria-label") ?? "") && vaultPracticePage.find('input[name="baseline-wager"]').length === 0, vaultPracticePage.text().slice(-200));
-      closeBaseline(vaultPracticePage);
-      const vaultMeasure = await advanceBaseline(runId, (v) => v.stage === "vault" && v.task?.phase === "measure");
-      const vaultPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => vaultPage.find('button[aria-label^="Tile "]').length === 9 && vaultPage.find('button[aria-label^="Tile "]').every((tile) => !tile.disabled), { timeout: 12_000, label: "the vault sequence to finish before recall" });
-      verifyStop(vaultPage, "measured vault recall");
-      check("baseline_screen", "a measured vault task allows an eligible wager after the sequence", vaultMeasure.task?.phase === "measure" && vaultPage.find('input[name="baseline-wager"]').length === 4, `length=${vaultMeasure.task?.length}; ${vaultPage.text().slice(-180)}`);
-      const tileOne = vaultPage.find('button[aria-label^="Tile 1"]')[0];
-      tileOne?.focus();
-      tileOne?.dispatchEvent(new vaultPage.dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
-      await waitFor(() => vaultPage.dom.window.document.activeElement?.getAttribute("aria-label")?.startsWith("Tile 2"), { label: "the right arrow to move the vault focus" });
-      const tileTwo = vaultPage.dom.window.document.activeElement;
-      tileTwo?.dispatchEvent(new vaultPage.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-      await waitFor(() => tileTwo?.getAttribute("aria-pressed") === "true", { label: "Enter to tap the focused vault tile" });
-      check("baseline_screen", "arrow keys move focus and Enter records one vault tap", tileTwo?.getAttribute("aria-pressed") === "true" && /You have tapped 1/.test(vaultPage.text()), vaultPage.text().slice(-200));
-      closeBaseline(vaultPage);
-
-      const shopPractice = await advanceBaseline(runId, (v) => v.stage === "shopkeeper" && v.task?.phase === "practice");
-      const shopPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => /Remember these three items/.test(shopPage.text()), { label: "shopkeeper practice" });
-      verifyStop(shopPage, "shopkeeper practice");
-      check("baseline_screen", "shopkeeper practice shows three items and does not offer a wager", shopPractice.task?.items?.length === 3 && shopPage.find("ul li").length === 3 && shopPage.find('input[name="baseline-wager"]').length === 0, shopPage.text().slice(-200));
-      await shopPage.click("I have them — start questions", "button");
-      const firstTrue = await waitFor(() => shopPage.byText("True", "button"), { label: "the first shopkeeper true/false control" }).catch(() => null);
-      check("baseline_screen", "starting the shopkeeper questions opens the true/false controls", !!firstTrue && /Question 1 of 3/.test(shopPage.text()) && !!shopPage.byText("False", "button"), shopPage.text().slice(-220));
-      if (!firstTrue) throw new Error(`shopkeeper did not open its questions: ${shopPage.text().slice(-300)}`);
-      for (let i = 0; i < 3; i += 1) await shopPage.click("True", "button");
-      await waitFor(() => !!shopPage.byText("Check recall", "button"), { label: "shopkeeper recall input" });
-      check("baseline_screen", "the shopkeeper practice moves through three accessible true/false prompts to recall without exposing a wager", (!!shopPage.find("textarea")[0] || /Question 3 of 3/.test(shopPage.text())) && shopPage.find('input[name="baseline-wager"]').length === 0, shopPage.find("textarea")[0] ? "recall input is present; no wager is shown" : shopPage.text().slice(-180));
-      await shopPage.click("Check recall", "button");
-      await waitFor(() => /Remember these three items/.test(shopPage.text()), { label: "the first measured shopkeeper task" });
-      closeBaseline(shopPage);
-      const shopMeasure = await advanceBaseline(runId, (v) => v.stage === "shopkeeper" && v.task?.phase === "measure");
-      const shopMeasuredPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => /Remember these three items/.test(shopMeasuredPage.text()), { label: "the measured shopkeeper screen" });
-      verifyStop(shopMeasuredPage, "measured shopkeeper recall");
-      await shopMeasuredPage.click("I have them — start questions", "button");
-      for (let i = 0; i < 3; i += 1) await shopMeasuredPage.click(i % 2 ? "False" : "True", "button");
-      await waitFor(() => !!shopMeasuredPage.byText("Check recall", "button"), { label: "measured shopkeeper recall" });
-      check("baseline_screen", "shopkeeper wagers appear only on a measured recall, not while studying or answering distractors", shopMeasure.task?.phase === "measure" && shopMeasuredPage.find('input[name="baseline-wager"]').length === 4, shopMeasuredPage.text().slice(-200));
-      closeBaseline(shopMeasuredPage);
-
-      const machinePractice = await advanceBaseline(runId, (v) => v.stage === "machine" && v.task?.phase === "practice");
-      const machinePage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => !!machinePage.byText("Test input", "button"), { label: "machine practice controls" });
-      verifyStop(machinePage, "machine practice");
-      check("baseline_screen", "machine practice is a probe/guess screen without wagers", machinePractice.task?.phase === "practice" && !!machinePage.byText("Guess instead", "button") && machinePage.find('input[name="baseline-wager"]').length === 0, machinePage.text().slice(-200));
-      const machineNumber = machinePage.find('input[type="number"]')[0];
-      if (machineNumber) machinePage.type(machineNumber, "1");
-      await sleep(120); // let React commit the controlled numeric field before pressing its gated button
-      const testMachineButton = machinePage.byText("Test input", "button");
-      check("baseline_screen", "the machine accepts the probe number before enabling Test input", machineNumber?.value === "1" && Boolean(testMachineButton) && !testMachineButton.disabled, `value=${machineNumber?.value ?? "(missing)"}; disabled=${testMachineButton?.disabled}`);
-      await machinePage.click("Test input", "button");
-      await waitFor(() => !!machinePage.byText("Guess instead", "button") && machinePage.text().includes("Input"), { label: "the first machine probe to be recorded" });
-      verifyStop(machinePage, "measured machine probe");
-      check("baseline_screen", "the measured machine probe itself has no wager control", machinePage.find('input[name="baseline-wager"]').length === 0, machinePage.text().slice(-180));
-      await machinePage.click("Guess instead", "button");
-      await waitFor(() => !!machinePage.byText("Submit rule guess", "button"), { label: "the machine guess control" });
-      verifyStop(machinePage, "machine rule guess");
-      check("baseline_screen", "a measured machine probe still has no wager, but an eligible rule guess does", machinePage.find('input[name="baseline-wager"]').length === 4 && /Guess the rule/.test(machinePage.text()), machinePage.text().slice(-200));
-      const machineWager = machinePage.find('input[name="baseline-wager"]').find((input) => input.value === "1");
-      if (machineWager) machinePage.checkInput(machineWager);
-      const machineGuess = machinePage.find("input").find((input) => input.type === "text");
-      if (machineGuess) machinePage.type(machineGuess, "maybe add one");
-      await sleep(120);
-      await machinePage.click("Submit rule guess", "button");
-      await waitFor(() => machinePage.requests.some((r) => /POST \/api\/v1\/baseline\/[^/]+\/trial/.test(r)), { label: "the measured machine guess to be sent" });
-      closeBaseline(machinePage);
-
-      const locked = await advanceBaseline(runId, (v) => v.stage === "locked_box" && v.task?.phase === "practice");
-      const lockedPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => !!lockedPage.byText("Start the puzzle", "button"), { label: "the locked-box choice screen" });
-      verifyStop(lockedPage, "locked-box start choice");
-      check("baseline_screen", "the locked box lets the learner start or walk away, without showing the answer", locked.task?.phase === "practice" && !!lockedPage.byText("Walk away", "button") && !lockedPage.find('input[name="baseline-wager"]').length && !/expected\s*:/i.test(lockedPage.text()), lockedPage.text().slice(-220));
-      await lockedPage.click("Start the puzzle", "button");
-      await waitFor(() => /Hint shop/.test(lockedPage.text()), { label: "the measured locked-box puzzle" });
-      verifyStop(lockedPage, "measured locked-box puzzle");
-      check("baseline_screen", "the puzzle offers the sequence, three priced hints, an answer field, and a stop choice", lockedPage.find('button.btn-ctl').length >= 3 && /coin/.test(lockedPage.text()) && !!lockedPage.find('input[type="number"]')[0] && !!lockedPage.byText("Walk away", "button") && lockedPage.find('input[name="baseline-wager"]').length === 0, lockedPage.text().slice(-260));
-      await lockedPage.click("Walk away", "button");
-      closeBaseline(lockedPage);
-
-      const trapPractice = await advanceBaseline(runId, (v) => v.stage === "trap" && v.task?.phase === "practice");
-      const trapPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => trapPage.find('input[name^="trap-"]').length > 0, { label: "the thinking-question practice screen" });
-      verifyStop(trapPage, "reasoning practice");
-      check("baseline_screen", "the reasoning screen labels practice as unmeasured and offers no wager", trapPractice.task?.phase === "practice" && /practice · not measured/.test(trapPage.text()) && trapPage.find('input[name="baseline-wager"]').length === 0, trapPage.text().slice(-200));
-      const trapChoice = trapPage.find('input[name^="trap-"]')[0];
-      if (trapChoice) trapPage.checkInput(trapChoice);
-      await trapPage.click("Try it", "button");
-      await waitFor(() => !!trapPage.byText("Submit answer", "button"), { label: "the measured reasoning question" });
-      verifyStop(trapPage, "measured reasoning question");
-      check("baseline_screen", "a measured reasoning answer can use the optional wager", trapPage.find('input[name="baseline-wager"]').length === 4, trapPage.text().slice(-180));
-      const trapWager = trapPage.find('input[name="baseline-wager"]').find((input) => input.value === "1");
-      if (trapWager) trapPage.checkInput(trapWager);
-      const measuredTrapChoice = trapPage.find('input[name^="trap-"]')[0];
-      if (measuredTrapChoice) trapPage.checkInput(measuredTrapChoice);
-      await trapPage.click("Submit answer", "button");
-      closeBaseline(trapPage);
-
-      const delayed = await advanceBaseline(runId, (v) => v.stage === "codewords_delayed" && v.task?.action === "predict");
-      const delayedPage = await openBaseline(`/baseline/${encodeURIComponent(runId)}`);
-      await waitFor(() => !!delayedPage.byText("Save prediction", "button"), { label: "the delayed-recall prediction" });
-      verifyStop(delayedPage, "delayed-recall prediction");
-      check("baseline_screen", "the prediction is a distinct screen and cannot be wagered", delayed.task?.action === "predict" && delayedPage.find('input[name="baseline-wager"]').length === 0 && /out of 8/.test(delayedPage.text()), delayedPage.text().slice(-180));
-      const prediction = delayedPage.find('input[type="number"]')[0];
-      if (prediction) delayedPage.type(prediction, "4");
-      await delayedPage.click("Save prediction", "button");
-      await waitFor(() => !!delayedPage.byText("Check free recall", "button"), { label: "free recall after the prediction" });
-      verifyStop(delayedPage, "delayed free recall");
-      check("baseline_screen", "free recall uses a text area and separates the delayed task from the prediction", !!delayedPage.find("textarea")[0] && /Free recall/.test(delayedPage.text()), delayedPage.text().slice(-200));
-      await delayedPage.click("Check free recall", "button");
-      await waitFor(() => !!delayedPage.byText("Choose place", "button"), { label: "the codeword recognition choices" });
-      verifyStop(delayedPage, "delayed recognition");
-      check("baseline_screen", "recognition offers choices and an eligible wager", delayedPage.find('input[name="baseline-wager"]').length === 4 && delayedPage.find('input[type="radio"]').length >= 8, delayedPage.text().slice(-200));
-      const recognitionChoice = delayedPage.find('input[type="radio"]').find((input) => input.name.startsWith("recognition-"));
-      if (recognitionChoice) delayedPage.checkInput(recognitionChoice);
-      await delayedPage.click("Choose place", "button");
-      closeBaseline(delayedPage);
-
-      const completed = await advanceBaseline(runId, (v) => v.kind === "snapshot");
-      const completeSnapshot = requireBaseline(await baselineRequest("POST", `/${encodeURIComponent(runId)}/finish`, {}), "seal the synthetic play-through");
-      check("baseline_screen", "the synthetic play-through terminates at the snapshot stage", completed.kind === "snapshot" && completeSnapshot.state === "sealed" && completeSnapshot.factors?.length === 8, JSON.stringify({ kind: completed.kind, state: completeSnapshot.state, measured_factors: completeSnapshot.factors?.filter((f) => f.state === "measured").length, factor_count: completeSnapshot.factors?.length }));
-      const rangeHonest = completeSnapshot.factors?.length === 8 && completeSnapshot.factors.every((factor) => {
-        if (typeof factor.n !== "number" || !factor.statement?.trim()) return false;
-        if (factor.state === "measured") return Array.isArray(factor.range) && factor.range.length === 2 && factor.range.every(Number.isFinite) && factor.n > 0;
-        return factor.range === null;
-      });
-      check("baseline_screen", "each synthetic snapshot range has a sample count and plain-language statement, or remains not measured", rangeHonest, JSON.stringify(completeSnapshot.factors?.map((f) => [f.key, f.state, f.n, f.range, Boolean(f.statement)])).slice(0, 220));
-      const completedPage = await openBaseline(`/baseline/snapshot?run_id=${encodeURIComponent(runId)}`);
-      await waitFor(() => /What we have measured so far/.test(completedPage.text()) && completedPage.find('section[aria-label="Baseline factors"] article').length === 8, { label: "the completed snapshot screen" });
-      const factorCards = completedPage.find('section[aria-label="Baseline factors"] article').map((card) => (card.textContent ?? "").replace(/\s+/g, " ").trim());
-      const cardsHonest = completeSnapshot.factors?.every((factor, index) => {
-        const text = factorCards[index] ?? "";
-        if (factor.state === "measured") {
-          const count = `based on ${factor.n} ${factor.n === 1 ? "answer" : "answers"}`;
-          return factor.n > 0 && Array.isArray(factor.range) && text.includes("estimated range") && text.includes(count) && text.includes(factor.statement);
+      /* The round itself: skills, ladder, the pop-up lesson, then the map. The loop
+       * answers whatever is on offer — a choice when there is one, the lesson's
+       * continue button when there is not — and stops at the map or not at all. */
+      await page.click("Start the round");
+      let steps = 0;
+      let sawLadder = false;
+      let sawLesson = false;
+      for (; steps < 60; steps += 1) {
+        await sleep(120);
+        const now = page.text();
+        // The done stage's card is also titled "Your subject map"; the map itself is
+        // the one with a topic after the dash and another round on offer.
+        if (/Your subject map —/.test(now) && page.byText("Measure another topic", "button")) break;
+        if (/ladder item/i.test(now)) sawLadder = true;
+        if (/Pop-up lesson/i.test(now) || /about 90 seconds/i.test(now)) sawLesson = true;
+        const finish = page.byText("See my subject map", "button");
+        if (finish) {
+          await page.click(finish);
+          continue;
         }
-        const needed = factor.detail?.needed;
-        const count = typeof needed === "number" ? `${factor.n} of ${needed} needed so far` : `${factor.n} task`;
-        return factor.range === null && text.includes("Not measured yet") && text.includes(count) && text.includes(factor.statement);
-      });
-      check("baseline_screen", "each snapshot card renders its own honest range/sample count or not-measured state and plain-language statement", factorCards.length === 8 && cardsHonest, JSON.stringify(completeSnapshot.factors?.map((f, i) => [f.key, factorCards[i]?.slice(0, 130)])).slice(0, 240));
-      closeBaseline(completedPage);
-
-      // A separate timer-hidden run makes sure the same eligible game offers no clock or wager
-      // when the learner said timers are stressful. Stop it cleanly instead of leaving a fixture.
-      const hiddenRun = requireBaseline(await baselineRequest("POST", "", {}), "start the timer-hidden check");
-      const hiddenView = await advanceBaseline(hiddenRun.run_id, (v) => v.stage === "codewords_cued" && v.task?.phase === "measure", { timers_help: "timers stress me" });
-      const hiddenPage = await openBaseline(`/baseline/${encodeURIComponent(hiddenRun.run_id)}`);
-      await waitFor(() => !!hiddenPage.byText("Check answer", "button"), { label: "the timer-hidden codeword task" });
-      verifyStop(hiddenPage, "timer-hidden task");
-      check("baseline_screen", "a stated no-timer preference hides the clock and all wagers without removing the task", hiddenView.timers_visible === false && !/Time so far|Study time remaining/.test(hiddenPage.text()) && hiddenPage.find('input[name="baseline-wager"]').length === 0, hiddenPage.text().slice(-220));
-      await hiddenPage.click("Stop here and see my snapshot", "button");
-      await waitFor(() => /What we have measured so far/.test(hiddenPage.text()), { label: "the timer-hidden run to stop cleanly" });
-      closeBaseline(hiddenPage);
-      check("baseline_screen", "the baseline scenario reached every tested stage, resume, stop, and snapshot", true, "synthetic responses are probe data, not learner findings");
-    } catch (err) {
-      check("baseline_screen", "the UI probe can drive the baseline screens without a harness or API crash", false, err.stack?.split("\n").slice(0, 4).join("\n") ?? String(err));
-    } finally {
-      for (const page of baselinePages) closeBaseline(page);
+        const read = page.byText("I have read it", "button");
+        if (read) {
+          await page.click(read);
+          continue;
+        }
+        const radio = page.find('[role="radio"]')[0];
+        if (radio) {
+          radio.click();
+          await sleep(30);
+          // Exact text, not a substring: the first option is labelled "The first
+          // answer", and a substring match presses that instead of the submit
+          // button forever — a stall that looks exactly like a dead control.
+          const answer = page.find("button").find((b) => (b.textContent ?? "").trim() === "Answer");
+          if (answer) await page.click(answer);
+          continue;
+        }
+        const done = page.byText("Finish early", "button");
+        if (done) await page.click(done);
+      }
+      const map = page.text();
+      check("subject", "the round can be clicked through to its end", /Your subject map/.test(map), `stopped after ${steps} answers: ${map.slice(0, 180)}`);
+      check("subject", "the ladder was one of the stages on the way", sawLadder, map.slice(0, 120));
+      check("subject", "and the pop-up lesson was served inside the round", sawLesson, map.slice(0, 120));
+      check("subject", "the map repeats the reason next to the skills it measured", /Why these skills\?/.test(map) && /leans hardest on/i.test(map), map.slice(0, 200));
+      check("subject", "skipped skills are on the map as not measured yet, not as failures", /not measured yet/i.test(map) && /not measured is not the same/i.test(map), map.slice(0, 220));
+      check("subject", "the ladder reports a position per sub-area, with unreached ones unmeasured rather than at rung 0", /Where the ladder settled/.test(map) && /sub-areas placed/.test(map), map.slice(0, 200));
+      check("subject", "every measured skill carries its answer count", /from \d+ answers?/.test(map), map.slice(0, 220));
+      check("subject", "no way of teaching is turned into a label for the learner", !/learning style|visual learner|auditory learner|kinesthetic/i.test(map), map.slice(0, 200));
+      check("subject", "no raw object reached the screen", !/[{[]\s*"\w+":/.test(map), map.slice(0, 160));
+      check("subject", "no uncaught error during the whole round", page.appErrors().length === 0, page.appErrors().slice(0, 2).join(" | ").slice(0, 200));
     }
+    closePage(page);
   }
 
   /* ------------------------------------------------------- failure paths ---- */
@@ -2134,16 +1959,16 @@ async function main() {
     closePage(notFound);
     const missing = await api("/api/v1/does-not-exist", { headers: { cookie } });
     check("failures", "an unknown API path 404s rather than 500ing", missing.status === 404, String(missing.status));
-    // the rate limiter, surfaced the way a learner would see it. `llm` is the tightest bucket
-    // a learner can spend by ordinary use, and /tutor/explain sits in it, so asking the same
-    // question repeatedly must eventually answer 429 with a wait time.
+    // the rate limiter, surfaced the way a learner would see it. `lesson_requests` is the
+    // tightest pacing budget a learner can spend by ordinary use (/explain sits in it); §3
+    // renamed the wire field from the operator's bucket name to this one.
     //
     // How many calls that takes is the server's business, not this file's. A suite walked back
     // to back is started with ADAPT_RATE_LIMIT_MULTIPLIER (the probe's own advice in the summary
     // below), which widens every bucket; a hardcoded 16 then reports the limiter as broken for
     // doing exactly what it was configured to do. So ask the server how wide the bucket is.
     const quotas = await api("/api/v1/quotas", { headers: { cookie, "x-csrf-token": csrf } });
-    const burst = Number(quotas.body?.buckets?.llm?.[1] ?? 12) || 12;
+    const burst = Number(quotas.body?.pacing?.lesson_requests?.[1] ?? 12) || 12;
     const ceiling = Math.min(400, Math.ceil(burst) + 6);
     let limited = 0;
     let limitedBody = null;
@@ -2157,7 +1982,7 @@ async function main() {
       }
       if (r.status === 429) { limited = i; limitedBody = r.body; limitedHeader = r.headers.get("retry-after"); break; }
     }
-    check("failures", "a flooded learner is told to wait, with a number", limited > 0 && limitedBody?.detail?.error === "rate_limited" && Number(limitedBody?.detail?.retry_after_s) > 0, limited ? `429 after ${limited} calls (bucket ${burst}/run, flooded up to ${ceiling}): ${JSON.stringify(limitedBody.detail)} (retry-after header: ${limitedHeader})` : `no 429 in ${ceiling} calls -- the server reported an llm burst of ${burst} and refused none of them`);
+    check("failures", "a flooded learner is told to wait, with a number", limited > 0 && limitedBody?.detail?.error === "rate_limited" && Number(limitedBody?.detail?.retry_after_s) > 0, limited ? `429 after ${limited} calls (bucket ${burst}/run, flooded up to ${ceiling}): ${JSON.stringify(limitedBody.detail)} (retry-after header: ${limitedHeader})` : `no 429 in ${ceiling} calls -- the server reported a lesson-request burst of ${burst} and refused none of them`);
     // the throttle above is the app refusing; this is the app *misreading* the refusal. A 429
     // on the one read that answers "who am I" used to render the sign-in wall and tell the
     // learner to start again - which is how a half-finished placement gets thrown away.
@@ -2212,6 +2037,252 @@ async function main() {
     closePage(gated);
     const stillOk = await api("/api/v1/health", { headers: { cookie } });
     check("failures", "being rate limited does not break the app (reads still answer)", stillOk.status === 200, String(stillOk.status));
+  }
+
+  /* -------------------------------------------------------------- baseline ---- */
+  // The mind baseline (phase 2). The flow is the server's, so this walks it the way a learner
+  // does: pick a format, skip the questions, look at the pairs, answer the cued trials until the
+  // vault arrives, tap a tile with the keyboard, then stop early. Stopping is the point of the
+  // last checks: a partial baseline must be a finished baseline, and the snapshot must say "not
+  // measured" rather than invent a zero for a game nobody played.
+  if (run("content")) {
+    // Most of this scenario judges the API surface directly, because the properties being checked
+    // are browser properties: what a learner is *sent*, not what the server holds. The answer key
+    // travelling in a payload is invisible to a unit test that never serialises one. The last
+    // three checks walk the screen that now reaches it, in mock mode, because that is the only
+    // mode where a rendered pack is not gated on which concepts a topic happens to have authored.
+    console.log("\x1b[1mcontent\x1b[0m");
+    const jar = new CookieJar();
+    const made = await createLearner({ display_name: "Probe Content", age_band: "16-18", as_guest: true });
+    check("content", "the engine's own learner can be created", made.status === 200, `${made.status} ${JSON.stringify(made.body).slice(0, 120)}`);
+    if (made.status === 200) {
+      for (const raw of made.headers.getSetCookie?.() ?? []) {
+        try { jar.setCookieSync(raw, BASE); } catch { /* not storable */ }
+      }
+      const cookie = jar.getCookieStringSync(BASE);
+      const head = { "x-csrf-token": made.body.csrf_token ?? "", cookie };
+      const read = (path) => api(path, { headers: head });
+
+      const breakdown = await read("/api/v1/content/breakdown?topic=biology");
+      check("content", "a topic's breakdown arrives over HTTP", breakdown.status === 200 && breakdown.body.available === true, `${breakdown.status} ${JSON.stringify(breakdown.body).slice(0, 120)}`);
+      const concepts = breakdown.body.concepts ?? [];
+      check("content", "every concept carries its misconceptions and objectives", concepts.length > 0 && concepts.every((c) => c.misconceptions.length && c.objectives.length), `${concepts.length} concepts`);
+      check("content", "the breakdown does not ship the answer kits", concepts.every((c) => !("kit" in c)), "a kit is the server's copy");
+
+      const missing = await read("/api/v1/content/breakdown?topic=astrophysics");
+      check("content", "a topic with no authored chain says so instead of inventing one", missing.status === 200 && missing.body.available === false && /no authored prerequisite chain/.test(missing.body.reason ?? ""), JSON.stringify(missing.body).slice(0, 140));
+
+      const pack = await read("/api/v1/content/pack?topic=calculus&concept=calc_rate");
+      check("content", "a concept pack arrives with all three variants", pack.status === 200 && !!(pack.body.variants?.written && pack.body.variants?.visual && pack.body.variants?.worked_example?.steps?.length), `${pack.status} ${JSON.stringify(pack.body).slice(0, 120)}`);
+      const pair = pack.body.pair ?? {};
+      const legs = ["A", "B"].map((leg) => pair[leg]).filter(Boolean);
+      check("content", "the matched pair arrives with both legs", legs.length === 2, `${legs.length} legs`);
+      check("content", "no leg carries its answer key", legs.every((leg) => !("answer" in leg) && !("answer_spec" in leg)), JSON.stringify(legs[0] ?? {}).slice(0, 160));
+      check("content", "no leg carries the answer explanation", legs.every((leg) => !("why" in leg)), "");
+      check("content", "the pair is matched on format and says it is not matched on difficulty", /NOT matched on difficulty/.test(pair.matched ?? ""), String(pair.matched).slice(0, 120));
+      check("content", "the worked example is present and verified", pack.body.variants?.worked_example?.verified === true, JSON.stringify(pack.body.variants?.worked_example?.flags ?? []));
+      check("content", "three graded hints and a three-point checklist", (pack.body.hints ?? []).length >= 3 && (pack.body.checklist ?? []).length === 3, `${(pack.body.hints ?? []).length} hints, ${(pack.body.checklist ?? []).length} points`);
+      check("content", "a GET never writes", pack.body.stored === false, String(pack.body.stored));
+
+      const grades = [];
+      for (const index of [0, 1, 2, 9]) {
+        const hint = await read(`/api/v1/content/hint?topic=calculus&concept=calc_rate&index=${index}`);
+        grades.push(hint.body.grade ?? "?");
+      }
+      check("content", "the hint ladder climbs nudge, method, near-answer and then stops", grades.join(",") === "nudge,method,near_answer,near_answer", grades.join(","));
+
+      const unknown = await read("/api/v1/content/pack?topic=calculus&concept=nope");
+      check("content", "an unknown concept names the ones that exist", unknown.status === 404 && /calc_rate/.test(unknown.body.detail ?? ""), `${unknown.status} ${JSON.stringify(unknown.body).slice(0, 120)}`);
+
+      // The pack is readable without a key, so the only thing that makes it usable is a grader.
+      // This goes over HTTP rather than living in the backend suite alone because the contract
+      // being tested is a browser's: the answer is the option's *text*, and the explanation must
+      // arrive with the verdict instead of with the question. It is deliberately ONE request --
+      // a full walk is paced against a per-connection ceiling, and the two extra requests this
+      // used to make were enough to throttle the scenarios that follow.
+      const legA = pack.body.pair?.A?.options ?? [];
+      if (legA.length >= 2) {
+        // Paced by the server's own retry number. A walk is already close to the per-connection
+        // ceiling, so one more write can land on an empty bucket -- and an unretried 429 here
+        // used to read as a broken route when it was the harness's own traffic.
+        let graded = await api("/api/v1/content/grade", {
+          method: "POST",
+          headers: { "x-csrf-token": made.body.csrf_token ?? "" },
+          cookie,
+          body: { topic: "calculus", concept: "calc_rate", leg: "A", choice: legA[0] },
+        });
+        for (let tries = 0; graded.status === 429 && tries < 6; tries += 1) {
+          const wait = Number(graded.body?.detail?.retry_after_s ?? graded.body?.retry_after_s ?? 1);
+          await sleep(Math.min(12_000, wait * 1000 + 250));
+          graded = await api("/api/v1/content/grade", {
+            method: "POST",
+            headers: { "x-csrf-token": made.body.csrf_token ?? "" },
+            cookie,
+            body: { topic: "calculus", concept: "calc_rate", leg: "A", choice: legA[0] },
+          });
+        }
+        check(
+          "content",
+          "an answer is graded over HTTP, by option text, and comes back with its explanation",
+          graded.status === 200 &&
+            graded.body.status === "scored" &&
+            graded.body.leg === "A" &&
+            graded.body.concept === "calc_rate" &&
+            typeof graded.body.explanation === "string" &&
+            graded.body.explanation.length > 0,
+          `${graded.status} ${JSON.stringify(graded.body).slice(0, 200)}`,
+        );
+      } else {
+        check("content", "an answer is graded over HTTP, by option text, and comes back with its explanation", false, "leg A arrived with no options");
+      }
+    }
+
+    // The screen that reaches all of the above. Mock mode, because a rendered pack needs a topic
+    // with an authored kit and the fixtures are the recorded shapes.
+    {
+      const page = await open("/subject?mock=1", "content");
+      await waitFor(() => /What we'd teach/.test(page.text()), { label: "the pack panel" });
+      const before = page.text();
+      check("content", "the subject screen offers the pack before it is asked for", !!page.byText("Show what we'd teach", "button"), page.text().slice(0, 140));
+      const packBox = page.find('input[aria-label="Pack topic"]')[0];
+      page.type(packBox, "calculus");
+      await sleep(120);
+      await page.click("Show what we'd teach", "button");
+      await waitFor(() => /Worked example/.test(page.text()), { label: "the variants" });
+      const text = page.text();
+      check("content", "the three variants arrive on the screen", /Written/.test(text) && /Visual/.test(text) && /Worked example/.test(text), text.slice(0, 200));
+      check("content", "the matched pair is on the screen with both legs", /Matched pair/.test(text) && /Leg A/.test(text) && /Leg B/.test(text), "");
+      check("content", "the pair says it is not matched on difficulty", /NOT matched on difficulty/.test(text), "");
+      check("content", "the hint ladder and the self-check arrive too", /Hints, in order/.test(text) && /Self-check/.test(text), "");
+      check("content", "no answer key is on the screen before answering", !/answer_spec/.test(text) && !/"correct_index"/.test(text), text.slice(0, 160));
+      // Answering is the point: the option is sent as text, and the verdict comes back graded.
+      const first = page.find("button").find((b) => /^\d+(\.\d+)?\s*(km\/h)?$/.test((b.textContent ?? "").trim()) || /^(8|9|4|5)$/.test((b.textContent ?? "").trim()));
+      if (first) {
+        await page.click(first);
+        await waitFor(() => /Right\.|Not yet\./.test(page.text()), { label: "the verdict" });
+        const after = page.text();
+        check("content", "answering a leg produces a verdict from the server", /Right\.|Not yet\./.test(after), after.slice(0, 200));
+        check("content", "the explanation only arrives once the learner has answered", /15 \/ 3 = 5/.test(before) === false, "");
+      } else {
+        check("content", "answering a leg produces a verdict from the server", false, "no option button was found");
+      }
+      closePage({ jar: page.jar });
+    }
+    closePage({ jar });
+  }
+
+  if (run("baseline")) {
+    console.log("\x1b[1mbaseline\x1b[0m");
+    const page = await open("/baseline", "baseline");
+    await waitFor(() => /How would you like to meet a new idea/.test(page.text()), { label: "the format pick" });
+    check("baseline", "opens on the format pick, not a game", page.find('[role="gridcell"]').length === 0, page.text().slice(0, 140));
+    const radios = page.find('[role="radio"]');
+    check("baseline", "the format pick is a radio group with the three stated options", radios.length === 3, `${radios.length} roles`);
+    check("baseline", "a preference screen asks for no coin wager", page.find(".baseline-coins").length === 0, String(page.find(".baseline-coins").length));
+    check("baseline", "stopping is on screen from the first step", !!page.byText("Stop here", "button"), page.text().slice(0, 200));
+
+    await page.click("a written explanation", '[role="radio"]');
+    await waitFor(() => /How you work/.test(page.text()), { label: "the questions screen" });
+    const qtext = page.text();
+    check("baseline", "the questions arrive in one sitting, not one per screen", /What are you learning this for\?/.test(qtext) && /How many days a week can you study\?/.test(qtext), qtext.slice(0, 160));
+    check("baseline", "every question says why it is asked", (qtext.match(/asked because it /g) ?? []).length >= 10, String((qtext.match(/asked because it /g) ?? []).length));
+    check("baseline", "the questions are skippable", !!page.byText("Skip the questions", "button"), "");
+
+    await page.click("Skip the questions", "button");
+    await waitFor(() => /Spy codewords: study/.test(page.text()), { label: "the study screen" });
+    check("baseline", "the study screen shows the eight pairs it will ask for later", page.find(".baseline-pairs li").length === 8, String(page.find(".baseline-pairs li").length));
+    check("baseline", "a practice screen is labelled as unscored and offers no coins", /not scored/.test(page.text()) && page.find(".baseline-coins").length === 0, page.text().slice(0, 160));
+
+    await page.click("I have looked at them", "button");
+    // Answer whatever comes until the vault, using the page's own controls. A wrong answer is a
+    // legitimate way through (cued recall is either right or it is not) -- what is being checked
+    // is that the flow advances without a reload and that coins appear exactly on scored tasks.
+    let saw_coins_on_measured = false;
+    let coins_on_practice = 0;
+    let prev = "";
+    for (let step = 0; step < 40; step += 1) {
+      if (/Watch: the tiles light up/.test(page.text())) break;
+      const text = page.text();
+      if (text === prev) break;
+      prev = text;
+      const coins = page.find(".baseline-coins").length > 0;
+      const scored = !/not scored/.test(text);
+      if (coins && scored) saw_coins_on_measured = true;
+      if (coins && !scored) coins_on_practice += 1;
+      const box = page.find("#baseline-free")[0];
+      if (box) {
+        page.type(box, "the old well");
+        await page.click("Answer", "button");
+      } else {
+        const opt = page.find(".baseline-option")[0];
+        if (!opt) break;
+        await page.click(opt);
+      }
+      await sleep(120);
+    }
+    check("baseline", "a scored question task offers the coin wager", saw_coins_on_measured, `coins seen: ${saw_coins_on_measured}`);
+    check("baseline", "no practice trial ever offers coins", coins_on_practice === 0, `${coins_on_practice} practice screens with coins`);
+
+    const tiles = page.find('[role="gridcell"]');
+    check("baseline", "the vault arrives as a nine-tile grid", tiles.length === 9, `${tiles.length} tiles`);
+    const busyAtStart = page.find('.vault-grid[aria-busy="true"]').length === 1;
+    check("baseline", "the tiles are disabled while the sequence is being flashed", busyAtStart || tiles.every((t) => t.disabled), busyAtStart ? "aria-busy" : "tiles disabled");
+    let ready = false;
+    try {
+      await waitFor(() => page.find('[role="gridcell"]').every((t) => !t.disabled), { timeout: 12_000, label: "the flash to finish" });
+      ready = true;
+    } catch { /* reported below */ }
+    check("baseline", "the flash ends and the grid becomes tappable", ready, "");
+    if (ready) {
+      // A keypress either marks the tile (right order so far), submits a wrong order and brings the
+      // next vault trial (whose own flash disables the grid again), or -- the only real failure --
+      // does nothing at all. So the signal is "the task changed", not "the tile is marked": an
+      // earlier version waited for a marked tile and read a *successful* wrong-order tap as nothing
+      // happening, because the next trial's flash looks exactly like a grid that ignored the key.
+      const beforeText = page.text();
+      const Ev = page.dom.window.KeyboardEvent;
+      page.dom.window.document.dispatchEvent(new Ev("keydown", { key: "7", bubbles: true, cancelable: true }));
+      let reacted = false;
+      try {
+        await waitFor(
+          () =>
+            page.text() !== beforeText ||
+            page.find(".vault-tile.tapped").length >= 1 ||
+            page.find('[role="gridcell"]').length === 0,
+          { timeout: 6000, label: "the vault to react to the keypress" },
+        );
+        reacted = true;
+      } catch { /* reported below, not swallowed */ }
+      check("baseline", "a number key taps a tile: no mouse needed for the grid", reacted, page.text().slice(0, 140));
+    }
+    const walkErrors = page.appErrors();
+    check("baseline", "no uncaught error during the walk", walkErrors.length === 0, walkErrors.join(" | ").slice(0, 200));
+
+    // The stop control is disabled while a trial is in flight, and the last keypress may still be
+    // waiting for its score -- so wait for the control to be usable instead of pressing a disabled
+    // button and blaming the snapshot.
+    await waitFor(() => { const b = page.byText("Stop here", "button"); return b ? !b.disabled : false; }, { timeout: 12_000, label: "the stop control to be ready" });
+    await page.click("Stop here", "button");
+    await waitFor(() => /What we noticed/.test(page.text()) && /not measured/.test(page.text()), { timeout: 12_000, label: "the snapshot" });
+    const snapText = page.text();
+    check("baseline", "stopping early still produces the snapshot", /What we measured, and what we did not/.test(snapText), snapText.slice(0, 200));
+    check("baseline", "the snapshot names what was not measured instead of zeroing it", /not measured/.test(snapText), snapText.slice(0, 200));
+    const measuredRows = page.find(".baseline-factors li").filter((li) => !li.classList.contains("muted"));
+    check("baseline", "a measured factor carries its range and its n", measuredRows.length > 0 && /n=\d+/.test(snapText), `${measuredRows.length} measured rows`);
+    check("baseline", "every lever says where it came from", (snapText.match(/measured|you told us|default/g) ?? []).length >= 3, snapText.slice(0, 200));
+    closePage(page);
+
+    // `?mock=1` has to reach the same screens, or a design review on a machine with no backend
+    // stops at the first fetch. The fixture advances the way the real flow does (it is scripted in
+    // mock.ts), so this walks two steps of it rather than one static view.
+    const mocked = await open("/baseline?mock=1", "baseline");
+    await waitFor(() => /How would you like to meet a new idea/.test(mocked.text()), { label: "the mocked format pick" });
+    check("baseline", "?mock=1 opens the baseline without a backend", mocked.find('[role="radio"]').length === 3, mocked.text().slice(0, 140));
+    await mocked.click("a written explanation", '[role="radio"]');
+    await waitFor(() => /How you work/.test(mocked.text()), { label: "the mocked questions" });
+    check("baseline", "the mock answers with the questions screen, not an error frame", /What are you learning this for\?/.test(mocked.text()), mocked.text().slice(0, 160));
+    check("baseline", "and no uncaught error on the mocked walk", mocked.appErrors().length === 0, mocked.appErrors().join(" | ").slice(0, 160));
+    closePage(mocked);
   }
 
   /* --------------------------------------------------------------- summary ---- */

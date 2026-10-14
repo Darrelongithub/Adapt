@@ -682,6 +682,7 @@ class Explanation:
     note: str = ""
 
     def as_dict(self) -> dict[str, Any]:
+        """The operator-facing shape: includes which model wrote it and what it spent."""
         return {
             "text": self.text,
             "note": self.note,
@@ -693,6 +694,24 @@ class Explanation:
             "model": self.model,
             "tokens_in": self.tokens_in,
             "tokens_out": self.tokens_out,
+            "citations": self.citations,
+        }
+
+    def as_public_dict(self) -> dict[str, Any]:
+        """The learner-facing shape: the same answer, without the service or its spend.
+
+        ``needs_extra_help`` is ``needs_model`` in the learner's terms: the built-in tutor could
+        not settle this one from the material, so a written-for-you answer would be worth having.
+        Brief §3 keeps the model's identity and its token accounting off every public surface.
+        """
+        return {
+            "text": self.text,
+            "note": self.note,
+            "source": self.source,
+            "frame": self.frame,
+            "cached": self.cached,
+            "needs_extra_help": self.needs_model,
+            "question": self.question,
             "citations": self.citations,
         }
 

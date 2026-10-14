@@ -119,13 +119,6 @@ STRATEGY_TO_METHOD: dict[str, str] = {
 #: assignment is seeded per (learner, concept), so the comparison has a design.
 ARMS: tuple[str, ...] = ("example_first", "explanation_first")
 
-#: How often the seeded draw is allowed to disagree with the learner's own click.
-#: 1.0 would ignore the click entirely; 0.0 would make every observation
-#: self-selected. Half is the honest middle: the learner still gets what they ask
-#: for half the time, and half the observations carry a design.
-ARM_RANDOMISED_SHARE = 0.5
-
-
 @dataclass
 class MethodAssignment:
     """What is taught before this question, and how we know it was that."""
@@ -152,6 +145,8 @@ class MethodAssignment:
             "design": self.design,
             "assigned_by": self.assigned_by,
             "exposure": self.exposure,
+            "source_type": "controlled" if self.design == "randomised" else "observational",
+            "weight": 1.0 if self.design == "randomised" else 0.4,
             "why": self.why,
         }
 
@@ -184,16 +179,22 @@ def assign_method(
     directives: Sequence[Mapping[str, Any]] | None = None,
     allow: Iterable[str] | None = None,
     prefer: str | None = None,
+    serve_ordinal: int | None = None,
 ) -> MethodAssignment:
     """Choose the teaching method for one exposure. Deterministic for the learner.
 
+    ``serve_ordinal`` counterbalances across a whole comparison run; callers persist
+    it with the assignment. Without it, rotation is per learner/concept.
     ``exposure`` is how many times this learner has already met this concept, so a
     second attempt at the same concept is taught differently from the first even
     when the item row is identical. ``prefer`` is not a preference: it is what the
     reteach loop uses to guarantee the next attempt is *not* the method that just
     failed.
     """
-    allowed = [m for m in METHOD_CYCLE if allow is None or m in set(allow)] or list(METHOD_CYCLE)
+    allowed_set = set(allow) if allow is not None else set(METHOD_CYCLE)
+    allowed = [m for m in METHOD_CYCLE if m in allowed_set]
+    if not allowed:
+        raise ValueError("no supported methods allowed")
     pinned = method_for_directives(directives)
     if pinned and pinned in allowed and prefer is None:
         return MethodAssignment(
@@ -209,15 +210,19 @@ def assign_method(
     if prefer and prefer in allowed:
         method = prefer
     else:
-        offset = seed % len(allowed)
-        method = allowed[(offset + int(exposure)) % len(allowed)]
+        # One seeded permutation per learner/block, not an independent draw per item.
+        # Consecutive serve ordinals use each allowed method exactly once.
+        ordinal = int(exposure) if serve_ordinal is None else int(serve_ordinal)
+        block, position = divmod(ordinal, len(allowed))
+        unit = topic_id if serve_ordinal is None else "comparison-run"
+        ordered = sorted(allowed, key=lambda m: stable_seed(learner_id, unit, str(block), m, "balance"))
+        method = ordered[position]
     arm_seed = stable_seed(learner_id, topic_id, "arm", str(int(exposure)))
-    randomised = (arm_seed % 1000) / 1000.0 < ARM_RANDOMISED_SHARE
     arm = ARMS[arm_seed % 2]
     return MethodAssignment(
         method=method,
         arm=arm,
-        design="randomised" if randomised else "observational",
+        design="observational" if prefer else "randomised",
         assigned_by="rotation",
         seed=seed,
         exposure=exposure,
@@ -247,9 +252,11 @@ def next_method(
     """
     allowed = [m for m in METHOD_CYCLE if m != exclude]
     report = method_report(observed, methods=allowed) if observed else {"methods": []}
-    ranked = [row for row in report.get("methods", []) if row.get("n", 0) >= EARLY_SIGNAL_N]
+    ranked = [row for row in report.get("methods", []) if row.get("effective_n", 0) >= EARLY_SIGNAL_N]
     if ranked:
-        best = max(ranked, key=lambda r: float(r.get("residual") or 0.0))
+        top = max(float(r.get("residual") or 0.0) for r in ranked)
+        tied = [r for r in ranked if float(r.get("residual") or 0.0) == top]
+        best = min(tied, key=lambda r: stable_seed(learner_id, item_id, str(exposure), str(r["method"])))
         return MethodAssignment(
             method=str(best["method"]),
             arm=ARMS[stable_seed(learner_id, topic_id, "arm", str(int(exposure))) % 2],
@@ -262,13 +269,17 @@ def next_method(
                 f"{float(best.get('residual') or 0.0):+.2f} against expectation over {int(best.get('n') or 0)} attempts"
             ),
         )
-    return assign_method(
+    assignment = assign_method(
         learner_id=learner_id,
         item_id=item_id,
         topic_id=topic_id,
         exposure=exposure,
         allow=allowed,
     )
+    assignment.design = "observational"
+    assignment.assigned_by = "reteach_rotation"
+    assignment.why += "; second exposure is not a controlled experiment"
+    return assignment
 
 
 # --------------------------------------------------------------------------- #
@@ -383,18 +394,7 @@ def balanced_probe(
             continue
         out.append(_probe_entry(concept, topic_id, anchor, run_format, learner_id, held_format=True, exposure=len(out)))
 
-    # Coverage is what matters, not format purity at the cost of a short probe: below six
-    # concepts the probe cannot say anything anyway, so the stragglers are added in their own
-    # format and *say so*, rather than the run quietly shrinking.
-    for concept in held:
-        if len(out) >= count or len(out) >= 6:
-            break
-        topic_id = str(concept.get("id") or "")
-        pool = usable.get(topic_id) or []
-        anchor = _anchor_item(pool, seed=stable_seed(learner_id, topic_id, "anchor"))
-        if anchor is None:
-            continue
-        out.append(_probe_entry(concept, topic_id, anchor, question_format(anchor), learner_id, held_format=False, exposure=len(out)))
+    # No format-changing fallback: a shorter honest comparison beats a confounded one.
     return out
 
 
@@ -418,6 +418,7 @@ def _probe_entry(
         item_id=str(anchor.get("id")),
         topic_id=topic_id,
         exposure=exposure,
+        serve_ordinal=exposure,
     )
     what = "the same kind of question each time" if held_format else f"a {fmt} question, which is the only format this concept has"
     return {
@@ -460,7 +461,7 @@ def _anchor_item(pool: Sequence[Mapping[str, Any]], *, seed: int) -> Mapping[str
 # --------------------------------------------------------------------------- #
 
 
-def _wilson(successes: float, n: int, *, z: float = 1.959963985) -> tuple[float, float]:
+def _wilson(successes: float, n: float, *, z: float = 1.959963985) -> tuple[float, float]:
     if n <= 0:
         return (0.0, 1.0)
     p = max(0.0, min(1.0, successes / n))
@@ -492,7 +493,9 @@ def method_report(
         method = str(row.get("method") or "unassigned")
         if wanted is not None and method not in wanted:
             continue
-        if row.get("correct") is None:
+        if str(row.get("design")) == "placement":
+            continue
+        if row.get("correct") is None or row.get("expected_success") is None:
             continue
         buckets.setdefault(method, []).append(row)
 
@@ -500,15 +503,15 @@ def method_report(
     for method, group in buckets.items():
         n = len(group)
         correct = [1.0 if r.get("correct") else 0.0 for r in group]
-        expected = [float(r.get("expected_success") or 0.5) for r in group]
-        actual_rate = sum(correct) / n
-        expected_rate = sum(expected) / n
+        expected = [float(r["expected_success"]) if r.get("expected_success") is not None else 0.5 for r in group]
+        weights = [1.0 if str(r.get("design")) in ("randomised", "counterbalanced") else 0.4 for r in group]
+        effective_n = sum(weights)
+        actual_rate = sum(c * w for c, w in zip(correct, weights, strict=True)) / effective_n
+        expected_rate = sum(e * w for e, w in zip(expected, weights, strict=True)) / effective_n
         residual = actual_rate - expected_rate
-        # The interval is on the residual: a method that is *expected* to be hard
-        # must not look bad for being hard.
-        lo, hi = _wilson(sum(correct), n)
-        exp_lo, exp_hi = _wilson(sum(expected), n)
-        randomised = sum(1 for r in group if str(r.get("design")) == "randomised")
+        # Predictions are fixed at serve time, not another random sample of responses.
+        lo, hi = _wilson(actual_rate * effective_n, effective_n)
+        randomised = sum(1 for r in group if str(r.get("design")) in ("randomised", "counterbalanced"))
         pilot_n = sum(1 for r in group if r.get("pilot"))
         pilot_label = None
         if pilot_n:
@@ -524,18 +527,23 @@ def method_report(
                 "actual": round(actual_rate, 3),
                 "expected": round(expected_rate, 3),
                 "residual": round(residual, 3),
-                "ci": [round(lo - exp_hi, 3), round(hi - exp_lo, 3)],
-                "evidence": evidence_label(n, min_n=min_n),
+                "ci": [round(lo - expected_rate, 3), round(hi - expected_rate, 3)],
+                "effective_n": round(effective_n, 3),
+                "sources": [
+                    {"source": "controlled", "weight": 1.0, "n": randomised},
+                    {"source": "observational", "weight": 0.4, "n": n - randomised},
+                ],
+                "evidence": evidence_label(effective_n, min_n=min_n),
                 # ``n`` counts every scored observation; ``n_pilot`` says how many of them
                 # were seeded before the demo. A number that is partly pilot data is not
                 # hidden and not softened: it is shown with the count of what it is made of.
                 "n_pilot": pilot_n,
                 "pilot": bool(pilot_n),
                 "pilot_label": pilot_label,
-                "note": EVIDENCE_NOTE if n < min_n else "",
+                "note": EVIDENCE_NOTE if effective_n < min_n else "",
             }
         )
-    out.sort(key=lambda r: (r["n"] < min_n, -float(r["residual"]), -int(r["n"])))
+    out.sort(key=lambda r: (r["effective_n"] < min_n, -float(r["residual"]), -int(r["n"])))
     return {
         "methods": out,
         "n_scored": sum(len(g) for g in buckets.values()),
@@ -548,7 +556,7 @@ def method_report(
 EVIDENCE_NOTE = "early signal: too few observations to call this a finding; treat it as a hint"
 
 
-def evidence_label(n: int, *, min_n: int = EARLY_SIGNAL_N) -> str:
+def evidence_label(n: float, *, min_n: int = EARLY_SIGNAL_N) -> str:
     """One vocabulary for sample-size honesty, used by every surface."""
     if n <= 0:
         return "no_data"
@@ -571,6 +579,11 @@ def method_delta(
     the difference of residuals with an interval, and it refuses to produce a
     number at all when either side is empty.
     """
+    if baseline is not None:
+        formats = [{str(r.get("question_kind") or r.get("kind") or "unknown")
+                    for r in rows if r.get("method") == m} for m in (method, baseline)]
+        if formats[0] and formats[1] and formats[0] != formats[1]:
+            return {"comparable": False, "reason": "question formats differ across methods"}
     report = method_report(rows)
     by_id = {row["method"]: row for row in report["methods"]}
     me = by_id.get(method)
@@ -582,14 +595,14 @@ def method_delta(
     if other is None:
         return {"comparable": False, "reason": f"no scored attempts yet under {baseline}", "method": me}
     diff = float(me["residual"]) - float(other["residual"])
-    width = (float(me["ci"][1]) - float(me["ci"][0])) / 2 + (float(other["ci"][1]) - float(other["ci"][0])) / 2
     return {
         "comparable": True,
         "method": me,
         "baseline": other,
         "residual_difference": round(diff, 3),
-        "interval": [round(diff - width, 3), round(diff + width, 3)],
-        "evidence": evidence_label(min(int(me["n"]), int(other["n"]))),
+        "interval": [round(float(me["ci"][0]) - float(other["ci"][1]), 3),
+                     round(float(me["ci"][1]) - float(other["ci"][0]), 3)],
+        "evidence": evidence_label(min(float(me["effective_n"]), float(other["effective_n"]))),
         "randomised_n": min(int(me.get("n_randomised") or 0), int(other.get("n_randomised") or 0)),
     }
 

@@ -170,8 +170,10 @@ export type Explanation = {
   source: "deterministic" | "cache" | "template" | "llm";
   frame: number;
   cached?: boolean;
-  needs_model?: boolean;
-  tried_model?: boolean;
+  /** §3 vocabulary: the tutor could not settle this from the learner's material
+   *  (`needs_extra_help`), and whether it went looking beyond it (`asked_for_extra_help`). */
+  needs_extra_help?: boolean;
+  asked_for_extra_help?: boolean;
   question?: string;
   model?: string | null;
   tokens_in?: number;

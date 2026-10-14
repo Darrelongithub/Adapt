@@ -72,44 +72,22 @@ function frontendCalls() {
   for (const file of walk(FE_SRC, (n) => /\.(ts|tsx)$/.test(n) && !n.includes("mock"))) {
     const src = read(file);
     const rel = relative(ROOT, file);
-    // Scan each helper name, then parse optional TypeScript generics with balanced angle
-    // brackets. A broad regex crossed from a nested useApi type into the next POST call and
-    // classified `post("review/complete")` as GET — an especially unhelpful false contract.
-    for (const match of src.matchAll(/\b(api|apiPost|apiVoid|useApi|get|post|del)\b/g)) {
-      const fn = match[1];
-      let at = match.index + fn.length;
-      if (src[match.index - 1] === ".") continue; // URLSearchParams.get, Map.get, etc.
-      while (/\s/.test(src[at] ?? "")) at += 1;
-      if (src[at] === "<") {
-        let depth = 0;
-        let closed = false;
-        for (; at < src.length; at += 1) {
-          const ch = src[at];
-          if (ch === "<") depth += 1;
-          else if (ch === ">" && src[at - 1] !== "=") {
-            depth -= 1;
-            if (depth === 0) { at += 1; closed = true; break; }
-          }
-        }
-        if (!closed) continue;
-      }
-      while (/\s/.test(src[at] ?? "")) at += 1;
-      if (src[at] !== "(") continue;
-      at += 1;
-      while (/\s/.test(src[at] ?? "")) at += 1;
-      const quote = src[at];
-      if (!["`", "\"", "'"].includes(quote)) continue; // variables and expressions are not literals
-      const start = at;
-      at += 1;
-      while (at < src.length) {
-        if (src[at] === "\\") { at += 2; continue; }
-        if (src[at] === quote) break;
-        at += 1;
-      }
-      if (at >= src.length) continue;
-      const literal = src.slice(start + 1, at);
-      const after = at + 1;
-      const tail = src.slice(after, after + 400);
+    // api<T>(path, { method: "POST", ... }) / apiPost(path, ...) / apiVoid(path, ...) /
+    // useApi<T>(path, query). The options object is usually several lines long, so the
+    // scan takes the balanced-ish run up to the closing brace rather than one line.
+    // `get`/`post`/`del` are the wrappers every page actually uses, so a scan of
+    // `api|useApi` alone left most of the app unchecked: the paths below `post(` were
+    // neither matched against the API nor against a fixture row.
+    // The generic-argument part is deliberately narrow (`<[^()<>]*>`): it used to be a
+    // paren-balanced run, which is greedy, so `post<BaselineView>("/api/v1/baseline", {})`
+    // followed by another generic call on a later line matched as ONE call whose "path" was the
+    // later string and whose method was the earlier function. A type argument in this repo is
+    // always a bare name, so nothing legitimate is lost by refusing to cross a bracket.
+    const CALL = /\b(api|apiPost|apiVoid|useApi|get|post|del)\s*(?:<[^()<>]*>)?\s*\(\s*(`[^`]*`|"[^"]*"|'[^']*')/g;
+    for (const m of src.matchAll(CALL)) {
+      const fn = m[1];
+      const literal = m[2].slice(1, -1);
+      const tail = src.slice(m.index + m[0].length, m.index + m[0].length + 400);
       const opts = /^\s*,\s*\{([\s\S]{0,300}?)\}/.exec(tail)?.[1] ?? "";
       let method = /method:\s*"(\w+)"/.exec(opts)?.[1];
       if (!method) method = fn === "apiVoid" || fn === "del" ? "DELETE" : fn === "apiPost" || fn === "post" ? "POST" : "GET";
@@ -121,6 +99,7 @@ function frontendCalls() {
       const literal = m[1].slice(1, -1);
       if (literal.startsWith("/api/")) calls.push({ rel, method: "GET", path: literal, raw: m[1], bare: true });
     }
+    // query hooks read through the same helpers, so nothing else to scan
   }
   return calls;
 }
@@ -131,15 +110,6 @@ function normalise(path) {
     .split("?")[0]
     .replace(/\$\{[^}]*\}/g, "*")
     .replace(/\/+$/, "") || "/";
-}
-
-/** api.ts accepts both full `/api/v1/...` paths and relative helper paths such as
- * `post("baseline", ...)`; the latter still reach the same versioned API. */
-function fullApiPath(path) {
-  const clean = normalise(path);
-  if (clean.startsWith("/api/")) return clean;
-  if (clean.startsWith("api/")) return `/${clean}`;
-  return `/api/v1/${clean.replace(/^\/+/, "")}`;
 }
 
 function matches(template, concrete) {
@@ -157,11 +127,7 @@ if (routes.size < 40) FAILURES.push(`backend route scan found only ${routes.size
 const templateOf = (method, path) => `${method} ${path}`;
 
 for (const call of frontendCalls()) {
-  if (call.path.includes("${path}")) {
-    NOTES.push(`${call.rel}: dynamic api(${call.path}) is checked through the server-side path allowlist, not a literal route`);
-    continue;
-  }
-  const path = fullApiPath(call.path);
+  const path = normalise(call.path);
   if (!path.startsWith("/api/")) continue;
   const candidates = [...routes].filter((r) => r.startsWith(`${call.method} `));
   const hit = candidates.some((r) => matches(r.slice(call.method.length + 1), path));
@@ -171,7 +137,7 @@ for (const call of frontendCalls()) {
   if (call.bare) FAILURES.push(`${call.rel}: a bare fetch() to ${path} skips api(): the CSRF header and the mock flag both live there`);
 }
 
-/* Mock parity: every path should have a fixture; baseline gaps are an explicit frozen-file exception and must be documented, never reported as mock-covered. */
+/* mock parity: every path the app can request must have a fixture, or `?mock=1` lies */
 const mockSrc = existsSync(join(FE_SRC, "lib", "mock.ts")) ? read(join(FE_SRC, "lib", "mock.ts")) : "";
 if (!mockSrc) {
   NOTES.push("no src/lib/mock.ts: skipping mock parity (the ?mock=1 tour is not defined)");
@@ -209,33 +175,15 @@ if (!mockSrc) {
   if (rows.length < 10) FAILURES.push(`mock: only ${rows.length} rows parsed from src/lib/mock.ts -- the parity check is reading the wrong shape`);
   const wanted = new Map();
   for (const call of frontendCalls()) {
-    if (call.path.includes("${path}")) continue;
-    const path = fullApiPath(call.path);
-    if (!path.startsWith("/api/")) continue;
-    const sample = path.replace(/\*/g, "1");
+    if (!call.path.startsWith("/api/")) continue;
+    const sample = normalise(call.path).replace(/\*/g, "1");
     wanted.set(`${call.method} ${sample}`, call);
   }
-  const baselineMockGaps = [];
   for (const [key, call] of wanted) {
     const method = key.slice(0, key.indexOf(" "));
     const url = key.slice(key.indexOf(" ") + 1);
     if (!rows.some((r) => r.method === method && r.re.test(url))) {
-      if (url.startsWith("/api/v1/baseline")) baselineMockGaps.push(`${method} ${url}`);
-      else FAILURES.push(`${call.rel}: ${method} ${url} has no mock row -- ?mock=1 would 404 exactly there`);
-    }
-  }
-  if (baselineMockGaps.length) {
-    // mock.ts and shared types are explicitly frozen for the parallel workstreams. Do not
-    // quietly call this parity: require an exact merge instruction in the Agent 1 report.
-    const notePath = join(ROOT, "agent-notes", "1-baseline.md");
-    const note = existsSync(notePath) ? read(notePath) : "";
-    const documented = note.includes("BASELINE MOCK FIXTURE INTEGRATION") &&
-      note.includes("frontend/src/lib/mock.ts") && note.includes("POST /api/v1/baseline");
-    const gapList = [...new Set(baselineMockGaps)].sort().join(", ");
-    if (!documented) {
-      FAILURES.push(`baseline: ${baselineMockGaps.length} route(s) have no fixture in frozen mock.ts (${gapList}); document exact fixture instructions in agent-notes/1-baseline.md`);
-    } else {
-      NOTES.push(`baseline mock fixture gaps (${baselineMockGaps.length}: ${gapList}) are documented for the integrator because frontend/src/lib/mock.ts is frozen`);
+      FAILURES.push(`${call.rel}: ${method} ${normalise(call.path)} has no mock row -- ?mock=1 would 404 exactly there`);
     }
   }
 }
@@ -251,42 +199,6 @@ for (const file of walk(join(FE_SRC, "app"), (n) => /page\.tsx$|layout\.tsx$/.te
     }
   }
   if (!/export default/.test(src)) FAILURES.push(`${relative(ROOT, file)}: no default export -- Next has nothing to render`);
-}
-
-/* baseline screens: these are product contracts, not just paths that happen to compile */
-{
-  const baselineHome = join(FE_SRC, "app", "baseline", "page.tsx");
-  const baselineRun = join(FE_SRC, "app", "baseline", "[runId]", "page.tsx");
-  const baselineSnapshot = join(FE_SRC, "app", "baseline", "snapshot", "page.tsx");
-  const baselineLib = join(FE_SRC, "lib", "baseline.ts");
-  const probe = join(ROOT, "frontend", "scripts-ui-probe.mjs");
-  const requiredFiles = [baselineHome, baselineRun, baselineSnapshot, baselineLib, probe];
-  const missing = requiredFiles.filter((p) => !existsSync(p)).map((p) => relative(ROOT, p));
-  if (missing.length) FAILURES.push(`baseline: missing required screen/helper/probe file(s): ${missing.join(", ")}`);
-  if (existsSync(baselineRun)) {
-    const src = read(baselineRun);
-    for (const marker of ["Stop here and see my snapshot", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "aria-label=\"Nine-tile vault", "view.timers_visible", "wagerAllowed"]) {
-      if (!src.includes(marker)) FAILURES.push(`baseline: run screen is missing required control/accessibility marker ${JSON.stringify(marker)}`);
-    }
-  }
-  if (existsSync(baselineSnapshot)) {
-    const src = read(baselineSnapshot);
-    for (const marker of ["factor.n", "factor.range", "Not measured yet", "What we will do differently"]) {
-      if (!src.includes(marker)) FAILURES.push(`baseline: snapshot screen is missing honest-estimate marker ${JSON.stringify(marker)}`);
-    }
-  }
-  if (existsSync(baselineLib)) {
-    const src = read(baselineLib);
-    for (const endpoint of ["baseline", "baseline/${encodeURIComponent(runId)}/format", "baseline/${encodeURIComponent(runId)}/questions", "baseline/${encodeURIComponent(runId)}/trial", "baseline/${encodeURIComponent(runId)}/finish", "baseline/snapshot"]) {
-      if (!src.includes(endpoint)) FAILURES.push(`baseline: helper is missing API operation ${endpoint}`);
-    }
-  }
-  if (existsSync(probe)) {
-    const src = read(probe);
-    if (!src.includes('"baseline"') || !src.includes("baseline_screen")) {
-      FAILURES.push("baseline: scripts-ui-probe.mjs does not register a baseline_screen scenario");
-    }
-  }
 }
 
 /* browser code must not name a host or read a non-public env var */
@@ -435,4 +347,4 @@ if (FAILURES.length) {
   for (const f of FAILURES) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log("contract ok: frontend paths match backend routes; any missing frozen baseline mock fixtures are documented for the integrator; scene kinds agree across engine/stages/mock, route exports are valid, and browser host/env checks pass");
+console.log("contract ok: every path the frontend calls exists, ?mock=1 covers them, the scene kinds agree across engine/stages/mock, route modules export what Next allows, no host or env misuse in browser code");

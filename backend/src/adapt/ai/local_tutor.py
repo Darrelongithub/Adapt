@@ -666,7 +666,13 @@ def explain(
         sources,
         applied,
         level,
-        grounded=bool(sources) and not answered_from_item,
+        # A claim about *which topic* the words came from, and the brief's rule is exact:
+        # grounded is true only when the shown body came from this item's topic (4.1.2). The
+        # cross-topic fallback above is honest -- it names the source topic on the passage --
+        # but it is not this topic's material, so it must not claim to be. The topic is
+        # measured separately (`topic_match`) so callers can tell "your own material" from
+        # "somewhere else in the course, and here is where".
+        grounded=bool(sources) and not answered_from_item and topic_match,
         source_topic=source_topic or wanted_topic,
         steps=steps,
         topic_match=topic_match,

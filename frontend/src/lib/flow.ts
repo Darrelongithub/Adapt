@@ -143,6 +143,8 @@ export function useFlow(mode: "practice" | "diagnostic") {
       extra: { teachback_text?: string; attempt_no?: number } = {},
     ): Promise<Receipt> => {
       const id = await ready();
+      // Support openings must reach the server before attribution, not after it.
+      await queue.flush();
       const body: Record<string, unknown> = { session_id: id, item_id: itemId, answer, ...extra };
       const out = await api<Receipt>("/api/v1/attempts", { method: "POST", json: body });
       push(

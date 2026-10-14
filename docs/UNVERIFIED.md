@@ -10,12 +10,16 @@ are implemented but *not* proven. Each item says what was done instead and how t
   and id-like fields are stripped before anything is sent), the pseudonym used in place of a
   name, the daily call/token budget and its accounting, the per-purpose call log, the retry
   and backoff rules, and — most importantly — that every consumer has a **local fallback**
-  whose response says `provider: "local"` and `grounded: true|false`.
-* **Not verified:** whether a real Gemini answer is *good*. No call has ever been made from
+  whose response says `served_by: "your own material"` (a model-written reply says
+  `"written for you"`) with `grounded: true|false`.
+* **Not verified:** whether a real model answer is *good*. No call has ever been made from
   this build. Prompt changes must be judged by the pilot's own outcomes
   (`docs/PILOT.md`), not by how the prompt reads.
 * **To check:** `ADAPT_GEMINI_API_KEY=… uvicorn adapt.api.app:app`, then
-  `POST /api/v1/explain` and look at `llm`, `model_ms` and `privacy.what_was_sent`.
+  `POST /api/v1/explain` and read `served_by`, `grounded` and `privacy.what_was_sent` in the
+  reply. The provider, model name, token counts and budget are **not on HTTP any more** (brief
+  §3): read them on the console — `adapt status`, `adapt config status` — or in the `llm_calls`
+  audit rows.
 
 ## Speech (STT and TTS)
 
@@ -426,3 +430,119 @@ area. What changed, and what a phone still has to confirm:
   this phase was caused by a *plain* `sqlite3` client touching the SQLCipher file while the server
   held it open; a clean shutdown cleared it and the data was intact. What an operator sees after a
   hard kill (SIGKILL, power loss) with a WAL left behind has not been tested.
+
+
+## Round: functionality (Phase 2, section 5, the mind baseline) - 2026-10-13
+
+Verified here (see the phase 2 report in `docs/FUNCTIONALITY_ROUND.md` for the numbers): the engine
+and its 40 tests, the flow order end to end, the HTTP surface, the screens driven in jsdom against
+the live API (25 checks) and against `?mock=1`, the contract linter and `next build`.
+
+**Not verified here: the screens in a real browser.** Chromium cannot be installed in this sandbox
+(`npx playwright install` ends in `ECONNRESET`), so nothing below has been seen with eyes or with a
+real timer. jsdom exercises state, fetch traffic and keyboard handlers; it does not paint, and it
+does not run a real 45-second clock.
+
+To check on a machine with a browser (any of these that fails is a bug worth reporting):
+
+1. `cd backend && ../.venv/bin/python -m uvicorn adapt.api.app:app --port 8000` and
+   `cd frontend && npm run dev`, then open `/baseline`.
+2. **The flash is watchable.** On the vault, the nine tiles light one at a time; on a phone-sized
+   viewport the grid must not scroll during the flash. `prefers-reduced-motion: reduce` shortens
+   the flash rather than removing it - check in devtools that the sequence is still shown.
+3. **The study clock.** The study screen counts down from 45s and the ready button works at any
+   point. Then answer "timers stress me" on the questions screen in a *new* run and confirm no
+   clock appears anywhere in the baseline (latency is still measured - that is stated on screen).
+4. **Keyboard only.** Tab to the vault grid, arrow to a tile, press Enter; then press the number
+   keys 1-9. Both must tap. The machine and locked-box text fields must submit on Enter.
+5. **Coins.** A 0-3 coin control appears on scored question tasks (cued recall, quick taps, traps)
+   and never on a practice trial or the study screen.
+6. **Stopping.** Press "Stop here" mid-vault and confirm the snapshot arrives; reload `/baseline`
+   and confirm the resume line names the stage and does not restart the games.
+7. **The snapshot screen reads correctly at 360px wide**, and no factor row overflows its card.
+8. **Audio/latency claims**: none are made - the baseline is silent.
+
+## Round: the §3 boundary, after the agent PRs merged - 2026-10-13
+
+Verified here: the merged tip passes the full backend suite (887 tests, including the canary walk
+that sets a canary key and asserts no provider or model name appears in any response body, header,
+WebSocket frame, log record or export), `npm run build`, the contract linter, the engine/lib/server
+node tests and `scripts/probe-fresh.sh all` (234 checks, 226 API calls). The built bundle was
+scanned by hand as well: `frontend/.next/static` contains no `gemini`, `openalex`, `arxiv`,
+`youtube`, `faster-whisper`, `kokoro` or `model_name`.
+
+**Not verified here, and worth a look on a real browser session:**
+
+1. **The learner-safe copy reads well on the screens.** The status chip (chrome), the privacy block
+   in `/settings`, the provenance line under a tutor answer and the `/voice` capability panel were
+   all reworded for §3. jsdom proves the elements render and the words are there; it cannot tell you
+   whether "Lessons: simple mode · answers and notes encrypted" is *pleasant*. Read them at 1280px
+   and at 360px.
+2. **The encryption claim in `/settings`.** `data_protection` deliberately names the storage engine
+   (`sqlite + field-level encryption`) so the "the file is encrypted" claim can be checked; confirm
+   that reads as a claim about the file and not as a product advertisement.
+3. **`Googlebot` is in the bundle.** Next.js ships its own bot-detection regex in framework code
+   (`chunks/255-*.js`, `main-*.js`). It is not configuration and cannot be removed without patching
+   the framework; the scan above is described as clean *of provider and model configuration*, which
+   is the §3 rule, but the word itself is present. Anyone auditing the bundle should expect it.
+4. **Console commands still print the operator's truth.** `adapt status` and `adapt config status`
+   are where the provider, model, key-presence and budget live now; nothing in the automated suite
+   asserts their wording, only their exit codes and JSON keys.
+
+## Round: the full-brief audit - 2026-10-14
+
+Verified here: the whole backend suite (1035 passed), the contract linter and typecheck, the
+production build, the engine/lib/server node tests, the full jsdom probe walk (**265 checks, 226 API
+calls, exit 0**), the phase-4 quality gate (`scripts/teaching_quality_eval.py`, zero gate flags
+across 199 questions in 56 topics), and a hand scan of `frontend/.next/static` for provider or model
+names.
+
+**Not verified here, and how to check each:**
+
+1. **Phase 4's engine assembles from authored chains; it has never written a pack with a model.**
+   `ai2.content_pack` is the hook, the validation and the cache are the same code either way, and
+   nothing here has exercised the model path — there is no key. The deterministic path *is* verified:
+   37 concepts × (3 variants + 2 pair legs + 3 hints + 3 checklist points) across 11 topics, checked
+   by the gate, by 56 unit tests and by 15 probe checks over HTTP.
+2. **The model pass of the quality gate.** `QUALITY_REPORT.md` says "not run" in those words. On a
+   machine with a key and network: `ADAPT_GEMINI_API_KEY=... .venv/bin/python
+   scripts/teaching_quality_eval.py` and compare the flagged count with the deterministic one.
+3. **`docs/screens/` is empty.** Chromium cannot be installed in this sandbox (`ECONNRESET`), so no
+   screenshot of any screen exists. Every screen change is driven and asserted in jsdom by
+   `frontend/scripts-ui-probe.mjs`; a human with a browser should spot-check the changed copy —
+   the status chip, the `/voice` capability panel, the receipt's teach-back feedback, the `/review`
+   retention-check step, the `/subject` round, and the `/contrast` demo.
+4. **The subject round over HTTP was walked in jsdom**, not by a person: 17 probe checks plus 61
+   backend tests. The visual design of the screens (density at 1280px, the round on a phone) is
+   unverified like every other screen.
+
+## Round: the content engine (2026-10-14)
+
+Verified here: the whole backend suite (**1097 passed**), the contract linter and typecheck, the
+production build, the full jsdom probe walk (**289 checks, 210 API calls, exit 0**, including a
+`content` scenario that now walks the screen as well as the API), the quality gate (**zero flags
+across 273 questions**), and the exact symbolic checker against hand-computable cases (equivalence,
+differentiation, linear and quadratic solving, and the refusals).
+
+**Not verified here, and how to check each:**
+
+1. **A model-written pack.** No key, so `ai2.content_pack` has only ever been driven deterministically.
+   On a machine with a key: build a pack for a topic with no authored chain, and confirm the pack says
+   it was written rather than sourced — and that a rejection still carries its reason.
+2. ~~**The engine behind a screen.**~~ **Closed.** The subject round now carries a "What we'd
+   teach" panel (`frontend/src/app/subject/page.tsx`, `frontend/src/lib/content.ts`): it asks for a
+   topic, resolves it to a concept through the engine's own breakdown, and renders the three
+   variants, the matched pair, the hint ladder and the self-check. The matched pair is answerable —
+   `POST /api/v1/content/grade` grades the option *text* the learner picked, so the shuffled options
+   and the key never reach the browser. The probe's `content` scenario now walks that screen in mock
+   mode and grades a real answer over HTTP.
+   *Still not verified:* whether the panel is in the right *place* in the subject round. It sits
+   below the resolve card, before the plan; a human should say whether a learner should meet the
+   material before or after the round that measures them. That is a design judgement, not a defect.
+3. **Screenshots remain impossible** (no browser can be installed here — `ECONNRESET`). The screen is
+   judged in jsdom by the probe's `content` scenario, not photographed.
+4. **The symbolic checker's scope.** It covers polynomials and rational functions exactly and refuses
+   everything else by name. Trigonometry, logarithms, matrices and irrational roots are *refused*, not
+   approximated — so an item using them is flagged `unverified` rather than checked. That is a stated
+   limit of the checker, not a defect, but it means such items are never scored on this path.
+5. **`docs/screens/` is still empty** for the same reason as before.

@@ -38,34 +38,6 @@ type Dashboard = {
   open_questions?: { topic_id?: string; question?: string; why?: string }[];
 };
 
-type EvidenceMethods = {
-  scope?: string;
-  strategies?: {
-    strategies?: { strategy: string; posterior_mean?: number; p_helps?: number; ci?: [number, number]; n?: number; band?: string }[];
-    note?: string;
-  };
-  detectors?: {
-    detector: string;
-    label: string;
-    design: string;
-    source: string;
-    weight: number;
-    status: string;
-    n?: number;
-    value?: number;
-    baseline?: number;
-    note: string;
-  }[];
-  preference_vs_performance?: {
-    available: boolean;
-    stated?: string | null;
-    sentence?: string;
-    note?: string;
-    status?: string;
-    measured?: { format: string; n: number; accuracy: number }[];
-  };
-};
-
 export default function Progress() {
   const dash = useApi<Dashboard>("dashboard");
   const journey = useApi<Journey>("journey", { days: 30, limit: 400 });
@@ -76,7 +48,6 @@ export default function Progress() {
   const [err, setErr] = useState<string | null>(null);
 
   const methodReport = useApi<{ methods: MethodRow[]; min_n_for_a_finding?: number }>("methods/report");
-  const evidence = useApi<EvidenceMethods>("evidence/methods");
   const methods = { rows: methodReport.data?.methods ?? [], minN: methodReport.data?.min_n_for_a_finding ?? 8 };
   const d = dash.data ?? {};
   const nodes = (journey.data?.nodes ?? []).filter((n) => !kind || n.kind === kind);
@@ -163,58 +134,6 @@ export default function Progress() {
             material is not punished for it. Under {methods.minN} observations it is called an early signal, and it stays one until
             there are enough to say otherwise.
           </p>
-        </Card>
-
-        <Card title="What you said, and what happened" tone="muted" right={<span>preference next to performance</span>}>
-          {(() => {
-            const pref = evidence.data?.preference_vs_performance;
-            const posteriors = evidence.data?.strategies?.strategies ?? [];
-            const detectors = evidence.data?.detectors ?? [];
-            return (
-              <div className="space-y-4 text-sm">
-                {pref?.available ? (
-                  <div>
-                    <p>{pref.sentence}</p>
-                    <ul className="mt-2 space-y-1 text-xs text-[var(--muted)]">
-                      {(pref.measured ?? []).map((m) => (
-                        <li key={m.format}>
-                          after {m.format.replace(/_/g, " ")}: {Math.round(m.accuracy * 100)}% right over {m.n} questions
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-2 text-xs text-[var(--muted)]">{pref.note}</p>
-                  </div>
-                ) : (
-                  <p className="text-[var(--muted)]">
-                    {pref?.note ?? "Not enough measured answers yet to compare with the format you picked — insufficient evidence, so no verdict is shown."}
-                  </p>
-                )}
-                {posteriors.length > 0 ? (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">How sure we are about each way of teaching</p>
-                    <ul className="mt-2 space-y-1">
-                      {posteriors.map((s) => (
-                        <li key={s.strategy} className="flex flex-wrap gap-x-2 text-xs">
-                          <span>{s.strategy.replace(/_/g, " ")}</span>
-                          <span>
-                            helps about {Math.round((s.posterior_mean ?? s.p_helps ?? 0) * 100)}% of the time
-                            {s.ci ? ` (somewhere between ${Math.round(s.ci[0] * 100)}% and ${Math.round(s.ci[1] * 100)}%)` : ""} · from {s.n ?? 0} answers
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-1 text-xs text-[var(--muted)]">{evidence.data?.strategies?.note}</p>
-                  </div>
-                ) : null}
-                {detectors.map((d) => (
-                  <p key={d.detector} className="text-xs text-[var(--muted)]">
-                    {d.label}: {d.status === "measured" && d.value !== undefined ? `${Math.round(d.value * 100)}% right afterwards, from ${d.n ?? 0} answers — ` : ""}
-                    observed, not assigned ({d.source}, weight {d.weight} next to 1.0 for assigned comparisons). {d.note}.
-                  </p>
-                ))}
-              </div>
-            );
-          })()}
         </Card>
 
         <Card title="Blocking prerequisites" tone={d.knowledge_gaps?.length ? "warn" : "muted"} right={<span>from the topic graph</span>}>

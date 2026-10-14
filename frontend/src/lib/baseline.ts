@@ -1,183 +1,243 @@
 "use client";
 
-/** Typed helpers for the skippable, resumable mind baseline. */
-import { get, post } from "@/lib/api";
+/**
+ * The mind baseline, from the browser's side (round brief section 5).
+ *
+ * The flow is the server's, not this file's: the API answers "what now?" and every screen here
+ * renders what came back. That is deliberate -- a cursor kept in the browser is a cursor that can
+ * disagree with the trial log, and then a learner who closes the tab is served game one again.
+ * So this module is thin on purpose: typed calls, plus the few pure helpers (`offers_coins`,
+ * `timers_visible`, `format_range`) that decide presentation and can be unit-tested without a DOM.
+ *
+ * Two promises the screens must keep, both asserted in the probe rather than only here:
+ *
+ * * **Stopping is normal.** Every screen has a way to finish now; a partial baseline stores what
+ *   was measured and marks the rest "not measured" -- never zero.
+ * * **Coins are a question, not a game.** A wager is offered only on scored question tasks, never
+ *   on a practice trial, and never when the learner asked for timers off (which is about how the
+ *   app behaves, and asking for coins while refusing a clock would be the same pressure in a
+ *   different costume).
+ */
 
+import { api, post } from "./api";
+
+export type Json = Record<string, unknown>;
+
+/** One task, as the server describes it. Loose by design: each game reads its own fields. */
 export type BaselineTask = {
   id: string;
   game: string;
-  phase: "practice" | "measure" | "show" | string;
+  phase?: string;
   prompt?: string;
-  story?: string;
-  kind?: string;
-  action?: string;
-  stage?: string;
-  options?: string[];
-  cue?: string;
-  pairs?: { code: string; place: string }[];
-  sequence?: number[];
-  length?: number;
-  direction?: "forward" | "backward" | string;
-  answer_direction?: "forward" | "backward" | string;
-  items?: string[];
-  distractors?: { id: string; text: string }[];
-  hint_shop?: { id: string; cost: number; text: string; level?: string }[];
-  cases?: { n: number; value: number }[];
-  study_ms?: number;
+  practice?: boolean;
   max_latency_ms?: number;
-  max_probes?: number;
-  probes_used?: number;
-  wrong_guesses?: number;
-  max_wrong_guesses?: number;
-  max_value?: number;
-  [key: string]: unknown;
-};
+} & Json;
+
+export type FormatOption = { value: string; label: string; hint: string };
 
 export type BaselineQuestion = {
   key: string;
   question: string;
-  options: (string | number)[];
+  options?: unknown[];
   multi?: boolean;
   free_text?: boolean;
   why?: string;
 };
 
-export type BaselineHistory = {
-  task_id: string;
-  game: string;
-  phase: string;
-  action: string;
-  correct: boolean | null;
-  latency_ms: number | null;
-  wager: number | null;
-  input?: number;
-  output?: number;
-  guess?: string;
-  hint_id?: string;
-  hint?: string;
-  cost?: number;
-  scored?: Record<string, unknown>;
-};
+export type StageRow = { stage: string; state: string; trials: number };
 
-export type BaselineStageReport = {
-  stages: { stage: string; state: "complete" | "partial" | "not_started" | string; trials: number }[];
-  complete: number;
-  total: number;
-  played: string[];
-  not_measured: string[];
+export type Completion = {
+  stages?: StageRow[];
+  complete?: number;
+  total?: number;
+  played?: string[];
+  not_measured?: string[];
 };
 
 export type BaselineView = {
   run_id: string;
   student_id: string;
-  status: "in_progress" | "complete" | string;
+  status: string;
   stage: string;
   stage_title: string;
-  kind: "task" | "format" | "questions" | "snapshot" | "done" | string;
+  kind: "format" | "questions" | "task" | "snapshot" | string;
   task: BaselineTask | null;
   progress: number;
-  note?: string;
-  format_pick?: string | null;
-  format_options: { value: string; label: string; hint: string }[];
+  note: string;
+  format_pick: string | null;
+  format_options: FormatOption[];
   questions: BaselineQuestion[];
-  answers: Record<string, unknown>;
-  timers_visible: boolean;
-  history: BaselineHistory[];
-  completion: BaselineStageReport;
-  measured_trials: number;
-  started_at?: string | null;
-  resumed?: boolean;
-  scored?: Record<string, unknown>;
+  answers?: Record<string, unknown>;
+  completion?: Completion;
+  /** The score of the trial just submitted, when there was one. */
+  scored?: Json | null;
   duplicate?: boolean;
+  refused?: string[];
+  refused_note?: string;
 };
 
-export type BaselineFactor = {
+export type Factor = {
   key: string;
   title: string;
-  state: "measured" | "not_enough_data" | string;
+  state: string;
   n: number;
-  range: [number, number] | null;
+  range: number[] | null;
   summary: string;
   statement: string;
   actions: string[];
-  detail: Record<string, unknown>;
+  detail?: Json;
 };
+
+export type Lever = { value: unknown; why?: string; source?: string };
+
+export type PreferenceVsPerformance = {
+  lever?: string;
+  preference?: string;
+  performance?: string;
+  statement?: string;
+  note?: string;
+} & Json;
 
 export type BaselineSnapshot = {
   student_id: string;
-  run_id?: string | null;
-  snapshot_id?: string | null;
-  taken_at?: string | null;
-  state: "sealed" | "in_progress" | "not_started" | string;
-  factors: BaselineFactor[];
+  run_id: string | null;
+  snapshot_id: string | null;
+  taken_at: string | null;
+  state: string;
+  factors: Factor[];
+  levers?: Record<string, Lever>;
+  preferences?: Record<string, unknown>;
+  preference_vs_performance?: PreferenceVsPerformance | null;
+  completion?: Completion;
   measured?: number;
   total?: number;
-  levers?: Record<string, { value: unknown; why: string; source: string }>;
-  preferences?: Record<string, unknown>;
-  preference_vs_performance?: { stated: string; measured: { format: string; n: number; accuracy: number }[]; sentence: string; note: string } | null;
-  completion?: BaselineStageReport;
   note?: string;
 };
 
-export type StartBaseline = BaselineView & { resumed: boolean };
-export type TrialInput = { task_id: string; response: Record<string, unknown>; latency_ms?: number; wager?: number };
+export type NextDay = {
+  student_id: string;
+  run_id?: string;
+  tasks: BaselineTask[];
+  studied?: boolean;
+  note?: string;
+};
 
-export async function startBaseline(): Promise<StartBaseline> {
-  return post<StartBaseline>("baseline", {});
+export type TrialBody = {
+  task_id: string;
+  response: Json;
+  latency_ms?: number | null;
+  wager?: number | null;
+};
+
+/* ------------------------------------------------------------------- calls ---- */
+
+/** Open the baseline, or hand back the run that is already open. */
+export const start_baseline = () => post<BaselineView>("/api/v1/baseline", {});
+
+export const load_baseline = (run_id: string) => api<BaselineView>(`/api/v1/baseline/${run_id}`);
+
+export const pick_format = (run_id: string, value: string) =>
+  post<BaselineView>(`/api/v1/baseline/${run_id}/format`, { value });
+
+/** The stated questions go in one submit, and skipping is a submit with no answers. */
+export const answer_questions = (run_id: string, answers: Record<string, unknown>) =>
+  post<BaselineView>(`/api/v1/baseline/${run_id}/questions`, { answers });
+
+export const submit_trial = (run_id: string, body: TrialBody) =>
+  post<BaselineView>(`/api/v1/baseline/${run_id}/trial`, body);
+
+/** Seal the run. A partial baseline is a finished baseline. */
+export const finish_baseline = (run_id: string) => post<BaselineSnapshot>(`/api/v1/baseline/${run_id}/finish`, {});
+
+export const load_snapshot = (run_id?: string | null) =>
+  api<BaselineSnapshot>("/api/v1/baseline/snapshot", { query: run_id ? { run_id } : undefined });
+
+export const load_next_day = (run_id?: string | null) =>
+  api<NextDay>("/api/v1/baseline/next-day", { query: run_id ? { run_id } : undefined });
+
+/* ----------------------------------------------------------------- helpers ---- */
+
+/** Games whose task is a single scored answer -- the only places coins are offered. */
+export const COIN_TASKS: readonly string[] = ["quick", "trap", "codewords_cued", "codewords_next_day"];
+
+/** A wager is a question about confidence in an answer, so it is only offered where there is one. */
+export function offers_coins(view: BaselineView): boolean {
+  const task = view.task;
+  if (!task) return false;
+  if (task.practice) return false;
+  if (!COIN_TASKS.includes(task.game)) return false;
+  return timers_visible(view);
 }
 
-export async function getBaseline(runId: string): Promise<BaselineView> {
-  const result = await get<BaselineView>(`baseline/${encodeURIComponent(runId)}`);
-  if (!result.data) throw new Error(result.error ?? "the baseline could not be opened");
-  return result.data;
+/**
+ * Whether the learner wants to see clocks.
+ *
+ * The app still measures latency quietly either way -- that is stated on the questions screen --
+ * but a visible countdown is the thing they said no to, so it stays hidden.
+ */
+export function timers_visible(view: BaselineView): boolean {
+  const answers = view.answers ?? {};
+  return answers["timers_help"] !== "timers stress me";
 }
 
-export async function chooseFormat(runId: string, value: string): Promise<BaselineView> {
-  return post<BaselineView>(`baseline/${encodeURIComponent(runId)}/format`, { value });
+/** "8-9" or "8", for a range that the server reports as a two-number list. */
+export function format_range(range: number[] | null | undefined, unit = ""): string {
+  if (!range || range.length === 0) return "not measured";
+  const [lo, hi] = [range[0], range[range.length - 1]];
+  const same = Math.abs(hi - lo) < 1e-9;
+  const text = same ? `${round(lo)}` : `${round(lo)}-${round(hi)}`;
+  return unit ? `${text} ${unit}` : text;
 }
 
-export async function saveBaselineQuestions(runId: string, answers: Record<string, unknown>): Promise<BaselineView> {
-  return post<BaselineView>(`baseline/${encodeURIComponent(runId)}/questions`, { answers });
+function round(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return String(Math.round(n * 10) / 10);
 }
 
-export async function submitBaselineTrial(runId: string, body: TrialInput): Promise<BaselineView> {
-  return post<BaselineView>(`baseline/${encodeURIComponent(runId)}/trial`, body);
+export function source_label(source: string | undefined): string {
+  if (source === "measured") return "measured";
+  if (source === "stated") return "you told us";
+  return "default";
 }
 
-export async function finishBaseline(runId: string): Promise<BaselineSnapshot> {
-  return post<BaselineSnapshot>(`baseline/${encodeURIComponent(runId)}/finish`, {});
+/** The eight factors, in the order the brief lists them. Anything unknown lands at the end. */
+export function order_factors(factors: Factor[]): Factor[] {
+  const order = [
+    "working_memory",
+    "processing_pace",
+    "attention_self_control",
+    "long_term_memory",
+    "reasoning_style",
+    "prior_knowledge",
+    "persistence_help_seeking",
+    "confidence_calibration",
+  ];
+  return [...factors].sort((a, b) => {
+    const ia = order.indexOf(a.key);
+    const ib = order.indexOf(b.key);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
 }
 
-export async function getBaselineSnapshot(runId?: string): Promise<BaselineSnapshot> {
-  const result = await get<BaselineSnapshot>("baseline/snapshot", runId ? { run_id: runId } : undefined);
-  if (!result.data) throw new Error(result.error ?? "the snapshot could not be read");
-  return result.data;
+/** Seconds left on a visible clock, for the study screen and the timed games. */
+export function seconds_left(deadline_ms: number, now_ms: number): number {
+  return Math.max(0, Math.ceil((deadline_ms - now_ms) / 1000));
 }
 
-export function wagerAllowed(task: BaselineTask | null | undefined, action?: string | null): boolean {
-  if (!task || task.phase !== "measure") return false;
-  if (task.game === "machine") return action === "guess";
-  if (task.game === "codewords_delayed" && (action === "predict" || task.action === "predict")) return false;
-  return ["codewords_cued", "codewords_delayed", "quick", "shopkeeper", "trap", "vault"].includes(task.game);
+/** What the learner types back for the shopkeeper's items: one line, comma separated. */
+export function parse_items(text: string): string[] {
+  return text
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-export function factorRange(range: [number, number] | null): string {
-  if (!range) return "not measured";
-  const [low, high] = range;
-  return `${trimNumber(low)}–${trimNumber(high)}`;
+/** A vault answer, given the order the tiles were tapped. */
+export function vault_expected(sequence: number[], answer_direction: string | undefined): number[] {
+  return answer_direction === "backward" ? [...sequence].reverse() : [...sequence];
 }
 
-export function trimNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
-}
-
-export function prettyKey(value: string): string {
-  return value.replace(/_/g, " ");
-}
-
-export function secondsLabel(seconds: number): string {
-  const safe = Math.max(0, Math.ceil(seconds));
-  const minutes = Math.floor(safe / 60);
-  const rest = safe % 60;
-  return minutes ? `${minutes}:${String(rest).padStart(2, "0")}` : `${rest}s`;
+/** True when the taps so far are the answer so far (a prefix check, so a wrong tap shows at once). */
+export function vault_prefix_ok(taps: number[], expected: number[]): boolean {
+  return taps.every((tap, i) => tap === expected[i]);
 }

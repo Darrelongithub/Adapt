@@ -84,13 +84,21 @@ and `scripts/teaching_quality_eval.py` writing `QUALITY_REPORT.md`.
 - [ ] Phase 1.1–1.10 fixes, with tests
 - [ ] Phase 1.4.2 BKT calibration
 - [x] Phase 1.4.3 shared state, orchestrator, `adapt rebuild-model`
-- [ ] Phase 2 baseline
-- [ ] Phase 3 subject round
-- [ ] Phase 4 content engine + `QUALITY_REPORT.md`
-- [ ] Phase 5 adaptation layer + contrast demo
-- [ ] Phase 6 evidence + failure loop
-- [ ] Phase 7 security/demo readiness
+- [x] Phase 2 baseline (backend + screens; browser checks pending, see `docs/UNVERIFIED.md`)
+- [x] Phase 3 subject round (agent 2, PR #15) - merged and wired
+- [x] Phase 4 content engine: the deterministic half and the §7 gate (`scripts/teaching_quality_eval.py`
+      + `QUALITY_REPORT.md`, zero flags), and the engine behind a screen - the subject round's
+      "What we'd teach" panel, with the matched pair graded server-side. The generative half
+      (a model-written pack) never landed and still has not run; see the final report
+- [x] Phase 5 adaptation layer + contrast demo (agent 4) - ported in from `main`, see the addendum
+- [x] All six agent PRs integrated: #9, #10, #12, #14, #15 merged; #11/#13 read off `main`;
+      the frozen-file wiring from agents 2, 4 and 6 applied by the integrator
+- [ ] Phase 6 evidence + failure loop (agent 5 landed)
+- [ ] Phase 7 security/demo readiness (agent 6 landed; integrated and green - see the integration report)
 - [ ] Final report
+
+Everything below the line "## Integration report 1" was landed by the agent workstreams on their own
+PRs and merged here (`docs/AGENT_BRIEFS.md` says how the merge is run).
 
 ## 0.5 Phase reports
 
@@ -319,3 +327,450 @@ inspecting the schema with the app's own `Database`), which is the path a return
    `evidence` *and* to the new log. Removing the old writes would break the phase-4 tests that
    read them; the brief says not to weaken tests, so the migration is additive and the remaining
    work (AI 1's analysis reading its inputs from the store) is recorded rather than half-done.
+
+
+---
+
+## Phase 2 report - the universal mind baseline (section 5)
+
+Status: **complete on everything this environment can execute.** The engine is 40/40 green, the
+whole suite is green, the screens exist and were driven in jsdom against the real API, and the
+browser-level and live-model claims are in `docs/UNVERIFIED.md` as pending checks with steps.
+
+### Files changed in this phase
+
+* `backend/src/adapt/baseline/{service,flow,games,factors}.py` - the engine (this phase started
+  here; the earlier checkpoint commit has the first half).
+* `backend/src/adapt/api/routes/baseline.py` - the eight routes, with the ownership check that
+  opens its own short-lived session.
+* `backend/tests/test_baseline.py` - 40 tests.
+* `backend/migrations/versions/0008_baseline_tables.py` - the run/trial tables.
+* `frontend/src/lib/baseline.ts` - the typed client and the pure presentation helpers.
+* `frontend/src/app/baseline/page.tsx` - every screen of the flow.
+* `frontend/src/lib/mock.ts` - the baseline fixtures (the run advances, so `?mock=1` walks it).
+* `frontend/scripts-ui-probe.mjs` - the `baseline` scenario: 25 checks.
+* `scripts/check-contract.mjs` - see deviation 2.
+
+### Commands run, with results
+
+```
+cd backend && ../.venv/bin/python -m pytest -q
+  765 passed, 1 warning in 55.74s
+
+cd backend && ../.venv/bin/python -m pytest -q tests/test_baseline.py
+  40 passed, 1 warning in 5.29s
+
+cd frontend && npm run lint          # contract + tsc
+  contract ok: every path the frontend calls exists, ?mock=1 covers them, ...
+
+cd frontend && npm run build
+  compiled; /baseline  8.27 kB
+
+scripts/probe-fresh.sh baseline      # jsdom + live API + real encrypted DB
+  25/25 checks passed
+```
+
+The full synthetic play-through (a perfect learner) now reaches every stage in the brief's order:
+study, cued recall, quick taps, vault, shopkeeper, quick taps, machine, locked box, quick taps,
+traps, delayed codewords, snapshot.
+
+### What was actually wrong (each one found by a test or by the play-through)
+
+1. **The run "hung" on SQLite write-lock contention, not an infinite loop.** `Baseline.submit` held
+   a write transaction while `state.ingest` opened a *second* session on the same file: every submit
+   waited out `busy_timeout = 5000` and then raised `database is locked`. Fixed by passing the
+   caller's session to `ingest`/`set_preference` and reading the learner model before the write
+   session opens. The route ownership check now uses its own session and nothing holds a request
+   session across a service call.
+2. **The shopkeeper stage never ran.** `shopkeeper_next` counted *every* trial in the run rather
+   than its own game's, so the stage looked complete the moment anything else had been measured: it
+   was reported "complete, 0 trials", the learner never saw the distraction task, and "recall under
+   distraction" was silently missing from the working-memory factor.
+3. **Two routes had an undefined session.** `GET /baseline/snapshot?run_id=...` and
+   `GET /baseline/next-day?run_id=...` called `_owned(s, ...)` with a session that no longer existed
+   - a `NameError` behind a branch no test entered. Both covered now.
+4. **The locked box re-served itself forever** and recorded nothing about what the learner did: the
+   trial never stored the action (probe/hint/attempt/walk away). Both fixed; the box now ends on a
+   solve, a walk-away, or three attempts.
+5. **`step_size` claimed "measured"** with no working-memory measurement behind it, and the
+   machine's "noticed the switch" read a typed sentence instead of the scored probe output.
+
+### Deviations (and why)
+
+1. **The vault tiles accept number keys (1-9) as well as arrows and Enter.** The brief requires
+   keyboard operation, which the tiles have. The number keys were added because the jsdom probe
+   cannot drive a React synthetic key handler, and because they are genuinely faster for a keyboard
+   learner. Asserted in the probe.
+2. **`scripts/check-contract.mjs`'s generic-argument matcher was narrowed** from a paren-balanced
+   run to `<[^()<>]*>`. The old pattern was greedy and matched across lines, so
+   `post<BaselineView>("/api/v1/baseline", {})` followed by another generic call parsed as one call
+   whose path was the *later* string - which meant real call sites were never checked against the
+   route table or the mock table. After the fix the checker sees 72 frontend calls instead of 53.
+3. **The study screen is labelled "looking time - not scored", not "measured".** A `phase: "show"`
+   task is looking time; calling it measured would claim a trial that was never scored.
+
+### Still open in this phase
+
+The browser checks in `docs/UNVERIFIED.md` (flash on a real device, 45-second clock, 360px layout),
+and screenshots into `docs/screens/` - both need a browser, which cannot be installed here.
+
+---
+
+## Integration report 1 - the landed agent PRs, and §3 on the wire
+
+*Integrator session, 2026-10-13. PRs #9 (evidence/calibration), #10 + #14 (phase 7 security) and #12
+(master prompts) merged into `arena/06d446fc-adapt`; #11 and #13 landed on `main` and are reconciled
+at the final merge. Agent 2 (phase 3) has not landed. The working note with the defect analysis is
+`agent-notes/7-integration.md`; what follows is the report.*
+
+### What was merged, and what was actually wrong
+
+The merges themselves were clean. What was not clean was the interaction between the phase-7 secrecy
+boundary and the routes the other phases had added. `secrecy.py` drops any response key whose
+normalised name contains `provider`, `llm`, `model`, `token`, `budget`, `quota` or `headroom` - and
+that silently ate learner-safe fields: `voices`, `model_version`, `needs_model`, `provider_note`, the
+lesson explain payload, `/status`, `/quotas`, `/health` and the resource search. Ten tests failed at
+the merged tip for this one reason.
+
+The fix direction matters and is now a rule in the code: **the boundary stays strict and the routes
+change**. Re-allowing a banned word so a payload survives is wrong - the canary route walk in
+`tests/test_config_secrecy.py` and the metadata test at :439 assert those words are *absent*, and
+those tests are the authority. So the routes now publish learner vocabulary instead:
+
+* `served_by` ("your own material" / "written for you") replaces `provider` and `provider_note` on
+  `/explain`, `/analyze`, `/tutor/message` and the WebSocket reply metadata.
+* `/health` and `/status` carry `lessons{state, says, note}` - "Lessons: ready" / "Lessons: simple
+  mode" - and `data_protection`, which is the same encryption facts as the operator's report minus
+  paths, key source and driver configuration (the engine stays: "the file is encrypted" is not
+  checkable without it, and an encryption engine is not a model provider).
+* `/quotas` reports `pacing` in learner words (`lesson_requests`, `voice_frames`, `exports`).
+* `/profile.shared_state.learner_model` is the learner's own model of themself; the bare `model` key
+  is reserved for runtime model identifiers and is gone from every public payload.
+* Lesson explains carry `needs_extra_help` and `asked_for_extra_help`; `tried_model` and
+  `needs_model` are operator vocabulary and are stripped if they reach the wire.
+
+The operator's view still exists - it is `adapt status` on the console, which prints exactly what
+the HTTP surface may not.
+
+### Files changed
+
+* `backend/src/adapt/security/secrecy.py` - `_MODEL_WORD_ALLOWED` reduced to the learner-safe keys;
+  new `_PRIVATE_PAYLOAD_KEYS` and `public_payload(data, *, served_locally)`.
+* `backend/src/adapt/api/routes/system.py` - `/health`, `/status`, `/quotas`, `/privacy`,
+  `lessons_state()`, `data_protection()`.
+* `backend/src/adapt/api/routes/tutor.py`, `learning.py`, `lessons.py` - the public shapes above;
+  `lessons.py` explain returns the same key set whichever branch answers.
+* `backend/src/adapt/ai/ai2.py`, `services/lessons.py` (`as_public_dict`).
+* `backend/src/adapt/voice/stt.py`, `tts.py` - engine capability sentences are learner-safe; the
+  install hint goes to the log (`docs/VOICE.md` has the commands).
+* `frontend/src/lib/types.ts`, `mock.ts`, `engine/types.ts`, `components/chrome.tsx`,
+  `components/question.tsx`, `app/page.tsx`, `app/settings/page.tsx`, `app/voice/page.tsx`,
+  `frontend/scripts-ui-probe.mjs`.
+
+### Test expectations corrected (each carries a §3 comment saying why)
+
+`tests/test_api_learner_loop.py` (health, analyze, explain, WebSocket meta, the status/quotas/privacy
+block rewritten with absence checks, resource sources), `tests/test_crypto_and_encryption.py` (the
+two encryption-honesty tests read `data_protection` and still assert what is *not* protected),
+`tests/test_lessons_api.py` (public explain key set), `tests/test_state_foundation.py` (component
+names asserted against `current().status()`, `learner_model` in the shared snapshot).
+`tests/test_config_secrecy.py` and `tests/test_prompt_injection.py` were **not** touched.
+
+One test-only defect was fixed because it was order-dependent rather than app-dependent:
+`test_private_routes_refuse_anonymous_callers` used the session-scoped client, whose cookie jar holds
+whatever an earlier test signed in - so `/dashboard` answered 200 to a supposedly anonymous caller
+whenever a valid cookie happened to be present, and 401 otherwise. It now clears the jar and restores
+the exact cookie objects around the check.
+
+### Commands run, with results
+
+| Command | Result |
+|---|---|
+| `pytest -q` (backend) | **887 passed**, 74.7 s |
+| `npm run lint` (contract + `tsc --noEmit`) | contract ok - 88 routes, 78 calls |
+| `npm run build` | compiled successfully |
+| `npm run test:engine` / `test:lib` / `test:server` | 15 / 18 / 2 passed |
+| `scripts/probe-fresh.sh all` | **234/234 checks passed**, exit 0 |
+| bundle scan of `frontend/.next/static` | no provider/model name (only Next's own `Googlebot` regex) |
+
+### Found by scanning the built bundle, not the source
+
+Two §3 violations lived only in shipped client code: `/voice` printed
+`pip install faster-whisper kokoro` with both engine names in tags and fallbacks, and the mock's
+capability strings named them too. Both are gone; the commands are in `docs/VOICE.md`. The same scan
+found the *backend* capability sentences naming their package on an authenticated HTTP surface -
+also fixed, and the probe now asserts the payload names no engine.
+
+### Still open
+
+* Agent 2's phase 3 (the subject round) has not landed.
+* `main`'s #11 and #13 wait for the final merge.
+* Anything only a real browser or a live model key can settle is in `docs/UNVERIFIED.md`.
+
+### Integration report 1, addendum - phase 5 ported from `main`
+
+`main` (`a1edc69`) turned out to be a single-commit snapshot with **no common ancestor** to this
+branch, so it cannot be merged - it has to be read and ported. It carried phase 5 (agent 4's
+adaptation layer): `ai/adapter.py`, `lesson/templates.py`, `api/routes/lesson_plan.py` and 594 lines
+of tests. Ported here, with only one line needed in a frozen file (the router tuple in `api/app.py`),
+those 83 tests pass unchanged against this tree, and the contrast screen plus the seven visual
+templates came with it (`components/visual/*`, `app/contrast`), now reachable from the nav as
+"Compare lessons" - it was an orphan route before. A new probe scenario covers it (8 checks),
+including the `?mock=1` path.
+
+`main` also carries a *second* implementation of the phase-2 baseline screens (another agent-1 run,
+`app/baseline/[runId]`, `app/baseline/snapshot`, a different `lib/baseline.ts`). The baseline on this
+branch is the one verified here (the engine's 40 tests, the 25-check probe walk, the phase 2 report
+above); the other one is left where it is and the choice is flagged for the final merge. `UI file.txt`
+and the prompts zip on `main` are not carried.
+
+Backend after the port: **970 passed**. Probe: **242 checks** (234 + the 8 new contrast checks).
+
+---
+
+## Integration report 2 - agent 2's phase 3 wired, and the phase-4 gate built
+
+*Integrator session, 2026-10-14. PR #15 (agent 2's subject round) merged into
+`arena/06d446fc-adapt`. Six agents have now landed; this is the audit of the merged tree against
+`ADAPT_functionality_round_prompt.md`, phase by phase.*
+
+### Phase 3, wired
+
+The handoff in `agent-notes/2-subject-round.md` listed the frozen-file edits its author could not
+make; all are applied: the `subjects` service on `AppServices`, `subjects.router` in `api/app.py`,
+and — the one that mattered beyond the routes — the subject models imported at the bottom of
+`db/models.py`, so `Base.metadata` is the whole schema whatever a process imported first. Without
+that import, a full-suite run failed one migration test depending on file order (the subject tables
+existed for the create-all path only if some *other* test had already imported them). 22 topics,
+28 skills across 5 families, the ladder and the pop-up lesson all serve over HTTP now, and
+`/subject` is reachable from the nav instead of being an orphan URL.
+
+### Phase 4: the gate the brief names, built; the engine it gates, absent
+
+Section 7 asks for a pipeline (concept breakdown → three variants per concept → matched A/B pairs →
+3-hint sets → 3-point teach-backs → symbolic verification → cache). What is in the tree is the
+*bottom* of that pipeline, well built: `assessment/worked.py` gives **every** item three graded
+hints and a worked example verified against the item's own answer key, and the subject round
+carries authored, checklist-graded content across maths, languages, sciences, history and the
+generic fallback. No branch, commit or PR exists for the generative half.
+
+So the gate was built and run:
+
+* `scripts/teaching_quality_eval.py` walks every deterministic item — the maths bank
+  (63 items: hints, examples, the explanation a learner actually sees), the subject pools
+  (89 questions) and the pop-up lesson's concepts in all three formats — and writes
+  `QUALITY_REPORT.md`.
+* The gate is exactly the brief's five flags: off-topic text, missing example, generic hint,
+  placeholder leakage, key disagreeing with the example. Everything else it notices is a note and
+  does not fail the run, because adding checks must not move the line.
+* **Result: zero flags across 199 questions in 56 named topics** (the brief asked for ≥40 questions
+  across ≥6 subjects). The model pass reports "not run — no key", in those words.
+* `backend/tests/test_teaching_quality.py` runs the same walks in the suite, so a content regression
+  fails the build rather than only the report.
+
+### The one defect the gate found
+
+`local_tutor.explain` marked `grounded: true` while serving another topic's passage (with the source
+topic named in the copy). That is precisely what §4.1.2 forbids — grounded is a claim about *which
+topic* the words came from. Fixed in one line (`grounded` now requires `topic_match`), and the
+existing test that asserted the old behaviour now asserts the rule, with the reason beside it.
+
+### Commands and results
+
+| Command | Result |
+|---|---|
+| `pytest -q` (backend, whole suite) | **1035 passed** |
+| `scripts/teaching_quality_eval.py` | **exit 0 — zero gate flags** across 199 questions |
+| `npm run lint` (contract + typecheck) | contract ok — 103 routes, 89 calls |
+| `npm run build` | compiled successfully |
+| `scripts/probe-fresh.sh all` | see the probe line below |
+
+### Deviations now on the record
+
+1. **Phase 4's engine assembles from authored chains rather than generating freely.** Agent 3
+   produced no branch, so the engine was built to compose the packs §7.2 names out of the authored
+   prerequisite chains — which means every sentence in a pack is one a person wrote and the engine
+   records where each part came from. A model-written pack is still possible: `ai2.content_pack` is
+   the hook, the validation is the same code, and the cache is keyed on content either way.
+2. **`grounded` semantics tightened** — cross-topic fallback text is honest but not "grounded".
+3. **The subject round's mock fixtures live in `lib/subjects.ts`**, not the shared `mock.ts` table
+   (agent 2's choice, kept: `mock.ts` was frozen during that round).
+4. **Two baseline UIs exist on `main`**; this branch's is the verified one and the choice is flagged
+   for the final merge.
+5. **No screenshots** (`docs/screens/` is empty): no browser can be installed in this sandbox. Every
+   screen change is covered by the jsdom probe instead, and this is in `docs/UNVERIFIED.md`.
+
+---
+
+## Audit against the brief, phase by phase (2026-10-14)
+
+The user asked for a pass over the whole brief to check it was implemented well, after all six
+agents landed. This is that audit. Each line names the evidence, not an impression.
+
+| Brief section | Verdict | Evidence |
+|---|---|---|
+| 2A shared state + orchestrator | **done** | `state/store.py` (immutable versions, idempotent ingest, write matrix), `state/orchestrator.py`, `adapt rebuild-model`; rebuild-equals-incremental and no-cross-AI-import tests pass |
+| 3 configuration secrecy | **done** | canary route walk (every route, every error shape, exports) + log boundary + bundle scan; console-only config in `cli.py`; simple mode wording on `/health`, `/status`, the status chip |
+| 4.1 the ten defects | **done** | each has a regression test; the ten are listed with what was actually wrong earlier in this document |
+| 4.2 BKT calibration | **done** | `learning/bkt.py` per-kind guess/slip, floor, interval; "early signal" under 8 observations |
+| 4.3 shared-state foundation | **done** | see 2A |
+| 5 phase 2, the mind baseline | **done** | engine + 40 tests, 25-check probe walk, six games, snapshot with ranges and n |
+| 6 phase 3, subject round | **done** | 22 topics, 28 skills, ladder, pop-up lesson; 61 backend tests + 17 probe checks live over HTTP |
+| 7 phase 4, content engine | **done** | `backend/src/adapt/content/` — concept breakdown, three variants per concept, matched A/B pair, graded hints, 3-point checklist, exact symbolic checker, §7.3 validation, §7.6 cache; `scripts/teaching_quality_eval.py` walks it (273 questions, zero flags); 56 tests in `backend/tests/test_content_engine.py`; 15 probe checks over HTTP |
+| 8 phase 5, adaptation layer | **done** | `ai/adapter.py` + 7 visual templates + contrast demo; adversarial tests reject malformed/injected plans; 83 tests; 8 probe checks |
+| 9 phase 6, evidence + failure loop | **done** | evidence routes, method comparison with controlled/observational weights, failure loop branches unit-tested; 59/59 journey check |
+| 10 phase 7, security/robustness/demo | **done** | injection tests, redaction, rate limits, `?mock=1`, demo seed, accessibility work |
+| 11 definition of done | **partial** | 1–5 hold except: screenshots under `docs/screens/` (**impossible here** — no browser), and `QUALITY_REPORT.md` covers the deterministic path only (2 says "zero flags", which it does) |
+| 12 final report | **this document + the phase reports** | |
+| 13 do-not list | **held** | no test weakened (three expectations corrected, each with the rule it now encodes); no learning-style labels; no fabricated numbers; no key in the bundle |
+
+**The three things a reader should not miss:** no screenshot exists because no browser can be
+installed in this sandbox (the probe drives every screen in jsdom instead); the live-model pass of the
+quality gate has never run (no key), which is stated in `QUALITY_REPORT.md` and `docs/UNVERIFIED.md`
+rather than implied; and phase 4's engine is deterministic by design — it assembles packs from the
+authored prerequisite chains, so it teaches what a person wrote and never invents a fact, which is a
+*choice* about scope rather than a missing model call.
+
+
+---
+
+## Integration report 3 — phase 4's content engine, built (2026-10-14)
+
+Phase 4 was the one phase with no landing: agent 3 produced no branch, and what existed was the
+deterministic *bottom* of the pipeline (three graded hints and a verified worked example for every
+bank item) plus the §7 gate. Section 7 asks for a pipeline: "**Concept breakdown** for the chosen
+topic… **Per concept, three variants**… plus a **matched question pair (A/B)**… a **graded 3-hint
+set**, and a **3-point teach-back checklist**", then "**Validation (code, mandatory before any learner
+sees an item)**" and a "**Cache**".
+
+All of it is now in `backend/src/adapt/content/`:
+
+| module | what it does |
+|---|---|
+| `symbolic.py` | exact algebra/calculus checking — equivalence, differentiation, linear and quadratic solving — over `Fraction` arithmetic, refusing (by name) anything it cannot vouch for |
+| `breakdown.py` | a topic's concepts, prerequisites, misconceptions and learning objectives, composed from the authored chain |
+| `pack.py` | one concept's three variants, its matched pair, its graded hints and its checklist |
+| `validation.py` | §7.3's mandatory check, as code |
+| `pipeline.py` | generate → validate → cache by content hash → log every rejection |
+| `api/routes/content.py` | the same pack over HTTP, with the key stripped |
+
+### The one design decision worth arguing about
+
+**The engine assembles; it does not author.** A concept's written variant is the chain's own
+description, its visual spec is `learning.visuals.build_visual` applied to that description, its
+worked example is four steps each taken from an authored rung, its pair is the rung-3 and rung-4
+tasks, its hints quote the rung-2 explanation and the rung-1 near-miss, and its checklist is the
+rung-5 rubric's three points. Every part records its source, and a concept with no authored kit
+produces a pack that says so rather than a plausible-looking invention.
+
+The alternative — asking a model to write a pack — is what §7 describes, and it is available:
+`ai2.content_pack` is the hook the orchestrator's turn cycle already calls, and the validation and
+the cache are the same code either way. What was built here is the path that works with no key, on a
+phone, in a demo, and in this sandbox — which is also the path every gate run takes.
+
+### The pair is not claimed to be matched on difficulty
+
+Rung 3 and rung 4 are different demands by design (§6.4). The pack says so in those words and points
+at `subjects.methodtest.expected_accuracy`, so a comparison between the legs uses expected
+performance from the learner's own `p_know` rather than raw scores — the same rule that stops a
+strong learner's 3/3-and-3/3 from being recorded as "visual learner".
+
+### What the gate and the tests found while building it
+
+Six defects, each fixed in the code rather than in the checker:
+
+1. `worked.PLACEHOLDER` read `{3}` as an unrendered variable, so every set-theory worked example
+   failed its own gate. Aligned with `numbas._UNRENDERED`, which had the correct pattern all along.
+2. The worked example's first step restated the raw stem, which put the question's own data — and for
+   "the median of 5, 7, 7, 9, 12", the answer — into the example. It now restates the question in the
+   learner's own words.
+3. `generated.key_verification` is written for candidates and reads `correct_index` at the top level;
+   feeding it the stored shape made every mcq key come back "no answer text to check". The view is
+   flattened before it is passed.
+4. The answer-leak rule fired on any key found in the stem, which rejects every "which word in this
+   sentence…" question. Quoted material is no longer the stem's own voice.
+5. A difficulty tolerance of ±0.30 around 0.78 never fired. It is now the repo's own 45% floor
+   (`selector.MIN_EXPECTED_SUCCESS`) with §4.1 item 7's scaffolded carve-out.
+6. A choice item whose `correct` flags and `correct_index` disagreed passed as "one key". They now
+   have to name the same option.
+
+And one pre-existing flake, fixed rather than tolerated: `test_approving_the_visual_strategy_changes_
+what_is_served` asserted that after revoking, the served methods were not all `"visual"`. Once the
+directive is gone `assign_method` falls back to a seeded rotation that can legitimately hand every
+concept the same method, so the test failed about one run in six — it now asserts the property that
+was actually meant, that nothing is *forcing* the method.
+
+### Results
+
+| command | result |
+|---|---|
+| `pytest -q` (backend, whole suite) | **1091 passed** (was 1035) |
+| `scripts/probe-fresh.sh all` | **280/280 checks** (was 265), 235 API calls |
+| `scripts/probe-fresh.sh content` | **15/15** — the new API scenario |
+| `scripts/teaching_quality_eval.py` | **exit 0, zero gate flags across 273 questions** (was 199) |
+| `npm run lint` | contract ok — 106 routes, 89 calls |
+| `npm run build` | compiled successfully |
+
+The gate's question count rose from 199 to 273 because the engine's matched pairs are now walked too:
+37 concepts × 2 legs, all checked for the same five flags.
+
+## Closing report — the content engine gets a screen (2026-10-14)
+
+The audit found one gap: phase 4's engine assembled packs that only the probe and the tests
+could reach, because nothing in the UI called `/api/v1/content/*`. A pack a learner cannot open
+is not teaching material, it is a fixture. This closes it.
+
+**What landed**
+
+* `POST /api/v1/content/grade` — grades one leg of a matched pair server-side. The browser holds
+  the question with its options shuffled and its key stripped, so it sends back the *text* of the
+  option it picked; the server maps that text back to the authored position and grades it with
+  `subjects.games.score_task`, the same deterministic scorer the skill round uses. The key never
+  leaves the server. A string this question never offered is refused rather than scored against a
+  guess. The authored explanation travels *with the verdict*, not with the question, because it
+  names the answer and a learner who has not answered yet must not be able to read it.
+* `frontend/src/lib/content.ts` — the only place the UI talks to `/api/v1/content/*`.
+* The subject round's "What we'd teach" panel (`frontend/src/app/subject/page.tsx`): a topic in,
+  the engine's own breakdown resolves it to a concept, and the three variants, the matched pair,
+  the hint ladder and the self-check come back.
+
+**Four things the panel refuses to smooth over.** These are the engine's honesty rules, not
+presentation choices, and each was a place where the obvious UI would have quietly overridden one:
+
+1. A concept with no authored kit shows the engine's own `reason` — not a placeholder, a
+   "coming soon", or a made-up card.
+2. `rejections` are rendered *where the missing part would have been*. A worked example that
+   failed its own gate is a decision the engine made; hiding it makes the pack look broken.
+3. The pair's own note that it is **not** matched on difficulty is shown, so nobody reads the two
+   legs as a like-for-like comparison — rung 3 and rung 4 are different demands by design.
+4. Grading is the server's. The browser sends option text, never an index, and never learns which
+   option is right until it has answered.
+
+**One design decision worth naming.** The panel has its own topic field rather than borrowing the
+resolve card's. The pack is about a topic, not about the round that measures it, and a learner who
+has not resolved anything yet can still ask what we would teach. It follows the resolve card when
+that one has an answer.
+
+**The mock fixtures moved to `lib/mock.ts`**, the shared table, so there is one copy of each
+recorded shape and `?mock=1` never 404s on a real route. The grade row cannot read a POST body
+(mock rows are handed the URL, which a POST does not carry) and says exactly that; `lib/content.ts`
+grades the mock answer properly because it does know which option was picked.
+
+### Results
+
+| command | result |
+|---|---|
+| `pytest -q` (backend, whole suite) | **1097 passed** / 1 skipped (was 1091) |
+| `scripts/probe-fresh.sh all` | **289/289 checks**, 210 API calls |
+| `scripts/probe-fresh.sh content` | **28/28** — the API walk *and* the screen walk |
+| `npm run lint` | contract ok — 107 routes, 92 calls |
+| `npm run build` | compiled successfully |
+
+The `content` scenario gained 13 checks, and its one new HTTP request is paced by the server's own
+retry number: a full walk already sits close to the per-connection ceiling, and an unretried 429
+there reads as a broken route rather than as the harness's own traffic.
+
+**Still not verified, and now named as such in `docs/UNVERIFIED.md`:** whether the panel is in the
+right *place* in the subject round. It sits below the resolve card and before the plan; whether a
+learner should meet the material before or after the round that measures them is a design
+judgement, not a defect, and it is a human's to make.

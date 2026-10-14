@@ -149,7 +149,7 @@ export default function Home() {
         <Tag tone="good">no learning styles question</Tag>
         <Tag tone="think">hypotheses, not labels</Tag>
         <Tag tone="accent">keystrokes never recorded</Tag>
-        <Tag>{health?.mode ? `mode: ${health.mode}` : "the API is not answering"}</Tag>
+        <Tag>{health?.lessons?.says ?? (health?.ok ? "the API is answering" : "the API is not answering")}</Tag>
         {mock ? <Tag tone="bad">showing demo data</Tag> : null}
       </div>
       {mock ? (

@@ -1,508 +1,784 @@
-"""Phase 6 (Agent 5): evidence, method comparison, and the "why did I fail" loop.
-
-Three layers, matching the brief's gate:
-
-* **Unit** — every branch of the update rule (prerequisite → weight 0,
-  fatigue → 0.5 + break, otherwise → 1.0), the fatigue rule exactly as stated
-  (last two > 1.5× session median *with* falling accuracy — either half alone
-  must not fire), matched-B same-format selection, seeded-random tie-breaks,
-  counterbalanced serve-time assignment, weighted evidence summaries, the
-  observational labelling of self-selection detectors, seeded Thompson
-  posteriors shown as mean + interval + n, and the "insufficient evidence"
-  label below minimum n.
-* **Simulation** — synthetic learners of *known* behaviour must let the loop
-  recover the right conclusion better than chance: learners whose visual
-  method genuinely works get visual identified; learners missing the
-  prerequisite get the miss attributed to the prerequisite, every time.
-* **HTTP** — the loop and the evidence surfaces exercised end to end through
-  the real app: prerequisite-fail, fatigue, and clean-method branches over
-  ``POST /evidence/failure-loop``; actual-vs-expected with weights over
-  ``GET /evidence/methods``; preference-vs-performance wired to real
-  (inserted) attempt outcomes.
-"""
+"""Known-behaviour simulations plus every attribution branch and real HTTP recovery."""
 
 from __future__ import annotations
 
-import random
+import json
 
+import numpy as np
 import pytest
-from sqlalchemy import select
 
-from adapt.learning import effect as EFFECT
-from adapt.learning import failure as F
-from adapt.learning import methods as M
-from adapt.learning import patterns as P
-
-
-def _rows(method: str, correct_pattern: list[bool], *, design: str = "randomised", expected: float = 0.5) -> list[dict]:
-    return [
-        {"method": method, "correct": c, "expected_success": expected, "design": design, "question_kind": "numeric", "topic_id": "top_x"}
-        for c in correct_pattern
-    ]
-
-
-FIRST = {"id": "i1", "kind": "numeric", "difficulty": 0.5, "topic_id": "top_b"}
-CANDIDATES = [
-    {"id": "i2", "kind": "numeric", "difficulty": 0.55, "topic_id": "top_b", "active": True},
-    {"id": "i3", "kind": "mcq", "difficulty": 0.5, "topic_id": "top_b", "active": True},
-]
-PREREQS = {"top_b": ["top_a"]}
-PREREQ_CANDIDATES = {"top_a": [{"id": "p1", "kind": "numeric", "difficulty": 0.3, "topic_id": "top_a", "active": True}]}
-CALM_LAT = [1000, 1100, 900, 1000, 1050, 950]
-CALM_OK = [True, True, False, True, True, False]
+from adapt.learning.failure import (
+    FailureError,
+    FailureLoop,
+    attribution,
+    choose_alternative,
+    fatigue_flag,
+    outcome_report,
+    validate_pair,
+)
+from adapt.learning.methods import METHODS, assign_method, balanced_probe
+from adapt.learning.strategies import StrategyModel, StrategyStat
 
 
-def _loop(**overrides):
-    kwargs = dict(
-        learner_id="st_test",
-        topic_id="top_b",
-        first_item=FIRST,
-        first_method="explanation",
-        first_expected=0.6,
-        candidates=CANDIDATES,
-        prereqs=PREREQS,
-        prereq_candidates=PREREQ_CANDIDATES,
-        prereq_correct=True,
-        session_latencies_ms=CALM_LAT,
-        session_correct=CALM_OK,
-        method_rows=[],
-        matched_correct=None,
-    )
-    kwargs.update(overrides)
-    return F.run_failure_loop(**kwargs)
-
-
-# --------------------------------------------------------------------------- #
-# (b) the fatigue rule, exactly as stated
-# --------------------------------------------------------------------------- #
-
-def test_fatigue_fires_only_when_slow_and_slipping():
-    fired = F.fatigue_check([1000, 1000, 1100, 900, 3200, 4100], [True, True, True, False, False, False])
-    assert fired["fired"] is True and fired["median_ms"] == 1050.0
-    assert "tiredness" in fired["why"]
-
-
-def test_fatigue_does_not_fire_for_slow_but_accurate():
-    # Slow and careful is not tired: accuracy held while the last two slowed.
-    out = F.fatigue_check([1000, 1000, 1100, 900, 3200, 4100], [True, False, True, True, True, True])
-    assert out["fired"] is False
-
-
-def test_fatigue_does_not_fire_for_fast_and_wrong():
-    out = F.fatigue_check([900, 1000, 800, 950, 700, 650], [True, True, True, False, False, False])
-    assert out["fired"] is False
-
-
-def test_fatigue_needs_four_timed_answers():
-    assert F.fatigue_check([1000, 5000, 6000], [True, False, False])["fired"] is False
-    assert F.fatigue_check([None, None], [True, False])["fired"] is False
-
-
-# --------------------------------------------------------------------------- #
-# (a) the prerequisite check
-# --------------------------------------------------------------------------- #
-
-def test_prerequisite_selection_uses_the_direct_chain_only():
-    prereqs = {"top_b": ["top_a"], "top_a": ["top_root"]}
-    topic, question = F.select_prerequisite_question("top_b", prereqs, PREREQ_CANDIDATES, learner_id="st_1")
-    assert topic == "top_a" and question["id"] == "p1"  # never the transitive root
-    assert F.direct_prerequisites("top_b", prereqs) == ["top_a"]
-
-
-def test_prerequisite_failure_attributes_to_prerequisite_at_zero_weight():
-    result = _loop(prereq_correct=False)
-    attr = result["attribution"]
-    assert attr["attributed_to"] == "prerequisite"
-    assert attr["method_weight"] == 0.0 and attr["counts_against_method"] is False
-    assert result["reteach"] is None and result["comparison"] is None
-    assert result["evidence"]["method_weight"] == 0.0
-    assert "does not count against" in result["learner_sentence"]
-
-
-def test_prerequisite_not_yet_checked_still_plans_the_question():
-    result = _loop(prereq_correct=None)
-    step = result["steps"]["prerequisite"]
-    assert step["status"] == "not_checked" and step["question"]["item_id"] == "p1"
-    assert step["chain"] == ["top_a"]
-
-
-# --------------------------------------------------------------------------- #
-# the update rule: all three branches
-# --------------------------------------------------------------------------- #
-
-def test_attribution_branches_and_weights():
-    prereq = F.attribution_for(prereq_status="failed", fatigue_fired=True)
-    assert prereq["method_weight"] == 0.0 and prereq["attributed_to"] == "prerequisite"  # prereq wins over fatigue
-    fatigue = F.attribution_for(prereq_status="passed", fatigue_fired=True)
-    assert fatigue["method_weight"] == 0.5 and fatigue["suggest_break"] is True
-    method = F.attribution_for(prereq_status="passed", fatigue_fired=False)
-    assert method["method_weight"] == 1.0 and method["suggest_break"] is False
-
-
-def test_fatigue_branch_defers_the_reteach_and_says_break():
-    result = _loop(
-        session_latencies_ms=[1000, 1000, 1100, 900, 3200, 4100],
-        session_correct=[True, True, True, False, False, False],
-    )
-    assert result["attribution"]["attributed_to"] == "fatigue"
-    assert result["evidence"]["method_weight"] == 0.5
-    assert result["reteach"]["deferred_until_after_break"] is True
-    assert "half weight" in result["learner_sentence"] and "break" in result["learner_sentence"]
-
-
-def test_clean_miss_attributes_to_the_method_at_full_weight():
-    result = _loop()
-    assert result["attribution"]["attributed_to"] == "method"
-    assert result["evidence"]["method_weight"] == 1.0
-    assert result["reteach"]["method"] != "explanation"  # never reteach in the failed method
-
-
-# --------------------------------------------------------------------------- #
-# (c) reteach choice, ties, and the matched question
-# --------------------------------------------------------------------------- #
-
-def test_reteach_picks_the_measured_best_alternative():
-    rows = _rows("visual", [True] * 8 + [False] * 2) + _rows("retrieval", [True] * 4 + [False] * 6)
-    choice = F.choose_reteach_method(rows, failed_method="explanation", learner_id="st_1", topic_id="top_b")
-    assert choice["method"] == "visual" and choice["tie_broken_by"] == "measured best" and choice["n"] == 10
-
-
-def test_reteach_tie_break_is_seeded_random_and_reproducible():
-    rows = _rows("visual", [True] * 5 + [False] * 5) + _rows("retrieval", [True] * 5 + [False] * 5)
-    first = F.choose_reteach_method(rows, failed_method="explanation", learner_id="st_1", topic_id="top_b")
-    again = F.choose_reteach_method(rows, failed_method="explanation", learner_id="st_1", topic_id="top_b")
-    assert first["method"] == again["method"]  # same seed, same draw
-    assert set(first["tied"]) == {"visual", "retrieval"} and "seeded random" in first["tie_broken_by"]
-    picks = {
-        F.choose_reteach_method(rows, failed_method="explanation", learner_id=f"st_{i}", topic_id="top_b")["method"]
-        for i in range(24)
+def pair(topic="fractions"):
+    base = {
+        "topic_id": topic,
+        "concept_id": "same-subconcept",
+        "pair_id": "pair-1",
+        "kind": "numeric",
+        "difficulty": 0.5,
+        "answer_spec": {"value": 4},
+        "stem": "2 + 2?",
     }
-    assert picks == {"visual", "retrieval"}  # different learners really do draw differently
+    return dict(base, id="a", pair_role="A"), dict(base, id="b", pair_role="B", stem="1 + 3?")
 
 
-def test_matched_question_holds_the_format_fixed():
-    picked, fmt, held = F.select_matched_question(CANDIDATES, FIRST, learner_id="st_1")
-    assert held is True and fmt == "typed_number" and picked["id"] == "i2" and picked["kind"] == "numeric"
+def variants():
+    return {m: {"text": f"Checked teaching for {m}"} for m in METHODS}
 
 
-def test_matched_question_refuses_a_different_format():
-    picked, _fmt, held = F.select_matched_question([CANDIDATES[1]], FIRST, learner_id="st_1")
-    assert picked is None and held is False  # says so instead of borrowing the mcq
-
-
-# --------------------------------------------------------------------------- #
-# serve-time assignment: counterbalanced, seeded, in code
-# --------------------------------------------------------------------------- #
-
-def test_counterbalanced_assignment_cycles_and_is_seeded_per_learner():
-    seen = {
-        F.counterbalanced_assignment(learner_id="st_1", concept_id="top_b", exposure=e)["method"] for e in range(4)
+def begin(services, learner, *, key="failure-1", prerequisite=True, recent=()):
+    loop = FailureLoop(services.state)
+    a, b = pair()
+    q = {
+        "id": "prereq",
+        "topic_id": "direct-prereq",
+        "kind": "numeric",
+        "stem": "1 + 1?",
+        "answer_spec": {"value": 2},
     }
-    assert seen == set(M.METHOD_CYCLE)  # one learner cycles through every method
-    a = F.counterbalanced_assignment(learner_id="st_1", concept_id="top_b", exposure=0)
-    b = F.counterbalanced_assignment(learner_id="st_1", concept_id="top_b", exposure=0)
-    assert a == b and a["design"] == "counterbalanced" and a["weight"] == 1.0
-    starts = {F.counterbalanced_assignment(learner_id=f"st_{i}", concept_id="top_b", exposure=0)["method"] for i in range(16)}
-    assert len(starts) > 1  # different learners start at different methods
-
-
-# --------------------------------------------------------------------------- #
-# (d) the comparison, with range, n, and the confound stated
-# --------------------------------------------------------------------------- #
-
-def test_comparison_reports_range_n_and_confound():
-    result = _loop(method_rows=_rows("visual", [True] * 8 + [False] * 2), matched_correct=True, matched_expected=0.5)
-    comp = result["comparison"]
-    assert comp["improved"] is True and comp["n"] == 11
-    assert 0.0 <= comp["range"][0] <= comp["range"][1] <= 1.0
-    assert comp["confound"] == F.SECOND_EXPOSURE_CONFOUND
-    sentence = result["learner_sentence"]
-    assert "from 11 attempt" in sentence and "not a controlled experiment" in sentence
-
-
-def test_comparison_below_minimum_n_says_insufficient_evidence():
-    result = _loop(method_rows=_rows("visual", [True]), matched_correct=True, matched_expected=0.5)
-    assert result["comparison"]["verdict_label"] == "insufficient evidence"
-    assert EFFECT.verdict_label("insufficient_evidence") == "insufficient evidence"
-    assert EFFECT.evaluate_change([0.4, 0.5], [0.6, 0.7], metric="accuracy").verdict == "insufficient_evidence"
-
-
-# --------------------------------------------------------------------------- #
-# §9.3/§9.4: weights and self-selection labels
-# --------------------------------------------------------------------------- #
-
-def test_row_weights_controlled_observational_and_loop_weights():
-    assert F.row_weight({"design": "randomised"}) == 1.0
-    assert F.row_weight({"design": "observational"}) == 0.4
-    assert F.row_weight({"design": "randomised", "method_weight": 0.5}) == 0.5
-    assert F.row_weight({"design": "randomised", "method_weight": 0.0}) == 0.0
-
-
-def test_weighted_summary_shows_raw_and_effective_n_with_source():
-    rows = _rows("visual", [True] * 10) + _rows("explanation", [True] * 5, design="observational")
-    summary = {s["method"]: s for s in F.weighted_method_summary(rows)}
-    assert summary["visual"]["n"] == 10 and summary["visual"]["effective_n"] == 10.0
-    assert summary["explanation"]["n"] == 5 and summary["explanation"]["effective_n"] == 2.0
-    assert "self-selected" in summary["explanation"]["source"]
-
-
-def test_self_selection_detectors_are_labelled_observational_never_proof():
-    attempts = (
-        [{"examples_opened": 1, "explanation_opened": False, "correct": i < 6} for i in range(8)]
-        + [{"examples_opened": 0, "explanation_opened": False, "correct": i < 3} for i in range(8)]
+    loop.start(
+        learner["student_id"],
+        attempt_id=key,
+        session_id="session-1",
+        a=a,
+        b=b,
+        method="explanation",
+        expected_a=0.4,
+        expected_b=0.4,
+        variants=variants(),
+        prerequisite=q if prerequisite else None,
+        prerequisite_required=prerequisite,
+        recent=recent,
     )
-    detectors = {d["detector"]: d for d in F.self_selection_detectors(attempts)}
-    opened = detectors["opened_example"]
-    assert opened["design"] == "observational" and opened["weight"] == 0.4 and opened["is_proof"] is False
-    assert opened["n"] == 8 and "range" in opened and "not proof" in opened["note"]
-    thin = F.self_selection_detectors(attempts[:2])[0]
-    assert thin["status"] == "insufficient evidence"
+    return loop
 
 
-def test_strategy_posteriors_are_seeded_and_carry_mean_interval_n():
-    rows = _rows("visual", [True] * 9 + [False]) + _rows("explanation", [True] * 2 + [False] * 8)
-    first = F.strategy_posteriors(rows, seed=7)
-    again = F.strategy_posteriors(rows, seed=7)
-    assert first["thompson_sample"] == again["thompson_sample"]  # reproducible draw
-    top = first["strategies"][0]
-    assert top["strategy"] == "visual_representation"
-    assert top["posterior_mean"] == top["p_helps"] and top["n"] == 10.0
-    assert top["ci"][0] <= top["posterior_mean"] <= top["ci"][1]
-
-
-# --------------------------------------------------------------------------- #
-# §9.1: the visual detector may only claim assignment when it was assigned
-# --------------------------------------------------------------------------- #
-
-def _ctx(rows: list[P.AttemptRow]) -> P.EvidenceContext:
-    return P.EvidenceContext(student_id="st_test", attempts=rows)
-
-
-def _visual_row(i: int, *, correct: bool, **kw) -> P.AttemptRow:
-    base = dict(id=f"a{i}", topic_id="top_frac", item_id=f"i{i}", correct=correct, expected_success=0.5)
-    base.update(kw)
-    return P.AttemptRow(**base)
-
-
-def test_visual_detector_calls_assigned_arms_randomised():
-    rows = [_visual_row(i, correct=i < 6, method="visual", design="randomised") for i in range(8)] + [
-        _visual_row(20 + i, correct=i < 2, method="explanation", design="randomised") for i in range(8)
-    ]
-    obs = P.detect_visual_benefit(_ctx(rows))
-    assert obs and obs[0].design == "randomised"
-    assert obs[0].facts["weight"] == 1.0 and "assigned at serve time" in str(obs[0].facts["assignment"])
-
-
-def test_visual_detector_never_calls_opened_visuals_randomised():
-    rows = [_visual_row(i, correct=i < 7, visual_opened=True, experience_mode="visual") for i in range(8)] + [
-        _visual_row(20 + i, correct=i < 2, experience_mode="read") for i in range(8)
-    ]
-    obs = P.detect_visual_benefit(_ctx(rows))
-    assert obs and obs[0].design == "observational"
-    assert obs[0].facts["weight"] == 0.4 and "self-selected" in str(obs[0].facts["assignment"])
-
-
-# --------------------------------------------------------------------------- #
-# simulations: known learners, right conclusions, better than chance
-# --------------------------------------------------------------------------- #
-
-def _synthetic_method_learner(rng: random.Random, true_best: str, n: int = 60) -> list[dict]:
-    """A learner who genuinely does better under ``true_best`` (p=0.85 vs 0.45).
-
-    Methods arrive by the same counterbalanced assignment the server uses, so
-    the simulation tests the real assignment + real comparison together.
-    """
-    rows = []
-    for exposure in range(n):
-        method = F.counterbalanced_assignment(learner_id="sim", concept_id="top_sim", exposure=exposure)["method"]
-        p = 0.85 if method == true_best else 0.45
-        rows.append(
-            {"method": method, "correct": rng.random() < p, "expected_success": 0.5, "design": "randomised", "question_kind": "numeric", "topic_id": "top_sim"}
+def test_counterbalanced_at_serve_time_is_reproducible_and_not_item_authored():
+    for learner in range(30):
+        for block in range(5):
+            assignments = [
+                assign_method(
+                    learner_id=str(learner),
+                    item_id=f"item-{i}",
+                    topic_id=f"topic-{i}",
+                    exposure=block * 4 + i,
+                    serve_ordinal=block * 4 + i,
+                )
+                for i in range(4)
+            ]
+            assert {a.method for a in assignments} == set(METHODS)
+            assert all(a.design == "randomised" for a in assignments)
+            for i, a in enumerate(assignments):
+                assert a == assign_method(
+                    learner_id=str(learner),
+                    item_id=f"item-{i}",
+                    topic_id=f"topic-{i}",
+                    exposure=block * 4 + i,
+                    serve_ordinal=block * 4 + i,
+                )
+    assert (
+        len(
+            {
+                assign_method(learner_id=str(i), item_id="same", topic_id="same").method
+                for i in range(30)
+            }
         )
-    return rows
+        == 4
+    )
 
 
-def test_simulation_recovers_the_true_best_method_better_than_chance():
-    recovered = 0
-    trials = 40
-    for t in range(trials):
-        rows = _synthetic_method_learner(random.Random(1000 + t), "visual")
-        report = M.method_report(rows)
-        ranked = [r for r in report["methods"] if r["n"] >= M.EARLY_SIGNAL_N]
-        best = max(ranked, key=lambda r: r["residual"])
-        recovered += best["method"] == "visual"
-    # Chance over four methods is 25% (10/40). A comparison that cannot beat
-    # that on a learner built to have a real best method is not a comparison.
-    assert recovered >= 28, f"recovered the true best method in {recovered}/{trials} synthetic learners"
+def test_probe_never_changes_question_format_to_fill_run():
+    concepts = [{"id": str(i)} for i in range(8)]
+    items = {
+        str(i): [{"id": str(i), "kind": "numeric" if i < 5 else "mcq", "difficulty": 0.5}]
+        for i in range(8)
+    }
+    probe = balanced_probe(concepts=concepts, items_by_concept=items, learner_id="one")
+    assert len(probe) == 5
+    assert {p["format"] for p in probe} == {"typed_number"}
+    assert all(p["format_held"] for p in probe)
 
 
-def test_simulation_prerequisite_gap_is_attributed_to_the_prerequisite():
-    for t in range(20):
-        result = _loop(learner_id=f"sim_{t}", prereq_correct=False)
-        assert result["attribution"]["attributed_to"] == "prerequisite"
-        assert result["evidence"]["method_weight"] == 0.0
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("kind", "mcq"),
+        ("pair_id", "other"),
+        ("concept_id", "other"),
+        ("topic_id", "other"),
+        ("difficulty", 0.9),
+        ("pair_role", "A"),
+    ],
+)
+def test_no_merely_similar_b(field, value):
+    a, b = pair()
+    b[field] = value
+    with pytest.raises(FailureError):
+        validate_pair(a, b)
 
 
-def test_simulation_same_format_is_held_across_methods():
-    rng = random.Random(42)
-    for _ in range(30):
-        candidates = [
-            {"id": f"c{i}", "kind": rng.choice(["mcq", "numeric", "text"]), "difficulty": 0.5, "topic_id": "top_b", "active": True}
-            for i in range(6)
+def tired():
+    return [{"correct": True, "time_on_item_ms": 1000} for _ in range(6)] + [
+        {"correct": False, "time_on_item_ms": 2500},
+        {"correct": False, "time_on_item_ms": 3000},
+    ]
+
+
+def test_exact_fatigue_definition():
+    assert fatigue_flag(tired())
+    assert not fatigue_flag(tired()[:3])
+    assert not fatigue_flag([{**r, "correct": True} for r in tired()])
+    assert not fatigue_flag([{**r, "time_on_item_ms": 1000} for r in tired()])
+    assert not fatigue_flag([{**r, "time_on_item_ms": None} for r in tired()])
+
+
+@pytest.mark.parametrize(
+    "prerequisite_ok,fatigue,multiplier,cause",
+    [
+        (False, False, 0, "prerequisite"),
+        (False, True, 0, "prerequisite"),
+        (True, True, 0.5, "fatigue"),
+        (True, False, 1, "method_comparison"),
+        (None, False, 0, "unchecked_prerequisite"),
+    ],
+)
+def test_attribution_branches(prerequisite_ok, fatigue, multiplier, cause):
+    rule = attribution(prerequisite_ok, fatigue)
+    assert rule["multiplier"] == multiplier
+    assert rule["cause"] == cause
+
+
+@pytest.mark.parametrize(
+    "prereq_answer,recent,expected_weight,cause",
+    [
+        ("3", (), 0, "prerequisite"),
+        ("2", tired(), 0.2, "fatigue"),
+        ("2", (), 0.4, "method_comparison"),
+    ],
+)
+def test_persisted_loop_all_update_branches(
+    services, learner, prereq_answer, recent, expected_weight, cause
+):
+    loop = begin(services, learner, recent=recent)
+    sid = learner["student_id"]
+    first = loop.view(sid, "failure-1")
+    assert first["stage"] == "prerequisite"
+    assert "answer_spec" not in json.dumps(first)
+    next_step = loop.answer(sid, "failure-1", question_id="prereq", answer=prereq_answer)
+    assert next_step["stage"] == "matched_b"
+    assert next_step["method"] != "explanation"
+    assert next_step["question"]["kind"] == "numeric"
+    # Device/process resume: a fresh service uses only the shared log.
+    fresh = FailureLoop(services.state)
+    assert fresh.view(sid, "failure-1") == next_step
+    result = fresh.answer(sid, "failure-1", question_id="b", answer="4")
+    outcome = result["outcome"]
+    assert outcome["effective_weight"] == expected_weight
+    assert outcome["cause"] == cause
+    assert (
+        outcome["n"] == 1
+        and outcome["interval"][0] <= outcome["residual_difference"] <= outcome["interval"][1]
+    )
+    assert "not a controlled experiment" in result["note"]
+    assert result == fresh.answer(sid, "failure-1", question_id="b", answer="9")
+    assert len([r for r in services.state.evidence_rows(sid) if r["kind"] == "method_outcome"]) == 2
+    report = fresh.report(sid)
+    assert len(report["methods"]) == (0 if cause == "prerequisite" else 2)
+    if cause == "prerequisite":
+        prereq = [r for r in services.state.evidence_rows(sid) if r["kind"] == "attempt"]
+        assert prereq[0]["topic_id"] == "direct-prereq" and prereq[0]["correct"] is False
+
+
+def test_no_prerequisite_topic_starts_with_b_and_unknown_check_refuses(services, learner):
+    loop = begin(services, learner, prerequisite=False)
+    assert loop.view(learner["student_id"], "failure-1")["stage"] == "matched_b"
+    a, b = pair()
+    with pytest.raises(FailureError, match="direct prerequisite"):
+        loop.start(
+            learner["student_id"],
+            attempt_id="new",
+            session_id="s",
+            a=a,
+            b=b,
+            method="explanation",
+            expected_a=0.4,
+            expected_b=0.4,
+            variants=variants(),
+            prerequisite=None,
+            prerequisite_required=True,
+            recent=[],
+        )
+
+
+def test_ties_randomised_seeded_not_catalog_order():
+    selections = {
+        choose_alternative(str(i), "loop", "explanation", variants(), {}) for i in range(40)
+    }
+    assert selections == set(METHODS) - {"explanation"}
+    assert choose_alternative("a", "b", "explanation", variants(), {}) == choose_alternative(
+        "a", "b", "explanation", variants(), {}
+    )
+    report = {
+        "methods": [
+            {"method": m, "n": 9, "residual": 0.3 if m == "visual" else 0.1} for m in METHODS
         ]
-        picked, fmt, held = F.select_matched_question(candidates, FIRST, learner_id="sim")
-        if held:
-            assert M.question_format(picked) == fmt == M.question_format(FIRST)
-        else:  # when no same-format question exists the loop must say so, not borrow one
-            assert all(M.question_format(c) != fmt or c["id"] == FIRST["id"] for c in candidates)
+    }
+    assert choose_alternative("a", "b", "explanation", variants(), report) == "visual"
 
 
-# --------------------------------------------------------------------------- #
-# HTTP: the loop and the surfaces, end to end
-# --------------------------------------------------------------------------- #
+def test_observational_sources_have_lower_weight_and_predictions_of_zero_are_not_replaced():
+    rows = [
+        {
+            "kind": "method_outcome",
+            "weight": weight,
+            "source_type": source,
+            "payload": {"method": "visual", "correct": True, "expected": 0, "multiplier": 1},
+        }
+        for source, weight in (("controlled", 1), ("observational", 0.4))
+    ]
+    row = outcome_report(rows)["methods"][0]
+    assert row["effective_n"] == 1.4 and row["expected"] == 0
+    assert {r["weight"] for r in row["sources"]} == {0.4, 1}
+    assert row["evidence"] == "insufficient evidence"
+    assert not outcome_report(
+        [{"kind": "method_outcome", "payload": {"method": "visual", "correct": True}}]
+    )["methods"]
 
-def _topic_with_prereq(services) -> tuple[str, str, str]:
-    """(topic_id, item_id, prereq_topic_id) with real bank items on both sides."""
-    from adapt.db.models import Item, TopicPrerequisite
 
+def test_posterior_mean_and_thompson_sampling_are_seedable():
+    stat = StrategyStat("worked_examples", alpha=2, beta=1, n=1)
+    assert stat.p_helps == pytest.approx(2 / 3)
+    assert stat.ci[0] <= stat.p_helps <= stat.ci[1]
+    model = StrategyModel([stat, StrategyStat("segmented_text")])
+    assert model.sample(rng=np.random.default_rng(7)) == model.sample(rng=np.random.default_rng(7))
+    before = stat.as_dict()
+    model.record("worked_examples", lift=-1, weight=0)
+    assert stat.as_dict() == before
+
+
+def test_synthetic_known_learners_recover_correct_method_better_than_chance():
+    wins = 0
+    for seed in range(30):
+        rng = np.random.default_rng(seed)
+        rows = []
+        for i in range(240):
+            # Varied topic difficulty: use a pre-exposure learner-model prediction.
+            baseline = 0.2 if i % 2 else 0.55
+            for m in METHODS:
+                actual = min(0.95, baseline + (0.25 if m == "visual" else 0))
+                rows.append(
+                    {
+                        "kind": "method_outcome",
+                        "source_type": "controlled",
+                        "weight": 1,
+                        "topic_id": f"topic-{i % 12}",
+                        "payload": {
+                            "method": m,
+                            "correct": bool(rng.random() < actual),
+                            "expected": baseline,
+                        },
+                    }
+                )
+        wins += outcome_report(rows)["methods"][0]["method"] == "visual"
+    assert wins >= 27, f"known visual benefit recovered in {wins}/30 simulations; chance=1/4"
+
+
+def test_preference_screen_uses_real_adjusted_outcomes(services, learner):
+    sid = learner["student_id"]
+    loop = FailureLoop(services.state)
+    services.state.set_preference(sid, "preferred_format", "explanation")
+    assert loop.report(sid)["preference_vs_performance"] is None
+    for method, correct, expected in (("visual", True, 0.4), ("explanation", True, 0.9)):
+        for i in range(10):
+            loop.record_outcome(
+                sid,
+                event_id=f"outcome-{method}-{i}",
+                method=method,
+                correct=correct,
+                expected=expected,
+                topic_id=str(i),
+                question_kind="numeric",
+                design="randomised",
+            )
+    row = loop.report(sid)["preference_vs_performance"]
+    assert row["stated"] == "explanation" and row["measured"][0]["method"] == "visual"
+    assert row["measured"][0]["ci"] and row["measured"][0]["n"] == 10
+    assert "actual-minus-expected" in row["sentence"]
+
+
+@pytest.fixture
+def evidence_router(client):
+    # Use production registration: test-only router wiring would mask a broken app.
+    assert "/api/v1/evidence" in client.app.openapi()["paths"]
+
+
+def test_http_full_loop_and_isolation(
+    client, services, learner, session, items, make_answer, evidence_router
+):
+    from adapt.services.attempts import item_payload
+
+    item = next(i["item"] for i in items if i["item"]["kind"] == "numeric")
+    response = client.post(
+        "/api/v1/attempts",
+        headers=learner["headers"],
+        json={
+            "session_id": session,
+            "item_id": item["id"],
+            "answer": make_answer(item["id"], correct=False),
+            "client_events": [],
+        },
+    )
+    assert response.status_code == 200, response.text
+    attempt_id = response.json()["attempt_id"]
+    missing = client.post(
+        "/api/v1/evidence/failure", headers=learner["headers"], json={"attempt_id": attempt_id}
+    )
+    assert missing.status_code == 422
+    assert "matched B" in missing.json()["detail"]["message"]
     with services.scope() as s:
-        edges = s.execute(select(TopicPrerequisite)).scalars().all()
-        for edge in edges:
-            items = s.execute(select(Item).where(Item.topic_id == edge.topic_id, Item.active.is_(True))).scalars().all()
-            prereq_items = s.execute(select(Item).where(Item.topic_id == edge.prerequisite_id, Item.active.is_(True))).scalars().all()
-            if len(items) >= 2 and prereq_items:
-                return edge.topic_id, items[0].id, edge.prerequisite_id
-    pytest.skip("no topic with a prerequisite edge and items on both sides in the seeded bank")
-
-
-def _post_loop(client, learner, **body):
-    return client.post("/api/v1/evidence/failure-loop", json=body, headers=learner["headers"])
-
-
-def test_failure_loop_over_http_prerequisite_branch(client, learner, services):
-    topic_id, item_id, prereq_id = _topic_with_prereq(services)
-    res = _post_loop(client, learner, topic_id=topic_id, item_id=item_id, method="explanation", expected_success=0.6, prereq_correct=False)
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body["attribution"]["attributed_to"] == "prerequisite"
-    assert body["evidence"]["method_weight"] == 0.0 and body["recorded"] is True
-    assert body["steps"]["prerequisite"]["topic_id"] == prereq_id
-    assert body["steps"]["prerequisite"]["question"]["item_id"]
-
-
-def test_failure_loop_over_http_fatigue_branch(client, learner, services):
-    topic_id, item_id, _ = _topic_with_prereq(services)
-    res = _post_loop(
-        client,
-        learner,
-        topic_id=topic_id,
-        item_id=item_id,
-        method="explanation",
-        expected_success=0.6,
-        prereq_correct=True,
-        session_latencies_ms=[1000, 1000, 1100, 900, 3200, 4100],
-        session_correct=[True, True, True, False, False, False],
+        a = item_payload(s, item["id"])
+    a.update(pair_id="http-pair", pair_role="A", concept_id="http-concept")
+    b = {
+        **a,
+        "id": "http-b",
+        "pair_role": "B",
+        "stem_template": None,
+        "stem": "What is two plus two?",
+        "answer_spec": {"value": 4},
+        "variant_spec": None,
+    }
+    cid = services.state.put_content(
+        concept=a["topic_id"],
+        kind="concept_pack",
+        topic_id=a["topic_id"],
+        payload={"matched_pairs": [{"a": a, "b": b}], "variants": variants()},
     )
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body["attribution"]["attributed_to"] == "fatigue" and body["evidence"]["method_weight"] == 0.5
-    assert body["reteach"]["deferred_until_after_break"] is True
-
-
-def test_failure_loop_over_http_method_branch_compares_matched(client, learner, services):
-    topic_id, item_id, _ = _topic_with_prereq(services)
-    res = _post_loop(
-        client,
-        learner,
-        topic_id=topic_id,
-        item_id=item_id,
-        method="explanation",
-        expected_success=0.6,
-        prereq_correct=True,
-        matched_correct=True,
-        matched_expected=0.5,
-        session_latencies_ms=CALM_LAT,
-        session_correct=CALM_OK,
+    services.state.set_validation(cid, "validated", module="code")
+    first = client.post(
+        "/api/v1/evidence/failure", headers=learner["headers"], json={"attempt_id": attempt_id}
     )
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body["attribution"]["attributed_to"] == "method" and body["evidence"]["method_weight"] == 1.0
-    assert body["reteach"]["method"] != "explanation"
-    assert body["reteach"]["format_held_fixed"] is True
-    assert body["comparison"]["confound"] == F.SECOND_EXPOSURE_CONFOUND
-    assert "not a controlled experiment" in body["learner_sentence"]
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert "answer_spec" not in first.text
+    if body["stage"] == "prerequisite":
+        qid = body["question"]["id"]
+        answer = make_answer(qid, correct=True)
+        response = client.post(
+            f"/api/v1/evidence/failure/{attempt_id}/answer",
+            headers=learner["headers"],
+            json={"question_id": qid, "answer": answer},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+    assert body["stage"] == "matched_b"
+    done = client.post(
+        f"/api/v1/evidence/failure/{attempt_id}/answer",
+        headers=learner["headers"],
+        json={"question_id": "http-b", "answer": "4"},
+    )
+    assert done.status_code == 200, done.text
+    assert done.json()["outcome"]["after_correct"] is True
+    assert client.get(f"/api/v1/evidence/failure/{attempt_id}").json() == done.json()
+    assert client.get("/api/v1/evidence").json()["methods"]
+    other = client.post(
+        "/api/v1/students", json={"display_name": "Another", "as_guest": True}
+    ).json()
+    assert client.get(f"/api/v1/evidence/failure/{attempt_id}").status_code == 404
+    denied = client.post(
+        "/api/v1/evidence/failure",
+        headers={"x-csrf-token": other["csrf_token"]},
+        json={"attempt_id": attempt_id},
+    )
+    assert denied.status_code == 404
 
 
-def test_failure_loop_over_http_rejects_unknown_item(client, learner, services):
-    topic_id, _item, _ = _topic_with_prereq(services)
-    res = _post_loop(client, learner, topic_id=topic_id, item_id="itm_does_not_exist", prereq_correct=True)
-    assert res.status_code == 404
+def test_http_refuses_missing_pair_and_forged_grades(client, learner, evidence_router):
+    assert (
+        client.post(
+            "/api/v1/evidence/failure", headers=learner["headers"], json={"attempt_id": "not-owned"}
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/api/v1/evidence/failure",
+            headers=learner["headers"],
+            json={"attempt_id": "a", "correct": False},
+        ).status_code
+        == 422
+    )
+    assert client.post("/api/v1/evidence/failure", json={"attempt_id": "a"}).status_code == 403
 
 
-def _insert_attempts(services, learner, session_id: str, topic_id: str, item_id: str, specs: list[tuple[str, bool]]):
+def test_comparison_refuses_different_question_formats():
+    from adapt.learning.methods import method_delta
+
+    rows = [
+        {"method": "visual", "correct": True, "expected_success": 0.5, "question_kind": "numeric"},
+        {
+            "method": "explanation",
+            "correct": False,
+            "expected_success": 0.5,
+            "question_kind": "mcq",
+        },
+    ]
+    result = method_delta(rows, method="visual", baseline="explanation")
+    assert not result["comparable"] and "formats differ" in result["reason"]
+    logged = [
+        {
+            "kind": "method_outcome",
+            "source_type": "controlled",
+            "weight": 1,
+            "payload": {
+                "method": r["method"],
+                "correct": r["correct"],
+                "expected": 0.5,
+                "question_kind": r["question_kind"],
+            },
+        }
+        for r in rows
+    ]
+    assert outcome_report(logged)["format_comparable"] is False
+
+
+@pytest.mark.parametrize("fatigue", [False, True])
+def test_unchecked_prerequisite_never_penalises_a_method(fatigue):
+    assert attribution(None, fatigue)["multiplier"] == 0
+    assert attribution(None, fatigue)["cause"] == "unchecked_prerequisite"
+
+
+def test_missing_final_latency_does_not_reuse_an_older_fatigue_pair():
+    assert not fatigue_flag([*tired(), {"correct": False, "time_on_item_ms": None}])
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("id", None),
+        ("topic_id", ""),
+        ("concept_id", " "),
+        ("difficulty", None),
+        ("difficulty", float("nan")),
+        ("difficulty", 2),
+        ("stem", ""),
+        ("answer_spec", []),
+    ],
+)
+def test_malformed_pair_is_refused_before_it_can_be_saved(field, value):
+    a, b = pair()
+    a[field] = value
+    b[field] = value
+    # Keep the IDs distinct: the missing-ID case must be caught for that reason alone.
+    if field == "id":
+        b["id"] = "b"
+    with pytest.raises(FailureError):
+        validate_pair(a, b)
+
+
+def test_bad_mcq_key_is_not_gradeable_recovery_content():
+    a, b = pair()
+    for q in (a, b):
+        q.update(
+            kind="mcq", choices=[{"text": "A"}, {"text": "B"}], answer_spec={"correct_index": 6}
+        )
+    with pytest.raises(FailureError):
+        validate_pair(a, b)
+
+
+def test_observational_delta_uses_weighted_count_and_interval_endpoints():
+    from adapt.learning.methods import method_delta
+
+    rows = [
+        {
+            "method": m,
+            "correct": m == "visual",
+            "expected_success": 0.5,
+            "question_kind": "numeric",
+            "design": "observational",
+        }
+        for m in ("visual", "explanation")
+        for _ in range(10)
+    ]
+    result = method_delta(rows, method="visual", baseline="explanation")
+    assert result["evidence"] == "early_signal"  # raw n=10 but effective n=4 per side
+    me, other = result["method"], result["baseline"]
+    assert result["interval"] == pytest.approx(
+        [me["ci"][0] - other["ci"][1], me["ci"][1] - other["ci"][0]], abs=0.002
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("expected", "unknown"),
+        ("expected", float("nan")),
+        ("expected", 2),
+        ("correct", "False"),
+        ("multiplier", float("inf")),
+        ("multiplier", -1),
+    ],
+)
+def test_invalid_logged_outcomes_are_counted_but_never_become_estimates(field, value):
+    payload = {"method": "visual", "expected": 0.5, "correct": True, "multiplier": 1}
+    payload[field] = value
+    result = outcome_report(
+        [
+            {
+                "kind": "method_outcome",
+                "source_type": "observational",
+                "weight": 0.4,
+                "payload": payload,
+            }
+        ]
+    )
+    assert result["methods"] == []
+    assert result["excluded_n"] == 1
+
+
+def test_attributed_elsewhere_outcomes_are_not_called_corrupt():
+    result = outcome_report(
+        [
+            {
+                "kind": "method_outcome",
+                "source_type": "observational",
+                "weight": 0.4,
+                "payload": {"method": "visual", "expected": 0.5, "correct": False, "multiplier": 0},
+            }
+        ]
+    )
+    assert result["excluded_n"] == 0 and result["attributed_elsewhere_n"] == 1
+
+
+def test_concurrent_conflicting_b_answers_are_one_consistent_atomic_result(services, learner):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    loop = begin(services, learner, prerequisite=False, key="raced-answer")
+    sid = learner["student_id"]
+    barrier = Barrier(2)
+
+    def submit(answer):
+        barrier.wait(timeout=5)
+        return FailureLoop(services.state).answer(
+            sid, "raced-answer", question_id="b", answer=answer
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(submit, ("4", "5")))
+    assert results[0] == results[1] == loop.view(sid, "raced-answer")
+    rows = services.state.evidence_rows(sid)
+    assert len([r for r in rows if r["kind"] == "method_outcome"]) == 2
+    scores = [r for r in rows if r["event_id"] == "failure:raced-answer:matched-b-score"]
+    assert len(scores) == 1
+    assert scores[0]["correct"] == results[0]["outcome"]["after_correct"]
+
+
+def test_hint_opening_detector_does_not_claim_random_assignment():
+    from adapt.learning.patterns import AttemptRow, EvidenceContext, detect_hint_dependency
+
+    attempts = [
+        AttemptRow(id=f"hint-{i}", topic_id="topic", item_id=f"q-{i}", correct=True, hints_used=1)
+        for i in range(20)
+    ] + [
+        AttemptRow(id=f"plain-{i}", topic_id="topic", item_id=f"p-{i}", correct=False)
+        for i in range(20)
+    ]
+    observations = detect_hint_dependency(EvidenceContext(student_id="s", attempts=attempts))
+    assert observations
+    for obs in observations:
+        result = obs.as_dict()
+        assert result["design"] == result["source_type"] == "observational"
+        assert result["weight"] == 0.4
+
+
+@pytest.mark.parametrize(
+    "bad_spec", [{"value": float("nan")}, {"value": "garbage"}, {"value": 4, "tolerance": -1}]
+)
+def test_invalid_numeric_key_cannot_enter_the_recovery_log(bad_spec):
+    a, b = pair()
+    b["answer_spec"] = bad_spec
+    with pytest.raises(FailureError):
+        validate_pair(a, b)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {"matched_pairs": [None]},
+        {"matched_pairs": "bad"},
+        {"matched_pairs": [{"a": None}]},
+        {"matched_pairs": [{"a": {"id": "original"}, "b": None}]},
+    ],
+)
+def test_malformed_validated_registry_payload_is_a_refusal_not_500(
+    client, services, learner, session, items, make_answer, evidence_router, payload, monkeypatch
+):
+    from adapt.services.attempts import item_payload
+
+    item = next(i["item"] for i in items if i["item"]["kind"] == "numeric")
+    with services.scope() as s:
+        a = item_payload(s, item["id"])
+    # The last case targets the actual A lookup; the others target container shape.
+    if isinstance(payload, dict) and isinstance(payload.get("matched_pairs"), list):
+        for candidate in payload["matched_pairs"]:
+            if isinstance(candidate, dict) and isinstance(candidate.get("a"), dict):
+                candidate["a"]["id"] = a["id"]
+    cid = services.state.put_content(
+        concept=a["topic_id"],
+        kind="concept_pack",
+        payload=payload or {"matched_pairs": None},
+        topic_id=a["topic_id"],
+    )
+    services.state.set_validation(cid, "validated", module="code")
+    # Registry is shared across this session's tests. Limit this corruption scenario
+    # to its own registered pack so an earlier valid A/B cannot mask the defect.
+    lookup = services.state.content_for
+    monkeypatch.setattr(
+        services.state,
+        "content_for",
+        lambda concept: [row for row in lookup(concept) if row["id"] == cid],
+    )
+    response = client.post(
+        "/api/v1/attempts",
+        headers=learner["headers"],
+        json={
+            "session_id": session,
+            "item_id": item["id"],
+            "answer": make_answer(item["id"], correct=False),
+            "client_events": [],
+        },
+    )
+    assert response.status_code == 200, response.text
+    start = client.post(
+        "/api/v1/evidence/failure",
+        headers=learner["headers"],
+        json={"attempt_id": response.json()["attempt_id"]},
+    )
+    assert start.status_code == 422, start.text
+    assert start.json()["detail"]["error"] == "evidence_refused"
+    assert not [
+        r
+        for r in services.state.evidence_rows(learner["student_id"])
+        if r["kind"] == "failure_transition"
+    ]
+
+
+def test_recovery_provenance_is_frozen_on_resume(services, learner):
+    loop, sid = FailureLoop(services.state), learner["student_id"]
+    a, b = pair()
+    initial = loop.start(
+        sid,
+        attempt_id="provenance",
+        session_id="session",
+        a=a,
+        b=b,
+        method="explanation",
+        expected_a=0.4,
+        expected_b=0.4,
+        variants=variants(),
+        prerequisite=None,
+        prerequisite_required=False,
+        recent=[],
+        model_version=3,
+        content_ids=["original-pack"],
+    )
+    assert initial["why"] == {"model_version": 3, "content_ids": ["original-pack"]}
+    resumed = loop.start(
+        sid,
+        attempt_id="provenance",
+        session_id="session",
+        a=a,
+        b=b,
+        method="explanation",
+        expected_a=0.4,
+        expected_b=0.4,
+        variants=variants(),
+        prerequisite=None,
+        prerequisite_required=False,
+        recent=[],
+        model_version=9,
+        content_ids=["replacement-pack"],
+    )
+    assert resumed == initial
+    assert loop.answer(sid, "provenance", question_id="b", answer="4")["why"] == initial["why"]
+
+
+def test_placement_cannot_update_method_posteriors(services, learner):
+    loop, sid = FailureLoop(services.state), learner["student_id"]
+    with pytest.raises(FailureError, match="placement"):
+        loop.record_outcome(
+            sid,
+            event_id="placement",
+            method="visual",
+            correct=True,
+            expected=0.5,
+            topic_id="t",
+            question_kind="numeric",
+            design="placement",
+        )
+    assert loop.report(sid)["methods"] == []
+
+
+def test_opening_an_old_receipt_does_not_attribute_later_fatigue_to_it(
+    client, services, learner, session, items, make_answer, evidence_router
+):
+    from datetime import timedelta
+
     from adapt.db.models import Attempt
+    from adapt.services.attempts import item_payload
 
+    item = next(i["item"] for i in items if i["item"]["kind"] == "numeric")
+    posted = client.post(
+        "/api/v1/attempts",
+        headers=learner["headers"],
+        json={
+            "session_id": session,
+            "item_id": item["id"],
+            "answer": make_answer(item["id"], correct=False),
+            "client_events": [],
+        },
+    )
+    assert posted.status_code == 200, posted.text
+    aid = posted.json()["attempt_id"]
     with services.scope() as s:
-        for method, correct in specs:
+        original = s.get(Attempt, aid)
+        a = item_payload(s, item["id"])
+        # Synthetic later answers form the exact fatigue pattern, but occurred after A.
+        for i, r in enumerate(tired()):
             s.add(
                 Attempt(
-                    session_id=session_id,
                     student_id=learner["student_id"],
-                    item_id=item_id,
-                    topic_id=topic_id,
-                    correct=correct,
-                    method=method,
-                    question_kind="numeric",
-                    expected_success=0.5,
-                    mapping_design="randomised",
+                    session_id=session,
+                    item_id=item["id"],
+                    topic_id=a["topic_id"],
+                    correct=r["correct"],
+                    time_on_item_ms=r["time_on_item_ms"],
+                    submitted_at=original.submitted_at + timedelta(seconds=i + 1),
                 )
             )
-
-
-def test_evidence_methods_and_preference_over_http(client, learner, session, services):
-    topic_id, item_id, _ = _topic_with_prereq(services)
-    services.state.set_preference(learner["student_id"], "preferred_format", "diagram", source="test")
-    _insert_attempts(
-        services,
-        learner,
-        session,
-        topic_id,
-        item_id,
-        [("visual", True)] * 6 + [("visual", False)] * 2 + [("explanation", True)] * 2 + [("explanation", False)] * 6,
+    a.update(pair_id="old-receipt", concept_id="old-concept", pair_role="A")
+    b = {**a, "id": "old-b", "pair_role": "B"}
+    cid = services.state.put_content(
+        concept=a["topic_id"],
+        kind="concept_pack",
+        payload={"matched_pairs": [{"a": a, "b": b}], "variants": variants()},
+        topic_id=a["topic_id"],
     )
-    res = client.get("/api/v1/evidence/methods")
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body["scope"] == "all topics"
-    by_method = {m["method"]: m for m in body["methods"]}
-    assert by_method["visual"]["residual"] > 0 and by_method["visual"]["n"] == 8
-    assert by_method["visual"]["effective_n"] == 8.0 and by_method["visual"]["weights"]["observational"] == 0.4
-    assert all(d["design"] == "observational" and d["weight"] == 0.4 for d in body["detectors"])
-    strategies = {s_["strategy"]: s_ for s_ in body["strategies"]["strategies"]}
-    assert strategies["visual_representation"]["posterior_mean"] > strategies["segmented_text"]["posterior_mean"]
-
-    pref = client.get("/api/v1/evidence/preference-vs-performance")
-    assert pref.status_code == 200, pref.text
-    pref_body = pref.json()
-    assert pref_body["available"] is True and pref_body["stated"] == "diagram"
-    assert "learning styles" in pref_body["note"]
-
-    one_topic = client.get("/api/v1/evidence/methods", params={"topic_id": topic_id})
-    assert one_topic.json()["scope"] == "one topic"
-    empty_topic = client.get("/api/v1/evidence/methods", params={"topic_id": "top_no_such_topic"})
-    assert empty_topic.json()["methods"] == []
-
-
-def test_failure_loop_records_a_controlled_evidence_event(client, learner, services):
-    topic_id, item_id, _ = _topic_with_prereq(services)
-    before = services.state.evidence_count(learner["student_id"])
-    res = _post_loop(client, learner, topic_id=topic_id, item_id=item_id, method="explanation", prereq_correct=False)
-    assert res.status_code == 200, res.text
-    after = services.state.evidence_count(learner["student_id"])
-    assert after == before + 1
-    rows = [r for r in services.state.evidence_rows(learner["student_id"]) if r.get("kind") == "failure_loop"]
-    assert rows and rows[-1]["payload"]["method_weight"] == 0.0
-    # Idempotent: the identical loop outcome is not written twice.
-    res2 = _post_loop(client, learner, topic_id=topic_id, item_id=item_id, method="explanation", prereq_correct=False)
-    assert res2.status_code == 200
-    assert services.state.evidence_count(learner["student_id"]) == after
+    services.state.set_validation(cid, "validated", module="code")
+    opened = client.post(
+        "/api/v1/evidence/failure", headers=learner["headers"], json={"attempt_id": aid}
+    )
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["fatigue"] is False

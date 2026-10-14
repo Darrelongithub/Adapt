@@ -78,7 +78,13 @@ def test_health_says_why_when_its_database_probe_fails(client, monkeypatch):
 def test_health_and_index_are_public(client):
     assert client.get("/healthz").status_code == 200
     body = client.get("/api/v1/health").json()
-    assert body["ok"] is True and "learners" in body and body["mode"] == "local"
+    # Brief §3: the learner-facing health payload carries the lesson state, not the deployment's
+    # mode or how many accounts exist. The old assertions here named `learners` and `mode`, which is
+    # exactly the operator detail the phase-7 boundary removes.
+    assert body["ok"] is True
+    assert body["lessons"]["state"] in ("ready", "simple mode")
+    assert body["lessons"]["says"].startswith("Lessons: ")
+    assert "learners" not in body and "mode" not in body
     # a working probe stays quiet: no error field to make a healthy payload look sick
     assert "database_error" not in body, body
     index = client.get("/api").json()
@@ -93,10 +99,28 @@ def test_health_and_index_are_public(client):
 
 
 def test_private_routes_refuse_anonymous_callers(client):
-    for path in ("/api/v1/dashboard", "/api/v1/profile", "/api/v1/plan", "/api/v1/journey", "/api/v1/attempts"):
-        response = client.post(path) if path.endswith("attempts") else client.get(path)
-        assert response.status_code == 401, (path, response.status_code)
-        assert response.json()["detail"] == "not signed in"
+    """A caller with no session at all is refused.
+
+    The `client` fixture is session-scoped, so its cookie jar carries whatever an earlier test in
+    the same run signed in. That made this check pass or fail on test *order* (`/dashboard` came
+    back 200 whenever a valid cookie happened to be in the jar) while claiming to test anonymity.
+    Clearing the jar is what makes the request anonymous in the way the name promises; the jar is
+    put back afterwards so no later test inherits this one's state.
+    """
+    jar = client.cookies.jar
+    saved = list(jar)
+    for cookie in saved:
+        jar.clear(cookie.domain, cookie.path, cookie.name)
+    try:
+        for path in ("/api/v1/dashboard", "/api/v1/profile", "/api/v1/plan", "/api/v1/journey", "/api/v1/attempts"):
+            response = client.post(path) if path.endswith("attempts") else client.get(path)
+            assert response.status_code == 401, (path, response.status_code)
+            assert response.json()["detail"] == "not signed in"
+    finally:
+        # put the exact cookie objects back, domain and path included: restoring a plain name/value
+        # pair would widen where the cookie is sent and change what later tests see
+        for cookie in saved:
+            jar.set_cookie(cookie)
 
 
 def test_registration_sets_a_httponly_cookie_and_hands_back_the_csrf_token(client):
@@ -752,8 +776,10 @@ def test_analyze_reports_evidence_hypotheses_and_a_question_not_a_change(client,
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["session_id"] == session, "the route takes the session as a query param; a JSON-only body must not silently analyse everything"
-    assert body["provider"] == "local", "no key configured, so nothing may claim a model wrote it"
-    assert body["llm"].get("used") in (False, None)
+    # §3: the answer says where it came from in the learner's terms ("your own material") and never
+    # names a runtime service. With no key configured, nothing may claim a model wrote it.
+    assert body["served_by"] == "your own material"
+    assert "provider" not in body and "llm" not in body
     assert body["traces"], "10 attempts have to leave a mastery trace somewhere"
     for hyp in body["hypotheses"]:
         assert hyp["detector"] and hyp["statement"]
@@ -1021,20 +1047,27 @@ def test_explain_hints_and_worked_examples_are_available_on_demand(client, learn
     )
     assert explained.status_code == 200, explained.text
     answer = explained.json()
-    assert answer["provider"] == "local" and answer["answer"].strip()
+    assert answer["served_by"] == "your own material" and answer["answer"].strip()
     assert answer["privacy"]["sent_to_model"] is False, "no key configured, so nothing may claim to have sent it"
     assert answer["level"] in BANDS
     assert isinstance(answer["adaptations_applied"], list) and isinstance(answer["sections"], list)
     assert isinstance(answer["sources"], list)
     assert answer["sources"], "the local tutor grounds answers in the learner's own material"
-    assert answer["meta"]["grounded"] is True
+    # Brief 4.1.2, the rule this test used to encode the opposite of: "mark `grounded: true`
+    # only when the shown text actually matches the item's topic". This reply is drawn from
+    # another topic in the same course -- the sentence above names which -- so `grounded` must
+    # be False and `topic_match` carries the distinction. The learner is still served their own
+    # material (`served_by`), with the source named; what may not be claimed is that this is
+    # material *about the question they asked*.
+    assert answer["meta"]["grounded"] is False
+    assert answer["meta"].get("topic_id"), "the reply says which topic the words came from"
     for src in answer["sources"]:
         assert {"kind", "ref", "title"} <= set(src)
         if src["kind"] == "material":
             assert src["material_id"], "so the citation opens the learner's own note"
         else:
             assert src.get("url"), "an external citation has to be clickable"
-    assert "meta" in answer and answer["provider_note"]
+    assert "meta" in answer and answer["served_by"], "the learner is told where the words came from"
     assert answer["message_id"].startswith("msg_")
 
     first = client.post(f"/api/v1/items/{item_id}/hint", json={"session_id": session}, headers=learner["headers"])
@@ -1220,7 +1253,7 @@ def test_websocket_text_turn_answers_counts_the_turn_and_keeps_the_transcript(cl
         assert reply is not None, seen
         assert reply["text"].strip() and "meta" in reply
         assert "fraction" in reply["text"].lower(), "the answer has to be about the topic that was asked about"
-        assert reply["meta"].get("provider") in {"local", "gemini"}
+        assert reply["meta"].get("served_by") in {"your own material", "written for you"}
         assert reply["ms"] >= 0
         # The voice path renders items through the same substitution the cards use, so the two
         # ways a template can leak (a `{token}` left in, or an answer key riding along) have to
@@ -1270,36 +1303,47 @@ def test_websocket_text_turn_answers_counts_the_turn_and_keeps_the_transcript(cl
 # --------------------------------------------------------------------------- #
 
 
-def test_status_quotas_and_privacy_explain_the_running_configuration(client, learner):
+def test_status_quotas_and_privacy_say_only_what_a_learner_may_know(client, learner):
+    """The learner-facing system surface, after brief §3.
+
+    The previous version of this test asserted the operator's report: deployment mode, the database
+    driver and its key source, provider state, limiter buckets and daily budgets, and a quota
+    payload that named a provider. §3 says none of that may appear on any HTTP surface -- "no key,
+    a provider name, a model name or budget figures" -- so the assertions below are the learner's
+    contract instead, and the absence checks are the part that would catch a regression. The
+    operator's detail still exists: it is printed by `adapt status` on the console.
+    """
     status = client.get("/api/v1/status", headers=learner["headers"]).json()
-    assert status["mode"] == "local" and status["version"]
-    enc = status["encryption"]
-    assert enc["requested"] == "field-only" and enc["field_level_encryption"] is True
-    assert enc["driver"] == "sqlite" and "SQLCipher" in enc["driver_detail"], (
-        "no sqlcipher wheel here, so the status page must say column-level only"
-    )
-    assert enc["file_encrypted"] is False
-    assert any("answers" in f.lower() for f in enc["fields_encrypted"])
-    assert status["llm"]["configured"] is False and status["llm"]["provider"] == "none"
-    assert status["llm"]["note"]
-    assert status["database"]["plaintext_header"] in (True, False)
-    assert status["voice"]["stt"]["local_stt"] in (True, False)
-    assert "mutation" in status["rate_limits"]["scopes"]
+    assert status["ok"] is True and status["version"]
+    assert status["lessons"]["state"] in ("ready", "simple mode")
+    assert status["lessons"]["note"], "simple mode has to say what it means for the lessons"
+    protection = status["data_protection"]
+    assert protection["protected"] and protection["not_protected"]
+    assert any("answers" in f.lower() for f in protection["protected"])
+    assert protection["note"]
+
+    forbidden = ("llm", "provider", "providers", "model", "models", "database", "mode", "rate_limits", "driver")
+    serialized = json.dumps(status).lower()
+    for key in forbidden:
+        assert f'"{key}"' not in serialized, f"/status leaked {key}"
 
     quotas = client.get("/api/v1/quotas", headers=learner["headers"]).json()
-    assert quotas["rate_limit_multiplier"] == 60  # raised for the suite; 1.0 in production
-    assert quotas["buckets"]["guest_create"][0] == 360.0
-    assert quotas["budget"]["calls"] == 120 and quotas["calls_left"] == quotas["budget"]["calls"] - quotas["used"]["calls"]
-    assert set(quotas["free_tiers"]) >= {"gemini"}
-    assert quotas["day"]
+    assert quotas["pacing"]["requests"][0] > 0 and quotas["pacing"]["writes"][0] > 0
+    assert quotas["note"]
+    # no provider-scoped buckets and no budget arithmetic on the public surface
+    assert "llm" not in quotas["pacing"] and "gemini" not in json.dumps(quotas).lower()
+    assert "budget" not in json.dumps(quotas).lower() and "calls_left" not in json.dumps(quotas)
 
     privacy = client.get("/api/v1/privacy", headers=learner["headers"]).json()
     assert privacy["telemetry"]["allowed_event_types"]
     assert "keystrokes" in " ".join(privacy["telemetry"]["never_recorded"])
-    forbidden = privacy["telemetry"]["forbidden_keys"]
-    assert "keystrokes" in forbidden and "clipboard" in forbidden
-    assert privacy["sent_to_gemini"] and privacy["storage"] and privacy["learner_controls"]
+    forbidden_keys = privacy["telemetry"]["forbidden_keys"]
+    assert "keystrokes" in forbidden_keys and "clipboard" in forbidden_keys
+    # provider-neutral wording: it says what is sent and what happens on a refusal, not who receives it
+    assert privacy["sent_to_model"]["when"] and privacy["sent_to_model"]["redaction"]
+    assert privacy["storage"] and privacy["learner_controls"]
     assert any("delete" in str(x).lower() for x in privacy["learner_controls"])
+    assert "gemini" not in json.dumps(privacy).lower() and "budget" not in json.dumps(privacy).lower()
 
     allow = client.get("/api/v1/events/allowlist", headers=learner["headers"]).json()
     assert "hint_no" in allow["allowed"]["hint_opened"], "the allowlist names the fields per type"
@@ -2113,16 +2157,25 @@ def test_a_resource_search_answers_without_a_network(client, learner):
     body = response.json()
     assert body["query"] == "adding fractions"
     assert isinstance(body["results"], list)
-    assert isinstance(body["providers"], list) and body["providers"], "the answer must name the providers it tried"
-    for provider in body["providers"]:
-        assert {"provider", "ok", "source", "note"} <= set(provider)
+    # §3: the learner is told *what was tried* in learner-safe words ("papers and preprints"),
+    # never which upstream service was tried. The canary test walks this route and asserts the
+    # service names appear in no response, so the kind label is the contract, not a nicety.
+    assert isinstance(body["sources"], list) and body["sources"], "the answer must say what it tried"
+    for source in body["sources"]:
+        assert {"kind", "ok", "source", "note"} <= set(source)
+        assert source["kind"] and "openalex" not in json.dumps(source).lower()
     if not body["results"]:
         assert body.get("note"), "an empty answer must say why it is empty"
     assert "retrieval_note" in body, "results must arrive with the caveat that search is not endorsement"
 
 
 def test_a_resource_search_refuses_an_unknown_provider_without_crashing(client, learner):
-    """A caller naming a provider that does not exist gets the providers that do."""
+    """A caller naming a source that does not exist gets the sources that do (here: none).
+
+    The request field keeps its old name (``providers``) because that is the wire contract the
+    resource service takes; what changed is the *response*, which names kinds of source rather
+    than upstream services (§3, and the canary test walks this route).
+    """
     response = client.post(
         "/api/v1/resources/search",
         json={"query": "quadratic equations", "providers": ["nope"], "limit": 2},
@@ -2131,7 +2184,7 @@ def test_a_resource_search_refuses_an_unknown_provider_without_crashing(client, 
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["results"] == []
-    assert body["providers"] == [], "no known provider was asked, so none is reported"
+    assert body["sources"] == [], "no known source was asked, so none is reported"
 
 
 def test_analyze_refuses_a_session_that_is_not_this_learners(client, learner, session):

@@ -485,7 +485,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
               <p>{reply.answer}</p>
               {reply.next_action ? <p className="text-[var(--accent)]">Next: {reply.next_action}</p> : null}
               <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-                {reply.provider === "local" ? "from your course material, no model call" : `model: ${reply.provider}`}
+                {reply.served_by ?? "from your course material"}
                 {reply.meta?.grounded ? " · grounded" : " · not grounded in your material"} ·{" "}
                 {reply.privacy?.sent_to_model ? "your question was sent to the model" : "nothing left this machine"}
               </p>
@@ -558,6 +558,13 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
         <Tag>{receipt.grading_method}</Tag>
       </div>
       <p className="text-sm leading-relaxed">{receipt.feedback}</p>
+      {receipt.next_step ? <Notice>
+        <p>{receipt.next_step.note}</p>
+        {receipt.next_step.suggest_break ? <p>A short break is worth trying before continuing.</p> : null}
+        {receipt.next_step.stage === "unavailable"
+          ? <p>No method comparison was recorded. <Btn href="/evidence">View your evidence</Btn></p>
+          : <Btn href={`/evidence?attempt=${encodeURIComponent(receipt.attempt_id)}`}>Continue the recovery check</Btn>}
+      </Notice> : null}
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         {/* The interval the server computed, not `undefined`: this row used to print a bare
             estimate next to an observation count, which reads as a measurement. It now shows
@@ -574,11 +581,19 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
         {receipt.mastery.first_observation ? <Tag tone="think">first data point on this topic</Tag> : null}
       </div>
       {tb ? (
-        <p className="mt-2 text-xs text-[var(--muted)]">
-          teach back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
-          {tb.missing?.length ? <> — missing <em>{tb.missing.join(", ")}</em></> : <> — all there</>}
-          {tb.followup ? <>. {tb.followup}</> : null}. {tb.note}
-        </p>
+        <div className="mt-2 text-xs text-[var(--muted)]">
+          {/* The grader's sentence first (it is the feedback), the coverage count under it, and
+              any misconception about the *answer* last -- never about the learner. */}
+          {tb.feedback ? <p>{tb.feedback}</p> : null}
+          <p>
+            teach back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
+            {tb.missing?.length ? <> — missing <em>{tb.missing.join(", ")}</em></> : <> — all there</>}
+            {tb.followup && !tb.feedback ? <>. {tb.followup}</> : null}. {tb.note}
+          </p>
+          {(tb.misconceptions ?? []).length ? (
+            <p>one thing to double-check: {(tb.misconceptions ?? []).join("; ")}</p>
+          ) : null}
+        </div>
       ) : null}
       {receipt.proposals_expected ? (
         <p className="mt-2 text-xs text-[var(--think)]">

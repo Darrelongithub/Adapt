@@ -113,10 +113,19 @@ export type Receipt = {
     followup?: string | null;
     words?: number;
     note?: string;
+    /** One sentence from the 3-point grader, always present, <=220 chars, second person. */
+    feedback?: string;
+    /** Non-empty only when a configured model named one and the verbatim-quote gate passed it. */
+    misconceptions?: string[];
+    /** "rules" or "model" -- which path produced `feedback`, said honestly. */
+    feedback_source?: string;
   } | null;
   retention?: Record<string, unknown> | null;
   flags?: string[];
   proposals_expected?: boolean;
+  teaching?: { method: string | null; design: string | null; label: string | null };
+  next_step?: { stage: string; loop_id: string; note: string; suggest_break?: boolean } | null;
+  method_compare?: Record<string, unknown> | null;
 };
 
 export type Proposal = {
@@ -188,7 +197,9 @@ export type JourneyNode = {
 
 export type ExplainReply = {
   answer: string;
-  provider: string;
+  /** Where these words came from, in the learner's terms: "your own material" or
+   *  "written for you". The server never names a service or a model here (§3). */
+  served_by?: string;
   sections?: { label: string; text: string }[];
   next_action?: string | null;
   adaptations_applied?: string[];
@@ -199,22 +210,57 @@ export type ExplainReply = {
   model_ms?: number;
   message_id?: string;
   intent?: string | null;
-  meta?: { grounded?: boolean; provider_detail?: string };
-  provider_note?: string;
+  meta?: { grounded?: boolean };
   privacy?: { sent_to_model?: boolean; redacted_fields?: number; what_was_sent?: string };
 };
 
-export type Health = { ok: boolean; mode: string; learners?: number; [k: string]: unknown };
+/** How lessons are being produced right now, in a sentence a learner can read (§3). */
+export type LessonsState = { state: "ready" | "simple mode" | string; says: string; note?: string };
+
+/** What is protecting learner data -- the claim, without the deployment detail (§3). */
+export type DataProtection = {
+  file_encrypted?: boolean;
+  underlying_engine?: string;
+  file_level?: string;
+  protected?: string[];
+  not_protected?: string[];
+  note?: string;
+};
+
+/** `GET /api/v1/review/check` -- the retention check (prompt 5).
+ *  `expected_answer_notes` is the answer key: fetch it with `with_notes=1` only *after* the
+ *  learner has answered, never beside the question. */
+export type RetentionCheck = {
+  topic_id: string;
+  title: string;
+  question: string;
+  rationale: string;
+  lag_hours?: number;
+  expected_recall?: number | null;
+  grounded_item_id?: string | null;
+  source: "rules" | "model" | string;
+  expected_answer_notes?: string;
+  notes?: string;
+};
+
+export type Health = {
+  ok: boolean;
+  version?: string;
+  lessons?: LessonsState;
+  database_reachable?: boolean;
+  database_error?: string;
+};
 
 export type Status = {
-  mode: string;
+  ok?: boolean;
   version?: string;
-  database: { path?: string; file_encrypted?: boolean; plaintext_header?: boolean; driver?: { driver?: string; detail?: string; key_source?: string } };
-  llm: { configured: boolean; provider?: string; note?: string };
-  encryption?: { requested?: string; file_encrypted?: boolean; driver?: string; driver_detail?: string; field_level_encryption?: boolean; fields_encrypted?: string[] };
-  rate_limits?: { scopes?: Record<string, { rate_per_min: number; burst: number }> };
-  voice?: { stt?: Record<string, unknown>; tts?: Record<string, unknown> };
+  lessons?: LessonsState;
+  demo_mode?: boolean;
+  data_protection?: DataProtection;
 };
+
+/** The learner-safe pacing report: pairs of (per-minute, burst). */
+export type Quotas = { pacing: Record<string, [number, number]>; note?: string };
 
 /** The reply from `POST /api/v1/adaptations/{id}/decision` (services/adaptations.decide).
  *  Every verb returns the same keys, and `ok:false` + `reason` is how "already answered"

@@ -132,12 +132,13 @@ class KokoroTTS:
         try:
             import kokoro  # noqa: F401
         except Exception as exc:
-            return False, (
-                "kokoro not importable "
-                f"({exc.__class__.__name__}); install with: pip install 'adapt-backend[voice]' "
-                "(pulls torch ~2 GB and downloads the 82M weights once)"
+            log.info(
+                "voice: kokoro not importable (%s); install with: pip install 'adapt-backend[voice]' "
+                "(pulls torch ~2 GB and downloads the 82M weights once)",
+                exc.__class__.__name__,
             )
-        return True, "kokoro importable; weights fetched on first synthesis unless cached"
+            return False, "the local voice engine is not installed in this environment"
+        return True, "local voice engine available; weights are fetched on first synthesis"
 
     @staticmethod
     def voice_for(gender: str | None, lang: str) -> str:

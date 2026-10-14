@@ -20,14 +20,16 @@ import json
 import re
 import time
 import uuid
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
+from starlette.datastructures import MutableHeaders
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from ..config import Settings, get_settings
 from .ratelimit import Limiter
+from .secrecy import ConfigurationSecrecyMiddleware
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"}
@@ -43,11 +45,11 @@ CSP_NO_INLINE = (
     "default-src 'self'; "
     "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "  # Next injects critical styles; scoped to style only
-    "img-src 'self' data: https://i.ytimg.com https://covers.openlibrary.org; "
+    "img-src 'self' data: blob:; "
     "media-src 'self' blob: data:; "
     "font-src 'self' data:; "
     "connect-src 'self' ws: wss:; "
-    "frame-src 'self' https://www.youtube.com https://numbas.mathcentre.ac.uk; "
+    "frame-src 'self'; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 )
 
@@ -73,26 +75,45 @@ def host_allowed(host: str | None, settings: Settings) -> bool:
     return any(p.match(h) for p in HOST_PATTERNS)
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, settings: Settings | None = None) -> None:
-        super().__init__(app)
-        self.settings = settings or get_settings()
+class SecurityHeadersMiddleware:
+    """ASGI boundary for security headers and configuration redaction.
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        response = await call_next(request)
-        h = response.headers
-        h["X-Content-Type-Options"] = "nosniff"
-        h["X-Frame-Options"] = "DENY"
-        h["Referrer-Policy"] = "no-referrer"
-        h["Cross-Origin-Opener-Policy"] = "same-origin"
-        h["Cross-Origin-Resource-Policy"] = "same-origin"
-        h["Permissions-Policy"] = "camera=(), geolocation=(), microphone=(self)"
-        h["Content-Security-Policy"] = CSP_NO_INLINE
-        h["Cache-Control"] = "no-store"
-        h["X-Request-Id"] = request.state.request_id if hasattr(request.state, "request_id") else uuid.uuid4().hex[:12]
-        if self.settings.require_https:
-            h["Strict-Transport-Security"] = "max-age=300; includeSubDomains"
-        return response
+    This is pure ASGI rather than ``BaseHTTPMiddleware`` so the same outer boundary
+    sees HTTP responses and WebSocket frames.  The secrecy wrapper is installed here
+    because this middleware is already registered around every route in ``app.py``.
+    """
+
+    def __init__(self, app, *, settings: Settings | None = None) -> None:
+        self.settings = settings or get_settings()
+        self.app = ConfigurationSecrecyMiddleware(app, self.settings)
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def with_security_headers(message):
+            if message.get("type") == "http.response.start":
+                headers = list(message.get("headers", []))
+                response_headers = MutableHeaders(raw=headers)
+                response_headers["X-Content-Type-Options"] = "nosniff"
+                response_headers["X-Frame-Options"] = "DENY"
+                response_headers["Referrer-Policy"] = "no-referrer"
+                response_headers["Cross-Origin-Opener-Policy"] = "same-origin"
+                response_headers["Cross-Origin-Resource-Policy"] = "same-origin"
+                response_headers["Permissions-Policy"] = (
+                    "camera=(), geolocation=(), microphone=(self)"
+                )
+                response_headers["Content-Security-Policy"] = CSP_NO_INLINE
+                response_headers["Cache-Control"] = "no-store"
+                request_id = (scope.get("state") or {}).get("request_id")
+                response_headers["X-Request-Id"] = request_id or uuid.uuid4().hex[:12]
+                if self.settings.require_https:
+                    response_headers["Strict-Transport-Security"] = "max-age=300; includeSubDomains"
+                message = {**message, "headers": response_headers.raw}
+            await send(message)
+
+        await self.app(scope, receive, with_security_headers)
 
 
 class TrustedHostMiddleware(BaseHTTPMiddleware):
@@ -100,10 +121,15 @@ class TrustedHostMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.settings = settings or get_settings()
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         if not host_allowed(request.headers.get("host"), self.settings):
             return JSONResponse(
-                {"detail": "untrusted host", "hint": "set ADAPT_EXTRA_ALLOWED_HOSTS or run the demo script"},
+                {
+                    "detail": "untrusted host",
+                    "hint": "set ADAPT_EXTRA_ALLOWED_HOSTS or run the demo script",
+                },
                 status_code=400,
             )
         if self.settings.require_https and request.url.scheme == "http":
@@ -121,7 +147,9 @@ class LimitsMiddleware(BaseHTTPMiddleware):
         self.settings = settings
         self.limiter = limiter
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         request.state.request_id = uuid.uuid4().hex[:12]
         length = request.headers.get("content-length")
         if length and length.isdigit() and int(length) > self.settings.max_body_bytes:
@@ -192,9 +220,11 @@ def origin_ok(request: Request, settings: Settings) -> bool:
     origin = request.headers.get("origin")
     if not origin:
         return True  # non-browser clients (curl, tests, native) send no Origin
-    allowed = {o.rstrip("/") for o in settings.origins} | {
-        f"https://{h}" for h in settings.extra_allowed_hosts
-    } | {f"http://{h}" for h in settings.extra_allowed_hosts}
+    allowed = (
+        {o.rstrip("/") for o in settings.origins}
+        | {f"https://{h}" for h in settings.extra_allowed_hosts}
+        | {f"http://{h}" for h in settings.extra_allowed_hosts}
+    )
     origin = origin.rstrip("/")
     if origin in allowed:
         return True

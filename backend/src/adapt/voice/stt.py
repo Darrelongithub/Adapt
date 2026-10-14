@@ -121,10 +121,20 @@ class WhisperSTT(BaseSTT):
 
     @staticmethod
     def probe(settings: Any) -> tuple[bool, str]:
+        """``(available, learner-safe sentence)``.
+
+        The sentence is what `GET /voice/capabilities` shows a learner, so it names no package,
+        provider or model (brief §3). The install hint goes to the log and `docs/VOICE.md`, which
+        is where an operator reads it -- the app never tells a learner to run pip.
+        """
         try:
             import faster_whisper  # noqa: F401
         except Exception as exc:
-            return False, f"faster-whisper not importable ({exc.__class__.__name__}); install with: pip install 'adapt-backend[voice]'"
+            log.info(
+                "voice: faster-whisper not importable (%s); install with: pip install 'adapt-backend[voice]'",
+                exc.__class__.__name__,
+            )
+            return False, "local transcription is not installed in this environment"
         try:
             from pathlib import Path
 

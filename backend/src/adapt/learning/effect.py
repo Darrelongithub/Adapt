@@ -1,6 +1,7 @@
 """Did the adaptation actually help? Non-parametric effect estimation.
 
-AI 1's proposals are experiments, so each one needs a pre/after comparison that a
+Approved changes are observational before/after comparisons, not experiments.
+Each one needs a pre/after comparison that a
 sceptical reader would accept:
 
 * paired or unpaired mean difference on the pre-registered metric,
@@ -27,21 +28,6 @@ import numpy as np
 
 ROPE_SD = 0.10
 MIN_GROUP_N = 5
-
-#: The two words a learner is shown when there is not enough data to say
-#: anything (brief §9.8). Added in Phase 6 without touching any existing key:
-#: below ``MIN_GROUP_N`` the verdict has always been ``insufficient_evidence``
-#: internally; this is the same fact in the words the learner reads, so a
-#: screen never has to translate the verdict itself (and cannot soften it
-#: into "loading" or "looks promising").
-INSUFFICIENT_EVIDENCE_LABEL = "insufficient evidence"
-
-
-def verdict_label(verdict: str | None) -> str:
-    """Learner-facing words for a verdict value."""
-    if verdict == "insufficient_evidence":
-        return INSUFFICIENT_EVIDENCE_LABEL
-    return (verdict or "not measured").replace("_", " ")
 
 
 def _rng(seed: int | None) -> np.random.Generator:
@@ -243,7 +229,7 @@ def evaluate_change(
             hedges_g=None,
             verdict="insufficient_evidence",
             explanation=(
-                f"{metric}: need >= {min_n} scored attempts on each side of the change; "
+                f"Insufficient evidence for {metric}: need >= {min_n} scored attempts on each side of the change; "
                 f"have {len(A)} baseline and {len(B)} after. Keeping the change under "
                 "observation rather than drawing a conclusion."
             ),
