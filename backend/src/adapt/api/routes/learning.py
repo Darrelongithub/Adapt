@@ -26,6 +26,7 @@ from ..deps import db_session, rate, require_csrf, student_from_request
 from ...assessment import bank
 from ...config import get_settings
 from ...db.models import Attempt, BktState, LearningSession, Student, Topic
+from ...journey import state as journey_state
 from ...learning import strategies as ST
 from ...learning.telemetry import ALLOWED_EVENTS as TELEMETRY_EVENTS
 from ...services import attempts as A
@@ -462,9 +463,19 @@ def journey(
     s: Session = Depends(db_session),
     student: Student = Depends(student_from_request),
 ) -> dict[str, Any]:
+    """The record *and* the path: what happened, and which stage the learner is on.
+
+    The timeline is what this route has always returned. Round 2's frozen contract puts
+    the path's state on the same path (``{stage, stages: [{id, status}]}``), so the two
+    are one answer here rather than two endpoints that could disagree: the record is the
+    evidence, and the stage list is derived from that same evidence by
+    :mod:`adapt.journey.state`. A screen that only wants the stage list asks
+    ``GET /api/v1/journey/state`` and skips the timeline.
+    """
     data = J.build(s, student.id, days=days, limit=limit)
     data["milestones"] = J.milestones(s, student.id)
     data["stats"] = J.stats(s, student.id)
+    data.update(journey_state.payload(s, student.id))
     return data
 
 

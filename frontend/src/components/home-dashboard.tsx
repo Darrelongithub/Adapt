@@ -33,6 +33,7 @@ export function HomeDashboard({ me }: { me: Me }) {
           <Btn kind="primary" href={primary}>{label}</Btn>
           <Btn href="/lesson">Explore lessons</Btn>
           <Btn href="/subject">Choose a subject</Btn>
+          <Btn href="/journey">Your path</Btn>
           {!me.onboarding_complete ? <Btn kind="ghost" href="/onboarding">Personalise your setup</Btn> : null}
         </div>
       </header>

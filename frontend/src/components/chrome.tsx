@@ -17,12 +17,14 @@ export const NAV = [
   { href: "/proposals", label: "Changes" },
   { href: "/review", label: "Review" },
   { href: "/progress", label: "Progress" },
+  // First entry opens the baseline; returning learners can resume it from Home.
   { href: "/baseline", label: "Mind check" },
   { href: "/subject", label: "Subject round" },
   { href: "/contrast", label: "Compare lessons" },
   { href: "/evidence", label: "Evidence" },
   { href: "/voice", label: "Voice" },
   { href: "/settings", label: "Settings" },
+  { href: "/journey", label: "Your path" },
 ];
 
 /** Red bar, every screen, whenever the data on it is not real. */
