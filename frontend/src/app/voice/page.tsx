@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Btn, Card, Check, Err, Field, Notice, Select, Tag, Textarea, useSession } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
+import { createDeduper, debounce, type Deduper } from "@/lib/debounce";
 
 type Caps = {
   stt?: { local_stt?: boolean; detail?: string; fallback?: string; model_size?: string };
@@ -37,6 +38,9 @@ type Frame =
   | { t: "config_ack"; voice_enabled?: boolean; gender?: string; barge_in?: boolean }
   | { t: "partial"; text?: string }
   | { t: "error"; detail?: string; message?: string }
+  | { t: "throttle"; scope?: string; retry_after_s?: number }
+  | { t: "deduped"; reason?: string }
+  | { t: "busy"; state?: string; detail?: string }
   | Record<string, unknown>;
 
 export default function VoicePage() {
@@ -53,6 +57,10 @@ export default function VoicePage() {
   const [log, setLog] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [mic, setMic] = useState<string | null>(null);
+  // A pacing refusal is not an error (nothing broke) and not one of the turn bubbles: the
+  // learner asked twice, the server answered once, and the sentence that explains the gap
+  // belongs on the screen rather than in a log that is closed by default.
+  const [notice, setNotice] = useState<string | null>(null);
   const ws = useRef<WebSocket | null>(null);
   const ctx = useRef<AudioContext | null>(null);
   const rec = useRef<{ stop: () => void } | null>(null);
@@ -152,6 +160,16 @@ export default function VoicePage() {
         setLog((l) => [...l, `server voice off (${String(f.reason)}): ${String(f.text ?? "").slice(0, 60)}…`]);
       } else if (t === "config_ack") {
         setLog((l) => [...l, `config: voice=${String(f.voice_enabled)} gender=${String(f.gender)} barge_in=${String(f.barge_in)}`]);
+      } else if (t === "throttle") {
+        // The server's own guard answered before any work was done. Saying "slow down" is
+        // friendlier than dropping the frame and letting the learner wonder.
+        setLog((l) => [...l, `server asked for a pause (${String(f.scope ?? "frames")}, ${String(f.retry_after_s ?? "?")}s)`]);
+        setNotice("that arrived faster than the server will answer - wait for the answer already on its way");
+      } else if (t === "deduped") {
+        setLog((l) => [...l, "the same message arrived twice; the second copy was ignored"]);
+      } else if (t === "busy") {
+        setLog((l) => [...l, `a turn is already running (${String(f.state ?? "working")})`]);
+        setNotice("one turn at a time: stop the answer that is running, or wait for it");
       } else if (t === "partial") setPartial(String(f.text ?? ""));
       else if (t === "error") setError(String(f.detail ?? f.message ?? "server error"));
     };
@@ -165,11 +183,29 @@ export default function VoicePage() {
     socket.onopen = () => {
       setOpen(true);
       socket.send(JSON.stringify({ t: "config", voice_on: voiceOn, gender, barge_in: barge }));
+      sends.current = createDeduper(900);
     };
     ws.current = socket;
   }
 
   const lastSpoken = useRef("");
+  // -- one send per intention, and no frame per keystroke ------------------------------- #
+  // The socket is the cheapest thing on this page to call and the most expensive thing on the
+  // server to answer: a text frame is a *turn*, and a model call. Two guards, both mirroring
+  // the server's (`ws_duplicate_window_ms` is the same 900 ms on purpose, so a learner's
+  // double-click is dropped here rather than explained by a refusal frame):
+  //
+  //  * `sends` refuses the same words twice inside the window -- a double-click, or a held
+  //    Enter on the send button;
+  //  * `configFrame` debounces the settings frames, which are sent from control handlers and
+  //    would otherwise go out once per pixel of a drag.
+  const sends = useRef<Deduper | null>(null);
+  const configFrame = useRef<((frame: Record<string, unknown>) => void) | null>(null);
+  const sendConfig = (frame: Record<string, unknown>) => {
+    (configFrame.current ??= debounce((next: Record<string, unknown>) => {
+      if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(next));
+    }, 250))(frame);
+  };
 
   async function playBinary(buf: ArrayBuffer) {
     if (!ctx.current) return;
@@ -196,9 +232,17 @@ export default function VoicePage() {
   function sendText() {
     const text = draft.trim();
     if (!text || !ws.current || ws.current.readyState !== WebSocket.OPEN) return;
+    if ((sends.current ??= createDeduper(900)).seen(text)) {
+      // The same words again inside the window: a double-click on send, or Enter held down.
+      // One turn was started; the second copy is dropped here, where it costs nothing.
+      setDraft("");
+      setLog((l) => [...l, "that was the same message twice - one turn sent"]);
+      return;
+    }
     lastSpoken.current = text;
     ws.current.send(JSON.stringify({ t: "text", text }));
     setDraft("");
+    setNotice(null);
     setState("thinking");
   }
 
@@ -273,6 +317,14 @@ export default function VoicePage() {
       </div>
 
       {error ? <Err error={error} status={null} /> : null}
+      {notice ? (
+        <Notice>
+          {notice}
+          <button className="ml-2 underline" onClick={() => setNotice(null)}>
+            dismiss
+          </button>
+        </Notice>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card title="Turn" tone="ask">
@@ -361,9 +413,11 @@ export default function VoicePage() {
               </Field>
               {open ? (
                 <Btn
-                  onClick={() => {
-                    ws.current?.send(JSON.stringify({ t: "config", voice_on: voiceOn, gender, barge_in: barge }));
-                  }}
+                  // Debounced, not sent straight down the socket: a double-click here used to
+                  // be two config frames, and the server answers each of them with a frame of
+                  // its own. The window is short enough that a deliberate second change still
+                  // arrives.
+                  onClick={() => sendConfig({ t: "config", voice_on: voiceOn, gender, barge_in: barge })}
                 >
                   apply to this session
                 </Btn>

@@ -141,12 +141,23 @@ def _configured_terms(settings: Any | None) -> tuple[str, ...]:
         "youtube_api_key",
         "gemini_model_ai1",
         "gemini_model_ai2",
+        "gemini_model_light",
+        "gemini_model_standard",
+        "gemini_model_deep",
         "gemini_base_url",
         "openalex_mailto",
     ):
         value = getattr(settings, attr, None)
         if isinstance(value, str) and value:
             terms.add(value)
+    # A per-task pin is a model name too, and a model name is one of the things §3 keeps
+    # off every learner-facing surface. Missing these would leave the newest way to
+    # configure a model as the one way that is not scrubbed.
+    pinned = getattr(settings, "gemini_task_models", None)
+    if isinstance(pinned, dict):
+        for value in pinned.values():
+            if isinstance(value, str) and value:
+                terms.add(value)
     return tuple(sorted(terms, key=len, reverse=True))
 
 

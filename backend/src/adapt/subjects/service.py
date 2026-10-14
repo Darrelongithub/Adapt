@@ -49,10 +49,11 @@ from . import curriculum as CUR
 from . import games as G
 from . import ladder as L
 from . import methodtest as M
+from . import placement as PL
 from . import plan as P
 from .leanings import Leanings, family_of_skill, rate_leanings
 from .models import MethodTestRun, SubjectRound, SubjectSnapshot, SubjectTrial
-from .resolve import Resolved, refine_with_model, resolve_topic
+from .resolve import Resolved
 from .taxonomy import TAXONOMY_VERSION, skills_for
 
 log = logging.getLogger("adapt.subjects.service")
@@ -185,15 +186,22 @@ class Subjects:
             raise SubjectsError("that is too long to be a topic name — a subject or a topic, in a few words")
         with self._sess() as s:
             ids = self._topic_ids(s)
-        resolved = resolve_topic(str(text), bank=BANK.topic_catalog(), topic_ids=ids)
-        resolved = refine_with_model(resolved, llm=self.llm, student_id=student_id)
-        leanings = rate_leanings(resolved.as_dict(), llm=self.llm, student_id=student_id)
+        # One call answers both questions (which family, and what it leans on). `placement`
+        # in the response is the chain's own account of how the answer was produced.
+        resolved, leanings, placement = PL.place_and_rate(
+            str(text),
+            llm=self.llm,
+            student_id=student_id,
+            bank=BANK.topic_catalog(),
+            topic_ids=ids,
+        )
         chain = CUR.chain_for(resolved)
         pair = M.pair_for(resolved.topic_key)
         return {
             "resolved": resolved.as_dict(),
             "suggestions": _suggestions(resolved),
             "leanings": leanings.as_dict(with_scale=True),
+            "placement": placement,
             "ladder": {
                 "available": chain is not None,
                 "chain": chain.as_dict(with_nodes=False) if chain else None,
@@ -222,8 +230,7 @@ class Subjects:
     # ------------------------------------------------------------------ #
     def plan_tests(self, topic: str | Mapping[str, Any] | Resolved, *, student_id: str | None = None) -> dict[str, Any]:
         """Which skills the round tests, which it does not, and why — for any topic, run or not."""
-        resolved = self._resolve_any(topic, student_id=student_id)
-        leanings = rate_leanings(resolved.as_dict(), llm=self.llm, student_id=student_id)
+        resolved, leanings, placement = self._place_any(topic, student_id=student_id)
         plan = P.plan_tests(leanings)
         tasks: dict[str, list[dict[str, Any]]] = {}
         seed = seed_of(student_id or "anonymous", resolved.topic_key, "subject-round")
@@ -240,6 +247,7 @@ class Subjects:
         pair = M.pair_for(resolved.topic_key)
         payload = plan.as_dict(with_tasks=True, tasks=tasks)
         payload["topic"] = {**payload["topic"], **{"level_hint": resolved.level_hint, "resolved_from": resolved.source, "bank_code": resolved.bank_code}}
+        payload["placement"] = placement
         payload["round"] = {
             "stages": [{"key": k, "title": t} for k, t in STAGES],
             "estimated_seconds": plan.estimated_seconds
@@ -261,21 +269,69 @@ class Subjects:
         return payload
 
     def _resolve_any(self, topic: str | Mapping[str, Any] | Resolved, *, student_id: str | None = None) -> Resolved:
-        if isinstance(topic, Resolved):
-            return topic
-        if isinstance(topic, Mapping):
-            if topic.get("normalised") or topic.get("source"):
-                return Resolved(**{k: v for k, v in topic.items() if k in Resolved.__dataclass_fields__})  # type: ignore[arg-type]
-            return self._resolve_text(student_id, str(topic.get("topic") or topic.get("text") or ""))
-        return self._resolve_text(student_id, str(topic or ""))
+        """Just the topic half, for callers that already have leanings."""
+        return self._place_any(topic, student_id=student_id)[0]
 
-    def _resolve_text(self, student_id: str | None, text: str) -> Resolved:
+    def _place_any(
+        self, topic: str | Mapping[str, Any] | Resolved, *, student_id: str | None = None
+    ) -> tuple[Resolved, Leanings, dict[str, Any]]:
+        """Resolve a topic *and* rate its leanings, in as few model calls as the shape allows.
+
+        A caller that already holds a ``Resolved`` (or the dict it came from) has had the
+        placement half decided for it, so only the ratings can be asked for -- one call,
+        which is what ``rate_leanings`` does. Free text is the fused case: both halves are
+        unknown and one prompt answers both (:mod:`adapt.subjects.placement`).
+        """
+        if isinstance(topic, Resolved):
+            return (
+                topic,
+                rate_leanings(topic.as_dict(), llm=self.llm, student_id=student_id),
+                {"chain": None, "calls": 1, "note": "the topic was already resolved; only the ratings were asked for"},
+            )
+        if isinstance(topic, Mapping) and (topic.get("normalised") or topic.get("source")):
+            resolved = Resolved(**{k: v for k, v in topic.items() if k in Resolved.__dataclass_fields__})  # type: ignore[arg-type]
+            return (
+                resolved,
+                rate_leanings(resolved.as_dict(), llm=self.llm, student_id=student_id),
+                {"chain": None, "calls": 1, "note": "the topic was already resolved; only the ratings were asked for"},
+            )
+        text = str(topic.get("topic") or topic.get("text") or "") if isinstance(topic, Mapping) else str(topic or "")
+        return self._place_text(student_id, text)
+
+    def _place_text(self, student_id: str | None, text: str) -> tuple[Resolved, Leanings, dict[str, Any]]:
+        """The one call, for a topic nobody has resolved yet."""
         if not str(text or "").strip():
             raise SubjectsError("a topic is needed before anything can be planned")
         with self._sess() as s:
             ids = self._topic_ids(s)
-        resolved = resolve_topic(str(text), bank=BANK.topic_catalog(), topic_ids=ids)
-        return refine_with_model(resolved, llm=self.llm, student_id=student_id)
+        return PL.place_and_rate(
+            text,
+            llm=self.llm,
+            student_id=student_id,
+            bank=BANK.topic_catalog(),
+            topic_ids=ids,
+        )
+
+    def _resolve_text(self, student_id: str | None, text: str) -> Resolved:
+        """Just the topic, for callers that never look at the ratings.
+
+        ``need_ratings=False`` is the difference between asking one question and asking two:
+        the counterbalanced-lesson path only needs to know which topic it is dealing a lesson
+        for, and buying a skill profile to discard it would be exactly the waste item 1 is
+        about.
+        """
+        if not str(text or "").strip():
+            raise SubjectsError("a topic is needed before anything can be planned")
+        with self._sess() as s:
+            ids = self._topic_ids(s)
+        return PL.place_and_rate(
+            text,
+            llm=self.llm,
+            student_id=student_id,
+            bank=BANK.topic_catalog(),
+            topic_ids=ids,
+            need_ratings=False,
+        )[0]
 
     # ------------------------------------------------------------------ #
     # the round: start, view, answer, finish
@@ -286,8 +342,7 @@ class Subjects:
         One open round per (learner, topic): two would be two ladders climbing at once and one
         snapshot that could not say which sitting it described.
         """
-        resolved = self._resolve_text(student_id, topic)
-        leanings = rate_leanings(resolved.as_dict(), llm=self.llm, student_id=student_id)
+        resolved, leanings, placement = self._place_text(student_id, topic)
         plan = P.plan_tests(leanings)
         with self._sess() as s:
             existing = s.execute(
@@ -311,7 +366,7 @@ class Subjects:
                 resolved=resolved.as_dict(),
                 leanings=leanings.as_dict(),
                 plan=plan.as_dict(),
-                completion={"stages_seen": ["skills"]},
+                completion={"stages_seen": ["skills"], "placement": placement},
             )
             s.add(row)
             s.flush()

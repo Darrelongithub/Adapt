@@ -956,6 +956,13 @@ class LlmCall(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     redacted_fields: Mapped[int] = mapped_column(Integer, default=0)
     prompt_chars: Mapped[int] = mapped_column(Integer, default=0)
+    #: Which class of work this call was (``ai/routing.py``): light | standard | deep.
+    #: Recorded per call rather than derived on read, because the routing table changes and
+    #: "what did we actually spend the cheap model on last Tuesday" has to survive that.
+    tier: Mapped[str | None] = mapped_column(String(12))
+    #: Input tokens the provider served from a registered static prefix (a *saving*, not a
+    #: cost): the number that says whether the context cache earned its place.
+    cached_tokens: Mapped[int] = mapped_column(Integer, default=0)
     day: Mapped[str] = mapped_column(String(10), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

@@ -234,6 +234,23 @@ def _database_check(st) -> tuple[bool, str, str] | None:
         db.dispose()
 
 
+def _chain_steps(task: str) -> list[dict[str, Any]]:
+    """The merged call's steps, or an empty list when the chain is declared elsewhere.
+
+    Lazy and defensive on purpose: ``adapt doctor`` is the screen an operator runs when
+    something is wrong, so a chain module that cannot be imported has to *say nothing* there
+    rather than take the whole report down with it.
+    """
+    try:
+        from .subjects import placement as PL
+
+        if task == PL.PLACEMENT_CHAIN.purpose:
+            return PL.chain_summary()["steps"]
+    except Exception:  # pragma: no cover - a broken import is reported by its own check
+        return []
+    return []
+
+
 @app.command("doctor")
 def doctor(as_json: bool = typer.Option(False, "--json")) -> None:
     """Report what is installed, what is optional, and what will fall back."""
@@ -325,6 +342,80 @@ def doctor(as_json: bool = typer.Option(False, "--json")) -> None:
             tunnel = cmd
             break
     check("tunnel for judges", bool(tunnel), tunnel or "neither localtunnel (npx lt) nor cloudflared found", "npm i -g localtunnel  |  brew install cloudflared")
+
+    # -- what the model calls actually cost ---------------------------------- #
+    # Four answers an operator needs before a demonstration, and the only place all four
+    # appear together. Model *names* are printed here and nowhere on the HTTP surface
+    # (brief §3): this is the console of the machine that holds the API key.
+    #
+    #   1. which model answers which class of work (routing.report);
+    #   2. how big the static heads are, and which of them clear the provider's cache floor;
+    #   3. which requests used to be two calls and are now one (the chains);
+    #   4. how many requests may be in flight at once before the server says wait.
+    from .ai import routing
+    from .ai import static_context as SC
+    from .security.ratelimit import build_realtime_guard
+
+    routing_report = routing.report(st)
+    for tier, row in routing_report["classes"].items():
+        names_in_tier = row["tasks"]
+        check(
+            f"model tier: {tier}",
+            True,
+            f"{row['model']} -- {len(names_in_tier)} task(s)",
+            "",
+        )
+    blocks = SC.sizes()
+    floor = int(getattr(st, "gemini_context_cache_min_tokens", 1024) or 1024)
+    cacheable = {name: row for name, row in blocks.items() if row["est_tokens"] >= floor}
+    check(
+        "static context",
+        bool(getattr(st, "ai_context_cache", True)),
+        (
+            f"{len(blocks)} block(s); {len(cacheable)} above the {floor}-token cache floor "
+            f"({', '.join(sorted(cacheable)) or 'none'})"
+        ),
+        "lower ADAPT_GEMINI_CONTEXT_CACHE_MIN_TOKENS if the provider allows smaller caches",
+    )
+    joins = {task: pol.joins for task, pol in routing.TASKS.items() if pol.joins}
+    check(
+        "merged calls",
+        bool(getattr(st, "ai_single_call", True)),
+        (
+            "on: "
+            + "; ".join(
+                f"{task} replaces {len(purposes)} calls "
+                f"({', '.join(purposes)}) with one"
+                for task, purposes in joins.items()
+            )
+            if joins
+            else "on: no table entry merges two purposes yet"
+        ),
+        "ADAPT_AI_SINGLE_CALL=0 restores the sequential path, for measurement",
+    )
+    guard = build_realtime_guard(st)
+    check(
+        "concurrency guard",
+        True,
+        (
+            f"{guard.max_inflight} request(s) in flight per key, "
+            f"{guard.burst_max} inside any {int(guard.window_s * 1000)} ms before it is called a loop"
+        ),
+        "raise ADAPT_REALTIME_MAX_INFLIGHT for a load test, not for a demo",
+    )
+    data["cost"] = {
+        "routing": routing_report,
+        "static_context": blocks,
+        "cache_floor_tokens": floor,
+        "chains": {
+            # The table says *that* a purpose merges others; the chain module says what the
+            # merged prompt actually asks for, step by step. Both, because a claim about
+            # call counts that cannot be read back is a claim nobody can check.
+            task: {"one_call": True, "replaces": list(purposes), "steps": _chain_steps(task)}
+            for task, purposes in joins.items()
+        },
+        "realtime": guard.snapshot(),
+    }
     if as_json:
         _echo(data)
     else:
@@ -440,8 +531,8 @@ def analyze(
 @app.command()
 def proposals(student_id: str = typer.Option(..., "--for"), include_decided: bool = typer.Option(False, "--all")) -> None:
     """List adaptation proposals (what AI 1 wants to change, and why)."""
-    from .services import adaptations as AD
     from .db.engine import get_db
+    from .services import adaptations as AD
 
     with get_db().session() as s:
         out = {"pending": AD.pending(s, student_id)}
@@ -609,9 +700,9 @@ def demo(turns: int = typer.Option(3, "--turns", help="practice items to run thr
     """The whole loop, end to end, on a freshly seeded learner. Prints a story."""
     from .db.engine import Database
     from .db.init_db import init
-    from .services import build
     from .services import adaptations as AD
     from .services import attempts as A
+    from .services import build
     from .services import journey as J
     from .services import sessions as S
 
@@ -1230,13 +1321,14 @@ def demo_seed_cmd(
 def demo_seed(svcs: Any, *, count: int = 3, reset: bool = False) -> dict[str, Any]:
     """Create synthetic demo learners. Called by the CLI and by tests."""
     import random
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    from .db.engine import get_db
-    from .db.models import Student, Attempt, LearningSession, Item, Topic
-    from .security.auth import hash_password
-    from .crypto.fields import blind_index_for
     from sqlalchemy import select as sa_select
+
+    from .crypto.fields import blind_index_for
+    from .db.engine import get_db
+    from .db.models import Attempt, Item, LearningSession, Student, Topic
+    from .security.auth import hash_password
 
     db = svcs.db
     created: list[dict[str, str]] = []
