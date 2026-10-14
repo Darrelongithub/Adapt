@@ -1,0 +1,15 @@
+{
+  "name": "adapt-e2e-games",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Round 2, phase F: browser suite for every baseline game and the subject round.",
+  "scripts": {
+    "test": "playwright test",
+    "test:desktop": "playwright test --project=desktop",
+    "test:mobile": "playwright test --project=mobile",
+    "test:keyboard": "playwright test --project=keyboard"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0"
+  }
+}

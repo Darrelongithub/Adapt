@@ -550,13 +550,12 @@ function TaskCard({
       ) : null}
 
       {isChoice && task.options ? (
-        <div className="space-y-2" role="radiogroup" aria-label="Choices">
+        <div className="space-y-2" role="group" aria-label="Choices">
           {task.options.map((opt, i) => (
             <button
               key={i}
               type="button"
-              role="radio"
-              aria-checked={choice === i}
+              aria-pressed={choice === i}
               onClick={() => setChoice(i)}
               className={`block w-full rounded border px-3 py-2 text-left text-sm ${choice === i ? "border-[var(--accent)] font-medium" : ""}`}
             >
