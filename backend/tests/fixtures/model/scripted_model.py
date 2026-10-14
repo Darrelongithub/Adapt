@@ -205,6 +205,7 @@ VARIANTS = (
     "key_mismatch",
     "unverified",
     "wrong_language",
+    "keypaste",
 )
 
 
@@ -404,6 +405,9 @@ class ScriptedModel:
             text_body += " This paragraph was written by Gemini and needs no API key."
         if self.variant == "placeholder":
             text_body += " The concept being explained is {topic}."
+        if self.variant == "keypaste":
+            # a model that pastes something credential-shaped where a learner can read it
+            text_body += " Config note: api_key: AIzaSyD-FAKE-KEY-FOR-THE-CHECK-9911"
 
         # a check block carries the item it asks about and the answer the lesson believes;
         # `key_mismatch` is that answer disagreeing with the item's own key.

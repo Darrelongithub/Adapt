@@ -13,7 +13,7 @@ What exists:
 | `scripts/live_model_check.py` | the harness: the topics, the checks, the judge, the report |
 | `backend/tests/fixtures/model/contract_stub.py` | the frozen contracts (`get_pack`, `write_lesson`, `explain_after_wrong`, `reteach`) standing in for Phases B and C, which are not merged here |
 | `backend/tests/fixtures/model/scripted_model.py` | the scripted fake, its nine red-team variants, and the fixture replayer |
-| `backend/tests/test_live_check_harness.py` | 36 tests: the harness against the fake, the red team, the refusal paths, the fixtures, the bridge into `ai/llm.py`, and a pipeline that returns dataclasses |
+| `backend/tests/test_live_check_harness.py` | 38 tests: the harness against the fake, the red team, the refusal paths, the fixtures, the bridge into `ai/llm.py`, and a pipeline that returns dataclasses |
 | `MODEL_QUALITY_REPORT.md` | the template a real run replaces |
 
 ## What a run does
@@ -51,7 +51,7 @@ is reported as an incomplete run, never as a verdict.
 
 ## What is checked, and by whom
 
-**35 automated checks per topic** — 420 over a full run — of which the model's own text is judged
+**36 automated checks per topic** — 432 over a full run — of which the model's own text is judged
 by code, because code is what decides. They cover:
 
 * the pack: concepts exist, ids are unique, the source is one of `authored`/`model`/`simple`, a key
@@ -62,8 +62,8 @@ by code, because code is what decides. They cover:
   step size, it opens with the profile's lead format, every explanation is followed by a check, the
   text is in the profile's language;
 * everything a learner could read, in both languages and all three moments: no developer text, no
-  unrendered placeholder, no markup or links, and no printed answer sitting in the stem of the
-  question that asks for it;
+  unrendered placeholder, no markup or links, no credential-shaped string, and no printed answer
+  sitting in the stem of the question that asks for it;
 * the moments: the wrong-answer explanation starts from the answer the learner actually gave, and
   the second reteach is a different explanation from the first.
 
@@ -152,7 +152,7 @@ model. The report's first line then says, in bold, that a scripted fake answered
 `--selftest` refuses to overwrite `MODEL_QUALITY_REPORT.md` unless `--force` is passed; it defaults
 to `/tmp/adapt-live-check-selftest.md`.
 
-The **red team** is the other half of the test. Nine variants each break exactly one rule, and the
+The **red team** is the other half of the test. Ten variants each break exactly one rule, and the
 suite asserts that the run fails, with that rule's own reason in the report:
 
 | variant | what it breaks | what the run says |
@@ -166,6 +166,7 @@ suite asserts that the run fails, with that rule's own reason in the report:
 | `key_mismatch` | a check block's answer is not the item's key | "the check block answers 'After five heads, a tail is due.'" |
 | `unverified` | items that no verification passed | "items that passed verification 0/2 (want 50%)" |
 | `wrong_language` | the Kiswahili profile is answered in English | "language 50% (want 90%)" |
+| `keypaste` | a credential-shaped string is pasted into learner copy | `credential_in_copy: lesson[…].text: a [withheld] API key` |
 
 ## Fixtures
 
@@ -174,6 +175,10 @@ latency), the packs, the lessons, the moments, the judge's scores and the checks
 addressed by `prompt_key`, a short digest of the request, so a fixture replays by content rather
 than by call order, and a fixture written before those keys existed still replays by purpose in
 recorded order.
+
+Everything the run writes — the report, the fixtures, and **stdout**, because a flag can quote the
+model's own words — passes through the app's own two passes first: `redact_text`
+(identity-shaped strings) and `scrub_text` (configured secrets, including the key itself).
 
 Every fixture passes through the app's own two passes before it touches the disk — `redact_text`
 (identity-shaped strings) and `scrub_text` (configured secrets, including the key itself) — and the

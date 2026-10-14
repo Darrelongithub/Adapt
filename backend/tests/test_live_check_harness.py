@@ -173,6 +173,7 @@ def test_the_call_budget_stops_a_run_rather_than_overspending(harness, tmp_path)
         "key_mismatch",
         "unverified",
         "wrong_language",
+        "keypaste",
     ],
 )
 def test_each_way_of_producing_bad_teaching_fails_the_run(harness, scripted, tmp_path, variant):
@@ -206,6 +207,7 @@ def test_the_red_team_variants_do_not_all_fail_for_the_same_reason(harness, scri
         "wrong_language": "language",
         "unverified": "passed verification",
         "bare_judge": "quote",
+        "keypaste": "credential_in_copy",
     }
     for variant, marker in expected.items():
         out = tmp_path / f"{variant}-why.md"
@@ -315,6 +317,46 @@ def test_a_run_that_fails_still_does_not_print_the_credential(harness, tmp_path,
     assert "developer_text" in text, "the failing run has to say what it caught"
     assert canary not in text
     assert canary not in capsys.readouterr().out
+
+
+def test_a_model_that_echoes_the_credential_does_not_get_it_into_anything_this_run_writes(
+    harness, scripted, tmp_path, monkeypatch, capsys
+):
+    """The model can put the key in its own reply; the report, the fixture and stdout may not."""
+    canary = "YTCANARY-LIVE-CHECK-7c41"
+    monkeypatch.setenv("ADAPT_GEMINI_API_KEY", canary)
+    base = scripted.make("good")
+
+    def echoing(purpose, system, user, schema, max_tokens):
+        reply = base(purpose, system, user, schema, max_tokens)
+        if purpose == "lesson" and reply.get("blocks"):
+            first = dict(reply["blocks"][0])
+            first["body"] = f"Config note: api_key: {canary}. " + str(first.get("body") or "")
+            reply = {**reply, "blocks": [first, *reply["blocks"][1:]]}
+        return reply
+
+    fixtures = tmp_path / "fixtures"
+    out = tmp_path / "echoed.md"
+    code = harness.main(
+        [
+            "--selftest",
+            "--topics",
+            "probability",
+            "--allow-partial",
+            "--save-fixtures",
+            "--fixture-dir",
+            str(fixtures),
+            "--out",
+            str(out),
+        ],
+        model_factory=lambda: echoing,
+    )
+    assert code == 1, "a lesson that pastes a credential in is not a passing run"
+    assert "credential_in_copy" in out.read_text(), "and the report has to name what it caught"
+    assert canary not in out.read_text(), "the report quoted a credential back"
+    fixture = (fixtures / "probability.json").read_text()
+    assert canary not in fixture, "the fixture kept the credential"
+    assert canary not in capsys.readouterr().out, "stdout carried the credential"
 
 
 def test_the_scripted_fake_says_so_in_the_report_it_produces(harness, tmp_path):

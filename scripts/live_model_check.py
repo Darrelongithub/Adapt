@@ -155,6 +155,20 @@ AMBIGUOUS_WORDS = (
     (re.compile(r"\bendpoints?\b", re.I), "endpoint"),
     (re.compile(r"\btokens?\b", re.I), "token"),
 )
+#: What a credential looks like if a model ever pastes one into the text a learner reads. A key
+#: is not "developer text" -- it is a secret that has escaped -- so it gets its own flag, and the
+#: patterns are narrow (a provider prefix, or a named credential with 16+ characters after it) so
+#: that ordinary prose cannot trip them.
+CREDENTIAL_SHAPED = (
+    (re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}"), "a Google API key"),
+    (re.compile(r"\bsk-[A-Za-z0-9]{16,}"), "a provider secret key"),
+    (
+        re.compile(
+            r"(?i)\b(?:api[_\- ]?key|access[_\- ]?token|client[_\- ]?secret|bearer)\b[\s:=]+[A-Za-z0-9_\-.]{16,}"
+        ),
+        "a named credential and its value",
+    ),
+)
 PLACEHOLDER = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}")
 MARKUP = re.compile(r"(https?://|\*\*|^\s*#{1,6}\s|</?[a-zA-Z][^>]*>)", re.M)
 
@@ -736,6 +750,17 @@ def check_text(result: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[st
     for hit in soft_hits[:3]:
         notes.append(f"check the word's use — {hit}")
 
+    # a credential in copy: the run must never print one, and learner text must not carry one
+    credential_hits: list[str] = []
+    for where, text in pieces:
+        for pattern, label in CREDENTIAL_SHAPED:
+            match = pattern.search(text)
+            if match:
+                credential_hits.append(f"{where}: {label} — …{_context(text, match.start(), width=12)}…")
+    check("no credential-shaped string in learner copy", not credential_hits, " | ".join(credential_hits[:3]))
+    if credential_hits:
+        flags.extend(f"credential_in_copy: {hit}" for hit in credential_hits[:3])
+
     placeholders = [f"{where}: {text[:80]}" for where, text in pieces if PLACEHOLDER.search(text)]
     check("no unrendered placeholder reaches a learner", not placeholders, " | ".join(placeholders[:3]))
     if placeholders:
@@ -1155,8 +1180,11 @@ def main(
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     def say(line: str = "") -> None:
+        # stdout goes into logs and CI output, so it passes the same secrecy pass the report does:
+        # a flag can quote the model's own words, and the model is not the only thing that can
+        # echo a credential back
         if not args.quiet:
-            print(line, flush=True)
+            print(_scrub(line, settings), flush=True)
 
     settings = None
     mode = "live"

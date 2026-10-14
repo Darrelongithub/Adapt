@@ -12,7 +12,7 @@ reports those runs wrote say so in their first lines.
 | `scripts/live_model_check.py` | the harness: 12 topics × 2 profiles × 3 moments + judge, 35 automated checks per topic, the report writer, four exit codes |
 | `backend/tests/fixtures/model/contract_stub.py` | the frozen contracts (`get_pack`, `write_lesson`, `explain_after_wrong`, `reteach`) as a stub, standing in for Phases B and C, which are not merged on this branch |
 | `backend/tests/fixtures/model/scripted_model.py` | the scripted fake, nine red-team variants, and the fixture replayer |
-| `backend/tests/test_live_check_harness.py` | 36 tests: the run, the refusals, the red team, the judge's evidence rule, the fixtures, the bridge into `ai/llm.py`, and a dataclass-shaped pipeline |
+| `backend/tests/test_live_check_harness.py` | 38 tests: the run, the refusals, the red team, the judge's evidence rule, the fixtures, the bridge into `ai/llm.py`, and a dataclass-shaped pipeline |
 | `docs/round2/live-check.md` | how to run it, what it checks, the thresholds, the exit codes, and what it cannot see |
 | `MODEL_QUALITY_REPORT.md` | the committed template a live run replaces |
 | `docs/round2/handoff-e.md` | the small, specific list of what Phase G must do |
@@ -27,8 +27,8 @@ All run in this checkout on `arena/4b39a527-adapt`.
 | what | command | result |
 | --- | --- | --- |
 | the harness's own tests | `cd backend && PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_live_check_harness.py` | **27 passed** |
-| the backend suite, whole | `cd backend && PYTHONPATH=src .venv/bin/python -m pytest -q tests` | **1145 passed, 1 skipped** |
-| the full self-test | `python scripts/live_model_check.py --selftest --out /tmp/e-hardened.md` | exit **0**, `Verdict: PASS`, 12/12 topics, 144 calls, **420/420** automated checks |
+| the backend suite, whole | `cd backend && PYTHONPATH=src .venv/bin/python -m pytest -q tests` | **1147 passed, 1 skipped** |
+| the full self-test | `python scripts/live_model_check.py --selftest --out /tmp/e-keypaste.md` | exit **0**, `Verdict: PASS`, 12/12 topics, 144 calls, **432/432** automated checks |
 | the red team | `--selftest --variant <v> --topics probability --allow-partial` | `good` exit 0; the other **eight exit 1**, each with its own reason (below) |
 | the refusal path | `python scripts/live_model_check.py` with no key | exit **2**, prints `adapt config set-key` / `adapt config test`, creates no file and leaves an existing report alone |
 | asking for the real pipeline where B and C are not merged | `--pipeline real` | exit **2**, `refused: … needs adapt.content.skeleton and adapt.ai.lesson_writer`, writes nothing |
@@ -50,6 +50,7 @@ The red team, one failure reason each — this is the evidence that the checks c
 | `key_mismatch` | "the check block answers 'After five heads, a tail is due.' but the item's key is 'A probability is a number from 0 to 1 for how likely an even'" |
 | `unverified` | "items that passed verification 0/2 (want 50%)" + "no verified item was available, so moment 2 was not exercised" |
 | `wrong_language` | "language 50% (want 90%)" |
+| `keypaste` | `credential_in_copy: lesson[…].text: a [withheld] API key` (and the run that echoes the *configured* key into a lesson exits 1 with the report, the fixture and stdout all free of it) |
 
 Three behaviours worth naming because they are the phase's own honesty rules:
 
