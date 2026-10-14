@@ -120,6 +120,12 @@ def repeated_hint_flags(entries: Any) -> list[Flag]:
     ]
 
 
+
+def _flag_identical_hints(rows: list[tuple[str, str]], flags: list[Flag]) -> None:
+    """Flag a residue shared by three or more items. Stem and options are absent here."""
+    flags.extend(repeated_hint_flags((where, hint, "", []) for where, hint in rows))
+
+
 @dataclass
 class Flag:
     """One thing that would mislead a learner. `kind` decides whether it fails the run."""

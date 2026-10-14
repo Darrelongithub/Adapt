@@ -130,7 +130,7 @@ export default function Progress() {
         >
           <MethodReport rows={methods.rows} minN={methods.minN} />
           <p className="mt-3 text-xs text-[var(--muted)]">
-            Each method is compared with what was expected from you on those very questions, so a method that met harder
+            Each method is compared with what your earlier answers suggested you would get on those very questions, so a method that met harder
             material is not punished for it. Under {methods.minN} observations it is called an early signal, and it stays one until
             there are enough to say otherwise.
           </p>

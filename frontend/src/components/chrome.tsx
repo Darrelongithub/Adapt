@@ -62,17 +62,11 @@ export function StatusChip() {
       alive = false;
     };
   }, []);
-  // §3: this chip is on every page, so it says only what a learner may know -- how lessons are
-  // being produced right now and what protects the file. The service, its model and its budget
-  // live in the console (`adapt status`), not here.
+  // On every page, so it says only what a learner may know: how lessons are produced,
+  // and whether answers are encrypted when that has actually been reported. A signed-out
+  // reader has no status payload, so the chip omits the protection clause rather than guessing.
   const lessons = status?.lessons ?? health?.lessons;
-  // Learner-safe status wording only (Round 2, Phase A, task 2): how
-  // lessons are being made right now, in the words the status reply
-  // itself supplies ("Lessons: simple mode" / "Lessons: ready"). There
-  // is no "not reported" fallback: while nothing has been reported the
-  // chip simply says it is checking, and the protection half is left
-  // out entirely until there is a protection fact to state.
-  const tutor = lessons?.says ?? "Lessons: checking";
+  const tutor = lessons?.says ?? "Lessons: not reported";
   const protection = status?.data_protection;
   const enc = !status
     ? null
@@ -81,20 +75,19 @@ export function StatusChip() {
       : protection?.protected?.length
         ? "answers and notes encrypted"
         : null;
+  const service = error && !health
+    ? "service unreachable"
+    : health == null
+      ? "checking the service…"
+      : health.ok
+        ? "service up"
+        : "service down";
+  const text = [service, tutor, enc].filter(Boolean).join(" · ");
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-      {error ? (
-        <span className="text-[var(--bad)]">this app cannot be reached just now</span>
-      ) : (
-        <>
-          <span title={lessons?.note ?? ""}>
-            {health == null ? "checking…" : health.ok ? "ready" : "not reachable"} · {tutor}
-            {enc ? ` · ${enc}` : ""}
-          </span>
-          {status?.version ? <span>v{status.version}</span> : null}
-          {status?.demo_mode ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
-        </>
-      )}
+      <span title="how lessons are produced right now">{text}</span>
+      {status?.version ? <span>v{status.version}</span> : null}
+      {status?.demo_mode ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
     </div>
   );
 }

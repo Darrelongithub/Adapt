@@ -398,7 +398,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
                 }
               }}
               disabled={busy || revealed !== null}
-              title="This one shows the answer. It asks for a signed-in check first, because revealing an answer is not something another site should be able to trigger."
+              title="This shows the answer for this question. Revealing it is recorded, so it asks you to confirm you meant to."
             >
               {revealed ? "Revealed" : "Reveal it"}
             </Btn>
@@ -487,7 +487,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
               <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
                 {reply.served_by ?? "from your course material"}
                 {reply.meta?.grounded ? " · grounded" : " · not grounded in your material"} ·{" "}
-                {reply.privacy?.sent_to_model ? "your question was sent to the model" : "nothing left this machine"}
+                {reply.privacy?.sent_to_model ? "a written-for-you reply was used" : "nothing left this machine"}
               </p>
               {reply.sources?.length ? (
                 <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted)]">

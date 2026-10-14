@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 
 import { announce, Btn, Card, Err, Field, Input, Notice, Tag, useSession } from "@/components/ui";
 import { api, get, isMock, post, useApi, type Me } from "@/lib/api";
+import { showPrivacyUnread } from "@/lib/learnerCopy";
 import type { Health, Mastery } from "@/lib/types";
 
 type Dash = {
@@ -149,14 +150,14 @@ export default function Home() {
         <Tag tone="good">no learning styles question</Tag>
         <Tag tone="think">hypotheses, not labels</Tag>
         <Tag tone="accent">keystrokes never recorded</Tag>
-        <Tag>{health?.lessons?.says ?? (health?.ok ? "Lessons: ready" : "this app cannot be reached just now")}</Tag>
+        <Tag>{health?.lessons?.says ?? (health?.ok ? "the service is answering" : "the service is not answering")}</Tag>
         {mock ? <Tag tone="bad">showing demo data</Tag> : null}
       </div>
       {mock ? (
         <div className="mt-3 max-w-[640px]">
           <Notice>
-            You are looking at demo data. <Link className="link-inline" href="/" onClick={() => window.sessionStorage.removeItem("adapt-mock")}>clear it</Link>{" "}
-            and the same screens show your real work.
+            You are looking at fixtures. <Link className="link-inline" href="/" onClick={() => window.sessionStorage.removeItem("adapt-mock")}>clear it</Link>{" "}
+            and the same screens read the real API.
           </Notice>
         </div>
       ) : null}
@@ -199,7 +200,7 @@ export default function Home() {
                 <a className="link-inline" href="#what-is-recorded">
                   Read what is recorded
                 </a>{" "}
-                — the list comes from the same place the app enforces it.
+                — the list comes from the same place the server enforces it.
               </p>
 
               <div className="mt-4 flex flex-col gap-3">
@@ -355,8 +356,8 @@ export default function Home() {
                 {error ? <Err error={error} status={null} /> : null}
               </form>
               <p className="mt-3 text-xs text-[var(--muted)]">
-                A guest keeps the same data and the same rights as an account, including the delete button. Nothing is shared
-                outside this app that you have not agreed to, and{" "}
+                A guest keeps the same data and the same rights as an account, including the delete button. Nothing is sent for a
+                written-for-you reply unless you have agreed, and{" "}
                 <Link href="/settings" className="link-inline">
                   the settings screen lists every field that is stored
                 </Link>
@@ -514,23 +515,23 @@ function Stat({ label, value, note }: { label: string; value: string; note: stri
 }
 
 /** What the server says it records, in the server's words, with the anchor the consent step
- *  links to. It is the same endpoint `/settings` reads, so the two cannot disagree. */
+ *  links to. It is the same list the settings screen reads, so the two cannot disagree. */
 function RecordedPanel({ privacy, loading }: { privacy: Privacy | null; loading: boolean }) {
   const recorded = privacy?.telemetry?.recorded ?? [];
   const never = privacy?.telemetry?.never_recorded ?? [];
   return (
     <div id="what-is-recorded" className="mt-8 max-w-[720px]">
-      <Card title="What is recorded about you" tone="muted">
+      <Card title="What is recorded about you" tone="muted" right={<span>what is recorded</span>}>
         {loading ? <p className="text-sm text-[var(--muted)]">…</p> : null}
-        {recorded.length ? (
+        {showPrivacyUnread(loading, recorded.length) ? (
+          <p className="text-sm text-[var(--muted)]">The server owns this list, and could not be read just now.</p>
+        ) : recorded.length ? (
           <ul className="list-disc space-y-1 pl-5 text-sm">
             {recorded.map((r) => (
               <li key={r}>{r}</li>
             ))}
           </ul>
-        ) : (
-          <p className="text-sm text-[var(--muted)]">This list could not be read just now. Try again in a moment.</p>
-        )}
+        ) : null}
         {never.length ? (
           <p className="mt-2 text-xs text-[var(--muted)]">
             Never recorded: {never.join("; ")}.

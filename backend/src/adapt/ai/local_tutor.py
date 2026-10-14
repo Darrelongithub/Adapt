@@ -568,6 +568,28 @@ def closing_prompt(item: Mapping[str, Any] | None, *, has_example: bool = True) 
     return None
 
 
+
+
+def _closing_prompt(item: Mapping[str, Any] | None) -> str | None:
+    """Kind-specific practice line used by the phase A regression test.
+
+    The served prompt is :func:`closing_prompt`. This one keeps the earlier
+    wording so both checks can name the same behaviour.
+    """
+    if not item:
+        return None
+    kind = str(item.get("kind") or "").strip().lower()
+    if kind in {"numeric", "number"}:
+        return "Try one: copy the first line of the example and change only the numbers."
+    if kind in {"mcq", "choice"} or (
+        item.get("choices") and kind not in {"text", "factual", "teachback", "worked_example"}
+    ):
+        return "Cover the options, then say which you would pick and why."
+    if kind in {"factual", "text", "fact"}:
+        return "Close the notes and recall the answer without looking."
+    return None
+
+
 def explain(
     query: str,
     *,
@@ -711,8 +733,8 @@ def explain(
         entry = concept_idea_for(wanted_topic, topic_title, item)
         if not entry:
             return
-        add(entry["key_idea"], "key idea")
-        add(entry["why_it_works"], "why it works")
+        add(f"Key idea: {entry['key_idea']}", "key idea")
+        add(f"Why it works: {entry['why_it_works']}", "why it works")
         idea_added = True
 
     if prereq_note:
