@@ -205,6 +205,10 @@ class BudgetStop(RuntimeError):
     """The run's own per-run call limit is spent. Not a quality verdict: an incomplete run."""
 
 
+class Refused(RuntimeError):
+    """The run will not start: the operator asked for something this checkout cannot do."""
+
+
 CallRecord = dict[str, Any]
 
 
@@ -391,7 +395,10 @@ def load_pipeline(choice: str) -> tuple[Any, str]:
             return module, "real (Phase B/C modules in this checkout)"
         except Exception as exc:
             if choice == "real":
-                raise SystemExit(f"--pipeline real was asked for, but importing them failed: {exc}")
+                raise Refused(
+                    f"--pipeline real was asked for, but importing them failed: {exc} "
+                    "(needs adapt.content.skeleton and adapt.ai.lesson_writer)"
+                ) from exc
     return load_module(STUB_PATH, "live_check_contract_stub"), "local contract stub (Phase B/C not merged)"
 
 
@@ -1185,7 +1192,11 @@ def main(
         )
         return 2
 
-    pipeline, pipeline_label = load_pipeline(args.pipeline)
+    try:
+        pipeline, pipeline_label = load_pipeline(args.pipeline)
+    except Refused as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
     if settings is not None:
         from adapt.security.secrecy import install_log_redaction
 
@@ -1196,11 +1207,19 @@ def main(
         factory: Callable[[], Callable[..., dict[str, Any]]] = model_factory
     elif args.selftest:
         scripted = load_module(FIXTURE_FAKE, "live_check_scripted_model")
-        factory = lambda: scripted.make(args.variant)
+
+        def fake_factory() -> Callable[..., dict[str, Any]]:
+            return scripted.make(args.variant)
+
+        factory = fake_factory
     else:
         assert settings is not None
         live_model = LiveModel(settings)
-        factory = lambda: live_model
+
+        def live_factory() -> Callable[..., dict[str, Any]]:
+            return live_model
+
+        factory = live_factory
 
     if live_model is None:
         # a factory was injected (the tests): this harness did not contact the console's model,

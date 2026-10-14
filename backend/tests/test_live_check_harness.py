@@ -16,8 +16,8 @@ import dataclasses
 import importlib.util
 import json
 import sys
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -321,6 +321,118 @@ def test_the_scripted_fake_says_so_in_the_report_it_produces(harness, tmp_path):
     out = tmp_path / "fake.md"
     harness.main(["--selftest", "--topics", "probability", "--allow-partial", "--out", str(out)])
     assert "scripted fake" in out.read_text()
+
+
+def test_asking_for_the_real_pipeline_without_it_merged_refuses_like_other_bad_usage(
+    harness, tmp_path, monkeypatch, capsys
+):
+    if importlib.util.find_spec("adapt.content.skeleton") and importlib.util.find_spec(
+        "adapt.ai.lesson_writer"
+    ):
+        pytest.skip("Phases B and C are merged in this checkout: --pipeline real has something to run")
+    monkeypatch.setenv("ADAPT_GEMINI_API_KEY", "YTCANARY-LIVE-CHECK-7c41")
+    out = tmp_path / "real.md"
+    code = harness.main(["--pipeline", "real", "--out", str(out)])
+    assert code == 2, "asking for a pipeline that is not here is a refusal, not a crash"
+    err = capsys.readouterr().err
+    assert "refused" in err, err
+    # the operator is told which pipeline was wanted, not just that something was missing
+    assert "adapt.content.skeleton" in err and "adapt.ai.lesson_writer" in err, err
+    assert not out.exists(), "a refused run writes nothing"
+
+
+# --------------------------------------------------- the bridge to adapt.ai.llm (frozen) ----- #
+
+def _stub_client(monkeypatch, results, seen):
+    """Stand in for the frozen async ``GeminiLLM``: one reply per call, no network."""
+    from adapt.ai.llm import LLMResult
+
+    class _Client:
+        def __init__(self, settings=None, *, limiter=None) -> None:
+            self.settings = settings
+            self.closed = False
+            self.replies = list(results)
+
+        async def complete(self, **kwargs) -> LLMResult:
+            seen.append(kwargs)
+            return self.replies.pop(0) if self.replies else LLMResult(ok=False, status="error")
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    import adapt.ai.llm as llm
+
+    monkeypatch.setattr(llm, "GeminiLLM", _Client)
+    return _Client
+
+
+def test_the_live_model_bridges_the_frozen_async_client(harness, monkeypatch):
+    """The one path a keyless sandbox never runs: the sync-over-async call into ai/llm.py."""
+    from adapt.ai.llm import LLMResult
+
+    _stub_client(monkeypatch, [LLMResult(ok=True, text='{"a": 1}', data={"a": 1}), LLMResult(ok=True, data={"b": 2})], seen := [])
+
+    model = harness.LiveModel(object())  # the client is stubbed, so the settings are never read
+    try:
+        assert model("skeleton", "system", "user", {"a": "int"}, 300) == {"a": 1}
+        assert model.last_raw_text == '{"a": 1}'
+        # a second call on the same loop: the loop is kept open for the whole run on purpose
+        assert model("items", "system", "user", {}, 512) == {"b": 2}
+    finally:
+        model.close()
+
+    assert len(seen) == 2, "both calls went through the frozen client"
+    first = seen[0]
+    assert first["system"] == "system" and first["user"] == "user"
+    assert first["purpose"] == "skeleton" and first["role"] == "ai2"
+    assert first["temperature"] == 0.2, "the harness runs the pipeline at a low temperature"
+    assert first["max_output_tokens"] == 300 and first["response_spec"] == {"a": "int"}
+    assert seen[1]["max_output_tokens"] == 512
+    assert model.llm.closed, "close() has to shut the client down"
+    assert model.loop.is_closed(), "and the loop it opened"
+
+
+@pytest.mark.parametrize("status", ["quota", "disabled", "throttled"])
+def test_the_live_model_turns_a_refusal_into_a_named_stop(harness, monkeypatch, status):
+    from adapt.ai.llm import LLMResult
+
+    _stub_client(monkeypatch, [LLMResult(ok=False, status=status, error="not this time")], [])
+    model = harness.LiveModel(object())
+    try:
+        with pytest.raises(harness.ModelUnavailable) as caught:
+            model("skeleton", "system", "user", {}, 200)
+        assert caught.value.status == status
+    finally:
+        model.close()
+
+
+def test_the_live_model_treats_a_reply_that_is_not_an_object_as_unparsed(harness, monkeypatch):
+    from adapt.ai.llm import LLMResult
+
+    _stub_client(monkeypatch, [LLMResult(ok=True, text="not json at all", data=None)], [])
+    model = harness.LiveModel(object())
+    try:
+        with pytest.raises(harness.ModelUnavailable) as caught:
+            model("skeleton", "system", "user", {}, 200)
+        assert caught.value.status == "parse_error"
+        assert model.last_raw_text == "not json at all", "the raw reply is kept for the fixtures"
+    finally:
+        model.close()
+
+
+@pytest.mark.parametrize("status", ["quota", "disabled", "throttled"])
+def test_a_run_the_daily_allowance_stops_is_incomplete_not_a_verdict(harness, tmp_path, status):
+    def stopped():
+        def call(purpose, system, user, schema, max_tokens):
+            raise harness.ModelUnavailable(status, "refused by the configured allowance")
+
+        return call
+
+    out = tmp_path / f"{status}.md"
+    code = harness.main(["--selftest", "--topics", "probability", "--out", str(out)], model_factory=stopped)
+    assert code == 3, f"a run stopped by {status} has not earned a verdict"
+    text = out.read_text()
+    assert "Verdict: INCOMPLETE" in text and status in text
 
 
 # ------------------------------------------------- phases B and C: dataclasses, not dicts ----- #

@@ -13,7 +13,7 @@ What exists:
 | `scripts/live_model_check.py` | the harness: the topics, the checks, the judge, the report |
 | `backend/tests/fixtures/model/contract_stub.py` | the frozen contracts (`get_pack`, `write_lesson`, `explain_after_wrong`, `reteach`) standing in for Phases B and C, which are not merged here |
 | `backend/tests/fixtures/model/scripted_model.py` | the scripted fake, its nine red-team variants, and the fixture replayer |
-| `backend/tests/test_live_check_harness.py` | 27 tests: the harness against the fake, the red team, the refusal path, the fixtures |
+| `backend/tests/test_live_check_harness.py` | 36 tests: the harness against the fake, the red team, the refusal paths, the fixtures, the bridge into `ai/llm.py`, and a pipeline that returns dataclasses |
 | `MODEL_QUALITY_REPORT.md` | the template a real run replaces |
 
 ## What a run does
@@ -67,6 +67,13 @@ by code, because code is what decides. They cover:
 * the moments: the wrong-answer explanation starts from the answer the learner actually gave, and
   the second reteach is a different explanation from the first.
 
+**The bridge to the model** is the one path a keyless checkout cannot run, so it is tested against
+a stand-in for the frozen async client: `LiveModel` is asserted to call
+`adapt.ai.llm.GeminiLLM.complete` with the frozen arguments, to keep one event loop open across
+calls, to turn a refusal into a named stop (`quota`, `disabled`, `throttled` → an incomplete run),
+to treat a reply that is not an object as unparsed rather than as data, and to shut the client and
+the loop down.
+
 **The judge** is a separate call with a separate prompt. It scores `correctness`, `explains_why`,
 `uses_learner_answer`, `fits_profile` and `no_leakage` from 1 to 5, and **every score has to quote
 the artefact**: a quote that is not in the teaching text is not accepted, and a score with no quote
@@ -81,7 +88,7 @@ Exit code 0 is a pass, and a pass is a list, not a judgement call:
 | --- | --- |
 | 0 | every threshold below was met, no gate flag was raised |
 | 1 | a threshold was missed, a gate flag was raised, or a judge score was refused |
-| 2 | refused to run: no credential configured, bad usage, or a self-test trying to overwrite the report in the repository |
+| 2 | refused to run: no credential configured, `--pipeline real` where Phases B and C are not merged, a topic or profile that is not on the list, or a self-test trying to overwrite the report in the repository |
 | 3 | incomplete: the per-run call limit or the configured daily quota stopped the run, or fewer than all twelve topics ran and `--allow-partial` was not passed |
 
 | measure | threshold |
