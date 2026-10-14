@@ -220,31 +220,36 @@ def quotas(s: Session = Depends(db_session), student: Student = Depends(student_
 
 
 @router.get("/privacy")
-def privacy(_s: Session = Depends(db_session)) -> dict[str, Any]:
-    """What may be recorded, as a static non-personal list.
+def privacy() -> dict[str, Any]:
+    """The static, non-personal list of what may be recorded.
 
-    Signed-out readers need this before they consent, so it does not require a
-    learner session. It names no service, no path verb, and no person. The
-    database session is opened so the storage claim describes this instance.
+    Public and read-only on purpose: the consent screen shows this list
+    *before* anyone has an account, so requiring a signed-in learner made
+    that screen answer 401 and print "could not be read just now" for the
+    one list a person needs in order to decide. Nothing here is about an
+    individual learner, so there is nothing to protect by gating it; every
+    route that returns a learner's own rows still requires a session.
+    The wording is learner-facing, so it names no service, route or
+    internal mechanism (Round 2, Phase A, task 1 and 2).
     """
     return {
         "telemetry": TEL.privacy_summary(),
         "sent_to_model": {
-            "when": "only when a written-for-you answer is available and you have agreed to share a summary",
-            "identity": "a keyed pseudonym, never your name or email",
-            "redaction": "emails, phone numbers, web addresses and anything shaped like an ID are stripped before anything is shared",
-            "on_refusal": "if any of that cannot be honoured, the answer is written locally instead and the reply says so",
+            "when": "only when a written-for-you answer is available and you consented to sharing a summary",
+            "identity": "a made-up name for you, never your real name or email",
+            "redaction": "emails, phone numbers, web addresses, postal addresses and anything shaped like an ID are stripped before anything is shared",
+            "on_refusal": "if any of that cannot be honoured, the answer is put together here instead and the reply says so",
         },
         "voice": {
-            "listening": "speech is turned into text on this machine when that is installed; otherwise the browser does it and the audio stays here",
-            "speaking": "replies are spoken on this machine when that is installed; otherwise the browser speaks them and nothing is stored",
-            "stored": "transcript text for the turns you chose to record, plus how long they took and whether you interrupted",
-            "off_means": "voice off means no microphone access at all; typing teaches the same thing",
+            "heard": "speech is turned into text as you speak; the sound itself is not kept",
+            "spoken": "spoken replies are played to you and not stored",
+            "stored": "transcript text for the turns you chose to record, plus timing and interruption notes",
+            "off_means": "voice off = no microphone access at all; the keyboard path is identical",
         },
         "storage": data_protection(),
         "learner_controls": [
-            "answer or refuse every proposed change",
-            "undo an applied change at any time",
+            "answer or refuse every change that is proposed to you",
+            "revoke an applied change at any time",
             "delete your history",
             "see every event recorded about you",
         ],

@@ -60,15 +60,70 @@ GENERIC_MARKERS = (
     "write down the single fact the question is asking for",
     "read the question again carefully",
     "think about what you already know",
-    "which one is right",
 )
-#: After the stem and quoted options are removed, a residue this long that is shared
-#: by three or more items is the same hint pasted across the bank.
-_IDENTICAL_HINT_MIN = 16
 #: The five flags the brief names as the gate. The script exits non-zero on these, and only these.
 GATE_FLAGS = frozenset(
     {"off_topic", "missing_example", "generic_hint", "placeholder", "key_disagrees"}
 )
+
+#: A span a hint quotes: “...”, "..." or '...'. A hint that only restates the
+#: stem and quotes an option has said nothing of its own once both are removed.
+_QUOTED_SPAN = re.compile(r"“[^”]*”|\"[^\"]*\"|'[^']*'")
+
+
+def residual_hint_text(hint: object, stem: object = "", options: Any = ()) -> str:
+    """What a hint says once the question it was pasted onto is taken away.
+
+    The stem (verbatim) and every quoted option are removed, the rest is
+    lower-cased and stripped of punctuation. Two hints that differ only by
+    the stem they quote or the option they name leave the *same* residual
+    — which is how a generic hint hides behind item-specific-looking text
+    (``which one is right: <this stem>`` was the old choice wrapper).
+    """
+    text = str(hint or "")
+    if stem:
+        text = re.sub(re.escape(str(stem)), " ", text, flags=re.IGNORECASE)
+    text = _QUOTED_SPAN.sub(" ", text)
+    for option in options or ():
+        opt = str(option or "").strip()
+        if opt:
+            text = re.sub(re.escape(opt), " ", text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", text.lower())).strip()
+
+
+def repeated_hint_flags(entries: Any) -> list[Flag]:
+    """``generic_hint`` flags for hint text shared by three or more items.
+
+    ``entries`` is an iterable of ``(where, hint, stem, options)`` with one
+    entry per hint and ``where`` naming the *item*. A residual shared by
+    at least three distinct items is flagged once per shared text: it
+    could be pasted onto any of them, which is the brief's definition of
+    a generic hint, however item-specific its quoting looks.
+    """
+    by_residual: dict[str, set[str]] = {}
+    first_where: dict[str, str] = {}
+    for where, hint, stem, options in entries:
+        residual = residual_hint_text(hint, stem, options)
+        if not residual:
+            continue
+        by_residual.setdefault(residual, set()).add(str(where))
+        first_where.setdefault(residual, str(where))
+    return [
+        Flag(
+            "generic_hint",
+            first_where[residual],
+            f"the same hint text serves {len(wheres)} items once the stem and quoted options "
+            f"are removed: {residual[:90]}",
+        )
+        for residual, wheres in sorted(by_residual.items())
+        if len(wheres) >= 3
+    ]
+
+
+
+def _flag_identical_hints(rows: list[tuple[str, str]], flags: list[Flag]) -> None:
+    """Flag a residue shared by three or more items. Stem and options are absent here."""
+    flags.extend(repeated_hint_flags((where, hint, "", []) for where, hint in rows))
 
 
 @dataclass
@@ -126,6 +181,19 @@ def _raw_options(item: Mapping[str, Any]) -> list[Any]:
 
 def _options(item: Mapping[str, Any]) -> list[str]:
     return [str(o) for o in _raw_options(item)]
+
+
+def _option_texts(item: Mapping[str, Any]) -> list[str]:
+    """The option texts a hint might quote, from either question shape."""
+    out: list[str] = []
+    for raw in list(item.get("choices") or []) + _raw_options(item):
+        if isinstance(raw, Mapping):
+            text = str(raw.get("text") or "")
+        else:
+            text = str(raw or "")
+        if text and text not in out:
+            out.append(text)
+    return out
 
 
 def _key_index(item: Mapping[str, Any]) -> int | None:
@@ -238,42 +306,6 @@ def _rendered_bank_items() -> list[tuple[str, str, dict[str, Any]]]:
     return out
 
 
-def _hint_residue(hint: str, item: Mapping[str, Any]) -> str:
-    """Hint text with the stem and quoted options removed, for the identical-hint gate."""
-    text = hint.lower()
-    stem = str(item.get("stem") or "").lower().strip()
-    if len(stem) >= 8 and stem in text:
-        text = text.replace(stem, " ")
-    text = re.sub(r"[“\"'«»][^”\"'»«]{1,200}[”\"'»«]", " ", text)
-    for choice in item.get("choices") or []:
-        if isinstance(choice, Mapping):
-            option = str(choice.get("text") or "").lower().strip()
-            if len(option) >= 2 and option in text:
-                text = text.replace(option, " ")
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _flag_identical_hints(rows: list[tuple[str, str]], flags: list[Flag]) -> None:
-    """Flag hint text that is identical across three or more items once the stem is gone."""
-    buckets: dict[str, list[str]] = {}
-    for where, residue in rows:
-        if len(residue) < _IDENTICAL_HINT_MIN:
-            continue
-        buckets.setdefault(residue, []).append(where)
-    for residue, wheres in buckets.items():
-        if len(wheres) < 3:
-            continue
-        sample = ", ".join(wheres[:3])
-        flags.append(
-            Flag(
-                "generic_hint",
-                "hints:identical",
-                f"the same hint text appears on {len(wheres)} items after the stem and quoted options are removed ({sample}): {residue[:90]}",
-            )
-        )
-
-
 def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note]) -> None:
     """The authored maths bank: hints, worked example and explanation, item by item."""
     items = _rendered_bank_items()
@@ -286,7 +318,10 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
     index = TUTOR.build_index(materials=materials, items=[dict(i) for _, _, i in items])
 
     maths = coverage.setdefault("maths", Coverage("maths"))
-    residues: list[tuple[str, str]] = []
+    # Hints this walk generated (not the authored ones: an author's ladder
+    # is item-specific by construction, and ``worked.verify_hints`` makes
+    # the same distinction). Collected for the repeated-text check below.
+    generated_hint_entries: list[tuple[str, str, str, list[str]]] = []
     for topic_code, label, item in items:
         where = f"{topic_code}/{label}"
         maths.items += 1
@@ -310,9 +345,12 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
         for hint in hints:
             if any(marker in hint.lower() for marker in GENERIC_MARKERS):
                 flags.append(Flag("generic_hint", f"hints:{where}", hint[:80]))
-            residue = _hint_residue(hint, item)
-            if len(residue) >= _IDENTICAL_HINT_MIN:
-                residues.append((f"hints:{where}", residue))
+        authored_hints = [str(h).strip() for h in (item.get("hints") or []) if str(h or "").strip()]
+        for hint in hints:
+            if hint not in authored_hints:
+                generated_hint_entries.append(
+                    (where, hint, str(item.get("stem") or ""), _option_texts(item))
+                )
 
         # -- the worked example -------------------------------------------------- #
         steps = WORKED.ensure_example(item, render=lambda raw: BANK.render_item_for(raw, seed=0))
@@ -357,8 +395,9 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
             if sentence and not sentence.rstrip().endswith((".", "!", "?", "…", ":")):
                 notes.append(Note("cut_sentence", f"explain:{where}", sentence[-60:]))
                 break
-
-    _flag_identical_hints(residues, flags)
+    # A generated hint that survives on three or more items once its stem
+    # and quoted options are stripped is generic, however specific it looks.
+    flags.extend(repeated_hint_flags(generated_hint_entries))
 
 
 def _skill_pool(skill_id: str) -> tuple[dict[str, Any], ...]:
@@ -486,6 +525,7 @@ def walk_content_engine(coverage: dict[str, Coverage], flags: list[Flag], notes:
         "topics": 0, "concepts": 0, "worked_example": 0, "matched_pair": 0,
         "three_hints": 0, "teach_back_checklist": 0, "visual_spec": 0, "rejections": 0,
     }
+    generated_hint_entries: list[tuple[str, str, str, list[str]]] = []
     for key in (
         "calculus", "algebra", "statistics", "government", "biology", "chemistry",
         "world_history", "grammar", "essay_writing", "discrete_maths", "kiswahili",
@@ -537,6 +577,16 @@ def walk_content_engine(coverage: dict[str, Coverage], flags: list[Flag], notes:
                         flags.append(Flag("generic_hint", where, f"a generated hint reads as generic: {text[:90]}"))
                     if PLACEHOLDER.search(text):
                         flags.append(Flag("placeholder", where, "an unrendered placeholder in a generated hint"))
+                    for leg in ("A", "B"):
+                        leg_item = pack.pair.get(leg) or {}
+                        generated_hint_entries.append(
+                            (
+                                where,
+                                text,
+                                str(leg_item.get("stem") or ""),
+                                _option_texts(leg_item) if isinstance(leg_item, Mapping) else [],
+                            )
+                        )
             else:
                 flags.append(Flag("generic_hint", where, f"only {len(pack.hints)} hint(s) for a generated concept"))
             if pack.checklist:
@@ -548,6 +598,7 @@ def walk_content_engine(coverage: dict[str, Coverage], flags: list[Flag], notes:
                 totals["visual_spec"] += 1
             if not str((pack.variants.get("written") or {}).get("text") or "").strip("[]'\" "):
                 flags.append(Flag("missing_content", where, "a generated concept has no written variant"))
+    flags.extend(repeated_hint_flags(generated_hint_entries))
     for pack in (breakdown_for("astrophysics"),):
         if pack.available:
             flags.append(Flag("missing_content", "engine:astrophysics", "a topic with no chain reported content"))
@@ -706,7 +757,7 @@ def report(
     lines.append("")
     lines.append("* `off_topic` — text was shown as grounded while it came from another topic (brief 4.1.2).")
     lines.append("* `missing_example` — the app would refer to a worked example it cannot show (4.1.3).")
-    lines.append("* `generic_hint` — a hint that could be pasted onto any question in the bank (4.1.4), including the same residue on three or more items once the stem and quoted options are removed.")
+    lines.append("* `generic_hint` — a hint that could be pasted onto any question in the bank (4.1.4).")
     lines.append("* `placeholder` — an unrendered `{a}` reached text a learner reads.")
     lines.append("* `key_disagrees` — the worked example contradicts the item's own answer key.")
     lines.append("* A `no_item_reason` note is not a defect: the reasoning for a bank item is its topic's")
