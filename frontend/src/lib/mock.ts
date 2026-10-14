@@ -35,6 +35,28 @@ const learner = {
   mock: true,
 };
 
+/** The path's state under `?mock=1`: somebody partway through, with one step skipped so
+ *  the "not measured" wording is on screen too. Nothing here is saved — the banner says
+ *  as much, and `journey/advance` below cannot change it. */
+const journeyState = {
+  student_id: learner.student_id,
+  stage: "subject_round",
+  stages: [
+    { id: "account", status: "done", evidence: "recorded" },
+    { id: "preferences", status: "done", evidence: "recorded" },
+    { id: "games", status: "skipped", evidence: "stated" },
+    { id: "subject", status: "done", evidence: "recorded" },
+    { id: "subject_round", status: "todo", evidence: "none" },
+    { id: "snapshot", status: "todo", evidence: "none" },
+    { id: "first_lesson", status: "todo", evidence: "none" },
+    { id: "practice", status: "todo", evidence: "none" },
+  ],
+  progress: { done: 3, skipped: 1, todo: 4, total: 8, percent: 50 },
+  not_measured: ["games"],
+  updated_at: "2026-10-11T09:25:00",
+  generated_at: "2026-10-11T09:31:00",
+};
+
 const item = {
   id: "itm_fraction_add_01",
   topic_id: "top_21f47f97804945afa7a5",
@@ -1444,7 +1466,14 @@ const rows: Row[] = [
   { method: "GET", match: /^\/api\/v1\/review\/due/, body: { due: [{ topic_id: item.topic_id, title: mastery.title, due_at: "2026-10-11T14:40:00", overdue: true, half_life_hours: 26.5, expected_recall_at_due: 0.85, reps: 3, lapses: 1 }], count: 1, rule: "scheduled at the point your own recall is projected to reach ~85%" } },
   { method: "POST", match: /^\/api\/v1\/review\/complete/, body: { lag_hours: 26.4, expected_recall: 0.84, correct: true, scheduled: { due_at: "2026-10-15T09:10:00", half_life_hours: 62.1, reps: 4, lapses: 1, expected_recall_at_due: 0.85 }, was_due_at: "2026-10-11T14:40:00" } },
   { method: "GET", match: /^\/api\/v1\/dashboard/, body: { student_id: learner.student_id, generated_at: "2026-10-11T09:30:00", profile_taken_at: "2026-10-11T09:29:40", mastery: [mastery, masterySecond], band_summary: { developing: 1, new: 1 }, weakest: [mastery], knowledge_gaps: [{ topic_id: item.topic_id, topic_title: mastery.title, blocking_prerequisite_title: "What a fraction means", severity: 0.42 }], hypotheses: [{ id: "hyp_mock_0001", statement: "You get there when the first step is visible.", status: "active", confidence: 0.61, disproof: "accuracy stays flat with examples shown" }], pending_proposals: [proposal], active_adaptations: [], decided_adaptations: [], reviews: { due_now: [{ topic_id: item.topic_id, title: mastery.title, due_at: "2026-10-11T14:40:00" }], checks_total: 2, checks_mean_score: 0.75 }, last_7_days: { attempts: 11, mean_score: 0.68, hints_used: 4, mean_seconds_on_question: 63 }, data_volume: { attempts: 11, events: 84, evidence: 3, retention_checks: 2 }, open_questions: [], measured_outcomes: { evaluated: 0, applied: 1 }, strategy_evidence: [], student_preferences: { goal: "GCSE maths" }, guardrails: { no_fixed_trait_labels: true, hypotheses_are_not_facts: true }, notes: [] } },
-  { method: "GET", match: /^\/api\/v1\/journey/, body: { student_id: learner.student_id, generated_at: "2026-10-11T09:31:00", window_days: 90, nodes: [{ ts: "2026-10-11T09:12:44", kind: "proposal", tone: "ask", title: "Proposed change: worked examples (pending)", detail: proposal.change, meta: {} }, { ts: "2026-10-11T09:20:00", kind: "adaptation", tone: "good", title: "Now applying: worked example before the next attempt", detail: "you approved it", meta: {} }, { ts: "2026-10-10T18:04:11", kind: "attempt", tone: "good", title: "Answered correctly: Adding and subtracting fractions", detail: "63s, no hints", meta: {} }], counts: { attempt: 1, proposal: 1, adaptation: 1 }, phases: [{ name: "practise", from: "2026-10-10", to: "2026-10-11", nodes: 3 }], summary: "11 answers in the last 7 days, 4 of them after opening a hint.", milestones: [{ ts: "2026-10-11T09:20:00", title: "First adaptation approved", detail: "worked examples" }], stats: { sessions: 3, attempts: 11, mean_score: 0.68, events: 84 } } },
+  /* the journey's stage state (round 2, part D). These two rows sit above the timeline row
+     because that one's pattern also matches /journey/state — first match wins. */
+  { method: "GET", match: /^\/api\/v1\/journey\/state/, body: journeyState },
+  // A fixture cannot read the request body, so it cannot know which stage was advanced and
+  // cannot pretend the write landed: it returns the same state, and the banner on every
+  // screen says nothing here is saved.
+  { method: "POST", match: /^\/api\/v1\/journey\/advance/, body: journeyState },
+  { method: "GET", match: /^\/api\/v1\/journey/, body: { ...journeyState, window_days: 90, nodes: [{ ts: "2026-10-11T09:12:44", kind: "proposal", tone: "ask", title: "Proposed change: worked examples (pending)", detail: proposal.change, meta: {} }, { ts: "2026-10-11T09:20:00", kind: "adaptation", tone: "good", title: "Now applying: worked example before the next attempt", detail: "you approved it", meta: {} }, { ts: "2026-10-10T18:04:11", kind: "attempt", tone: "good", title: "Answered correctly: Adding and subtracting fractions", detail: "63s, no hints", meta: {} }], counts: { attempt: 1, proposal: 1, adaptation: 1 }, phases: [{ name: "practise", from: "2026-10-10", to: "2026-10-11", nodes: 3 }], summary: "11 answers in the last 7 days, 4 of them after opening a hint.", milestones: [{ ts: "2026-10-11T09:20:00", title: "First adaptation approved", detail: "worked examples" }], stats: { sessions: 3, attempts: 11, mean_score: 0.68, events: 84 } } },
   { method: "GET", match: /^\/api\/v1\/strategies/, body: { strategies: [{ id: "worked_examples", label: "Worked example before the next attempt", family: "load_reduction", what: "Show a fully solved, step labelled example of the same problem type immediately before the question.", mechanism: "Reduces intrinsic load on first exposure.", watch_metric: "accuracy", n: 0, p_helps: 0.5 }] } },
   { method: "GET", match: /^\/api\/v1\/voice\/capabilities/, body: { stt: { local_stt: false, detail: "local transcription is not installed in this fixture", fallback: "browser Web Speech API dictation (free, on your device)", model_size: "base" }, tts: { local_tts: false, detail: "the local voice engine is not installed in this fixture", fallback: "browser speechSynthesis with male/female voice selection", sample_rate: 24000 }, voices: { female: { a: "af_heart", b: "bf_violet" }, male: { a: "am_fenrir", b: "bm_ola" } }, barge_in: true, transport: "websocket /ws/voice (binary s16le frames + JSON control messages)", path: "/ws/voice", note: "transcription accuracy and teaching accuracy are measured separately" } },
   { method: "POST", match: /^\/api\/v1\/voice\/speak/, body: { available: false, reason: "fixtures: no local TTS installed", fallback: "browser speechSynthesis" } },
