@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, humanize, Notice, Select, Tag, Textarea, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, Notice, Select, Tag, Textarea, useSession } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
 
 type Caps = {
@@ -330,20 +330,22 @@ export default function VoicePage() {
             {caps.error ? <Err error={caps.error} status={caps.status} /> : null}
             <ul className="space-y-2 text-sm">
               <li>
-                <Tag tone={c?.stt?.local_stt ? "good" : "warn"}>listening: {c?.stt?.local_stt ? "on this machine" : "browser dictation"}</Tag>
-                {c?.stt?.local_stt ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.stt?.detail ?? "local transcription is not installed here"}. {c?.stt?.fallback}</p>}
-                {c?.stt?.local_stt ? <p className="mt-1 text-xs text-[var(--muted)]">model {c.stt.model_size} · {c.stt.detail}</p> : null}
+                <Tag tone={c?.stt?.local_stt ? "good" : "warn"}>listening: {c?.stt?.local_stt ? "on this machine" : "in the browser"}</Tag>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  {c?.stt?.local_stt
+                    ? "Listening is set up on this machine. Nothing you say is sent away."
+                    : "Listening uses the browser. Nothing you say is sent away to be transcribed."}
+                </p>
               </li>
               <li>
-                <Tag tone={c?.tts?.local_tts ? "good" : "warn"}>speaking: {c?.tts?.local_tts ? "on this machine" : "browser speechSynthesis"}</Tag>
-                {c?.tts?.local_tts ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.tts?.detail ?? "the local voice engine is not installed here"}. {c?.tts?.fallback}</p>}
-                {c?.tts?.local_tts ? (
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    voices: {humanize(c.tts.voices ?? {}) || "none reported"} · {c.tts.sample_rate} Hz · {c.tts.interruption ?? "chunked"}
-                  </p>
-                ) : null}
+                <Tag tone={c?.tts?.local_tts ? "good" : "warn"}>speaking: {c?.tts?.local_tts ? "on this machine" : "in the browser"}</Tag>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  {c?.tts?.local_tts
+                    ? "Speaking is set up on this machine. Replies are not stored as audio."
+                    : "Speaking uses the browser. The audio stays on this device."}
+                </p>
               </li>
-              <li className="text-xs text-[var(--muted)]">transport: {c?.transport ?? "websocket /ws/voice"}</li>
+              <li className="text-xs text-[var(--muted)]">A live connection is used when it is available. Text still works without it.</li>
             </ul>
             <div className="mt-3 space-y-2 border-t border-[var(--line)] pt-3">
               <Check label="Let it speak out loud" checked={voiceOn} onChange={setVoiceOn} hint="off = text bubbles only, and the server stops synthesising anything" />

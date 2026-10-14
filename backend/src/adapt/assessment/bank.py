@@ -274,9 +274,9 @@ def teachback(topic_title, concepts, *, est=150, difficulty=0.5, prompt=None):
             "pass_fraction": 0.6,
         },
         "hints": [
-            "Name the key quantity first.",
-            "Say which operation connects the quantities.",
-            "Finish with one example, even a tiny one.",
+            f"Name the key quantity in {topic_title} first.",
+            f"Say which idea connects the parts of {topic_title}.",
+            f"Finish with one tiny example of {topic_title}.",
         ],
         "solution_steps": [],
         "difficulty": difficulty,

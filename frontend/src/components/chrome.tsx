@@ -64,32 +64,32 @@ export function StatusChip() {
       alive = false;
     };
   }, []);
-  // §3: this chip is on every page, so it says only what a learner may know -- how lessons are
-  // being produced right now and what protects the file. The service, its model and its budget
-  // live in the console (`adapt status`), not here.
+  // On every page, so it says only what a learner may know: how lessons are produced,
+  // and whether answers are encrypted when that has actually been reported. A signed-out
+  // reader has no status payload, so the chip omits the protection clause rather than guessing.
   const lessons = status?.lessons ?? health?.lessons;
-  const tutor = !status && !health ? "tutor: not reported" : (lessons?.says ?? "tutor: not reported");
+  const tutor = lessons?.says ?? "Lessons: not reported";
   const protection = status?.data_protection;
   const enc = !status
-    ? "protection: not reported"
+    ? null
     : protection?.file_encrypted
       ? "whole file encrypted"
       : protection?.protected?.length
         ? "answers and notes encrypted"
-        : "protection: not reported";
+        : null;
+  const service = error && !health
+    ? "service unreachable"
+    : health == null
+      ? "checking the service…"
+      : health.ok
+        ? "service up"
+        : "service down";
+  const text = [service, tutor, enc].filter(Boolean).join(" · ");
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-      {error ? (
-        <span className="text-[var(--bad)]">the API is unreachable</span>
-      ) : (
-        <>
-          <span title={lessons?.note ?? "the API did not report yet"}>
-            {health == null ? "checking the API…" : health.ok ? "API up" : "API down"} · {tutor} · {enc}
-          </span>
-          {status?.version ? <span>v{status.version}</span> : null}
-          {status?.demo_mode ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
-        </>
-      )}
+      <span title="how lessons are produced right now">{text}</span>
+      {status?.version ? <span>v{status.version}</span> : null}
+      {status?.demo_mode ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
     </div>
   );
 }

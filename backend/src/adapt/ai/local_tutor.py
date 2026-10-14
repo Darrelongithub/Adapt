@@ -27,7 +27,7 @@ import random
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 log = logging.getLogger("adapt.tutor")
 
@@ -375,6 +375,221 @@ def _opener(level: str, context: str, *, topic_title: str | None, seed: str) -> 
     return rng.choice(pool).replace("{topic}", topic_title or "this")
 
 
+#: Authored simple-mode "why" for every bank concept (Round 2, Phase A,
+#: task 6). One sentence for the key idea and one for why it works, written
+#: for the deterministic path so a learner in simple mode meets the idea
+#: before the worked steps rather than only a recipe. ``title`` is the
+#: bank topic's title: the live path knows a topic by that title (and by
+#: an opaque row id), while the quality walk knows it by bank code, so
+#: :func:`concept_idea_for` accepts either.
+CONCEPT_IDEAS: dict[str, dict[str, str]] = {
+    "integer_ops": {
+        "title": "Integer operations",
+        "key_idea": "In a chain of adding and subtracting, work from left to right and let each minus sign belong to the number after it.",
+        "why_it_works": "This works because operations of the same rank are done in reading order, so no sign gets moved or lost.",
+    },
+    "fractions_intro": {
+        "title": "What a fraction means",
+        "key_idea": "A fraction says how many equal parts of one whole you have, with the denominator naming the size of each part and the numerator counting them.",
+        "why_it_works": "This works because equal parts are the unit, so a fraction only means something when every part is the same size.",
+    },
+    "equivalent_fractions": {
+        "title": "Equivalent fractions",
+        "key_idea": "Equivalent fractions name the same amount even though the numerator and denominator look different.",
+        "why_it_works": "This works because multiplying the top and bottom by the same non-zero number multiplies the fraction by one, so its value does not change.",
+    },
+    "fraction_add": {
+        "title": "Adding and subtracting fractions",
+        "key_idea": "Fractions can only be added or subtracted once they share a common denominator.",
+        "why_it_works": "This works because a common denominator makes both fractions count parts of the same size, so the numerators can be added.",
+    },
+    "fraction_mult": {
+        "title": "Multiplying and dividing fractions",
+        "key_idea": "To multiply fractions, multiply the numerators together and the denominators together, with no common denominator needed.",
+        "why_it_works": "This works because multiplying by a fraction takes that share of a share, and dividing by a fraction is the same as multiplying by its reciprocal.",
+    },
+    "decimals": {
+        "title": "Decimals and place value",
+        "key_idea": "Each decimal place is worth one tenth of the place to its left.",
+        "why_it_works": "This works because our number system is built in tens, so moving the point multiplies or divides by ten without changing the digits.",
+    },
+    "percentages": {
+        "title": "Percentages of quantities",
+        "key_idea": "A percentage is an amount out of one hundred, so a percentage of a quantity is that share of the quantity.",
+        "why_it_works": "This works because turning the percentage into a decimal or fraction and multiplying finds the stated share of the whole.",
+    },
+    "ratio": {
+        "title": "Ratio and proportion",
+        "key_idea": "A ratio compares quantities part to part, and sharing in a ratio means first finding the value of one equal part.",
+        "why_it_works": "This works because every term of the ratio counts the same-sized part, so scaling one part rebuilds the whole comparison.",
+    },
+    "negative_numbers": {
+        "title": "Negative numbers",
+        "key_idea": "Negative numbers are positions below zero on the number line, and their signs also decide the direction of a calculation.",
+        "why_it_works": "This works because subtracting always moves left on the line and multiplying two negatives reverses direction twice, ending positive.",
+    },
+    "order_of_operations": {
+        "title": "Order of operations",
+        "key_idea": "Calculations have an agreed order: brackets first, then powers, then multiplication and division, then addition and subtraction.",
+        "why_it_works": "This works because everyone reading the same expression in that order gets the same value, with equal-rank steps read left to right.",
+    },
+    "collecting_terms": {
+        "title": "Collecting like terms",
+        "key_idea": "Only like terms can be collected, meaning terms with exactly the same letters to exactly the same powers.",
+        "why_it_works": "This works because like terms count the same kind of quantity, so their coefficients can be added without changing what is being counted.",
+    },
+    "linear_equations": {
+        "title": "Solving linear equations",
+        "key_idea": "Solving an equation means keeping both sides equal while you undo operations until the unknown stands alone.",
+        "why_it_works": "This works because doing the same operation to both sides preserves equality, and undoing in reverse order peels the calculation away from the unknown.",
+    },
+    "rearranging": {
+        "title": "Rearranging formulae",
+        "key_idea": "Rearranging a formula is solving it for a chosen letter instead of for a number.",
+        "why_it_works": "This works because the same equality-preserving moves apply, as long as a letter trapped inside a sum is freed by factorising before you divide.",
+    },
+    "graphs_lines": {
+        "title": "Graphs of straight lines",
+        "key_idea": "In y = mx + c, m tells you the gradient of the straight line and c tells you where it crosses the y-axis.",
+        "why_it_works": "This works because m measures how much y changes for each step in x, so lines with the same m rise in exactly the same way.",
+    },
+    "indices": {
+        "title": "Indices and powers",
+        "key_idea": "An index counts how many times its base is multiplied by itself.",
+        "why_it_works": "This works because counting repeated factors turns multiplying powers into adding indices, dividing powers into subtracting indices, and a negative index into a reciprocal.",
+    },
+    "standard_form": {
+        "title": "Standard form",
+        "key_idea": "Standard form writes a number as a value between one and ten multiplied by a power of ten.",
+        "why_it_works": "This works because the power of ten carries the size of the number, so very large and very small numbers become easy to compare.",
+    },
+    "statistical_mean": {
+        "title": "Mean, median and range",
+        "key_idea": "The mean shares a total equally, the median is the middle value in order, and the range measures spread from smallest to largest.",
+        "why_it_works": "This works because each summary answers a different question, with the mean using every value, the median resisting extremes, and the range describing how far apart the data are.",
+    },
+    "area_perimeter": {
+        "title": "Area and perimeter",
+        "key_idea": "Perimeter is the distance around a shape in single lengths, while area counts the square units that cover its surface.",
+        "why_it_works": "This works because lengths add around the edge while area multiplies two lengths together, which is why their units are different.",
+    },
+    "unit_conversion": {
+        "title": "Converting units",
+        "key_idea": "Converting units means multiplying by a fraction equal to one, such as one hundred centimetres over one metre.",
+        "why_it_works": "This works because multiplying by one cannot change the amount, only the unit it is written in, and area units need that factor squared.",
+    },
+    "probability": {
+        "title": "Probability as a fraction",
+        "key_idea": "For equally likely outcomes, probability is the number of favourable outcomes divided by the number of possible outcomes.",
+        "why_it_works": "This works because equally likely outcomes share the chance evenly, and independent events multiply because each stage keeps its own share of possibilities.",
+    },
+    "history_ww1": {
+        "title": "Why the First World War began",
+        "key_idea": "The First World War had a trigger, the assassination in Sarajevo in June 1914, and deeper causes that turned it into a European war.",
+        "why_it_works": "This works as an explanation because separating the trigger from the alliance system, militarism and imperial rivalry lets you weigh how a local quarrel became a general war.",
+    },
+    "bio_photosynthesis": {
+        "title": "How plants make their food",
+        "key_idea": "Photosynthesis uses light energy trapped by chlorophyll to join carbon dioxide and water into glucose, releasing oxygen.",
+        "why_it_works": "This works because the plant takes carbon dioxide in through its leaves and water up from its roots, then stores the light energy in the glucose it makes.",
+    },
+}
+
+
+def _idea_key(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def concept_idea_for(
+    topic_id: object = None,
+    topic_title: object = None,
+    item: Mapping[str, Any] | None = None,
+) -> dict[str, str] | None:
+    """The authored key idea for a concept, by bank code, by row id suffix, or by title.
+
+    Returns ``None`` for a topic with no authored entry rather than
+    inventing one: a concept this table does not cover gets the
+    explanation without this section, exactly as before.
+    """
+    item = item or {}
+    candidates = [
+        topic_id,
+        item.get("topic_id"),
+        item.get("topic_code"),
+        item.get("code"),
+        topic_title,
+        item.get("topic_title"),
+    ]
+    for candidate in candidates:
+        key = _idea_key(candidate)
+        if not key:
+            continue
+        if key.replace(" ", "_") in CONCEPT_IDEAS:
+            return CONCEPT_IDEAS[key.replace(" ", "_")]
+        # A database row id ends in the bank code for seeded items
+        # (``itm_fraction_add_02`` / a topic id built from the code).
+        for code, entry in CONCEPT_IDEAS.items():
+            if key.replace(" ", "_").endswith(code) or key == _idea_key(entry["title"]):
+                return entry
+    return None
+
+
+#: Item kinds whose closing prompt asks the learner to recall a fact.
+_FACTUAL_KINDS = frozenset({"factual", "text", "short_text", "recall", "factual_recall"})
+#: Item kinds whose closing prompt is about choosing between options.
+_CHOICE_KINDS = frozenset({"mcq", "choice", "multiple_choice", "multiple-choice"})
+#: Item kinds whose closing prompt can safely say "change the numbers".
+_NUMERIC_KINDS = frozenset({"numeric", "number", "typed_number", "typed-number"})
+
+
+def closing_prompt(item: Mapping[str, Any] | None, *, has_example: bool = True) -> str | None:
+    """The closing "try one" for an explanation, chosen by the item's kind.
+
+    Round 2, Phase A, task 4: the old closing told every learner to
+    "copy the first line of the example and change only the numbers",
+    which is nonsense under a factual or a choice question. Now the
+    kind decides: numeric items change the numbers, choice items cover
+    the options and commit to a pick with a reason, factual items
+    recall without looking — and a kind none of those fit (a teach-back,
+    a worked example itself, no item at all) gets no closing prompt
+    rather than one pasted on anyway.
+    """
+    if not item:
+        return None
+    kind = str(item.get("kind") or "").lower()
+    if kind in _NUMERIC_KINDS:
+        if has_example:
+            return "Try one: copy the first line of the example and change only the numbers."
+        return "Try one with the smallest numbers you can think of, and say each step out loud."
+    if kind in _CHOICE_KINDS or item.get("choices") or item.get("options"):
+        return "Try one: cover the options, say which you would pick and why, then uncover them and check."
+    if kind in _FACTUAL_KINDS:
+        return "Try one: recall the answer without looking, say it out loud, then check what you said."
+    return None
+
+
+
+
+def _closing_prompt(item: Mapping[str, Any] | None) -> str | None:
+    """Kind-specific practice line used by the phase A regression test.
+
+    The served prompt is :func:`closing_prompt`. This one keeps the earlier
+    wording so both checks can name the same behaviour.
+    """
+    if not item:
+        return None
+    kind = str(item.get("kind") or "").strip().lower()
+    if kind in {"numeric", "number"}:
+        return "Try one: copy the first line of the example and change only the numbers."
+    if kind in {"mcq", "choice"} or (
+        item.get("choices") and kind not in {"text", "factual", "teachback", "worked_example"}
+    ):
+        return "Cover the options, then say which you would pick and why."
+    if kind in {"factual", "text", "fact"}:
+        return "Close the notes and recall the answer without looking."
+    return None
+
+
 def explain(
     query: str,
     *,
@@ -501,6 +716,27 @@ def explain(
                 entry["material_id"] = str(src.doc_id).split(":")[1]
             sources.append(entry)
 
+    idea_added = False
+
+    def add_key_idea() -> None:
+        """The authored key idea and why it works, before any worked steps.
+
+        Simple mode has to say *why* before it shows a recipe (task 6):
+        the two authored sentences go in as their own sections, once,
+        ahead of whichever worked example this explanation is about to
+        show. A topic with no authored entry gets no section rather
+        than an invented one.
+        """
+        nonlocal idea_added
+        if idea_added:
+            return
+        entry = concept_idea_for(wanted_topic, topic_title, item)
+        if not entry:
+            return
+        add(f"Key idea: {entry['key_idea']}", "key idea")
+        add(f"Why it works: {entry['why_it_works']}", "why it works")
+        idea_added = True
+
     if prereq_note:
         add(prereq_note, "first, the prerequisite")
 
@@ -549,6 +785,7 @@ def explain(
         cap = 2 if not topic_match else 3  # a cross-topic answer stays short and to the point
         body = " ".join(_shorten(d.text, budget // max(1, len(chosen[:cap])) + 8) for d in chosen[:cap])
         add(body, "explanation", chosen[0])
+        add_key_idea()
     elif item and (item.get("solution_steps") or []):
         # The material has nothing relevant, but the question in front of the learner does —
         # its own worked example, written for it. Answering from that is grounded in the
@@ -559,6 +796,7 @@ def explain(
             "question's own working, checked against its answer key:",
             "where this came from",
         )
+        add_key_idea()
         lines = []
         for i, st in enumerate((item.get("solution_steps") or [])[:5]):
             txt = st.get("text") if isinstance(st, dict) else str(st)
@@ -628,22 +866,15 @@ def explain(
             r,
         )
 
-    has_example = bool(item and (item.get("solution_steps") or []))
-    next_step = {
-        "new": (
-            "Try one: copy the first line of the example and change only the numbers."
-            if has_example
-            else "Try one with the smallest numbers you can think of, and say each step out loud."
-        ),
-        "developing": (
-            "Now do the next one without looking at the example, then compare."
-            if has_example
-            else "Now do the next one without looking back, then compare it with what you just did."
-        ),
-        "proficient": "Do the next two; tell me which step you skipped and why that was safe.",
-        "mastered": "Explain it back in two sentences as if to someone who has not seen it.",
-    }[level]
-    add(next_step, "your turn")
+    # The closing prompt follows the *item kind*, not the learner's level
+    # (task 4): "change only the numbers" only makes sense under a numeric
+    # item, and a kind with no fitting prompt gets none.
+    has_example = any(sec.get("label") == "worked example" for sec in sections) or bool(
+        item and (item.get("solution_steps") or [])
+    )
+    next_step = closing_prompt(item, has_example=has_example)
+    if next_step:
+        add(next_step, "your turn")
 
     applied = [k for k in dmap if k]
     text = "\n\n".join(p for p in parts if p)
