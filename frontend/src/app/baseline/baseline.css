@@ -1,0 +1,344 @@
+/*
+ * The baseline's own furniture (round 2, phase F). The baseline page used class names that no
+ * stylesheet defined, so its choices, inputs and snapshot rows ran together on screen. Every rule
+ * here sits under .baseline-page, so nothing leaks into the other pages.
+ */
+
+.baseline-page {
+  max-width: 52rem;
+  color: var(--ink);
+}
+
+.baseline-page .muted {
+  color: var(--muted);
+}
+
+.baseline-page .small {
+  font-size: 0.8125rem;
+}
+
+.baseline-page .wrap p {
+  margin: 0.4rem 0;
+}
+
+/* Header: step, stop, and the progress bar. */
+.baseline-page .baseline-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.baseline-page .baseline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.baseline-page .baseline-bar {
+  position: relative;
+  height: 6px;
+  margin: 0.75rem 0 1rem;
+  background: var(--accent-dim);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.baseline-page .baseline-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* A task: its header (timer and practice tag), prompt, story, cue. */
+.baseline-page .baseline-task {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.baseline-page .baseline-task-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.baseline-page .baseline-prompt {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.baseline-page .baseline-story {
+  margin: 0.5rem 0;
+  max-width: 40rem;
+  line-height: 1.5;
+}
+
+.baseline-page .baseline-cue {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 0.25rem 0;
+}
+
+.baseline-page .baseline-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0.75rem 0 0.25rem;
+}
+
+.baseline-page .baseline-pairs {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.baseline-page .baseline-machine-out {
+  list-style: none;
+  margin: 0.75rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+/* Questions: one fieldset per question, its choices as wrapped buttons. */
+.baseline-page .baseline-q {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+.baseline-page .baseline-q-row {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.baseline-page .baseline-q-row legend {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  padding: 0;
+  line-height: 1.4;
+}
+
+.baseline-page .baseline-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.baseline-page .baseline-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.baseline-page .baseline-option strong {
+  font-weight: 500;
+}
+
+.baseline-page .baseline-option.on,
+.baseline-page .baseline-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  font-weight: 600;
+}
+
+.baseline-page .baseline-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.baseline-page .baseline-option:focus-visible,
+.baseline-page .coin:focus-visible,
+.baseline-page .vault-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Inputs and rows of controls. */
+.baseline-page .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.baseline-page .input {
+  min-width: min(100%, 18rem);
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.baseline-page .input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Coins (confidence wager). */
+.baseline-page .baseline-coins {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.baseline-page .coin {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.baseline-page .coin.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* The vault: a grid of tiles that light up, then are tapped back. */
+.baseline-page .vault-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  max-width: 18rem;
+  margin: 1rem 0;
+}
+
+.baseline-page .vault-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.baseline-page .vault-tile.flash {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.baseline-page .vault-tile.tapped {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Hint shop: a disclosure with a list of hints. */
+.baseline-page .baseline-hints {
+  margin-top: 0.75rem;
+}
+
+.baseline-page .baseline-hints > summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.baseline-page .baseline-hints li {
+  margin: 0.5rem 0;
+}
+
+.baseline-page .baseline-levers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Snapshot: one ruled row per factor; the range and n sit on the title line. */
+.baseline-page .baseline-factors {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.baseline-page .baseline-factors > li {
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.baseline-page .baseline-factors > li:first-child {
+  border-top: 0;
+}
+
+.baseline-page .baseline-factors .row,
+.baseline-page .baseline-levers .row {
+  margin-top: 0;
+}
+
+.baseline-page .baseline-factors ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0 0;
+}
+
+.baseline-page .baseline-levers > li {
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.baseline-page .baseline-levers > li:first-child {
+  border-top: 0;
+}
+
+.baseline-page .baseline-levers > li > span {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+/* Cards on the page keep their own spacing; this only stops the snapshot's sections running together. */
+.baseline-page .baseline-snapshot > section + section {
+  margin-top: 1rem;
+}

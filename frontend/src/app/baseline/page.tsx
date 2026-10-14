@@ -23,6 +23,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import "./baseline.css";
+
 import { Btn, Card, Notice, Tag, Trace, announce } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useRovingTabIndex } from "@/lib/a11y/useRovingTabIndex";
@@ -182,7 +184,7 @@ export default function Baseline() {
 
   if (error && !view) {
     return (
-      <div className="wrap">
+      <div className="wrap baseline-page">
         <Card title="The baseline could not open">
           <Notice tone="bad">{error}</Notice>
           <p className="muted">Nothing was recorded. If you are signed out, the front door will ask you in.</p>
@@ -193,7 +195,7 @@ export default function Baseline() {
 
   if (!view) {
     return (
-      <div className="wrap" aria-busy="true">
+      <div className="wrap baseline-page" aria-busy="true">
         <Card title="Opening the baseline">
           <p className="muted">One sitting of short games. Nothing here is a grade.</p>
         </Card>
@@ -206,7 +208,7 @@ export default function Baseline() {
   const progress = Math.round((view.progress ?? 0) * 100);
 
   return (
-    <div className="wrap">
+    <div className="wrap baseline-page">
       <header className="baseline-head">
         <div>
           <p className="muted small" style={{ margin: 0 }}>
