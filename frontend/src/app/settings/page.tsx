@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 
 import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Select, Tag, useSession } from "@/components/ui";
 import { del, get, post, useApi } from "@/lib/api";
+import type { Status } from "@/lib/types";
 
 type PrefReply = { accepted?: Record<string, unknown>; rejected_keys?: string[]; rejected_reasons?: Record<string, string>; note?: string };
 type Allowlist = { allowed: Record<string, string[]>; forbidden_keys: string[]; rule: string };
@@ -48,7 +49,7 @@ export default function Settings() {
   const prefs = useApi<{ preferences: Record<string, unknown>; allowed_keys: string[] }>("me/preferences");
   const privacy = useApi<Privacy>("privacy");
   const allow = useApi<Allowlist>("events/allowlist");
-  const status = useApi<Record<string, unknown>>("status");
+  const status = useApi<Status>("status");
   const audit = useApi<{ entries: { action: string; object?: string; outcome?: string; created_at?: string | null }[] }>("audit", { limit: 50 });
   const [form, setForm] = useState<Record<string, string | boolean>>({});
   const [reply, setReply] = useState<PrefReply | null>(null);
@@ -200,10 +201,10 @@ export default function Settings() {
                 hint="Off means the server rejects the events, so no proposals can be built and no schedule can be derived. Practice keeps working."
               />
               <Check
-                label="Allow a model summary when it would help"
+                label="Allow a written-for-you summary when it would help"
                 checked={consent.llm}
                 onChange={(v) => setConsent((c) => ({ ...c, llm: v }))}
-                hint={`Currently: ${humanize(status.data?.llm ?? {}) || "no model configured"}`}
+                hint="Off means every reply is written from your own material. A summary is shared only when this is on and a written-for-you reply is available."
               />
               <Check
                 label="Voice"
@@ -233,20 +234,19 @@ export default function Settings() {
             </div>
           </Card>
 
-          <Card title="This instance" tone="muted" right={<Tag>{String(status.data?.mode ?? "?")}</Tag>}>
+          <Card title="This instance" tone="muted">
             {status.error ? <Err error={status.error} status={status.status} /> : null}
             <ul className="space-y-1 text-xs text-[var(--muted)]">
-              {Object.entries(status.data ?? {}).map(([k, v]) => (
-                <li key={k}>
-                  <span className="text-ink-2">{k.replace(/_/g, " ")}:</span> {typeof v === "object" ? humanize(v) : String(v)}
-                </li>
-              ))}
+              <li>{status.data?.lessons?.says ?? "Lessons: not reported"}</li>
+              {status.data?.data_protection?.file_level ? <li>{status.data.data_protection.file_level}</li> : null}
+              {status.data?.data_protection?.note ? <li>{status.data.data_protection.note}</li> : null}
+              {status.data?.demo_mode ? <li>demo mode: writes need a passphrase</li> : null}
             </ul>
           </Card>
         </div>
       </div>
 
-      <Card title="What may be recorded about you" tone="muted" right={<span>GET /privacy · /events/allowlist</span>}>
+      <Card title="What may be recorded about you" tone="muted" right={<span>what is recorded</span>}>
         <p className="text-sm">{privacy.data?.telemetry?.note ?? "The server owns this list; the client cannot add a field to it."}</p>
         <div className="mt-2 grid gap-3 md:grid-cols-2">
           <div>
@@ -272,7 +272,7 @@ export default function Settings() {
         <div className="mt-3 grid gap-2 text-xs text-[var(--muted)] md:grid-cols-2">
           {Object.entries(privacy.data?.sent_to_model ?? {}).map(([k, v]) => (
             <p key={k}>
-              <span className="text-ink-2">to the model · {k.replace(/_/g, " ")}:</span> {v}
+              <span className="text-ink-2">if a summary is shared · {k.replace(/_/g, " ")}:</span> {v}
             </p>
           ))}
           {Object.entries(privacy.data?.voice ?? {}).map(([k, v]) => (

@@ -220,28 +220,33 @@ def quotas(s: Session = Depends(db_session), student: Student = Depends(student_
 
 
 @router.get("/privacy")
-def privacy(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
-    st = get_settings()
+def privacy(_s: Session = Depends(db_session)) -> dict[str, Any]:
+    """What may be recorded, as a static non-personal list.
+
+    Signed-out readers need this before they consent, so it does not require a
+    learner session. It names no service, no path verb, and no person. The
+    database session is opened so the storage claim describes this instance.
+    """
     return {
         "telemetry": TEL.privacy_summary(),
         "sent_to_model": {
-            "when": "only when a model is configured and the learner consented to sharing a summary",
-            "identity": "a keyed pseudonym, never the name or email",
-            "redaction": "emails, phone numbers, URLs, addresses and anything shaped like an ID are stripped before sending",
+            "when": "only when a written-for-you answer is available and you have agreed to share a summary",
+            "identity": "a keyed pseudonym, never your name or email",
+            "redaction": "emails, phone numbers, web addresses and anything shaped like an ID are stripped before anything is shared",
             "on_refusal": "if any of that cannot be honoured, the answer is written locally instead and the reply says so",
         },
         "voice": {
-            "stt": "local faster-whisper running in the server process; audio is decoded in memory and discarded",
-            "tts": "local Kokoro; audio is streamed to the browser and not stored",
-            "stored": "transcript text for the turns the learner chose to record, plus latency and interruption flags",
-            "off_means": "voice off = no microphone access at all; the keyboard path is identical",
+            "listening": "speech is turned into text on this machine when that is installed; otherwise the browser does it and the audio stays here",
+            "speaking": "replies are spoken on this machine when that is installed; otherwise the browser speaks them and nothing is stored",
+            "stored": "transcript text for the turns you chose to record, plus how long they took and whether you interrupted",
+            "off_means": "voice off means no microphone access at all; typing teaches the same thing",
         },
         "storage": data_protection(),
         "learner_controls": [
-            "answer or refuse every adaptation proposal",
-            "revoke an applied adaptation at any time",
-            "delete your history (DELETE /api/v1/me)",
-            "see every event recorded about you (GET /api/v1/journey)",
+            "answer or refuse every proposed change",
+            "undo an applied change at any time",
+            "delete your history",
+            "see every event recorded about you",
         ],
     }
 

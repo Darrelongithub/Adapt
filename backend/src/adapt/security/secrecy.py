@@ -558,31 +558,70 @@ def _safe_log_argument(value: Any, settings: Any) -> Any:
     return value
 
 
+def _scrub_log_args(args: Any, settings: Any) -> Any:
+    """Scrub log arguments without changing the shape uvicorn's access formatter unpacks.
+
+    ``AccessFormatter`` unpacks exactly five arguments and does ``int(status_code)``.
+    Replacing the tuple with ``()`` makes that unpack fail, and uvicorn then prints
+    ``--- Logging error ---`` on every request. String arguments are scrubbed in
+    place; the status code stays an int; the tuple length is preserved.
+    """
+    if args is None or args == ():
+        return args
+    if isinstance(args, Mapping):
+        return _safe_log_argument(args, settings)
+    if isinstance(args, tuple):
+        return tuple(_safe_log_argument(arg, settings) for arg in args)
+    if isinstance(args, list):
+        return tuple(_safe_log_argument(arg, settings) for arg in args)
+    return args
+
+
+def _bind_safe_message(record: logging.LogRecord, rendered: str) -> None:
+    """Return the already-scrubbed render from ``getMessage``.
+
+    The format string and the argument tuple stay as they are, so a later
+    ``msg % args`` (or uvicorn's five-argument unpack) still works. Replacing
+    ``msg`` with the rendered text while ``args`` remain makes ``%`` throw.
+    """
+
+    def _safe_get_message() -> str:
+        return rendered
+
+    record.getMessage = _safe_get_message  # type: ignore[method-assign]
+
+
 def _redact_log_record(record: logging.LogRecord, settings: Any) -> logging.LogRecord:
-    try:
-        if isinstance(record.msg, (Mapping, list, tuple)):
-            safe_message = _safe_log_argument(record.msg, settings)
-            record.msg = _safe_log_text(str(safe_message), settings)
-            record.args = ()
-        else:
-            if isinstance(record.args, Mapping):
-                record.args = _safe_log_argument(record.args, settings)
-            elif isinstance(record.args, tuple):
-                record.args = tuple(_safe_log_argument(arg, settings) for arg in record.args)
-            record.msg = _safe_log_text(record.getMessage(), settings)
-            record.args = ()
-    except Exception:
-        record.msg = "[log detail withheld]"
-        record.args = ()
-    # Avoid formatting the original exception or traceback after the message has
-    # been sanitized. The event itself remains in the application response path.
-    if record.exc_info:
-        record.exc_info = None
-        record.exc_text = None
-    if record.stack_info:
-        record.stack_info = scrub_text(record.stack_info, settings)
+    # The factory and ``Logger.makeRecord`` both call this. The second pass must
+    # not reformat the message (that would see the bound ``getMessage``) and must
+    # not clear args. It still scrubs ``extra=`` fields, which are attached after
+    # the factory returns.
+    if not getattr(record, "_adapt_log_redacted", False):
+        try:
+            record.args = _scrub_log_args(record.args, settings)
+            if isinstance(record.msg, (Mapping, list, tuple)):
+                safe_message = _safe_log_argument(record.msg, settings)
+                record.msg = _safe_log_text(str(safe_message), settings)
+            try:
+                rendered = logging.LogRecord.getMessage(record)
+            except Exception:
+                rendered = "[log detail withheld]"
+            _bind_safe_message(record, _safe_log_text(rendered, settings))
+        except Exception:
+            # Keep whatever args we have. Clearing them is what breaks access logs.
+            _bind_safe_message(record, "[log detail withheld]")
+        record._adapt_log_redacted = True
+        # Avoid formatting the original exception or traceback after the message has
+        # been sanitized. The event itself remains in the application response path.
+        if record.exc_info:
+            record.exc_info = None
+            record.exc_text = None
+        if record.stack_info:
+            record.stack_info = scrub_text(record.stack_info, settings)
     for name, value in tuple(record.__dict__.items()):
-        if name in {"msg", "args", "exc_info", "exc_text", "stack_info"}:
+        if name in {"msg", "args", "exc_info", "exc_text", "stack_info", "getMessage", "_adapt_log_redacted"}:
+            continue
+        if callable(value):
             continue
         normalized_name = _normal_key(name)
         if normalized_name in _DROP_KEYS or any(

@@ -385,8 +385,8 @@ def _nudge(item: Mapping[str, Any]) -> str:
     terms = _words(stem)[:3]
     if item.get("choices"):
         return (
-            f"This is one of those “which one is right” questions: {stem}. Read all the options before choosing — "
-            "three of them were written to catch a specific mistake."
+            f"Read every option before you choose: {stem}. "
+            "Each wrong option was written to catch one specific mistake."
         )
     if terms:
         return f"What is being asked, in your own words: {stem}. The ideas doing the work are {' and '.join(terms)}."
@@ -422,19 +422,101 @@ def _near_answer(item: Mapping[str, Any]) -> str:
         )
     value, how, variables = computable_value(item)
     if value is not None:
-        return (
-            f"Check the size of your answer against the question's numbers: it comes out {_magnitude(value)}. "
-            "If yours is a different order of magnitude, the slip is in the arithmetic, not the method."
+        return _with_anchor(
+            (
+                f"Check the size of your answer against the question's numbers: it comes out {_magnitude(value)}. "
+                "If yours is a different order of magnitude, the slip is in the arithmetic, not the method."
+            ),
+            item,
         )
     rubric = item.get("rubric") or {}
     concepts = [str(c.get("concept") or c.get("name") or "") for c in (rubric.get("required_concepts") or []) if isinstance(c, Mapping)]
     concepts = [c for c in concepts if c]
     if concepts:
         return "Check your answer against the list of ideas being looked for: " + ", ".join(concepts[:4]) + "."
-    return "Check your answer by saying it out loud in one sentence. If you cannot, the missing piece is usually the reason."
+    return _with_anchor(
+        "Check your answer by saying it out loud in one sentence. If you cannot, the missing piece is usually the reason.",
+        item,
+    )
+
+
+def _step_anchor(item: Mapping[str, Any]) -> str:
+    """A short fragment of this item's own first step, so a shared check is not identical.
+
+    The fragment is taken from the step, not from the answer key. It is left out when
+    it is only the stem, which the identical-hint check already strips.
+    """
+    raw_steps = item.get("solution_steps") or []
+    text = ""
+    if raw_steps:
+        first = raw_steps[0]
+        text = str(first.get("text") if isinstance(first, Mapping) else first or "").strip()
+    if not text:
+        derived = ensure_example(item)
+        if derived:
+            text = str(derived[0].get("text") or "").strip()
+    if not text:
+        return ""
+    stem = str(item.get("stem") or "").strip()
+    fragment = text
+    if stem and stem.lower() in fragment.lower():
+        fragment = re.sub(re.escape(stem), " ", fragment, flags=re.IGNORECASE).strip(" .:-")
+    fragment = _halt(fragment)
+    if len(fragment) < 8 or fragment.lower() == stem.lower():
+        return ""
+    if len(fragment) > 72:
+        fragment = fragment[:72].rsplit(" ", 1)[0].strip()
+    return fragment
+
+
+def _with_anchor(sentence: str, item: Mapping[str, Any]) -> str:
+    anchor = _step_anchor(item)
+    if not anchor or anchor.lower() in sentence.lower():
+        return sentence
+    return f"{sentence} The step this question turns on: {anchor}."
+
+
+def _mcq_hints(item: Mapping[str, Any]) -> list[str] | None:
+    """Three graded hints from the distractors' own misconceptions.
+
+    The correct option is never named. Each grade quotes a different wrong option
+    and the reason its author wrote, so the ladder cannot be pasted onto another
+    question and cannot collapse to “which one is right”.
+    """
+    if not item.get("choices"):
+        return None
+    reasons = distractor_reasons(item)
+    if not reasons:
+        return None
+    shapes = (
+        "One option is there to catch a slip: “{text}” is wrong because {why}.",
+        "Rule that option out before you choose: “{text}” fails because {why}.",
+        "If “{text}” looks tempting, the slip is this: {why}.",
+    )
+    hints: list[str] = []
+    seen: set[str] = set()
+    for i in range(len(HINT_GRADES)):
+        text, why = reasons[i % len(reasons)]
+        text_h, why_h = _halt(text), _halt(why)
+        if i < len(reasons):
+            hint = shapes[i].format(text=text_h, why=why_h)
+        else:
+            hint = (
+                f"The mistake behind “{text_h}” is the one to check last: {why_h}. "
+                "Pick only an option that does not make that slip."
+            )
+        key = hint.strip().lower()
+        if key in seen:
+            hint = hint + " Read the remaining options against that same slip."
+        seen.add(hint.strip().lower())
+        hints.append(hint)
+    return hints
 
 
 def generate_hints(item: Mapping[str, Any]) -> list[str]:
+    from_traps = _mcq_hints(item)
+    if from_traps:
+        return from_traps
     return [_nudge(item), _method(item), _near_answer(item)]
 
 

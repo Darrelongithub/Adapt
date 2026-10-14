@@ -60,7 +60,11 @@ GENERIC_MARKERS = (
     "write down the single fact the question is asking for",
     "read the question again carefully",
     "think about what you already know",
+    "which one is right",
 )
+#: After the stem and quoted options are removed, a residue this long that is shared
+#: by three or more items is the same hint pasted across the bank.
+_IDENTICAL_HINT_MIN = 16
 #: The five flags the brief names as the gate. The script exits non-zero on these, and only these.
 GATE_FLAGS = frozenset(
     {"off_topic", "missing_example", "generic_hint", "placeholder", "key_disagrees"}
@@ -234,6 +238,42 @@ def _rendered_bank_items() -> list[tuple[str, str, dict[str, Any]]]:
     return out
 
 
+def _hint_residue(hint: str, item: Mapping[str, Any]) -> str:
+    """Hint text with the stem and quoted options removed, for the identical-hint gate."""
+    text = hint.lower()
+    stem = str(item.get("stem") or "").lower().strip()
+    if len(stem) >= 8 and stem in text:
+        text = text.replace(stem, " ")
+    text = re.sub(r"[“\"'«»][^”\"'»«]{1,200}[”\"'»«]", " ", text)
+    for choice in item.get("choices") or []:
+        if isinstance(choice, Mapping):
+            option = str(choice.get("text") or "").lower().strip()
+            if len(option) >= 2 and option in text:
+                text = text.replace(option, " ")
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _flag_identical_hints(rows: list[tuple[str, str]], flags: list[Flag]) -> None:
+    """Flag hint text that is identical across three or more items once the stem is gone."""
+    buckets: dict[str, list[str]] = {}
+    for where, residue in rows:
+        if len(residue) < _IDENTICAL_HINT_MIN:
+            continue
+        buckets.setdefault(residue, []).append(where)
+    for residue, wheres in buckets.items():
+        if len(wheres) < 3:
+            continue
+        sample = ", ".join(wheres[:3])
+        flags.append(
+            Flag(
+                "generic_hint",
+                "hints:identical",
+                f"the same hint text appears on {len(wheres)} items after the stem and quoted options are removed ({sample}): {residue[:90]}",
+            )
+        )
+
+
 def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note]) -> None:
     """The authored maths bank: hints, worked example and explanation, item by item."""
     items = _rendered_bank_items()
@@ -246,6 +286,7 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
     index = TUTOR.build_index(materials=materials, items=[dict(i) for _, _, i in items])
 
     maths = coverage.setdefault("maths", Coverage("maths"))
+    residues: list[tuple[str, str]] = []
     for topic_code, label, item in items:
         where = f"{topic_code}/{label}"
         maths.items += 1
@@ -269,6 +310,9 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
         for hint in hints:
             if any(marker in hint.lower() for marker in GENERIC_MARKERS):
                 flags.append(Flag("generic_hint", f"hints:{where}", hint[:80]))
+            residue = _hint_residue(hint, item)
+            if len(residue) >= _IDENTICAL_HINT_MIN:
+                residues.append((f"hints:{where}", residue))
 
         # -- the worked example -------------------------------------------------- #
         steps = WORKED.ensure_example(item, render=lambda raw: BANK.render_item_for(raw, seed=0))
@@ -313,6 +357,8 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
             if sentence and not sentence.rstrip().endswith((".", "!", "?", "…", ":")):
                 notes.append(Note("cut_sentence", f"explain:{where}", sentence[-60:]))
                 break
+
+    _flag_identical_hints(residues, flags)
 
 
 def _skill_pool(skill_id: str) -> tuple[dict[str, Any], ...]:
@@ -660,7 +706,7 @@ def report(
     lines.append("")
     lines.append("* `off_topic` — text was shown as grounded while it came from another topic (brief 4.1.2).")
     lines.append("* `missing_example` — the app would refer to a worked example it cannot show (4.1.3).")
-    lines.append("* `generic_hint` — a hint that could be pasted onto any question in the bank (4.1.4).")
+    lines.append("* `generic_hint` — a hint that could be pasted onto any question in the bank (4.1.4), including the same residue on three or more items once the stem and quoted options are removed.")
     lines.append("* `placeholder` — an unrendered `{a}` reached text a learner reads.")
     lines.append("* `key_disagrees` — the worked example contradicts the item's own answer key.")
     lines.append("* A `no_item_reason` note is not a defect: the reasoning for a bank item is its topic's")

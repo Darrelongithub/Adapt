@@ -27,7 +27,7 @@ import random
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 log = logging.getLogger("adapt.tutor")
 
@@ -375,6 +375,47 @@ def _opener(level: str, context: str, *, topic_title: str | None, seed: str) -> 
     return rng.choice(pool).replace("{topic}", topic_title or "this")
 
 
+def _concept_preface(
+    topic_id: str | None,
+    topic_title: str | None,
+    item: Mapping[str, Any] | None,
+) -> str | None:
+    """The concept's one-sentence key idea and why, or nothing if this is not a bank concept."""
+    from ..content.concept_why import sentences_for
+
+    payload = item or {}
+    pair = sentences_for(
+        topic_id=topic_id or payload.get("topic_id"),
+        topic_title=topic_title or payload.get("topic_title"),
+        tags=payload.get("tags") or [],
+    )
+    if not pair:
+        return None
+    key_idea, why = pair
+    return f"Key idea: {key_idea}\n\nWhy it works: {why}"
+
+
+def _closing_prompt(item: Mapping[str, Any] | None) -> str | None:
+    """The practice line for this item's kind, or nothing when no kind fits.
+
+    Numeric items ask the learner to change the numbers. Choice items ask them to
+    cover the options and say which they would pick. Factual items (bank kind
+    ``text`` or ``factual``) ask for a recall without looking. Teach-back, worked
+    examples and unknown kinds get no line: a number-changing prompt on those is
+    the misfire this replaces.
+    """
+    if not item:
+        return None
+    kind = str(item.get("kind") or "").strip().lower()
+    if kind in {"numeric", "number"}:
+        return "Try one: copy the first line of the example and change only the numbers."
+    if kind in {"mcq", "choice"} or (item.get("choices") and kind not in {"text", "factual", "teachback", "worked_example"}):
+        return "Cover the options, then say which you would pick and why."
+    if kind in {"factual", "text", "fact"}:
+        return "Close the notes and recall the answer without looking."
+    return None
+
+
 def explain(
     query: str,
     *,
@@ -501,6 +542,14 @@ def explain(
                 entry["material_id"] = str(src.doc_id).split(":")[1]
             sources.append(entry)
 
+    def add_why() -> None:
+        """Put the concept's key idea immediately before worked steps, once."""
+        if any(sec.get("label") == "why this works" for sec in sections):
+            return
+        block = _concept_preface(topic_id, topic_title, item)
+        if block:
+            add(block, "why this works")
+
     if prereq_note:
         add(prereq_note, "first, the prerequisite")
 
@@ -567,6 +616,7 @@ def explain(
         # Shown as a labelled section, not as a citation: ``sources`` means "somewhere you can
         # go and read this", and the item has no URL to open (the client renders a URL-less
         # source as plain text, and the contract is that a non-material source is clickable).
+        add_why()
         add("\n".join(lines), "worked example", None)
         # ``grounded`` is a claim about the *material*, and this text is the item's own
         # working, not a passage the learner can go and read. It is useful (it is the answer to
@@ -614,9 +664,11 @@ def explain(
             if txt:
                 lines.append(f"{i + 1}. {txt}")
         if lines:
+            add_why()
             add("\n".join(lines), "worked example")
     elif by_kind.get("solution") and want_example and not already_shown:
         top = by_kind["solution"][0][1]
+        add_why()
         add(top.text, "worked example", top)
 
     if by_kind.get("resource") and level in ("new", "developing"):
@@ -628,22 +680,9 @@ def explain(
             r,
         )
 
-    has_example = bool(item and (item.get("solution_steps") or []))
-    next_step = {
-        "new": (
-            "Try one: copy the first line of the example and change only the numbers."
-            if has_example
-            else "Try one with the smallest numbers you can think of, and say each step out loud."
-        ),
-        "developing": (
-            "Now do the next one without looking at the example, then compare."
-            if has_example
-            else "Now do the next one without looking back, then compare it with what you just did."
-        ),
-        "proficient": "Do the next two; tell me which step you skipped and why that was safe.",
-        "mastered": "Explain it back in two sentences as if to someone who has not seen it.",
-    }[level]
-    add(next_step, "your turn")
+    next_step = _closing_prompt(item)
+    if next_step:
+        add(next_step, "your turn")
 
     applied = [k for k in dmap if k]
     text = "\n\n".join(p for p in parts if p)
