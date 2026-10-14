@@ -119,6 +119,8 @@ export type NextDay = {
   run_id?: string;
   tasks: BaselineTask[];
   studied?: boolean;
+  /** True when the check is asked on the day of the sitting: a short gap, not the next-day one. */
+  same_day?: boolean;
   note?: string;
 };
 
@@ -152,8 +154,14 @@ export const finish_baseline = (run_id: string) => post<BaselineSnapshot>(`/api/
 export const load_snapshot = (run_id?: string | null) =>
   api<BaselineSnapshot>("/api/v1/baseline/snapshot", { query: run_id ? { run_id } : undefined });
 
-export const load_next_day = (run_id?: string | null) =>
-  api<NextDay>("/api/v1/baseline/next-day", { query: run_id ? { run_id } : undefined });
+/**
+ * The codeword check. With a run id, that run's check. With `finished`, the check of the last sitting
+ * the learner finished (the return visit). With neither, the newest run's (the server's default).
+ */
+export const load_next_day = (run_id?: string | null, finished = false) =>
+  api<NextDay>("/api/v1/baseline/next-day", {
+    query: run_id ? { run_id } : finished ? { finished: true } : undefined,
+  });
 
 /* ----------------------------------------------------------------- helpers ---- */
 
@@ -200,23 +208,59 @@ export function source_label(source: string | undefined): string {
   return "default";
 }
 
-/** The eight factors, in the order the brief lists them. Anything unknown lands at the end. */
+/**
+ * The eight factors, in the order the server reports them (`FACTORS` in backend/.../factors.py).
+ * The keys must be the server's: a name the server never sends sorts to the end and the factor
+ * is shown out of place. (The page used `reasoning_style` and `confidence_calibration`, so two
+ * of the eight were always last.)
+ */
+export const FACTOR_ORDER: readonly string[] = [
+  "prior_knowledge",
+  "working_memory",
+  "processing_pace",
+  "attention_self_control",
+  "long_term_memory",
+  "reasoning",
+  "metacognition",
+  "persistence_help_seeking",
+];
+
+/** The thirteen steps the learner sees before the snapshot, in order (the snapshot is not a step). */
+export const STEP_STAGES: readonly string[] = [
+  "format",
+  "questions",
+  "codewords_study",
+  "codewords_cued",
+  "quick_a",
+  "vault",
+  "shopkeeper",
+  "quick_b",
+  "machine",
+  "locked_box",
+  "quick_c",
+  "trap",
+  "codewords_delayed",
+];
+
+/** "Step 4 of 13" for a stage. The stage of a finished or unknown view has no step. */
+export function step_label(stage: string): string {
+  const at = STEP_STAGES.indexOf(stage);
+  return at === -1 ? "" : `Step ${at + 1} of ${STEP_STAGES.length}`;
+}
+
+/** The eight factors in the server's order. Anything unknown lands at the end. */
 export function order_factors(factors: Factor[]): Factor[] {
-  const order = [
-    "working_memory",
-    "processing_pace",
-    "attention_self_control",
-    "long_term_memory",
-    "reasoning_style",
-    "prior_knowledge",
-    "persistence_help_seeking",
-    "confidence_calibration",
-  ];
+  const order = FACTOR_ORDER;
   return [...factors].sort((a, b) => {
     const ia = order.indexOf(a.key);
     const ib = order.indexOf(b.key);
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
+}
+
+/** The same rule as `timers_visible`, for a preferences map (the snapshot carries the answers). */
+export function timers_visible_in(prefs: Record<string, unknown> | undefined): boolean {
+  return (prefs ?? {})["timers_help"] !== "timers stress me";
 }
 
 /** Seconds left on a visible clock, for the study screen and the timed games. */
@@ -236,6 +280,9 @@ export function parse_items(text: string): string[] {
 export function vault_expected(sequence: number[], answer_direction: string | undefined): number[] {
   return answer_direction === "backward" ? [...sequence].reverse() : [...sequence];
 }
+
+/** The learner's own probes on a machine round, as the server recorded them (oldest first). */
+export type MachineProbe = { x: number; out: unknown; falsifying: boolean };
 
 /** True when the taps so far are the answer so far (a prefix check, so a wrong tap shows at once). */
 export function vault_prefix_ok(taps: number[], expected: number[]): boolean {
