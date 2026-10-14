@@ -721,9 +721,7 @@ function WhyPanel({
             <p className="text-[13px] whitespace-pre-wrap">{answer.text}</p>
             <p className="text-[11px] text-[var(--muted)]">
               source: <span className="font-mono">{answer.source}</span>
-              {answer.cached ? " · from the cache, so no model was asked" : ""}
-              {answer.model ? ` · ${answer.model}` : ""}
-              {answer.tokens_out ? ` · ${answer.tokens_out} tokens out` : ""}
+              {answer.cached ? " · remembered from earlier, so nothing new was written" : ""}
             </p>
             {answer.note ? <p className="text-[12px] text-[var(--warn)]">{answer.note}</p> : null}
             {answer.citations?.length ? (
@@ -896,8 +894,8 @@ function EvidencePanel({ evidence }: { evidence: Evidence }) {
         </p>
         <p className="text-[var(--muted)]">{s.note}</p>
         <p className="text-[var(--muted)]">
-          narration cache: {evidence.narration_cache.entries} entries, {evidence.narration_cache.model_calls_saved} model
-          calls avoided
+          remembered explanations: {evidence.narration_cache.entries} entries,{" "}
+          {evidence.narration_cache.model_calls_saved} explanations reused instead of written again
         </p>
         <ul className="mt-1 flex flex-col gap-0.5 text-[var(--muted)]">
           {evidence.not_evidence.map((line, li) => (

@@ -553,7 +553,11 @@ def _safe_log_text(value: str, settings: Any) -> str:
 def _safe_log_argument(value: Any, settings: Any) -> Any:
     if isinstance(value, str):
         return _safe_log_text(value, settings)
-    if isinstance(value, (Mapping, list, tuple)):
+    if isinstance(value, tuple):
+        return tuple(_safe_log_argument(child, settings) for child in value)
+    if isinstance(value, list):
+        return [_safe_log_argument(child, settings) for child in value]
+    if isinstance(value, Mapping):
         return _scrub_value(value, settings)
     return value
 
@@ -565,12 +569,31 @@ def _redact_log_record(record: logging.LogRecord, settings: Any) -> logging.LogR
             record.msg = _safe_log_text(str(safe_message), settings)
             record.args = ()
         else:
+            # Redact each argument in place *by position* and leave the tuple
+            # (or mapping) the caller supplied intact in shape and length.
+            # The previous version collapsed the record to its rendered
+            # message with ``args = ()``: that is safe for a plain formatter,
+            # but uvicorn's access formatter unpacks ``record.args`` as
+            # ``(client, method, path, version, status)``, so every request
+            # then raised inside the formatter and Python printed a
+            # ``Logging error`` traceback instead of the access line.
+            # Scrubbing the format string plus each argument separately
+            # gives the same rendered redaction without breaking any
+            # formatter that reads ``args`` for itself.
             if isinstance(record.args, Mapping):
                 record.args = _safe_log_argument(record.args, settings)
-            elif isinstance(record.args, tuple):
+                record.msg = scrub_text(str(record.msg), settings)
+            elif isinstance(record.args, tuple) and record.args:
                 record.args = tuple(_safe_log_argument(arg, settings) for arg in record.args)
-            record.msg = _safe_log_text(record.getMessage(), settings)
-            record.args = ()
+                record.msg = scrub_text(str(record.msg), settings)
+            elif record.args:
+                # ``logging`` normally stores a tuple or a mapping; keep an
+                # unusual single argument's shape rather than dropping it.
+                record.args = _safe_log_argument(record.args, settings)  # type: ignore[arg-type]
+                record.msg = scrub_text(str(record.msg), settings)
+            else:
+                record.msg = _safe_log_text(str(record.msg), settings)
+                record.args = record.args
     except Exception:
         record.msg = "[log detail withheld]"
         record.args = ()

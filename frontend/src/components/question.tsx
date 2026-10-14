@@ -398,7 +398,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
                 }
               }}
               disabled={busy || revealed !== null}
-              title="This one shows the answer. The endpoint needs the CSRF token even though it is a GET, because revealing an answer is not a read you would want forged by another site."
+              title="This one shows the answer. It asks for a signed-in check first, because revealing an answer is not something another site should be able to trigger."
             >
               {revealed ? "Revealed" : "Reveal it"}
             </Btn>

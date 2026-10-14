@@ -200,10 +200,10 @@ export default function Settings() {
                 hint="Off means the server rejects the events, so no proposals can be built and no schedule can be derived. Practice keeps working."
               />
               <Check
-                label="Allow a model summary when it would help"
+                label="Allow a summary to be shared when it would help"
                 checked={consent.llm}
                 onChange={(v) => setConsent((c) => ({ ...c, llm: v }))}
-                hint={`Currently: ${humanize(status.data?.llm ?? {}) || "no model configured"}`}
+                hint={`Currently: ${(status.data?.lessons as { says?: string } | undefined)?.says ?? "Lessons: simple mode"}`}
               />
               <Check
                 label="Voice"
@@ -246,8 +246,8 @@ export default function Settings() {
         </div>
       </div>
 
-      <Card title="What may be recorded about you" tone="muted" right={<span>GET /privacy · /events/allowlist</span>}>
-        <p className="text-sm">{privacy.data?.telemetry?.note ?? "The server owns this list; the client cannot add a field to it."}</p>
+      <Card title="What may be recorded about you" tone="muted">
+        <p className="text-sm">{privacy.data?.telemetry?.note ?? "This list is fixed; nothing can be added to it from this screen."}</p>
         <div className="mt-2 grid gap-3 md:grid-cols-2">
           <div>
             <p className="text-xs uppercase text-[var(--muted)]">event types the server accepts ({(privacy.data?.telemetry?.allowed_event_types ?? []).length})</p>
@@ -272,7 +272,7 @@ export default function Settings() {
         <div className="mt-3 grid gap-2 text-xs text-[var(--muted)] md:grid-cols-2">
           {Object.entries(privacy.data?.sent_to_model ?? {}).map(([k, v]) => (
             <p key={k}>
-              <span className="text-ink-2">to the model · {k.replace(/_/g, " ")}:</span> {v}
+              <span className="text-ink-2">sharing a summary · {k.replace(/_/g, " ")}:</span> {v}
             </p>
           ))}
           {Object.entries(privacy.data?.voice ?? {}).map(([k, v]) => (

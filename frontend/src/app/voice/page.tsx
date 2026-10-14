@@ -158,10 +158,10 @@ export default function VoicePage() {
     socket.onclose = (ev) => {
       setOpen(false);
       setState("idle");
-      if (ev.code === 4401) setError("the websocket refused the session (4401): sign in again — an unauthenticated voice stream is refused, not silently ignored");
-      else setLog((l) => [...l, `closed (${ev.code}${ev.reason ? ` ${ev.reason}` : ""})`]);
+      if (ev.code === 4401) setError("the voice connection needs you signed in: sign in again — a signed-out voice session is refused, not silently ignored");
+      else setLog((l) => [...l, "the voice connection closed"]);
     };
-    socket.onerror = () => setError("websocket transport error — the text path below still works without it");
+    socket.onerror = () => setError("the voice connection hit a problem — the text path below still works without it");
     socket.onopen = () => {
       setOpen(true);
       socket.send(JSON.stringify({ t: "config", voice_on: voiceOn, gender, barge_in: barge }));
@@ -216,7 +216,7 @@ export default function VoicePage() {
       stop: () => void;
     }) | undefined;
     if (!Impl) {
-      setMic("this browser has no dictation API — type instead (Chrome, Edge and Safari have it). Nothing was sent anywhere to find that out.");
+      setMic("this browser cannot listen — type instead (Chrome, Edge and Safari can). Nothing was sent anywhere to find that out.");
       return;
     }
     const r = new Impl();
@@ -303,7 +303,7 @@ export default function VoicePage() {
               <Btn kind="primary" onClick={sendText} disabled={!open || !draft.trim()}>
                 send
               </Btn>
-              <Btn onClick={dictate} disabled={Boolean(mic)} title="uses your browser's own dictation; no audio goes to the server unless the local engine is installed and the websocket is streaming">
+              <Btn onClick={dictate} disabled={Boolean(mic)} title="uses your browser's own dictation; no audio leaves this page unless listening on this machine is set up and the voice connection is live">
                 {mic ?? "hold to talk"}
               </Btn>
               {mic ? (
@@ -331,19 +331,19 @@ export default function VoicePage() {
             <ul className="space-y-2 text-sm">
               <li>
                 <Tag tone={c?.stt?.local_stt ? "good" : "warn"}>listening: {c?.stt?.local_stt ? "on this machine" : "browser dictation"}</Tag>
-                {c?.stt?.local_stt ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.stt?.detail ?? "local transcription is not installed here"}. {c?.stt?.fallback}</p>}
-                {c?.stt?.local_stt ? <p className="mt-1 text-xs text-[var(--muted)]">model {c.stt.model_size} · {c.stt.detail}</p> : null}
+                {c?.stt?.local_stt ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.stt?.detail ?? "listening on this machine is not set up here"}. Your browser can listen instead, on your device.</p>}
+                {c?.stt?.local_stt ? <p className="mt-1 text-xs text-[var(--muted)]">{c.stt.detail}</p> : null}
               </li>
               <li>
                 <Tag tone={c?.tts?.local_tts ? "good" : "warn"}>speaking: {c?.tts?.local_tts ? "on this machine" : "browser speechSynthesis"}</Tag>
-                {c?.tts?.local_tts ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.tts?.detail ?? "the local voice engine is not installed here"}. {c?.tts?.fallback}</p>}
+                {c?.tts?.local_tts ? null : <p className="mt-1 text-xs text-[var(--muted)]">{c?.tts?.detail ?? "speaking from this machine is not set up here"}. Your browser can read aloud instead, on your device.</p>}
                 {c?.tts?.local_tts ? (
                   <p className="mt-1 text-xs text-[var(--muted)]">
                     voices: {humanize(c.tts.voices ?? {}) || "none reported"} · {c.tts.sample_rate} Hz · {c.tts.interruption ?? "chunked"}
                   </p>
                 ) : null}
               </li>
-              <li className="text-xs text-[var(--muted)]">transport: {c?.transport ?? "websocket /ws/voice"}</li>
+              <li className="text-xs text-[var(--muted)]">connection: live while this page is open</li>
             </ul>
             <div className="mt-3 space-y-2 border-t border-[var(--line)] pt-3">
               <Check label="Let it speak out loud" checked={voiceOn} onChange={setVoiceOn} hint="off = text bubbles only, and the server stops synthesising anything" />
