@@ -2045,6 +2045,57 @@ async function main() {
   // vault arrives, tap a tile with the keyboard, then stop early. Stopping is the point of the
   // last checks: a partial baseline must be a finished baseline, and the snapshot must say "not
   // measured" rather than invent a zero for a game nobody played.
+  if (run("content")) {
+    // The content engine has no screen yet, so this is the one scenario that judges an API surface
+    // directly. It is here rather than only in the backend suite because the properties being
+    // checked are browser properties: what a learner is *sent*, not what the server holds. The
+    // answer key travelling in a payload is invisible to a unit test that never serialises one.
+    console.log("\x1b[1mcontent\x1b[0m");
+    const jar = new CookieJar();
+    const made = await createLearner({ display_name: "Probe Content", age_band: "16-18", as_guest: true });
+    check("content", "the engine's own learner can be created", made.status === 200, `${made.status} ${JSON.stringify(made.body).slice(0, 120)}`);
+    if (made.status === 200) {
+      for (const raw of made.headers.getSetCookie?.() ?? []) {
+        try { jar.setCookieSync(raw, BASE); } catch { /* not storable */ }
+      }
+      const cookie = jar.getCookieStringSync(BASE);
+      const head = { "x-csrf-token": made.body.csrf_token ?? "", cookie };
+      const read = (path) => api(path, { headers: head });
+
+      const breakdown = await read("/api/v1/content/breakdown?topic=biology");
+      check("content", "a topic's breakdown arrives over HTTP", breakdown.status === 200 && breakdown.body.available === true, `${breakdown.status} ${JSON.stringify(breakdown.body).slice(0, 120)}`);
+      const concepts = breakdown.body.concepts ?? [];
+      check("content", "every concept carries its misconceptions and objectives", concepts.length > 0 && concepts.every((c) => c.misconceptions.length && c.objectives.length), `${concepts.length} concepts`);
+      check("content", "the breakdown does not ship the answer kits", concepts.every((c) => !("kit" in c)), "a kit is the server's copy");
+
+      const missing = await read("/api/v1/content/breakdown?topic=astrophysics");
+      check("content", "a topic with no authored chain says so instead of inventing one", missing.status === 200 && missing.body.available === false && /no authored prerequisite chain/.test(missing.body.reason ?? ""), JSON.stringify(missing.body).slice(0, 140));
+
+      const pack = await read("/api/v1/content/pack?topic=calculus&concept=calc_rate");
+      check("content", "a concept pack arrives with all three variants", pack.status === 200 && !!(pack.body.variants?.written && pack.body.variants?.visual && pack.body.variants?.worked_example?.steps?.length), `${pack.status} ${JSON.stringify(pack.body).slice(0, 120)}`);
+      const pair = pack.body.pair ?? {};
+      const legs = ["A", "B"].map((leg) => pair[leg]).filter(Boolean);
+      check("content", "the matched pair arrives with both legs", legs.length === 2, `${legs.length} legs`);
+      check("content", "no leg carries its answer key", legs.every((leg) => !("answer" in leg) && !("answer_spec" in leg)), JSON.stringify(legs[0] ?? {}).slice(0, 160));
+      check("content", "no leg carries the answer explanation", legs.every((leg) => !("why" in leg)), "");
+      check("content", "the pair is matched on format and says it is not matched on difficulty", /NOT matched on difficulty/.test(pair.matched ?? ""), String(pair.matched).slice(0, 120));
+      check("content", "the worked example is present and verified", pack.body.variants?.worked_example?.verified === true, JSON.stringify(pack.body.variants?.worked_example?.flags ?? []));
+      check("content", "three graded hints and a three-point checklist", (pack.body.hints ?? []).length >= 3 && (pack.body.checklist ?? []).length === 3, `${(pack.body.hints ?? []).length} hints, ${(pack.body.checklist ?? []).length} points`);
+      check("content", "a GET never writes", pack.body.stored === false, String(pack.body.stored));
+
+      const grades = [];
+      for (const index of [0, 1, 2, 9]) {
+        const hint = await read(`/api/v1/content/hint?topic=calculus&concept=calc_rate&index=${index}`);
+        grades.push(hint.body.grade ?? "?");
+      }
+      check("content", "the hint ladder climbs nudge, method, near-answer and then stops", grades.join(",") === "nudge,method,near_answer,near_answer", grades.join(","));
+
+      const unknown = await read("/api/v1/content/pack?topic=calculus&concept=nope");
+      check("content", "an unknown concept names the ones that exist", unknown.status === 404 && /calc_rate/.test(unknown.body.detail ?? ""), `${unknown.status} ${JSON.stringify(unknown.body).slice(0, 120)}`);
+    }
+    closePage({ jar });
+  }
+
   if (run("baseline")) {
     console.log("\x1b[1mbaseline\x1b[0m");
     const page = await open("/baseline", "baseline");

@@ -824,6 +824,74 @@ class EducationalIntelligence:
             out.append({**pick.as_dict(), "item": public_item(rendered), "position": i + 1, "of": len(picks)})
         return out
 
+    # ------------------------------------------------------------------ #
+    # phase 4: the content engine
+    # ------------------------------------------------------------------ #
+
+    def content_pack(
+        self,
+        *,
+        concept: str,
+        kind: str = "variant_set",
+        topic_id: str | None = None,
+        context: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Generate one concept's teaching pack: three variants, a matched pair, hints, a checklist.
+
+        This is the hook the orchestrator's turn cycle looks for
+        (``state/orchestrator.py`` step 3 calls ``ai2.content_pack``), and it is the only place in the
+        app that authors content. The deterministic engine in :mod:`adapt.content` does the work; this
+        method exists so the call arrives with AI 2's identity and the write matrix keeps its promise
+        that authoring belongs to the AI and validating belongs to code.
+
+        ``topic_id`` is the topic key (``calculus``, ``kiswahili``), not a database row id: the engine
+        reads the authored chain by key, which is what makes it usable with no database at all — the
+        same reason the quality gate can run it in a sandbox with no server.
+
+        Returns the payload the registry stores, with ``concept``/``kind``/``payload`` keys the
+        orchestrator reads. A topic with no authored chain returns a payload that says so, because
+        "we have nothing for this concept" is a result and an invented concept is not.
+        """
+        from ..content.pipeline import generate
+
+        result = generate(str(topic_id or concept), concept_id=str(concept), p_know=context.get("p_know") if context else None)
+        if not result.available or not result.packs:
+            return {
+                "payload": {
+                    "concept": str(concept),
+                    "available": False,
+                    "reason": result.reason,
+                    "spec": result.spec,
+                    "packs": [],
+                },
+                "notes": [result.reason, *result.notes],
+            }
+        pack = result.packs[0]
+        payload = pack.as_dict()
+        payload["spec"] = result.spec
+        payload["available"] = True
+        payload["reason"] = result.reason
+        return {"payload": payload, "notes": list(result.notes) + list(result.rejections and [f"rejected: {r['code']}" for r in result.rejections] or [])}
+
+    def validate_pack(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """The deterministic §7.3 check on a pack payload, in the orchestrator's verdict shape.
+
+        Exposed on AI 2 because the orchestrator asks the *generator* to validate what it made, and the
+        honest implementation of that is to hand the payload to the code that has no stake in it. The
+        write matrix still holds where it matters: the store's ``set_validation`` accepts only
+        ``module="code"``, so an AI can never bless its own content in the registry — this verdict
+        travels with the pack as a claim, and the store records it as one.
+        """
+        from ..content.validation import validate_pack
+
+        return validate_pack(payload)
+
+    def breakdown(self, topic_key: str, *, level: str | None = None) -> dict[str, Any]:
+        """A topic's concepts, prerequisites, misconceptions and objectives (§7.1)."""
+        from ..content.breakdown import breakdown_for
+
+        return breakdown_for(topic_key, level=level).as_dict()
+
     @staticmethod
     def _item_dict(it: Any) -> dict[str, Any]:
         """One stored item as the plain dict the selector expects."""

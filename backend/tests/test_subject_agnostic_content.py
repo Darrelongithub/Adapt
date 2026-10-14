@@ -201,8 +201,23 @@ def test_approving_the_visual_strategy_changes_what_is_served(services, learner,
     revoked = client.post("/api/v1/adaptations/strategy/visual_representation/revoke", headers=headers)
     assert revoked.status_code == 200, revoked.text
     restored = client.get("/api/v1/practice?count=3", headers=headers).json()["items"]
-    restored_methods = {
-        ((e.get("presentation") or {}).get("method_assignment") or {}).get("method") or (e.get("presentation") or {}).get("method")
+    assert restored
+    # The property is "the approved adaptation is no longer in charge", and the payload says who is:
+    # an assignment made *by an adaptation* carries ``assigned_by="approved_adaptation"`` and a design
+    # of ``assigned_by_adaptation``, while the counterbalanced rotation says otherwise. Asserting on
+    # the method itself was wrong and flaky — once the directive is gone, ``assign_method`` falls back
+    # to a seeded rotation that can legitimately hand every served concept the same method (about one
+    # run in six, which is how often this test used to fail for no reason). Which method a learner is
+    # served is not what revoking promises; that nothing is forcing it is.
+    still_forced = [
+        (e.get("presentation") or {}).get("method_assignment")
         for e in restored
-    }
-    assert restored_methods != {"visual"}, f"revoking did not take effect: {restored_methods}"
+        if ((e.get("presentation") or {}).get("method_assignment") or {}).get("assigned_by") == "approved_adaptation"
+    ]
+    assert not still_forced, f"revoking did not take effect: {still_forced}"
+    # And the teaching is the learner's own again: at least one served item is taught by the rotation
+    # rather than by the revoked directive.
+    assert any(
+        ((e.get("presentation") or {}).get("method_assignment") or {}).get("assigned_by") != "approved_adaptation"
+        for e in restored
+    )

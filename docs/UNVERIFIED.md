@@ -499,9 +499,11 @@ names.
 
 **Not verified here, and how to check each:**
 
-1. **Phase 4's generative content engine does not exist.** Nothing to verify; it is named in the
-   audit table in `docs/FUNCTIONALITY_ROUND.md` and is the largest remaining gap against the brief.
-   The deterministic half (hints, examples, authored pools) *is* verified — by the gate above.
+1. **Phase 4's engine assembles from authored chains; it has never written a pack with a model.**
+   `ai2.content_pack` is the hook, the validation and the cache are the same code either way, and
+   nothing here has exercised the model path — there is no key. The deterministic path *is* verified:
+   37 concepts × (3 variants + 2 pair legs + 3 hints + 3 checklist points) across 11 topics, checked
+   by the gate, by 56 unit tests and by 15 probe checks over HTTP.
 2. **The model pass of the quality gate.** `QUALITY_REPORT.md` says "not run" in those words. On a
    machine with a key and network: `ADAPT_GEMINI_API_KEY=... .venv/bin/python
    scripts/teaching_quality_eval.py` and compare the flagged count with the deterministic one.
@@ -513,3 +515,27 @@ names.
 4. **The subject round over HTTP was walked in jsdom**, not by a person: 17 probe checks plus 61
    backend tests. The visual design of the screens (density at 1280px, the round on a phone) is
    unverified like every other screen.
+
+## Round: the content engine (2026-10-14)
+
+Verified here: the whole backend suite (**1091 passed**), the contract linter and typecheck, the
+production build, the full jsdom probe walk (**280 checks, 235 API calls, exit 0**, including a new
+15-check `content` scenario that judges the engine's API directly), the quality gate (**zero flags
+across 273 questions**), and the exact symbolic checker against hand-computable cases (equivalence,
+differentiation, linear and quadratic solving, and the refusals).
+
+**Not verified here, and how to check each:**
+
+1. **A model-written pack.** No key, so `ai2.content_pack` has only ever been driven deterministically.
+   On a machine with a key: build a pack for a topic with no authored chain, and confirm the pack says
+   it was written rather than sourced — and that a rejection still carries its reason.
+2. **The engine behind a screen.** No UI calls `/api/v1/content/*` yet, so the routes are exercised by
+   the probe and the tests but not by a learner clicking. A human should decide where the pack belongs
+   in the subject-round screen, and then the probe's `content` scenario becomes a screen walk.
+3. **Screenshots remain impossible** (no browser can be installed here — `ECONNRESET`). The `content`
+   scenario is an API walk precisely because there is no screen to photograph.
+4. **The symbolic checker's scope.** It covers polynomials and rational functions exactly and refuses
+   everything else by name. Trigonometry, logarithms, matrices and irrational roots are *refused*, not
+   approximated — so an item using them is flagged `unverified` rather than checked. That is a stated
+   limit of the checker, not a defect, but it means such items are never scored on this path.
+5. **`docs/screens/` is still empty** for the same reason as before.

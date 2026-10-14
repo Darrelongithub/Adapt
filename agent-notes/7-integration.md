@@ -190,3 +190,37 @@ learner-safe sentences and log the install hint instead (it is also in `docs/VOI
   concept, matched pairs, symbolic verification) is not built. That is the largest remaining gap
   against the brief and it is named in the final report.
 * Everything a browser or a live model key would verify is in `docs/UNVERIFIED.md`.
+
+## Fourth wave: phase 4's content engine, built
+
+The audit's one real gap was §7: agent 3 never landed a branch, so the pipeline the brief describes
+did not exist. It does now, in `backend/src/adapt/content/`.
+
+**The design decision, stated so it can be argued with.** The engine *assembles* packs from the
+authored prerequisite chains rather than writing them with a model. A concept's written variant is the
+chain's description; its visual spec is `learning.visuals.build_visual` on that description; its worked
+example is four steps each taken from an authored rung; its pair is the rung-3 and rung-4 tasks; its
+hints quote the rung-2 explanation and the rung-1 near-miss; its checklist is the rung-5 rubric. Every
+part records its source. `ai2.content_pack` is the hook for a model to do the same job with the same
+validation and the same cache, and nothing here has exercised it (no key).
+
+**Three rules the code enforces that are worth knowing before editing:**
+
+1. A pack's difficulty is **not declared**. The chain kits carry none (the ladder places by rung), and
+   inventing one would put a number in the pack that no authored source supports. `validate_item`
+   therefore has nothing to reject on the band rule for these items, and says so.
+2. The matched pair is matched on **concept and format, never on difficulty** — rungs 3 and 4 are
+   different demands by design. Compare the legs with `methodtest.expected_accuracy`, not raw scores.
+3. `validate_item` applies §7.3's four rejections to everything; `validate_for_bank` adds the
+   bank-insertion rules (stem already in the bank, every distractor explained) for the one caller that
+   inserts rows. Applying those globally would reject content the ladder has always served.
+
+**Defects found and fixed while building it** (full list in `docs/FUNCTIONALITY_ROUND.md`, integration
+report 3): `worked.PLACEHOLDER` reading set notation as a variable; the worked example restating the
+raw stem as step 1; `key_verification` being fed the stored shape instead of the candidate shape; the
+answer-leak rule firing on quoted material; a difficulty tolerance that never fired; and a choice item
+whose `correct` flags and `correct_index` disagreed passing as one key. Plus one pre-existing flake in
+`test_subject_agnostic_content.py`, now asserting the property it meant.
+
+**Numbers:** 1091 tests passed (was 1035); 280/280 probe checks (was 265), including a new 15-check
+`content` scenario; zero gate flags across 273 questions (was 199).

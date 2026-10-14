@@ -9,16 +9,16 @@ change: the gate is the script's exit code (zero on a clean deterministic path).
 | subject family | content items | questions checked | explanations | hints | worked examples |
 |---|---|---|---|---|---|
 | generic | 16 | 16 | 0 | 0 | 0 |
-| history | 24 | 24 | 0 | 0 | 0 |
-| languages | 24 | 24 | 0 | 0 | 0 |
-| maths | 110 | 110 | 63 | 189 | 63 |
-| sciences | 25 | 25 | 0 | 0 | 0 |
-| **total** | **199** | **199** | **63** | **189** | **63** |
+| history | 31 | 38 | 0 | 21 | 7 |
+| languages | 33 | 42 | 0 | 27 | 9 |
+| maths | 124 | 138 | 63 | 231 | 77 |
+| sciences | 32 | 39 | 0 | 21 | 7 |
+| **total** | **236** | **273** | **63** | **300** | **100** |
 
-**Distinct topics walked: 56** — algebra, apply, area_perimeter, argument, bio_photosynthesis, biology, calculus, cause_chains, cause_consequence, checking, chronology, collecting_terms, comprehension, data_sense, decimals, equivalent_fractions, experimental_thinking, explain, flexibility, fraction_add, fraction_mult, fractions_intro, government, grammar, grammar_sense, graph_sense, graphs_lines, history_ww1, indices, integer_ops, linear_equations, logic_chains, negative_numbers, number_sense, order_of_operations, pattern_structure, percentages, perspective, predict, prediction_models, probability, production, ratio, rearranging, recall, recognise, scale_sense, source_analysis, spot_error, standard_form, statistical_mean, statistics, symbol_fluency, translate_words, unit_conversion, vocabulary_context.
+**Distinct topics walked: 61** — algebra, apply, area_perimeter, argument, bio_photosynthesis, biology, calculus, cause_chains, cause_consequence, checking, chemistry, chronology, collecting_terms, comprehension, data_sense, decimals, discrete maths, equivalent_fractions, essay writing, experimental_thinking, explain, flexibility, fraction_add, fraction_mult, fractions_intro, government, grammar, grammar_sense, graph_sense, graphs_lines, history_ww1, indices, integer_ops, kiswahili, linear_equations, logic_chains, negative_numbers, number_sense, order_of_operations, pattern_structure, percentages, perspective, predict, prediction_models, probability, production, ratio, rearranging, recall, recognise, scale_sense, source_analysis, spot_error, standard_form, statistical_mean, statistics, symbol_fluency, translate_words, unit_conversion, vocabulary_context, world history.
 
 The brief's gate asks for at least 40 questions across at least 6 subjects. This run checked
-**199 questions across 56 named topics** in 5 subject families.
+**273 questions across 61 named topics** in 5 subject families.
 
 The 63 explanations came out three ways, told apart by the reply's own note:
 
@@ -31,7 +31,7 @@ presented as the learner's own material.
 
 ## The deterministic path: the five gate flags
 
-**Zero flags across 199 questions.** No off-topic text, no missing example, no
+**Zero flags across 273 questions.** No off-topic text, no missing example, no
 generic hint, no placeholder leakage, no answer key disagreeing with the worked example —
 on every deterministic item in the repository, which is the whole of what a learner sees
 without a key.
@@ -40,6 +40,7 @@ without a key.
 
 * `no_item_reason` — 17
 * `thin_example` — 3
+* `engine_coverage` — 1
 
 | note | where | detail |
 |---|---|---|
@@ -63,6 +64,24 @@ without a key.
 | `no_item_reason` | `history_ww1/What was the immediate trigger of the First Worl` | the item carries no reasoning of its own; the explanation path supplies the topic's material |
 | `thin_example` | `example:bio_photosynthesis/Name the green pigment in chloroplasts that trap` | 1 step(s) |
 | `no_item_reason` | `bio_photosynthesis/Which two substances does a plant take in for ph` | the item carries no reasoning of its own; the explanation path supplies the topic's material |
+| `engine_coverage` | `engine` | concepts=37; matched_pair=37; rejections=0; teach_back_checklist=37; three_hints=37; topics=11; visual_spec=37 |
+
+## The generated path (brief 7.1-7.6)
+
+Everything above is authored content. This section is produced at run time by `adapt.content` — the concept breakdown, the three variants per concept, the matched question pair, the graded hints and the checklist — and then checked by the same five flags plus the section 7.3 rejections.
+
+| what | count |
+|---|---|
+| concepts | 37 |
+| matched pair | 37 |
+| rejections | 0 |
+| teach back checklist | 37 |
+| three hints | 37 |
+| topics | 11 |
+| visual spec | 37 |
+| worked example | 37 |
+
+Each concept's written variant, visual spec, worked example, pair, hints and checklist is assembled from the topic's authored prerequisite chain, and every part records where it came from. The pair is matched on concept and format and is **not** claimed to be matched on difficulty: the two legs are rungs 3 and 4, which are different demands by design, so a comparison between them has to use expected performance and never raw scores.
 
 ## The model pass
 

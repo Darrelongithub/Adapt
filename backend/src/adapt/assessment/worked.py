@@ -40,7 +40,12 @@ from typing import Any, Callable, Mapping, Sequence
 #: generated set, the served set and the quality report all have to agree on what is meant.
 HINT_GRADES = ("nudge", "method", "near_answer")
 
-PLACEHOLDER = re.compile(r"\{(\w+)\}")
+#: An unrendered ``{name}`` placeholder. The name must *start* with a letter, matching
+#: ``numbas._UNRENDERED`` (the repo's other placeholder check): ``\{3\}`` is a set containing 3,
+#: not a missing variable, and the old ``\w+`` pattern flagged every worked example that used set
+#: notation -- which the content engine's set-theory concepts do. No real placeholder is lost:
+#: every variable in the bank is named ``[a-zA-Z_]\w*``, so ``{ans}``, ``{a}`` and ``{b}`` still match.
+PLACEHOLDER = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}")
 
 #: Words that carry no information about *which* question this is, so a "specific" hint built
 #: out of one of them would be the generic hint again with a different shape.

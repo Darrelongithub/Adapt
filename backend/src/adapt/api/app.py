@@ -32,7 +32,17 @@ from ..security.middleware import (
     TrustedHostMiddleware,
 )
 from ..services import attach, build
-from .routes import adaptations, auth, baseline, evidence, learning, lessons, system, tutor
+from .routes import (
+    adaptations,
+    auth,
+    baseline,
+    content,
+    evidence,
+    learning,
+    lessons,
+    system,
+    tutor,
+)
 from .ws import router as ws_router
 
 log = logging.getLogger("adapt.api")
@@ -154,6 +164,7 @@ def create_app() -> FastAPI:
         auth.router,
         learning.router,
         lessons.router,
+        content.router,
         adaptations.router,
         lesson_plan.router,
         subjects.router,

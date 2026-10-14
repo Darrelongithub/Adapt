@@ -50,7 +50,12 @@ from adapt.assessment import bank as BANK  # noqa: E402
 from adapt.assessment import worked as WORKED  # noqa: E402
 from adapt.ai import local_tutor as TUTOR  # noqa: E402
 
-PLACEHOLDER = re.compile(r"\{(\w+)\}")
+#: An unrendered `{name}` placeholder. The name must start with a letter, matching
+#: ``assessment.numbas._UNRENDERED`` and ``assessment.worked.PLACEHOLDER``: `{3}` is a set
+#: containing 3, and the old `\w+` pattern flagged every set-theory worked example the content
+#: engine generates. Three copies of one rule is two too many; this is the third, and it now says
+#: the same thing as the other two.
+PLACEHOLDER = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}")
 GENERIC_MARKERS = (
     "write down the single fact the question is asking for",
     "read the question again carefully",
@@ -411,6 +416,105 @@ def walk_popup_lessons(coverage: dict[str, Coverage], flags: list[Flag], notes: 
                 _check_question(entry, f"{where}#{i}", flags, notes)
 
 
+def walk_content_engine(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note]) -> dict[str, Any]:
+    """The generated half of the brief: the §7 pipeline, walked end to end.
+
+    Everything here is produced by ``adapt.content`` at run time rather than read from a table, so
+    this is the only walker that exercises *generation* and *validation* rather than authored content.
+    It applies the same five gate flags, plus the §7.3 rejections as flags in their own right — a
+    generated item that fails the brief's mandatory check is exactly what the gate exists to catch.
+
+    Returns the engine's own coverage counts (with n) so the report can state what was generated
+    without this script re-counting it.
+    """
+    from adapt.content import pipeline as PIPE
+    from adapt.content.breakdown import breakdown_for
+
+    families = {
+        "calculus": "maths", "algebra": "maths", "statistics": "maths", "discrete_maths": "maths",
+        "grammar": "languages", "kiswahili": "languages", "essay_writing": "languages",
+        "biology": "sciences", "chemistry": "sciences",
+        "government": "history", "world_history": "history",
+    }
+    totals: dict[str, Any] = {
+        "topics": 0, "concepts": 0, "worked_example": 0, "matched_pair": 0,
+        "three_hints": 0, "teach_back_checklist": 0, "visual_spec": 0, "rejections": 0,
+    }
+    for key in (
+        "calculus", "algebra", "statistics", "government", "biology", "chemistry",
+        "world_history", "grammar", "essay_writing", "discrete_maths", "kiswahili",
+    ):
+        family = families.get(key, "generic")
+        cov = coverage.setdefault(family, Coverage(family))
+        cov.topics.add(key.replace("_", " "))
+        result = PIPE.generate(key)
+        totals["topics"] += 1
+        if not result.available:
+            flags.append(Flag("missing_content", f"engine:{key}", result.reason))
+            continue
+        for rejection in result.rejections:
+            totals["rejections"] += 1
+            flags.append(Flag("engine_rejected", f"engine:{key}", f"{rejection['code']}: {rejection['detail'][:120]}"))
+        for pack in result.packs:
+            where = f"engine:{key}:{pack.concept_id}"
+            totals["concepts"] += 1
+            cov.items += 1
+            example = pack.variants.get("worked_example") or {}
+            steps = example.get("steps") or []
+            if steps:
+                totals["worked_example"] += 1
+                cov.examples += 1
+                body = " ".join(str(s.get("text") or "") for s in steps)
+                if PLACEHOLDER.search(body):
+                    flags.append(Flag("placeholder", where, "an unrendered placeholder in a generated worked example"))
+                if example.get("verified") is not True:
+                    flags.append(Flag("key_disagrees", where, f"the worked example failed its own gate: {example.get('flags')}"))
+                if len(steps) < 3:
+                    notes.append(Note("thin_example", where, f"{len(steps)} step(s) in a generated worked example"))
+            else:
+                flags.append(Flag("missing_example", where, "a generated concept has no worked example"))
+            if pack.pair.get("A") and pack.pair.get("B"):
+                totals["matched_pair"] += 1
+                cov.questions += 2
+                for leg in ("A", "B"):
+                    item = dict(pack.pair[leg])
+                    item.setdefault("kind", "mcq")
+                    _check_question(item, f"{where}:{leg}", flags, notes)
+            else:
+                flags.append(Flag("missing_content", where, "a generated concept has no matched question pair"))
+            if len(pack.hints) >= 3:
+                totals["three_hints"] += 1
+                cov.hints += 3
+                for hint in pack.hints[:3]:
+                    text = str(hint.get("text") or "")
+                    if any(marker in text.lower() for marker in GENERIC_MARKERS):
+                        flags.append(Flag("generic_hint", where, f"a generated hint reads as generic: {text[:90]}"))
+                    if PLACEHOLDER.search(text):
+                        flags.append(Flag("placeholder", where, "an unrendered placeholder in a generated hint"))
+            else:
+                flags.append(Flag("generic_hint", where, f"only {len(pack.hints)} hint(s) for a generated concept"))
+            if pack.checklist:
+                totals["teach_back_checklist"] += 1
+            else:
+                notes.append(Note("no_checklist", where, "a generated concept has no teach-back checklist"))
+            visual = pack.variants.get("visual") or {}
+            if visual.get("nodes") or visual.get("rows") or visual.get("labels"):
+                totals["visual_spec"] += 1
+            if not str((pack.variants.get("written") or {}).get("text") or "").strip("[]'\" "):
+                flags.append(Flag("missing_content", where, "a generated concept has no written variant"))
+    for pack in (breakdown_for("astrophysics"),):
+        if pack.available:
+            flags.append(Flag("missing_content", "engine:astrophysics", "a topic with no chain reported content"))
+    notes.append(
+        Note(
+            "engine_coverage",
+            "engine",
+            "; ".join(f"{k}={v}" for k, v in sorted(totals.items())),
+        )
+    )
+    return totals
+
+
 def model_pass() -> dict[str, Any]:
     """The model half of the gate. Only runs with a key; otherwise says so in those words."""
     key = os.environ.get("ADAPT_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -440,6 +544,7 @@ def report(
     flags: list[Flag],
     notes: list[Note],
     model: dict[str, Any],
+    engine: dict[str, Any] | None = None,
 ) -> str:
     total_items = sum(c.items for c in coverage.values())
     total_q = sum(c.questions for c in coverage.values())
@@ -524,6 +629,29 @@ def report(
         if len(notes) > 25:
             lines.append(f"| … | | {len(notes) - 25} more |")
     lines.append("")
+    if engine:
+        lines.append("## The generated path (brief 7.1-7.6)")
+        lines.append("")
+        lines.append(
+            "Everything above is authored content. This section is produced at run time by "
+            "`adapt.content` — the concept breakdown, the three variants per concept, the matched "
+            "question pair, the graded hints and the checklist — and then checked by the same five "
+            "flags plus the section 7.3 rejections."
+        )
+        lines.append("")
+        lines.append("| what | count |")
+        lines.append("|---|---|")
+        for key, value in sorted(engine.items()):
+            lines.append(f"| {key.replace('_', ' ')} | {value} |")
+        lines.append("")
+        lines.append(
+            "Each concept's written variant, visual spec, worked example, pair, hints and checklist is "
+            "assembled from the topic's authored prerequisite chain, and every part records where it "
+            "came from. The pair is matched on concept and format and is **not** claimed to be matched "
+            "on difficulty: the two legs are rungs 3 and 4, which are different demands by design, so a "
+            "comparison between them has to use expected performance and never raw scores."
+        )
+        lines.append("")
     lines.append("## The model pass")
     lines.append("")
     lines.append(f"* Ran: **{model['ran']}** — {model['why']}")
@@ -553,10 +681,11 @@ def main() -> int:
     walk_bank(coverage, flags, notes)
     walk_subject_pools(coverage, flags, notes)
     walk_popup_lessons(coverage, flags, notes)
+    engine = walk_content_engine(coverage, flags, notes)
     gate = [f for f in flags if f.kind in GATE_FLAGS]
     model = model_pass()
 
-    text = report(coverage, gate, notes, model)
+    text = report(coverage, gate, notes, model, engine=engine)
     Path(args.out).write_text(text, encoding="utf-8")
     print(text)
     print(f"wrote {args.out}", file=sys.stderr)
@@ -567,6 +696,7 @@ def main() -> int:
                     "gate_flags": [f.__dict__ for f in gate],
                     "notes": [n.__dict__ for n in notes],
                     "coverage": {k: v.items for k, v in coverage.items()},
+                    "engine": engine,
                     "model": model,
                 }
             )

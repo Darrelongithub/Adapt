@@ -265,8 +265,20 @@ def test_content_pipeline_does_not_claim_validation_without_a_checker(
         return {"payload": {"text": "test-only content"}}
 
     concept = f"unchecked:{learner['student_id']}"
+    # The "no checker" case has to take the checker away explicitly now: AI 2 gained a deterministic
+    # one (adapt.content.validation.validate_pack) when the phase 4 engine landed, so relying on it
+    # being absent no longer tests the branch it was written for. The property under test is
+    # unchanged -- nothing is ever marked "validated" without a check that said so.
+    monkeypatch.setattr(services.orchestrator, "ai2", SimpleNamespace())
     cid = services.orchestrator.ensure_content(concept, generator=generator)
     assert services.state.get_content(cid)["validation"] == "unvalidated"
+    # And the real checker, given a payload that is not a teaching pack, refuses it rather than
+    # blessing it: no worked example, no matched pair, nothing a learner could be taught from.
+    monkeypatch.undo()
+    refused_by_the_real_checker = services.orchestrator.ensure_content(
+        f"not_a_pack:{concept}", generator=generator
+    )
+    assert services.state.get_content(refused_by_the_real_checker)["validation"] == "rejected"
     monkeypatch.setattr(
         services.orchestrator,
         "ai2",
