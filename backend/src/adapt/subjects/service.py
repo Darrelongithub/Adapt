@@ -336,7 +336,8 @@ class Subjects:
     # ------------------------------------------------------------------ #
     # the round: start, view, answer, finish
     # ------------------------------------------------------------------ #
-    def start_round(self, student_id: str, *, topic: str, seed: int | None = None) -> dict[str, Any]:
+    def start_round(self, student_id: str, *, topic: str, seed: int | None = None,
+                    selected_skills: list[str] | None = None, comments: str = "") -> dict[str, Any]:
         """Open a round for a topic, or hand back the unfinished one for the same topic.
 
         One open round per (learner, topic): two would be two ladders climbing at once and one
@@ -344,6 +345,25 @@ class Subjects:
         """
         resolved, leanings, placement = self._place_text(student_id, topic)
         plan = P.plan_tests(leanings)
+        if selected_skills is not None:
+            from dataclasses import replace
+
+            selected = set(selected_skills)
+            offered = {item.skill.id for item in plan.tested}
+            if not selected or not selected <= offered:
+                raise SubjectsError("Select at least one skill from the proposed outline before starting")
+            kept = tuple(item for item in plan.tested if item.skill.id in selected)
+            removed = tuple(
+                P.SkippedSkill(skill=item.skill, rating=item.rating, reason="You chose not to include this in the outline")
+                for item in plan.tested if item.skill.id not in selected
+            )
+            plan = replace(
+                plan, tested=kept, skipped=(*plan.skipped, *removed),
+                estimated_seconds=sum(item.seconds for item in kept),
+                cross_check=plan.cross_check if plan.cross_check in selected else None,
+                reason="Your reviewed outline: " + ", ".join(item.skill.title for item in kept) + ". Unchecked skills are not measured.",
+            )
+        review = {"selected_skills": list(plan.tested_ids), "comments": comments.strip()[:2000]}
         with self._sess() as s:
             existing = s.execute(
                 select(SubjectRound)
@@ -355,6 +375,12 @@ class Subjects:
                 .order_by(SubjectRound.started_at.desc())
             ).scalars().first()
             if existing is not None:
+                stored_review = (existing.plan or {}).get("learner_review", {})
+                if selected_skills is not None and (
+                    set(selected_skills) != {item["id"] for item in (existing.plan or {}).get("tested", [])}
+                    or review["comments"] != stored_review.get("comments", "")
+                ):
+                    raise SubjectsError("This topic already has an unfinished round. Resume it from Home before changing its saved outline")
                 return self.view(student_id, existing.id)
             row = SubjectRound(
                 student_id=student_id,
@@ -365,7 +391,9 @@ class Subjects:
                 stage="skills",
                 resolved=resolved.as_dict(),
                 leanings=leanings.as_dict(),
-                plan=plan.as_dict(),
+                plan={**plan.as_dict(), "learner_review": review},
+                # Both facts about this round: the outline the learner reviewed, and how the
+                # topic was placed (the merged call's own account of itself, item 1).
                 completion={"stages_seen": ["skills"], "placement": placement},
             )
             s.add(row)
@@ -401,7 +429,7 @@ class Subjects:
                     "resolved_from": resolved.source,
                     "raw": resolved.raw,
                 },
-                "plan": plan.as_dict(),
+                "plan": {**plan.as_dict(), "learner_review": (run.plan or {}).get("learner_review")},
                 "reason": plan.reason,
                 "taxonomy_version": TAXONOMY_VERSION,
                 "measured_trials": len([t for t in trials if t.phase == "measure" and t.correct is not None]),

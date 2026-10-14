@@ -1306,3 +1306,9 @@ __all__ = [
 # order -- a create-all database could silently lack them and the first subject round would fail on
 # a missing table.
 from ..subjects import models as _subject_models  # noqa: E402,F401
+
+# The journey's one table (round 2, Part D), for the same reason and by the same rule:
+# ``create_all`` builds whatever is on ``Base.metadata`` when it runs, and ``alembic check``
+# compares the database against exactly that. Importing the module is what guarantees both
+# see ``journey_stages`` no matter which module a process imported first.
+from ..journey import models as _journey_models  # noqa: E402,F401

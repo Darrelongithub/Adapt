@@ -1,7 +1,7 @@
 """which class of work each call was, and how much of it the cache served
 
-Revision ID: 0009
-Revises: P2_subject_round
+Revision ID: 0010
+Revises: 0009
 Create Date: 2026-10-14 10:20:00.000000
 
 Adds the two columns the cost round needs to be *checkable* rather than believed:
@@ -30,8 +30,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = '0009'
-down_revision: str | None = 'P2'
+revision: str = '0010'
+down_revision: str | None = '0009'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

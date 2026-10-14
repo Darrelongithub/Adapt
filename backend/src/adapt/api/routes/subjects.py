@@ -57,6 +57,8 @@ class ResolveBody(BaseModel):
 
 class RoundBody(BaseModel):
     topic: str = Field(min_length=1, max_length=240)
+    selected_skills: list[str] | None = Field(default=None, max_length=20)
+    comments: str = Field(default="", max_length=2000)
 
 
 class TrialBody(BaseModel):
@@ -212,7 +214,9 @@ def start_round(
 ) -> dict[str, Any]:
     """Open a round for a topic, or hand back the unfinished one for the same topic."""
     try:
-        return _subjects().start_round(student.id, topic=body.topic)
+        return _subjects().start_round(
+            student.id, topic=body.topic, selected_skills=body.selected_skills, comments=body.comments,
+        )
     except SubjectsError as exc:
         raise _refused(exc) from None
 

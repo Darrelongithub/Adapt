@@ -1,14 +1,39 @@
 # ADAPT web
 
-Next 16 (App Router) and React 19, one client tree per screen, Tailwind 4, and no data layer of
+Next 15 (App Router) and React 19, one client tree per screen, Tailwind 4, and no data layer of
 its own: every screen talks to the FastAPI backend through `src/lib/api.ts`, which is the only file
 allowed to know what a session cookie, a CSRF token and the `/api/v1` prefix are.
 
 ```bash
 npm ci
-npm run dev          # node server.mjs — binds 0.0.0.0:3000, serves Next in dev
+npm run host         # recommended for using/sharing the app: build, then run both servers
+npm run dev          # for editing code: API + Next development server, shared on Wi-Fi
+npm run dev:web      # frontend only, for a separately managed API
 npm run build && npm run start   # the same server, production build
 ```
+
+**For smooth page switching, use `npm run host`.** It builds all routes before starting both
+servers, so the first click on a section does not wait for development compilation. Stop any
+running dev server before switching modes: both use `.next`. Startup takes the build time;
+normal navigation then uses the production build. `npm run dev` is still the editing workflow.
+Both commands use the existing Wi-Fi supervisor and stop both servers with Ctrl+C.
+
+`npm run dev` uses `dev.mjs` to find the repository's `.venv` and run `adapt host --dev`.
+Install the backend once from the repository root with
+`.venv/bin/python -m pip install -e "./backend[dev]"` (create `.venv` first if needed).
+It upgrades the database before seeding, starts both servers, prints a LAN address, and
+stops both on Ctrl+C or if either service exits. Next runs in development mode without a
+production build. The exact detected Wi-Fi IP is added to the API trust list and the Next
+HMR allowlist; no wildcard LAN trust is added. The existing room launcher raises rate limits
+for shared-Wi-Fi traffic for these processes only, as reported in its banner.
+
+Use `npm run dev -- --ip <wifi-ip>` if VPN/interface detection picks the wrong address,
+`PORT=3001 npm run dev` for a different web port, or `ADAPT_PYTHON=/path/to/python` to
+choose a Python environment. Other devices must be on the same network and your firewall
+must allow the web port. The microphone on a phone requires HTTPS; `--tunnel` is opt-in.
+
+`npm run dev:web` and `npm run start` still run the frontend only. For a mock-only preview,
+use `ADAPT_API=offline npm run dev:web` and open `http://localhost:3000/?mock=1`.
 
 `server.mjs` is not `next dev`. It is a small Node server that serves Next and proxies `/api/*`,
 `/healthz` and the `Upgrade /ws/voice` handshake to the backend, so the browser only ever talks to
@@ -22,13 +47,40 @@ screen has to say so rather than spinning). Nothing in `src/` reads `process.env
 that did would ship `undefined` — and `player.test.mjs` fails the build if engine code starts naming
 a host.
 
-## The five commands that gate this directory
+## Entry, home, and subject outlines
+
+* The welcome cover exists in the initial HTML. The app underneath is hidden/inert until it
+  finishes; storage failure fails open rather than trapping someone at the welcome sentence.
+* `SessionGate` does not mount protected pages or the sidebar while signed out. The floating
+  consent/login card cannot be dismissed by Escape or clicking outside. Decline keeps it locked.
+* Registration and guest creation store the explicit analytics choice and keep model sharing off.
+  Successful authentication returns the profile directly; older session reads cannot overwrite it.
+* With no saved baseline history, entry routes to `/baseline`. Once a learner has started a
+  baseline (even if unfinished), subsequent sign-ins go to Home. The dashboard offers resume links
+  instead of silently restarting the check. Existing signed-in sessions can navigate normally.
+* Home reads real progress, due reviews and owned unfinished lesson/baseline/subject runs. An
+  empty or unavailable result is labelled, not replaced by sample metrics.
+* Subject round has a required subject and optional specific topic, then a reviewable **assessment
+  outline**. The checked skills determine the saved round. Comments are stored in its encrypted
+  plan and displayed on resume; comments do not automatically rewrite the outline or its content.
+
+Regression walk (against either running mode):
+
+```bash
+npm run probe -- --only home,settings,navigation,subject-outline
+```
+
+This uses hydrated pages under jsdom, including delayed navigation, guest entry and a returning
+login. It does not establish how the interface paints on a real phone; check that on your Wi-Fi.
+
+## Checks
 
 | command | what it proves |
 | --- | --- |
 | `npm run lint` | `node ../scripts/check-contract.mjs && tsc --noEmit`. The contract check reads both sides as *source* — no server, no key, no network: every path the frontend calls exists in the API; `?mock=1` has a fixture for each; route modules export only what Next allows; no hard-coded origin, no `process.env` in browser code, no key material; `/ws/voice` really is proxied; `allowedDevOrigins` covers `localhost`, `127.0.0.1` and the preview domain; and the sim modules, the stage registry and the mock's kinds agree on which scene kinds exist. |
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm run test:engine` | `node --test src/lib/engine/*.test.mjs` — the player's rules (gate, clamping, timing, reduce-motion) plus two source assertions over `player.ts`, `types.ts` and `components/scenes/*`. |
+| `npm run test:dev` | launcher interpreter selection, command forwarding, and missing-backend setup guidance. |
 | `npm run test:server` | `node --test server.test.mjs`: the launcher itself — `ADAPT_API=offline` must refuse with a 503 and keep serving the UI (on its own port and its own output directory), a request carrying a LAN `Host` must reach the API as `127.0.0.1`, and an upgrade must come back with the `101`'s own headers intact. |
 | `npm run probe` | jsdom driving the real pages against a running dev server + API: click, type, answer, reload, then compare what the screen says with what the API says. `--only diagnose,lesson` and `--base http://host:port` are the two knobs. |
 | `npm run probe:mock -- --only lesson` | the same lesson screen on `?mock=1`, asserting the things the mock *can* honestly show — and that it touches no `/api/v1` endpoint at all. |

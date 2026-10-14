@@ -899,6 +899,7 @@ def serve(
 
 @app.command("host")
 def host_cmd(
+    dev: bool = typer.Option(False, "--dev", help="use Next development mode (no production build)"),
     port: int = typer.Option(None, "--port", help="the address people open: the web app's port (default 3000)"),
     data_dir: Path = typer.Option(None, "--data-dir", help="data directory for the API (default: ADAPT_DATA_DIR from your environment, else var/)"),
     tunnel: bool = typer.Option(False, "--tunnel", help="also open an https tunnel (cloudflared, else npx localtunnel): the microphone needs https, and it works off-wifi"),
@@ -968,9 +969,15 @@ def host_cmd(
         configured_multiplier=st.rate_limit_multiplier,
         room_multiplier=multiplier,
     )
-    web_env = H.build_web_env(os.environ, api_port=api_port, web_port=web_port, production=True)
+    web_env = H.build_web_env(
+        os.environ, api_port=api_port, web_port=web_port, production=not dev, lan_ip=lan_ip,
+    )
 
-    if not frontend.built:
+    if dev and not frontend.installed:
+        typer.secho("frontend dependencies are missing: run `cd frontend && npm ci`", fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+
+    if not dev and not frontend.built:
         if not frontend.installed:
             typer.secho(f"{frontend.directory}/node_modules is missing: run `cd frontend && npm ci` first", fg=typer.colors.RED)
             raise typer.Exit(code=2)

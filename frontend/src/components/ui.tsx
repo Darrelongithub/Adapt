@@ -419,8 +419,8 @@ export function SessionLog({ title, entries, empty }: { title: string; entries: 
 /* session + status, kept in one place so every page agrees            */
 /* ------------------------------------------------------------------ */
 
-type SessionState = { me: Record<string, unknown> | null; loading: boolean; unknown?: string | null; refresh: () => void; signOut: () => Promise<void> };
-const SessionCtx = createContext<SessionState>({ me: null, loading: true, unknown: null, refresh: () => {}, signOut: async () => {} });
+type SessionState = { me: Record<string, unknown> | null; loading: boolean; unknown?: string | null; refresh: () => void; establish: (me: Record<string, unknown>) => void; signOut: () => Promise<void> };
+const SessionCtx = createContext<SessionState>({ me: null, loading: true, unknown: null, refresh: () => {}, establish: () => {}, signOut: async () => {} });
 export const useSession = () => useContext(SessionCtx);
 export const SessionProvider = SessionCtx.Provider;
 

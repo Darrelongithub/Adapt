@@ -197,6 +197,7 @@ export type Me = {
   role: string;
   onboarding_complete: boolean;
   diagnostic_complete: boolean;
+  baseline_started?: boolean;
   voice_enabled: boolean;
   voice_gender: string;
   language: string;
