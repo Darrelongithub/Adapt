@@ -16,6 +16,7 @@ export const NAV = [
   { href: "/review", label: "Review" },
   { href: "/progress", label: "Progress" },
   { href: "/baseline", label: "Mind check" },
+  { href: "/subject", label: "Subject round" },
   { href: "/contrast", label: "Compare lessons" },
   { href: "/evidence", label: "Evidence" },
   { href: "/voice", label: "Voice" },

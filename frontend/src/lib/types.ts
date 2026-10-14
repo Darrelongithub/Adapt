@@ -113,6 +113,12 @@ export type Receipt = {
     followup?: string | null;
     words?: number;
     note?: string;
+    /** One sentence from the 3-point grader, always present, <=220 chars, second person. */
+    feedback?: string;
+    /** Non-empty only when a configured model named one and the verbatim-quote gate passed it. */
+    misconceptions?: string[];
+    /** "rules" or "model" -- which path produced `feedback`, said honestly. */
+    feedback_source?: string;
   } | null;
   retention?: Record<string, unknown> | null;
   flags?: string[];
@@ -219,6 +225,22 @@ export type DataProtection = {
   protected?: string[];
   not_protected?: string[];
   note?: string;
+};
+
+/** `GET /api/v1/review/check` -- the retention check (prompt 5).
+ *  `expected_answer_notes` is the answer key: fetch it with `with_notes=1` only *after* the
+ *  learner has answered, never beside the question. */
+export type RetentionCheck = {
+  topic_id: string;
+  title: string;
+  question: string;
+  rationale: string;
+  lag_hours?: number;
+  expected_recall?: number | null;
+  grounded_item_id?: string | null;
+  source: "rules" | "model" | string;
+  expected_answer_notes?: string;
+  notes?: string;
 };
 
 export type Health = {

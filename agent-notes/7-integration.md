@@ -19,6 +19,46 @@ branch did not:
 
 The only line that had to move in a frozen file is the router registration in `api/app.py`.
 
+## Third wave: agent 2's phase 3 merged (#15), wired, and the phase 4 gate
+
+`arena/01eb08ac-adapt` (agent 2, the subject round) was merged as **PR #15** (`fb51517`). Its own
+handoff (`agent-notes/2-subject-round.md`) listed the frozen-file wiring it could not do; all of it
+is applied here:
+
+1. `services/__init__.py` — `AppServices` carries a `subjects` service, built from the same session
+   factory, store and model client as the rest of the container. The route module's own fallback
+   still exists and now finds the real service.
+2. `api/app.py` — `subjects.router` is registered in the router tuple. Until this line, the screen
+   404'd in the live app (the tests mounted the router themselves).
+3. **`db/models.py`** — `from ..subjects import models as _subject_models` at the bottom. This is
+   what makes `Base.metadata` the *whole* schema whatever a process imported first: `create_all` on
+   app boot and on `adapt init`, and the migration test's expectation, agree from either direction.
+   The alternative (agent 2's own note suggested `db/init_db.py`) fixes only the CLI path; the
+   migration suite's boot script imports `adapt.db.models`, and the order-dependent failure
+   (`test_upgrade_head_builds_the_schema_the_models_describe`, only under a full-suite run) came
+   from exactly that gap.
+4. The migration keeps the placeholder revision id `P2` on `down_revision = "0008"`: it is the
+   single head, the chain is linear, and nothing references the id.
+5. `frontend/src/components/chrome.tsx` gained `Subject round`; the screen was an orphan route.
+
+**Phase 4 (agent 3) never landed a branch.** What exists for §7 is the deterministic half —
+`assessment/worked.py` (three graded hints and a worked example for every item, verified against the
+item's own key) and the subject round's authored pools across five families — plus the gate the
+brief names, which did not exist: `scripts/teaching_quality_eval.py` writes `QUALITY_REPORT.md`,
+and `tests/test_teaching_quality.py` runs the same walks in the suite. That gap is stated in the
+report, not papered over: there is no concept-breakdown pipeline, no per-concept three-variant
+generation, no matched A/B pair generation, no symbolic checker, and no model pass (no key here).
+
+### The defect the gate found on its first run
+
+`local_tutor.explain` served another topic's passage while reporting `grounded: true`. The copy was
+honest about it (the sentence names the source topic), but the brief's rule is exact — 4.1.2:
+"mark `grounded: true` only when the shown text actually matches the item's topic". One line:
+grounding now requires `topic_match`, and a cross-topic answer reports `grounded: false` with the
+topic named. The test that asserted the old behaviour asserted it in as many words
+(`assert answer["meta"]["grounded"] is True`); its expectation is corrected with the §4.1.2 reason
+next to it, and the `topic_id` it now checks is what makes the reply's provenance checkable.
+
 ## What landed
 
 | PR | Branch HEAD | What it brought |
@@ -126,9 +166,27 @@ learner-safe sentences and log the install hint instead (it is also in `docs/VOI
 * `scripts/probe-fresh.sh contrast`, `voice`, `learn` - 8/8, 8/8 and 26/26.
 * bundle scan - clean, as above.
 
+## The frontend items the master-prompts note left for the integrator
+
+`agent-notes/master-prompts-3-4-5-6-frontend.md` listed four; all are applied:
+
+* **Teach-back receipt** — `Receipt.teachback` gains `feedback`, `misconceptions`,
+  `feedback_source`; the receipt shows the grader's sentence first, the coverage line under it, and
+  "one thing to double-check" only when a misconception survived the verbatim-quote gate.
+* **Retention check** — new `RetentionCheck` type and a per-row step on `/review`: "Show me the
+  check" fetches the question and why now; the answer key is fetched with `with_notes=1` **only
+  after** the learner has rated, which is the honesty rule the endpoint was built with. The probe
+  asserts both halves (question visible, key not; then key visible after the rating).
+* **Resource picks** — no screen calls that endpoint, so nothing to change; the note stands.
+* **Approval script** — nothing to change; `ask_text` was already rendered.
+
 ## Still open
 
 * Agent 2's phase 3 has not landed; the final merge order is unchanged.
 * Which baseline UI ships (this branch's or `main`'s) - recommend this branch's, since it is the one
   verified end to end here. Flagged for the final merge.
+* **Phase 4's content engine is the one phase with no landing.** The gate and the deterministic
+  content are in place and green; the generative half (concept breakdown, three variants per
+  concept, matched pairs, symbolic verification) is not built. That is the largest remaining gap
+  against the brief and it is named in the final report.
 * Everything a browser or a live model key would verify is in `docs/UNVERIFIED.md`.

@@ -1288,3 +1288,14 @@ __all__ = [
     "DeliveryRecord",
     "SessionState",
 ]
+
+
+# -- the round's own tables --------------------------------------------------- #
+# ``adapt/subjects/models.py`` declares the subject round's four tables (phase 3) away from this
+# file, which was frozen while six workstreams ran. Importing it here is what makes ``Base.metadata``
+# *the whole schema* no matter which module a process imported first: ``create_all`` builds every
+# table on app boot and on ``adapt init``, and the migration test compares the migrated database
+# against all of it. Without this line, whether a database has the subject tables depended on import
+# order -- a create-all database could silently lack them and the first subject round would fail on
+# a missing table.
+from ..subjects import models as _subject_models  # noqa: E402,F401

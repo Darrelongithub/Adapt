@@ -24,6 +24,7 @@ from ..baseline import Baseline
 from ..state import LearnerState, Orchestrator
 from ..ai.ai1 import LearningIntelligence
 from ..ai.ai2 import EducationalIntelligence
+from ..subjects.service import Subjects
 from ..ai.scene_narrator import SceneNarrator
 from ..ai.llm import GeminiLLM
 from ..config import Settings, get_settings
@@ -52,6 +53,8 @@ class AppServices:
     ai3: SceneNarrator | None
     resources: ResourceService | None
     limiter: Any
+    #: The subject round (phase 3). Optional so a partially built container still works.
+    subjects: Any = None
     _reply_fn: Callable[..., Any] | None = field(default=None, repr=False)
 
     # -- sessions ---------------------------------------------------------- #
@@ -236,6 +239,10 @@ def build(
     orchestrator = Orchestrator(state=state, settings=settings, ai1=ai1, ai2=ai2, ai3=ai3)
     # The baseline talks to the store (its trials are evidence) and to nobody else.
     baseline = Baseline(database.sessionmaker, state=state, settings=settings)
+    # The subject round (phase 3): same store, same model client, same session factory as the rest.
+    subjects = Subjects(
+        database.sessionmaker, state=state, settings=settings, llm=getattr(ai2, "llm", None)
+    )
     return AppServices(
         settings=settings,
         db=database,
@@ -245,6 +252,7 @@ def build(
         ai1=ai1,
         ai2=ai2,
         ai3=ai3,
+        subjects=subjects,
         resources=resources,
         limiter=limiter,
     )

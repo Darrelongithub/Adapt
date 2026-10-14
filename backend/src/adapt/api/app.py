@@ -148,7 +148,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware, settings=st)
     app.state.limiter = limiter
 
-    from .routes import lesson_plan
+    from .routes import lesson_plan, subjects
 
     for r in (
         auth.router,
@@ -156,6 +156,7 @@ def create_app() -> FastAPI:
         lessons.router,
         adaptations.router,
         lesson_plan.router,
+        subjects.router,
         tutor.router,
         baseline.router,
         evidence.router,

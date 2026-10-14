@@ -488,3 +488,28 @@ scanned by hand as well: `frontend/.next/static` contains no `gemini`, `openalex
 4. **Console commands still print the operator's truth.** `adapt status` and `adapt config status`
    are where the provider, model, key-presence and budget live now; nothing in the automated suite
    asserts their wording, only their exit codes and JSON keys.
+
+## Round: the full-brief audit - 2026-10-14
+
+Verified here: the whole backend suite (1035 passed), the contract linter and typecheck, the
+production build, the engine/lib/server node tests, the full jsdom probe walk (**265 checks, 226 API
+calls, exit 0**), the phase-4 quality gate (`scripts/teaching_quality_eval.py`, zero gate flags
+across 199 questions in 56 topics), and a hand scan of `frontend/.next/static` for provider or model
+names.
+
+**Not verified here, and how to check each:**
+
+1. **Phase 4's generative content engine does not exist.** Nothing to verify; it is named in the
+   audit table in `docs/FUNCTIONALITY_ROUND.md` and is the largest remaining gap against the brief.
+   The deterministic half (hints, examples, authored pools) *is* verified — by the gate above.
+2. **The model pass of the quality gate.** `QUALITY_REPORT.md` says "not run" in those words. On a
+   machine with a key and network: `ADAPT_GEMINI_API_KEY=... .venv/bin/python
+   scripts/teaching_quality_eval.py` and compare the flagged count with the deterministic one.
+3. **`docs/screens/` is empty.** Chromium cannot be installed in this sandbox (`ECONNRESET`), so no
+   screenshot of any screen exists. Every screen change is driven and asserted in jsdom by
+   `frontend/scripts-ui-probe.mjs`; a human with a browser should spot-check the changed copy —
+   the status chip, the `/voice` capability panel, the receipt's teach-back feedback, the `/review`
+   retention-check step, the `/subject` round, and the `/contrast` demo.
+4. **The subject round over HTTP was walked in jsdom**, not by a person: 17 probe checks plus 61
+   backend tests. The visual design of the screens (density at 1280px, the round on a phone) is
+   unverified like every other screen.

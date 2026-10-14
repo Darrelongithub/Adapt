@@ -1488,6 +1488,31 @@ async function main() {
     const reviewHere = page.find('.sidebar-item[aria-current="page"]');
     check("review", "the sidebar names this section too", reviewHere.length === 1 && /Review/i.test(reviewHere[0]?.textContent ?? ""), reviewHere.map((el) => el.textContent?.trim()).join(" | ") || "(nothing marked)");
     closePage(page);
+
+    // The retention check (master prompt 5). Driven against the fixtures because a fresh learner
+    // has nothing scheduled: a due row offers "Show me the check", the question arrives with the
+    // reason it is worth asking now, and -- the honesty property -- the answer key is not on
+    // screen until an answer exists.
+    const rated = await open("/review?mock=1", "review");
+    await sleep(700);
+    const checkBtn = rated.byText("Show me the check", "button");
+    check("review", "a due row offers the retention check", Boolean(checkBtn), rated.text().slice(0, 160));
+    if (checkBtn) {
+      await rated.click(checkBtn);
+      await sleep(500);
+      const asked = rated.text();
+      check("review", "the check arrives with the question and the reason it is asked now", /Without looking anything up/i.test(asked) && /projected recall|Forgetting curve/i.test(asked), asked.slice(0, 220));
+      check("review", "the answer key is not shown before an answer", !/how many equal parts the whole is cut into/i.test(asked), asked.slice(0, 220));
+      const rateBtn = rated.byText("I still know it", "button");
+      if (rateBtn) {
+        await rated.click(rateBtn);
+        await sleep(800);
+        const after = rated.text();
+        check("review", "after rating, the key opens and the next check is scheduled", /what it should have covered/i.test(after) && /equal parts the whole is cut into/i.test(after) && /next check/i.test(after), after.slice(0, 240));
+      }
+    }
+    check("review", "and no uncaught error on the mocked review walk", rated.appErrors().length === 0, rated.appErrors().slice(0, 2).join(" ; "));
+    closePage(rated);
   }
 
   /* -------------------------------------------------------------- settings ---- */

@@ -581,11 +581,19 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
         {receipt.mastery.first_observation ? <Tag tone="think">first data point on this topic</Tag> : null}
       </div>
       {tb ? (
-        <p className="mt-2 text-xs text-[var(--muted)]">
-          teach back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
-          {tb.missing?.length ? <> — missing <em>{tb.missing.join(", ")}</em></> : <> — all there</>}
-          {tb.followup ? <>. {tb.followup}</> : null}. {tb.note}
-        </p>
+        <div className="mt-2 text-xs text-[var(--muted)]">
+          {/* The grader's sentence first (it is the feedback), the coverage count under it, and
+              any misconception about the *answer* last -- never about the learner. */}
+          {tb.feedback ? <p>{tb.feedback}</p> : null}
+          <p>
+            teach back: {(tb.matched ?? []).length} of {(tb.matched ?? []).length + (tb.missing ?? []).length} ideas
+            {tb.missing?.length ? <> — missing <em>{tb.missing.join(", ")}</em></> : <> — all there</>}
+            {tb.followup && !tb.feedback ? <>. {tb.followup}</> : null}. {tb.note}
+          </p>
+          {(tb.misconceptions ?? []).length ? (
+            <p>one thing to double-check: {(tb.misconceptions ?? []).join("; ")}</p>
+          ) : null}
+        </div>
       ) : null}
       {receipt.proposals_expected ? (
         <p className="mt-2 text-xs text-[var(--think)]">

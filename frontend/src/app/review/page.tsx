@@ -18,8 +18,8 @@
 import { useState } from "react";
 
 import { Btn, Card, Err, Notice, SessionLog, Tag, Textarea, announce, useSessionLedger } from "@/components/ui";
-import { post, useApi } from "@/lib/api";
-import type { ReviewComplete, ReviewDue } from "@/lib/types";
+import { get, post, useApi } from "@/lib/api";
+import type { RetentionCheck, ReviewComplete, ReviewDue } from "@/lib/types";
 
 export default function Review() {
   const due = useApi<ReviewDue>("review/due", { within_hours: 72 });
@@ -28,6 +28,10 @@ export default function Review() {
   const [log, setLog] = useState<Record<string, ReviewComplete>>({});
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  /** The retention check per topic (prompt 5's screen): the question and why now, asked only
+   *  when the learner presses for it, and the answer key fetched only *after* they have answered. */
+  const [checks, setChecks] = useState<Record<string, RetentionCheck>>({});
+  const [checkNotes, setCheckNotes] = useState<Record<string, string>>({});
   /** Reviews rated in this session, newest first. The live region says each one once and is
    *  gone; the Changes screen keeps the same kind of ledger, and a self-report that leaves no
    *  trace on screen is a self-report the learner cannot check. */
@@ -35,6 +39,28 @@ export default function Review() {
 
   const rows = due.data?.due ?? [];
   const cal = plan.data?.retention?.calibration;
+
+  async function checkFor(topic: ReviewDue["due"][number], withNotes = false) {
+    setBusy(`check:${topic.topic_id}`);
+    setError(null);
+    try {
+      const out = await get<RetentionCheck>("review/check", {
+        topic_id: topic.topic_id,
+        ...(withNotes ? { with_notes: 1 } : {}),
+      });
+      if (!out.data) {
+        setError(out.error ?? "no check is scheduled for that topic");
+        return;
+      }
+      if (withNotes && out.data.expected_answer_notes) {
+        setCheckNotes((n) => ({ ...n, [topic.topic_id]: out.data!.expected_answer_notes! }));
+      } else {
+        setChecks((c) => ({ ...c, [topic.topic_id]: out.data! }));
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function answer(topic: ReviewDue["due"][number], correct: boolean) {
     setBusy(topic.topic_id);
@@ -49,6 +75,8 @@ export default function Review() {
       });
       setLog((l) => ({ ...l, [topic.topic_id]: out }));
       const next = out.scheduled ? when(out.scheduled.due_at) : "not rescheduled";
+      // now that an answer exists, the key may be shown
+      if (checks[topic.topic_id]) void checkFor(topic, true);
       announce(`${topic.title} rated ${correct ? "recalled" : "forgotten"} — next ${next}`);
       ledger.add(`${new Date().toLocaleTimeString()} — ${topic.title} rated “${correct ? "recalled" : "forgotten"}” → next ${next}`);
       due.reload();
@@ -151,6 +179,26 @@ export default function Review() {
                     {Math.round(r.half_life_hours ?? 0)} h · {r.reps ?? 0} successful review{r.reps === 1 ? "" : "s"}
                     {r.lapses ? `, ${r.lapses} lapse${r.lapses === 1 ? "" : "s"}` : ""}
                   </p>
+                  {checks[r.topic_id] ? (
+                    <div className="mt-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm">
+                      <p>{checks[r.topic_id].question}</p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">{checks[r.topic_id].rationale}</p>
+                      {checkNotes[r.topic_id] ? (
+                        <p className="mt-1 text-xs">
+                          <span className="text-[var(--muted)]">what it should have covered:</span>{" "}
+                          {checkNotes[r.topic_id]}
+                        </p>
+                      ) : done ? (
+                        <Btn kind="ghost" onClick={() => checkFor(r, true)} disabled={busy === `check:${r.topic_id}`}>
+                          what should it have covered?
+                        </Btn>
+                      ) : (
+                        <p className="mt-1 text-xs text-[var(--muted)]">
+                          answer it in your head (or say it out loud), then rate below — the answer key opens after that.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                   {done ? (
                     <Notice tone={done.scheduled ? "good" : "info"}>
                       logged {done.correct ? "as recalled" : "as forgotten"} — next check{" "}
@@ -178,6 +226,14 @@ export default function Review() {
                       >
                         I still know it
                       </button>
+                      <Btn
+                        kind="ghost"
+                        onClick={() => checkFor(r)}
+                        disabled={busy === `check:${r.topic_id}`}
+                        title="the question the schedule says is worth asking right now"
+                      >
+                        {busy === `check:${r.topic_id}` ? "…" : "Show me the check"}
+                      </Btn>
                       <Btn kind="ghost" href={`/learn`} title="a real retest through practice moves the same schedule">
                         do it properly instead
                       </Btn>

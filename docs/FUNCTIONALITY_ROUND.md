@@ -85,9 +85,12 @@ and `scripts/teaching_quality_eval.py` writing `QUALITY_REPORT.md`.
 - [ ] Phase 1.4.2 BKT calibration
 - [x] Phase 1.4.3 shared state, orchestrator, `adapt rebuild-model`
 - [x] Phase 2 baseline (backend + screens; browser checks pending, see `docs/UNVERIFIED.md`)
-- [ ] Phase 3 subject round (agent 2 - handoff is `docs/handoff/agent-2-subjects.md`)
-- [ ] Phase 4 content engine + `QUALITY_REPORT.md` (agent 3 landed; integration below)
+- [x] Phase 3 subject round (agent 2, PR #15) - merged and wired
+- [~] Phase 4 content engine: the deterministic half and the §7 gate (`scripts/teaching_quality_eval.py`
+      + `QUALITY_REPORT.md`, zero flags); the generative half never landed - see the final report
 - [x] Phase 5 adaptation layer + contrast demo (agent 4) - ported in from `main`, see the addendum
+- [x] All six agent PRs integrated: #9, #10, #12, #14, #15 merged; #11/#13 read off `main`;
+      the frozen-file wiring from agents 2, 4 and 6 applied by the integrator
 - [ ] Phase 6 evidence + failure loop (agent 5 landed)
 - [ ] Phase 7 security/demo readiness (agent 6 landed; integrated and green - see the integration report)
 - [ ] Final report
@@ -520,3 +523,103 @@ above); the other one is left where it is and the choice is flagged for the fina
 and the prompts zip on `main` are not carried.
 
 Backend after the port: **970 passed**. Probe: **242 checks** (234 + the 8 new contrast checks).
+
+---
+
+## Integration report 2 - agent 2's phase 3 wired, and the phase-4 gate built
+
+*Integrator session, 2026-10-14. PR #15 (agent 2's subject round) merged into
+`arena/06d446fc-adapt`. Six agents have now landed; this is the audit of the merged tree against
+`ADAPT_functionality_round_prompt.md`, phase by phase.*
+
+### Phase 3, wired
+
+The handoff in `agent-notes/2-subject-round.md` listed the frozen-file edits its author could not
+make; all are applied: the `subjects` service on `AppServices`, `subjects.router` in `api/app.py`,
+and — the one that mattered beyond the routes — the subject models imported at the bottom of
+`db/models.py`, so `Base.metadata` is the whole schema whatever a process imported first. Without
+that import, a full-suite run failed one migration test depending on file order (the subject tables
+existed for the create-all path only if some *other* test had already imported them). 22 topics,
+28 skills across 5 families, the ladder and the pop-up lesson all serve over HTTP now, and
+`/subject` is reachable from the nav instead of being an orphan URL.
+
+### Phase 4: the gate the brief names, built; the engine it gates, absent
+
+Section 7 asks for a pipeline (concept breakdown → three variants per concept → matched A/B pairs →
+3-hint sets → 3-point teach-backs → symbolic verification → cache). What is in the tree is the
+*bottom* of that pipeline, well built: `assessment/worked.py` gives **every** item three graded
+hints and a worked example verified against the item's own answer key, and the subject round
+carries authored, checklist-graded content across maths, languages, sciences, history and the
+generic fallback. No branch, commit or PR exists for the generative half.
+
+So the gate was built and run:
+
+* `scripts/teaching_quality_eval.py` walks every deterministic item — the maths bank
+  (63 items: hints, examples, the explanation a learner actually sees), the subject pools
+  (89 questions) and the pop-up lesson's concepts in all three formats — and writes
+  `QUALITY_REPORT.md`.
+* The gate is exactly the brief's five flags: off-topic text, missing example, generic hint,
+  placeholder leakage, key disagreeing with the example. Everything else it notices is a note and
+  does not fail the run, because adding checks must not move the line.
+* **Result: zero flags across 199 questions in 56 named topics** (the brief asked for ≥40 questions
+  across ≥6 subjects). The model pass reports "not run — no key", in those words.
+* `backend/tests/test_teaching_quality.py` runs the same walks in the suite, so a content regression
+  fails the build rather than only the report.
+
+### The one defect the gate found
+
+`local_tutor.explain` marked `grounded: true` while serving another topic's passage (with the source
+topic named in the copy). That is precisely what §4.1.2 forbids — grounded is a claim about *which
+topic* the words came from. Fixed in one line (`grounded` now requires `topic_match`), and the
+existing test that asserted the old behaviour now asserts the rule, with the reason beside it.
+
+### Commands and results
+
+| Command | Result |
+|---|---|
+| `pytest -q` (backend, whole suite) | **1035 passed** |
+| `scripts/teaching_quality_eval.py` | **exit 0 — zero gate flags** across 199 questions |
+| `npm run lint` (contract + typecheck) | contract ok — 103 routes, 89 calls |
+| `npm run build` | compiled successfully |
+| `scripts/probe-fresh.sh all` | see the probe line below |
+
+### Deviations now on the record
+
+1. **Phase 4's generative half is not built** (agent 3 produced no branch). The deterministic half
+   and the gate are; the report says so.
+2. **`grounded` semantics tightened** — cross-topic fallback text is honest but not "grounded".
+3. **The subject round's mock fixtures live in `lib/subjects.ts`**, not the shared `mock.ts` table
+   (agent 2's choice, kept: `mock.ts` was frozen during that round).
+4. **Two baseline UIs exist on `main`**; this branch's is the verified one and the choice is flagged
+   for the final merge.
+5. **No screenshots** (`docs/screens/` is empty): no browser can be installed in this sandbox. Every
+   screen change is covered by the jsdom probe instead, and this is in `docs/UNVERIFIED.md`.
+
+---
+
+## Audit against the brief, phase by phase (2026-10-14)
+
+The user asked for a pass over the whole brief to check it was implemented well, after all six
+agents landed. This is that audit. Each line names the evidence, not an impression.
+
+| Brief section | Verdict | Evidence |
+|---|---|---|
+| 2A shared state + orchestrator | **done** | `state/store.py` (immutable versions, idempotent ingest, write matrix), `state/orchestrator.py`, `adapt rebuild-model`; rebuild-equals-incremental and no-cross-AI-import tests pass |
+| 3 configuration secrecy | **done** | canary route walk (every route, every error shape, exports) + log boundary + bundle scan; console-only config in `cli.py`; simple mode wording on `/health`, `/status`, the status chip |
+| 4.1 the ten defects | **done** | each has a regression test; the ten are listed with what was actually wrong earlier in this document |
+| 4.2 BKT calibration | **done** | `learning/bkt.py` per-kind guess/slip, floor, interval; "early signal" under 8 observations |
+| 4.3 shared-state foundation | **done** | see 2A |
+| 5 phase 2, the mind baseline | **done** | engine + 40 tests, 25-check probe walk, six games, snapshot with ranges and n |
+| 6 phase 3, subject round | **done** | 22 topics, 28 skills, ladder, pop-up lesson; 61 backend tests + 17 probe checks live over HTTP |
+| 7 phase 4, content engine | **partial — the one real gap** | deterministic half complete (three graded hints + verified worked example for every item); `scripts/teaching_quality_eval.py` + `QUALITY_REPORT.md` exist and are green; the **generative** half (concept breakdown, three variants per concept, matched A/B pairs, symbolic checker) was never built |
+| 8 phase 5, adaptation layer | **done** | `ai/adapter.py` + 7 visual templates + contrast demo; adversarial tests reject malformed/injected plans; 83 tests; 8 probe checks |
+| 9 phase 6, evidence + failure loop | **done** | evidence routes, method comparison with controlled/observational weights, failure loop branches unit-tested; 59/59 journey check |
+| 10 phase 7, security/robustness/demo | **done** | injection tests, redaction, rate limits, `?mock=1`, demo seed, accessibility work |
+| 11 definition of done | **partial** | 1–5 hold except: screenshots under `docs/screens/` (**impossible here** — no browser), and `QUALITY_REPORT.md` covers the deterministic path only (2 says "zero flags", which it does) |
+| 12 final report | **this document + the phase reports** | |
+| 13 do-not list | **held** | no test weakened (three expectations corrected, each with the rule it now encodes); no learning-style labels; no fabricated numbers; no key in the bundle |
+
+**The three things a reader should not miss:** phase 4's generative half is missing; no screenshot
+exists because no browser can be installed in this sandbox (the probe drives every screen in jsdom
+instead); and the live-model pass of the quality gate has never run (no key), which is stated in
+`QUALITY_REPORT.md` and `docs/UNVERIFIED.md` rather than implied.

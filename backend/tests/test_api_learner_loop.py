@@ -1053,7 +1053,14 @@ def test_explain_hints_and_worked_examples_are_available_on_demand(client, learn
     assert isinstance(answer["adaptations_applied"], list) and isinstance(answer["sections"], list)
     assert isinstance(answer["sources"], list)
     assert answer["sources"], "the local tutor grounds answers in the learner's own material"
-    assert answer["meta"]["grounded"] is True
+    # Brief 4.1.2, the rule this test used to encode the opposite of: "mark `grounded: true`
+    # only when the shown text actually matches the item's topic". This reply is drawn from
+    # another topic in the same course -- the sentence above names which -- so `grounded` must
+    # be False and `topic_match` carries the distinction. The learner is still served their own
+    # material (`served_by`), with the source named; what may not be claimed is that this is
+    # material *about the question they asked*.
+    assert answer["meta"]["grounded"] is False
+    assert answer["meta"].get("topic_id"), "the reply says which topic the words came from"
     for src in answer["sources"]:
         assert {"kind", "ref", "title"} <= set(src)
         if src["kind"] == "material":
