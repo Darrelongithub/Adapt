@@ -13,7 +13,7 @@ What exists:
 | `scripts/live_model_check.py` | the harness: the topics, the checks, the judge, the report |
 | `backend/tests/fixtures/model/contract_stub.py` | the frozen contracts (`get_pack`, `write_lesson`, `explain_after_wrong`, `reteach`) standing in for Phases B and C, which are not merged here |
 | `backend/tests/fixtures/model/scripted_model.py` | the scripted fake, its nine red-team variants, and the fixture replayer |
-| `backend/tests/test_live_check_harness.py` | 38 tests: the harness against the fake, the red team, the refusal paths, the fixtures, the bridge into `ai/llm.py`, and a pipeline that returns dataclasses |
+| `backend/tests/test_live_check_harness.py` | 39 tests: the harness against the fake, the red team, the refusal paths, the fixtures, the bridge into `ai/llm.py`, the live branch end to end with a stubbed client, and a pipeline that returns dataclasses |
 | `MODEL_QUALITY_REPORT.md` | the template a real run replaces |
 
 ## What a run does
@@ -72,7 +72,10 @@ a stand-in for the frozen async client: `LiveModel` is asserted to call
 `adapt.ai.llm.GeminiLLM.complete` with the frozen arguments, to keep one event loop open across
 calls, to turn a refusal into a named stop (`quota`, `disabled`, `throttled` → an incomplete run),
 to treat a reply that is not an object as unparsed rather than as data, and to shut the client and
-the loop down.
+the loop down. One test then runs **everything except the network**: a key in the environment, no
+injected factory, the whole `main()` live branch with only the HTTP client underneath swapped —
+which is what proves the report says "Live run" for the right reason and the fixtures it saves are
+labelled accordingly.
 
 **The judge** is a separate call with a separate prompt. It scores `correctness`, `explains_why`,
 `uses_learner_answer`, `fits_profile` and `no_leakage` from 1 to 5, and **every score has to quote

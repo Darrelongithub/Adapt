@@ -408,6 +408,69 @@ def _stub_client(monkeypatch, results, seen):
     return _Client
 
 
+def test_a_configured_key_drives_the_whole_live_branch_end_to_end(harness, scripted, tmp_path, monkeypatch, capsys):
+    """Everything except the network: `main()` with a key and no injected factory.
+
+    This is the branch a real run takes, and the only thing faked is the HTTP client underneath
+    the frozen async wrapper -- so the harness's own settings load, its bridge, its fixtures
+    labelled as a live run, and its report are all exercised together.
+    """
+    from adapt.ai.llm import LLMResult
+
+    canary = "YTCANARY-LIVE-CHECK-7c41"
+    monkeypatch.setenv("ADAPT_GEMINI_API_KEY", canary)
+    brain = scripted.make("good")
+    seen: list[str] = []
+
+    class _Client:
+        def __init__(self, settings=None, *, limiter=None) -> None:
+            self.settings = settings
+
+        async def complete(self, **kwargs) -> LLMResult:
+            seen.append(str(kwargs.get("purpose")))
+            reply = brain(kwargs["purpose"], kwargs["system"], kwargs["user"], kwargs.get("response_spec") or {}, kwargs["max_output_tokens"])
+            return LLMResult(ok=True, text=json.dumps(reply), data=reply)
+
+        async def aclose(self) -> None:
+            return None
+
+    import adapt.ai.llm as llm
+
+    monkeypatch.setattr(llm, "GeminiLLM", _Client)
+
+    fixtures = tmp_path / "fixtures"
+    out = tmp_path / "live.md"
+    code = harness.main(
+        [
+            "--topics",
+            "probability",
+            "--allow-partial",
+            "--save-fixtures",
+            "--fixture-dir",
+            str(fixtures),
+            "--out",
+            str(out),
+            "--quiet",
+        ]
+    )
+    assert code == 0, out.read_text()[:600]
+    text = out.read_text()
+    # a configured key is what makes this a live run, and the report says so
+    assert "**Live run.**" in text and "scripted fake answered" not in text
+    # ...while the pipeline label stays honest about Phases B and C not being merged
+    assert "local contract stub" in text
+    assert canary not in text and canary not in capsys.readouterr().out
+
+    payload = json.loads((fixtures / "probability.json").read_text())
+    assert payload["model"] == "live"
+    assert payload["packs"]["en"]["source"] == "model"
+    assert set(payload["checks"][0]) == {"name", "ok", "detail", "kind"}
+
+    purposes = set(seen)
+    for purpose in ("skeleton", "items", "lesson", "explain_wrong", "reteach", "judge"):
+        assert purpose in purposes, f"the live branch never called {purpose}"
+
+
 def test_the_live_model_bridges_the_frozen_async_client(harness, monkeypatch):
     """The one path a keyless sandbox never runs: the sync-over-async call into ai/llm.py."""
     from adapt.ai.llm import LLMResult
