@@ -2046,10 +2046,11 @@ async function main() {
   // last checks: a partial baseline must be a finished baseline, and the snapshot must say "not
   // measured" rather than invent a zero for a game nobody played.
   if (run("content")) {
-    // The content engine has no screen yet, so this is the one scenario that judges an API surface
-    // directly. It is here rather than only in the backend suite because the properties being
-    // checked are browser properties: what a learner is *sent*, not what the server holds. The
-    // answer key travelling in a payload is invisible to a unit test that never serialises one.
+    // Most of this scenario judges the API surface directly, because the properties being checked
+    // are browser properties: what a learner is *sent*, not what the server holds. The answer key
+    // travelling in a payload is invisible to a unit test that never serialises one. The last
+    // three checks walk the screen that now reaches it, in mock mode, because that is the only
+    // mode where a rendered pack is not gated on which concepts a topic happens to have authored.
     console.log("\x1b[1mcontent\x1b[0m");
     const jar = new CookieJar();
     const made = await createLearner({ display_name: "Probe Content", age_band: "16-18", as_guest: true });
@@ -2092,6 +2093,80 @@ async function main() {
 
       const unknown = await read("/api/v1/content/pack?topic=calculus&concept=nope");
       check("content", "an unknown concept names the ones that exist", unknown.status === 404 && /calc_rate/.test(unknown.body.detail ?? ""), `${unknown.status} ${JSON.stringify(unknown.body).slice(0, 120)}`);
+
+      // The pack is readable without a key, so the only thing that makes it usable is a grader.
+      // This goes over HTTP rather than living in the backend suite alone because the contract
+      // being tested is a browser's: the answer is the option's *text*, and the explanation must
+      // arrive with the verdict instead of with the question. It is deliberately ONE request --
+      // a full walk is paced against a per-connection ceiling, and the two extra requests this
+      // used to make were enough to throttle the scenarios that follow.
+      const legA = pack.body.pair?.A?.options ?? [];
+      if (legA.length >= 2) {
+        // Paced by the server's own retry number. A walk is already close to the per-connection
+        // ceiling, so one more write can land on an empty bucket -- and an unretried 429 here
+        // used to read as a broken route when it was the harness's own traffic.
+        let graded = await api("/api/v1/content/grade", {
+          method: "POST",
+          headers: { "x-csrf-token": made.body.csrf_token ?? "" },
+          cookie,
+          body: { topic: "calculus", concept: "calc_rate", leg: "A", choice: legA[0] },
+        });
+        for (let tries = 0; graded.status === 429 && tries < 6; tries += 1) {
+          const wait = Number(graded.body?.detail?.retry_after_s ?? graded.body?.retry_after_s ?? 1);
+          await sleep(Math.min(12_000, wait * 1000 + 250));
+          graded = await api("/api/v1/content/grade", {
+            method: "POST",
+            headers: { "x-csrf-token": made.body.csrf_token ?? "" },
+            cookie,
+            body: { topic: "calculus", concept: "calc_rate", leg: "A", choice: legA[0] },
+          });
+        }
+        check(
+          "content",
+          "an answer is graded over HTTP, by option text, and comes back with its explanation",
+          graded.status === 200 &&
+            graded.body.status === "scored" &&
+            graded.body.leg === "A" &&
+            graded.body.concept === "calc_rate" &&
+            typeof graded.body.explanation === "string" &&
+            graded.body.explanation.length > 0,
+          `${graded.status} ${JSON.stringify(graded.body).slice(0, 200)}`,
+        );
+      } else {
+        check("content", "an answer is graded over HTTP, by option text, and comes back with its explanation", false, "leg A arrived with no options");
+      }
+    }
+
+    // The screen that reaches all of the above. Mock mode, because a rendered pack needs a topic
+    // with an authored kit and the fixtures are the recorded shapes.
+    {
+      const page = await open("/subject?mock=1", "content");
+      await waitFor(() => /What we'd teach/.test(page.text()), { label: "the pack panel" });
+      const before = page.text();
+      check("content", "the subject screen offers the pack before it is asked for", !!page.byText("Show what we'd teach", "button"), page.text().slice(0, 140));
+      const packBox = page.find('input[aria-label="Pack topic"]')[0];
+      page.type(packBox, "calculus");
+      await sleep(120);
+      await page.click("Show what we'd teach", "button");
+      await waitFor(() => /Worked example/.test(page.text()), { label: "the variants" });
+      const text = page.text();
+      check("content", "the three variants arrive on the screen", /Written/.test(text) && /Visual/.test(text) && /Worked example/.test(text), text.slice(0, 200));
+      check("content", "the matched pair is on the screen with both legs", /Matched pair/.test(text) && /Leg A/.test(text) && /Leg B/.test(text), "");
+      check("content", "the pair says it is not matched on difficulty", /NOT matched on difficulty/.test(text), "");
+      check("content", "the hint ladder and the self-check arrive too", /Hints, in order/.test(text) && /Self-check/.test(text), "");
+      check("content", "no answer key is on the screen before answering", !/answer_spec/.test(text) && !/"correct_index"/.test(text), text.slice(0, 160));
+      // Answering is the point: the option is sent as text, and the verdict comes back graded.
+      const first = page.find("button").find((b) => /^\d+(\.\d+)?\s*(km\/h)?$/.test((b.textContent ?? "").trim()) || /^(8|9|4|5)$/.test((b.textContent ?? "").trim()));
+      if (first) {
+        await page.click(first);
+        await waitFor(() => /Right\.|Not yet\./.test(page.text()), { label: "the verdict" });
+        const after = page.text();
+        check("content", "answering a leg produces a verdict from the server", /Right\.|Not yet\./.test(after), after.slice(0, 200));
+        check("content", "the explanation only arrives once the learner has answered", /15 \/ 3 = 5/.test(before) === false, "");
+      } else {
+        check("content", "answering a leg produces a verdict from the server", false, "no option button was found");
+      }
+      closePage({ jar: page.jar });
     }
     closePage({ jar });
   }

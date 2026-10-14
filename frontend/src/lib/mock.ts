@@ -1159,6 +1159,125 @@ const baselineNextDayBody = {
   note: "these are the pairs you learned last time, asked again with no new study",
 };
 
+/* ----------------------------------------------------- the content engine ---- */
+/*
+ * §7's pack and breakdown, in the recorded shapes: `variants` carries written/visual/
+ * worked_example, the pair is `A`/`B` with the key stripped and the options shuffled, and
+ * `rejections` carries the one part that failed its own gate. The strings are the ones the engine
+ * produces for the authored calculus kit.
+ *
+ * Exported because `lib/content.ts` short-circuits `?mock=1` with these same fixtures -- and, for
+ * grading, with the answer the learner actually picked, which a row cannot know: `mockLookup`
+ * hands a row the URL, and a POST carries no URL. That is also why the grade row below answers the
+ * only thing it honestly can.
+ */
+export const contentBreakdown = {
+  topic: "calculus",
+  title: "Calculus",
+  available: true,
+  reason: "an authored prerequisite chain exists for this topic",
+  concepts: [
+    {
+      id: "calc_rate",
+      title: "Rate of change",
+      misconceptions: ["the rate is the change in f without dividing"],
+      objectives: ["compute a rate from two values"],
+    },
+  ],
+};
+
+export const contentPack = {
+  concept_id: "calc_rate",
+  concept_title: "Rate of change",
+  topic_key: "calculus",
+  topic_title: "Calculus",
+  sub_area: "calculus",
+  available: true,
+  reason: "built from the authored chain kit for Rate of change (4 of 5 rungs authored)",
+  spec: "adapt.concept_pack.v1",
+  variants: {
+    written: {
+      id: "pk_written",
+      kind: "written",
+      stem: "A rate of change says how much one quantity moves per unit of another. On a straight line it never changes, so the slope is the rate.",
+      rung: 1,
+      demand: "recall",
+    },
+    visual: {
+      id: "pk_visual",
+      kind: "visual",
+      stem: "Two points on one curve, with the rise and the run marked between them.",
+      spec: { kind: "number_line", marks: [{ at: 0, label: "0" }, { at: 1, label: "1" }, { at: 2, label: "2" }] },
+      rung: 2,
+      demand: "procedural",
+    },
+    worked_example: {
+      id: "pk_worked",
+      kind: "worked_example",
+      stem: "Find the average rate of change of f(x) = x² between x = 1 and x = 4.",
+      steps: [
+        "Write what changed: f(4) - f(1) = 16 - 1 = 15.",
+        "Write what it changed over: 4 - 1 = 3.",
+        "Divide: 15 / 3 = 5.",
+        "So the average rate of change is 5 units of f per unit of x.",
+      ],
+      verified: true,
+      flags: [],
+      rung: 2,
+      demand: "procedural",
+      why: "the numerator is the change in f and the denominator is the change in x; swapping them is the usual slip",
+    },
+  },
+  pair: {
+    format: "choice",
+    matched:
+      "matched on concept and on question format; NOT matched on difficulty, because rung 3 and rung 4 are different demands by design. Compare the legs on expected performance",
+    expected_accuracy_note:
+      "compare the legs with subjects.methodtest.expected_accuracy(p_know, difficulty) — the same expected-performance rule the method test uses",
+    A: {
+      id: "pk_A",
+      kind: "choice",
+      stem: "What is the average rate of change of f(x) = x² between x = 1 and x = 3?",
+      options: ["8", "9", "4", "5"],
+      rung: 3,
+      demand: "procedural",
+    },
+    B: {
+      id: "pk_B",
+      kind: "choice",
+      stem: "A car covers 120 km in 2 hours. What is its average speed?",
+      options: ["60 km/h", "240 km/h", "30 km/h", "118 km/h"],
+      rung: 4,
+      demand: "transfer",
+    },
+  },
+  hints: [
+    { rung: 1, text: "Write the change in f first, then the change in x.", source: "the authored rung-1 near-miss" },
+    { rung: 2, text: "Divide the two changes, and keep the units in the answer.", source: "the authored rung-2 task" },
+    { rung: 3, text: "f(3) is 9 and f(1) is 1, so the change is 8 over 2.", source: "the authored rung-3 task" },
+  ],
+  checklist: [
+    { point: "the change in f is in the numerator", rung: 1 },
+    { point: "the change in x is in the denominator", rung: 2 },
+    { point: "the units are carried into the answer", rung: 3 },
+  ],
+  misconceptions: [
+    {
+      claim: "the rate is f(3) - f(1), without dividing",
+      contrast: "a change in f over no change in x is not a rate",
+      source: "the authored rung-1 near-miss",
+    },
+  ],
+  objectives: [
+    { rung: 1, key: "recall", demand: "recall", task_stem: "Say what a rate of change measures." },
+    { rung: 2, key: "procedural", demand: "procedural", task_stem: "Compute a rate from two values." },
+    { rung: 3, key: "procedural", demand: "procedural", task_stem: "Average rate of change of a curve." },
+    { rung: 4, key: "transfer", demand: "transfer", task_stem: "A rate in a context with units." },
+  ],
+  notes: ["the worked example passed its own gate"],
+  rejections: [],
+};
+
 const rows: Row[] = [
   /* Phase 5's contrast screen renders two plans side by side. The fixtures keep the same shape the
      adapter returns: ordered blocks each carrying a chunk_id and a why with its n, a why-panel, and
@@ -1364,6 +1483,12 @@ const rows: Row[] = [
   { method: "POST", match: /^\/api\/v1\/lessons\/run\/[^/]+\/variables$/, body: lessonVariables },
   { method: "POST", match: /^\/api\/v1\/lessons\/run\/[^/]+\/finish$/, body: lessonFinish },
   { method: "GET", match: /^\/api\/v1\/lessons\/run\/[^/]+$/, body: lessonReview },
+  /* the content engine (§7). The grade row cannot read a POST body, so it says the one true
+     thing available to it; `lib/content.ts` grades the mock answer properly, because it does know
+     which option was picked. */
+  { method: "GET", match: /^\/api\/v1\/content\/breakdown/, body: contentBreakdown },
+  { method: "GET", match: /^\/api\/v1\/content\/pack/, body: contentPack },
+  { method: "POST", match: /^\/api\/v1\/content\/grade/, body: { correct: false, status: "unparseable", points: 0, max_points: 1, why: "this fixture never saw the answer, so it cannot grade it — use the screen, which does know which option was picked", explanation: "", concept: "calc_rate", leg: "A", rung: 3, demand: "procedural" } },
 ];
 
 export function mockLookup(method: string, url: string): { found: boolean; body?: unknown; status?: number; error?: { message: string; detail?: unknown } } {

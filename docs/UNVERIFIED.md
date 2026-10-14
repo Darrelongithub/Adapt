@@ -518,9 +518,9 @@ names.
 
 ## Round: the content engine (2026-10-14)
 
-Verified here: the whole backend suite (**1091 passed**), the contract linter and typecheck, the
-production build, the full jsdom probe walk (**280 checks, 235 API calls, exit 0**, including a new
-15-check `content` scenario that judges the engine's API directly), the quality gate (**zero flags
+Verified here: the whole backend suite (**1097 passed**), the contract linter and typecheck, the
+production build, the full jsdom probe walk (**289 checks, 210 API calls, exit 0**, including a
+`content` scenario that now walks the screen as well as the API), the quality gate (**zero flags
 across 273 questions**), and the exact symbolic checker against hand-computable cases (equivalence,
 differentiation, linear and quadratic solving, and the refusals).
 
@@ -529,11 +529,18 @@ differentiation, linear and quadratic solving, and the refusals).
 1. **A model-written pack.** No key, so `ai2.content_pack` has only ever been driven deterministically.
    On a machine with a key: build a pack for a topic with no authored chain, and confirm the pack says
    it was written rather than sourced — and that a rejection still carries its reason.
-2. **The engine behind a screen.** No UI calls `/api/v1/content/*` yet, so the routes are exercised by
-   the probe and the tests but not by a learner clicking. A human should decide where the pack belongs
-   in the subject-round screen, and then the probe's `content` scenario becomes a screen walk.
-3. **Screenshots remain impossible** (no browser can be installed here — `ECONNRESET`). The `content`
-   scenario is an API walk precisely because there is no screen to photograph.
+2. ~~**The engine behind a screen.**~~ **Closed.** The subject round now carries a "What we'd
+   teach" panel (`frontend/src/app/subject/page.tsx`, `frontend/src/lib/content.ts`): it asks for a
+   topic, resolves it to a concept through the engine's own breakdown, and renders the three
+   variants, the matched pair, the hint ladder and the self-check. The matched pair is answerable —
+   `POST /api/v1/content/grade` grades the option *text* the learner picked, so the shuffled options
+   and the key never reach the browser. The probe's `content` scenario now walks that screen in mock
+   mode and grades a real answer over HTTP.
+   *Still not verified:* whether the panel is in the right *place* in the subject round. It sits
+   below the resolve card, before the plan; a human should say whether a learner should meet the
+   material before or after the round that measures them. That is a design judgement, not a defect.
+3. **Screenshots remain impossible** (no browser can be installed here — `ECONNRESET`). The screen is
+   judged in jsdom by the probe's `content` scenario, not photographed.
 4. **The symbolic checker's scope.** It covers polynomials and rational functions exactly and refuses
    everything else by name. Trigonometry, logarithms, matrices and irrational roots are *refused*, not
    approximated — so an item using them is flagged `unverified` rather than checked. That is a stated

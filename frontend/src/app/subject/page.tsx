@@ -18,6 +18,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Btn, Card, Err, Field, Input, Notice, Tag } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
+  fetchBreakdown,
+  fetchPack,
+  gradeAnswer,
+  type ConceptPack,
+  type GradeVerdict,
+} from "@/lib/content";
+import { VisualFigure } from "@/components/visual";
+import {
   fetchPlan,
   fetchRechecks,
   fetchSnapshot,
@@ -54,6 +62,12 @@ export default function Subject() {
   const [view, setView] = useState<RoundView | null>(null);
   const [snapshot, setSnapshot] = useState<SubjectSnapshot | null>(null);
   const [rechecks, setRechecks] = useState<RecheckDue[]>([]);
+  const [pack, setPack] = useState<ConceptPack | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
+  // The panel has its own topic field rather than borrowing the resolve card's: the pack is about
+  // a topic, not about the round, and a learner who has not resolved anything yet can still ask
+  // what we would teach. It follows the resolve card when that one has an answer.
+  const [packTopic, setPackTopic] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -85,6 +99,7 @@ export default function Subject() {
     try {
       const out = await resolveTopic(text.trim());
       setResolved(out);
+      if (out.resolved.title) setPackTopic(out.resolved.title);
       const p = await fetchPlan(out.resolved.title || text.trim());
       setPlan(p);
     } catch (err) {
@@ -148,6 +163,30 @@ export default function Subject() {
       setError(shown(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onShowPack() {
+    const topic = (packTopic || resolved?.resolved.title || text.trim()).trim();
+    if (!topic) return;
+    setPackBusy(true);
+    setError(null);
+    try {
+      // The breakdown first: it is what names the concepts this topic has, and a topic with no
+      // authored chain says so rather than leaving the button looking broken.
+      const out = await fetchBreakdown(topic);
+      const first = (out.concepts ?? [])[0];
+      if (!out.available || !first) {
+        setPack(null);
+        setNotice(out.reason);
+        return;
+      }
+      setPack(await fetchPack(topic, String(first.id)));
+      setNotice(null);
+    } catch (err) {
+      setError(shown(err));
+    } finally {
+      setPackBusy(false);
     }
   }
 
@@ -216,6 +255,34 @@ export default function Subject() {
               ) : null}
             </div>
           ) : null}
+        </Card>
+      ) : null}
+
+      {!view && !snapshot ? (
+        <Card title="What we'd teach">
+          <p className="text-sm text-[var(--muted)]">
+            Before any of this is measured, here is the material the topic has authored for it: one
+            worked example, one question, and a matched pair that asks the same thing twice in the
+            same shape. Where a concept has no authored kit, this says so instead of showing
+            something made up.
+          </p>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <div className="min-w-56 flex-1">
+              <Field label="Which topic?">
+                <Input
+                  value={packTopic}
+                  onChange={(e) => setPackTopic(e.target.value)}
+                  placeholder="e.g. calculus"
+                  aria-label="Pack topic"
+                />
+              </Field>
+            </div>
+            <Btn type="button" onClick={onShowPack} disabled={packBusy || !packTopic.trim()}>
+              {packBusy ? "…" : "Show what we'd teach"}
+            </Btn>
+            {pack ? <span className="text-xs text-[var(--muted)]">{pack.concept_title}</span> : null}
+          </div>
+          {pack ? <PackPanel pack={pack} /> : null}
         </Card>
       ) : null}
 
@@ -871,5 +938,241 @@ function RecheckCard({ due, onDone }: { due: RecheckDue; onDone: () => Promise<v
         </div>
       )}
     </Card>
+  );
+}
+
+/* ------------------------------------------------------- what we'd teach ---- */
+/*
+ * The §7 pack on a screen. Four things matter here, and they are why this is not a plain list of
+ * cards:
+ *
+ * 1. `available: false` is shown, not worked around. The engine's own `reason` is the sentence on
+ *    screen, because "we have nothing authored for this concept" is the honest answer and a
+ *    placeholder would be a claim we cannot back.
+ * 2. `rejections` is rendered where the missing part would have been. A worked example that
+ *    failed its own gate is a decision the engine made, and hiding it makes the pack look broken.
+ * 3. The pair's own note about *not* being matched on difficulty is shown, so the two legs are
+ *    not read as a like-for-like comparison.
+ * 4. The pair is answerable, and graded by the server. The browser sends the option text, never an
+ *    index, and never learns which option is right until it has answered — the explanation
+ *    arrives with the verdict.
+ */
+function PackPanel({ pack }: { pack: ConceptPack }) {
+  if (!pack.available) {
+    return (
+      <p className="mt-3 rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">
+        {pack.reason}
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4 space-y-4">
+      <p className="text-[13px] text-[var(--muted)]">{pack.reason}</p>
+      <PackRejections rejections={pack.rejections} />
+      <div className="grid gap-3 md:grid-cols-2">
+        <VariantCard part="Written" item={pack.variants.written} />
+        <VariantCard part="Visual" item={pack.variants.visual} />
+        <VariantCard part="Worked example" item={pack.variants.worked_example} wide />
+      </div>
+      <MatchedPair pack={pack} />
+      <div className="grid gap-3 md:grid-cols-2">
+        <HintLadder hints={pack.hints} />
+        <Checklist checklist={pack.checklist} />
+      </div>
+    </div>
+  );
+}
+
+function PackRejections({ rejections }: { rejections: ConceptPack["rejections"] }) {
+  if (!rejections.length) return null;
+  return (
+    <ul className="space-y-1">
+      {rejections.map((r, i) => (
+        <li key={i} className="rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-[13px]">
+          <span className="text-[var(--warn)]">{r.code}</span> {r.detail}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function VariantCard({
+  part,
+  item,
+  wide,
+}: {
+  part: string;
+  item?: ConceptPack["variants"]["written"];
+  wide?: boolean;
+}) {
+  if (!item) {
+    return (
+      <div className={`rounded-md border border-[var(--line)] bg-[var(--panel)] p-3 text-sm text-[var(--muted)]${wide ? " md:col-span-2" : ""}`}>
+        <div className="text-xs uppercase tracking-[0.12em]" style={{ fontFamily: "var(--font-mono)" }}>
+          {part}
+        </div>
+        <p className="mt-2">Nothing authored for this part.</p>
+      </div>
+    );
+  }
+  const spec = (item as { spec?: unknown }).spec;
+  return (
+    <div className={`rounded-md border border-[var(--line)] bg-[var(--panel)] p-3${wide ? " md:col-span-2" : ""}`}>
+      <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        {part}
+        {item.rung ? <span className="ml-2 normal-case tracking-normal">rung {item.rung}</span> : null}
+      </div>
+      <p className="mt-2 text-sm">{item.stem}</p>
+      {item.steps?.length ? (
+        <ol className="mt-2 space-y-1 text-sm">
+          {item.steps.map((s, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="text-[var(--muted)]">{i + 1}.</span>
+              <span>{s}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {spec ? (
+        <div className="mt-2">
+          <VisualFigure spec={spec} fallbackNote="this figure was not authored" />
+        </div>
+      ) : null}
+      {item.verified === false ? (
+        <p className="mt-2 text-[13px] text-[var(--warn)]">
+          This worked example failed its own gate, so it is shown as written rather than as checked.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function MatchedPair({ pack }: { pack: ConceptPack }) {
+  const { A, B } = pack.pair;
+  return (
+    <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-3">
+      <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        Matched pair
+      </div>
+      <p className="mt-2 text-[13px] text-[var(--muted)]">{pack.pair.matched}</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <PairLeg topic={pack.topic_key} concept={pack.concept_id} leg="A" item={A} />
+        <PairLeg topic={pack.topic_key} concept={pack.concept_id} leg="B" item={B} />
+      </div>
+      <p className="mt-3 text-[12px] text-[var(--muted)]">{pack.pair.expected_accuracy_note}</p>
+    </div>
+  );
+}
+
+function PairLeg({
+  topic,
+  concept,
+  leg,
+  item,
+}: {
+  topic: string;
+  concept: string;
+  leg: "A" | "B";
+  item?: ConceptPack["pair"]["A"];
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const [verdict, setVerdict] = useState<GradeVerdict | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onPick(choice: string) {
+    setPicked(choice);
+    setBusy(true);
+    setVerdict(null);
+    try {
+      setVerdict(await gradeAnswer(topic, concept, leg, choice));
+    } catch (err) {
+      setVerdict({
+        correct: false,
+        status: "error",
+        points: 0,
+        max_points: 1,
+        why: shown(err),
+        explanation: "",
+        concept,
+        leg,
+        rung: 0,
+        demand: "",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!item) return <p className="text-sm text-[var(--muted)]">Nothing authored for this leg.</p>;
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-[0.1em] text-[var(--muted)]">
+        Leg {leg}
+        {item.rung ? <span className="ml-2 normal-case tracking-normal">rung {item.rung}</span> : null}
+      </div>
+      <p className="mt-1 text-sm">{item.stem}</p>
+      <div className="mt-2 space-y-1">
+        {(item.options ?? []).map((o, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onPick(o)}
+            disabled={busy || picked !== null}
+            className={`block w-full rounded-md border px-3 py-2 text-left text-sm disabled:opacity-60 ${
+              picked === o ? "border-[var(--accent)]" : "border-[var(--line)]"
+            }`}
+          >
+            {o}
+          </button>
+        ))}
+      </div>
+      {verdict ? (
+        <div className="mt-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm">
+          <strong>{verdict.correct ? "Right." : "Not yet."}</strong> {verdict.why}
+          {verdict.explanation ? (
+            <p className="mt-1 text-[13px] text-[var(--muted)]">{verdict.explanation}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function HintLadder({ hints }: { hints: ConceptPack["hints"] }) {
+  return (
+    <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-3">
+      <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        Hints, in order
+      </div>
+      <ol className="mt-2 space-y-1 text-sm">
+        {hints.map((h, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="text-[var(--muted)]">{i + 1}.</span>
+            <span>{h.text}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-2 text-[12px] text-[var(--muted)]">
+        {hints.length ? `Rung ${hints[hints.length - 1].rung} is the last one; there is no near-answer step after it.` : "No hints are authored for this concept."}
+      </p>
+    </div>
+  );
+}
+
+function Checklist({ checklist }: { checklist: ConceptPack["checklist"] }) {
+  return (
+    <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-3">
+      <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        Self-check
+      </div>
+      <ul className="mt-2 space-y-1 text-sm">
+        {checklist.map((c, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="text-[var(--muted)]">□</span>
+            <span>{String((c as { point?: string }).point ?? "")}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
