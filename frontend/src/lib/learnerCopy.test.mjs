@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { bannedHits } from "./bannedPhrases.mjs";
-import { contrastFoot, evidenceMark } from "./learnerCopy.ts";
+import { contrastFoot, evidenceMark, showPrivacyUnread } from "./learnerCopy.ts";
 
 test("stated items do not show n=0", () => {
   assert.equal(evidenceMark("stated", 0, []), "stated");
@@ -51,4 +51,12 @@ test("status chip and home copy no longer use the old developer sentences", () =
   assert.doesNotMatch(settings, /Allow a model summary/);
   assert.doesNotMatch(settings, />GET \/privacy/);
   assert.doesNotMatch(settings, /to the model/);
+});
+
+test("a signed-out privacy list is not called unread while it is loading or after it arrives", () => {
+  assert.equal(showPrivacyUnread(true, 0), false);
+  assert.equal(showPrivacyUnread(false, 5), false);
+  assert.equal(showPrivacyUnread(false, 0), true);
+  const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(home, /showPrivacyUnread\(loading, recorded\.length\)/);
 });

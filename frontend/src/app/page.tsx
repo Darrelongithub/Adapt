@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 
 import { announce, Btn, Card, Err, Field, Input, Notice, Tag, useSession } from "@/components/ui";
 import { api, get, isMock, post, useApi, type Me } from "@/lib/api";
+import { showPrivacyUnread } from "@/lib/learnerCopy";
 import type { Health, Mastery } from "@/lib/types";
 
 type Dash = {
@@ -522,15 +523,15 @@ function RecordedPanel({ privacy, loading }: { privacy: Privacy | null; loading:
     <div id="what-is-recorded" className="mt-8 max-w-[720px]">
       <Card title="What is recorded about you" tone="muted" right={<span>what is recorded</span>}>
         {loading ? <p className="text-sm text-[var(--muted)]">…</p> : null}
-        {recorded.length ? (
+        {showPrivacyUnread(loading, recorded.length) ? (
+          <p className="text-sm text-[var(--muted)]">The server owns this list, and could not be read just now.</p>
+        ) : recorded.length ? (
           <ul className="list-disc space-y-1 pl-5 text-sm">
             {recorded.map((r) => (
               <li key={r}>{r}</li>
             ))}
           </ul>
-        ) : (
-          <p className="text-sm text-[var(--muted)]">The server owns this list, and could not be read just now.</p>
-        )}
+        ) : null}
         {never.length ? (
           <p className="mt-2 text-xs text-[var(--muted)]">
             Never recorded: {never.join("; ")}.

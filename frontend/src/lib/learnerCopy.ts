@@ -40,3 +40,9 @@ export function contrastFoot(input: { modelVersion?: number | null; evidenceN?: 
   }
   return `${lessons} Planned from this profile, with ${pieces} behind it.`;
 }
+
+/** The privacy list is public. Do not say it failed while it is still loading, or after it arrived. */
+export function showPrivacyUnread(loading: boolean, recordedCount: number): boolean {
+  const count = Number(recordedCount);
+  return !loading && (!Number.isFinite(count) || count <= 0);
+}

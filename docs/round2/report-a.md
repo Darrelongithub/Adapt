@@ -4,7 +4,7 @@ Branch: `arena/9f6212e5-adapt`. This session cannot create `r2/phase-a` or merge
 
 ## What landed
 
-1. `GET /api/v1/privacy` is public and read-only. It still opens a database session so the storage claim describes this instance, but it no longer requires a learner. The body has no `student_id` and does not name a service.
+1. `GET /api/v1/privacy` is public and read-only. It still opens a database session so the storage claim describes this instance, but it no longer requires a learner. The body has no `student_id` and does not name a service. The home screen does not say the list could not be read while that request is still loading, or after the list has arrived.
 2. Learner-facing developer copy was removed from the pages this phase may edit: home, settings, contrast, progress, diagnose, lesson, voice, the status chip, and the question reveal. Status wording is `Lessons: simple mode` (or `Lessons: ready` when a written-for-you reply is actually available). The chip no longer says `protection: not reported`. Onboarding copy is not edited; the exact replacements are in `handoff-A.md`.
 3. The secrecy log filter redacts the rendered message and keeps argument shapes. Uvicorn access logs still receive a five-tuple whose status is an `int`. Secrets in the message are redacted. `args` are not cleared.
 4. Closing prompts follow item kind: numeric asks to change the numbers; multiple choice asks the learner to cover the options and say which they would pick and why; a recall item asks them to recall without looking; teach-back, worked examples, unknown kinds, and a missing item get no prompt.
@@ -46,12 +46,16 @@ Ran from this machine on 2026-10-14.
 | `cd frontend && npm run lint` | contract check ok, `tsc --noEmit` clean |
 | `cd frontend && npm run test:engine` | 15 passed |
 | `cd frontend && npm run test:server` | 2 passed |
-| `cd frontend && npm run test:lib` | 23 passed |
+| `cd frontend && npm run test:lib` | 24 passed |
 | `/tmp/adapt-venv/bin/python scripts/teaching_quality_eval.py --out /tmp/quality-a.md` | exit 0. Walked 273 questions across 61 named topics. Zero gate flags. Model pass did not run: no key. |
 
 The quality report was written to `/tmp/quality-a.md` and was not committed. `QUALITY_REPORT.md` was not regenerated.
 
-Browser crawl: **not run**. `/opt/pw-browsers/chromium` is not on this machine, and `playwright install` is forbidden. The script is `frontend/tests-e2e/banned_phrases.mjs`. It never downloads a browser. When a binary is already present:
+Signed-out `GET /api/v1/privacy` through the web proxy (`http://127.0.0.1:3000/api/v1/privacy`) returned 200, with 5 recorded lines and no `student_id`.
+
+A jsdom walk then loaded every listed route, signed out and as a guest, against that running app. It read visible text plus title, aria-label, placeholder, and alt, and applied the same banned-phrase list as `frontend/tests-e2e/banned_phrases.mjs`. All 14 routes passed in both states. The home screen showed the server's recorded-events list and did not show "could not be read just now". This is not a Chromium run: paint, layout, and real browser chrome were not checked.
+
+The Playwright script itself was **not run**. `/opt/pw-browsers/chromium` is not on this machine, and `playwright install` is forbidden. The script is `frontend/tests-e2e/banned_phrases.mjs`. It never downloads a browser. When a binary is already present:
 
 ```
 ADAPT_MODE=local ADAPT_BASE_URL=http://127.0.0.1:3000 \
@@ -67,7 +71,7 @@ None. `docs/screens/a/` has no images because no browser was available. Do not t
 
 ## Unverified
 
-See `unverified-a.md`. Short version: no signed-out browser confirmation of the privacy screen, no banned-phrase crawl, no screenshots, no live Gemini call.
+See `unverified-a.md`. Short version: no Chromium crawl, no screenshots, no live Gemini call. The jsdom walk passed, and that is not a browser check.
 
 ## Handoffs for Phase G
 
