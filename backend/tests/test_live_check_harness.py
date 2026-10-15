@@ -269,6 +269,8 @@ def test_a_run_with_a_fake_can_save_fixtures_and_replay_them_without_a_key(
     report = tmp_path / "report.md"
     code = harness.main(
         [
+            "--pipeline",
+            "stub",  # this test is about the fixture machinery; Phase G pinned the pipeline
             "--topics",
             "probability",
             "--allow-partial",
@@ -442,6 +444,8 @@ def test_a_configured_key_drives_the_whole_live_branch_end_to_end(harness, scrip
     out = tmp_path / "live.md"
     code = harness.main(
         [
+            "--pipeline",
+            "stub",  # exercises the harness's live branch, not Phases B/C; Phase G pinned this
             "--topics",
             "probability",
             "--allow-partial",

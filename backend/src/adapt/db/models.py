@@ -1316,3 +1316,10 @@ from ..subjects import models as _subject_models  # noqa: E402,F401
 # compares the database against exactly that. Importing the module is what guarantees both
 # see ``journey_stages`` no matter which module a process imported first.
 from ..journey import models as _journey_models  # noqa: E402,F401
+
+# The generated-content cache (round 2, Part B) lives in ``adapt/content/skeleton/cache.py``
+# and follows the same rule. Without this import, a ``create_all`` run whose process only
+# imported the engine would silently lack ``content_pack_cache``, ``content_prepare_jobs``
+# and ``content_pack_item_calibration`` — exactly the drift ``tests/test_migrations.py``
+# exists to catch. Phase G added this while integrating Part B (see handoff-b.md §2).
+from ..content.skeleton import cache as _skeleton_cache  # noqa: E402,F401

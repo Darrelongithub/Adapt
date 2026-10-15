@@ -36,6 +36,7 @@ from .routes import (
     auth,
     baseline,
     content,
+    content_prepare,
     evidence,
     journey,
     learning,
@@ -167,6 +168,9 @@ def create_app() -> FastAPI:
         lessons.router,
         lesson.router,
         content.router,
+        # Part B's prepare job routes. The module's prefix already carries the full
+        # /api/v1/content/prepare path, so it is included without an extra prefix.
+        content_prepare.router,
         adaptations.router,
         journey.router,
         lesson_plan.router,

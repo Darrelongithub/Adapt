@@ -194,6 +194,32 @@ TASKS: dict[str, TaskPolicy] = {
         "the one retry, with the validator's reasons in the prompt; a repair pass, not a "
         "rewrite from nothing",
     ),
+    # -- generated content packs (round 2, Part B) --------------------------- #
+    "content_skeleton": _p(
+        "deep",
+        0.2,
+        3000,
+        "authors a topic's knowledge skeleton (concepts, prerequisites, key facts, "
+        "misconceptions); every field is schema- and code-validated (acyclic graph, "
+        "bounded text, real fact references) and a rejected skeleton falls back to an "
+        "authored or simple pack",
+    ),
+    "content_items": _p(
+        "deep",
+        0.2,
+        1600,
+        "writes one concept's matched A/B practice pair with graded hints and "
+        "misconception-tied distractors; an item reaches a learner only after "
+        "computational re-checking or an independent verifier pass, never on the "
+        "author's word",
+    ),
+    "content_item_verifier": _p(
+        "light",
+        0.0,
+        450,
+        "independently re-answers one item from the skeleton's facts alone; a verdict "
+        "that disagrees with the declared key rejects the item, so being wrong is safe",
+    ),
     # -- narration (AI 3) -------------------------------------------------- #
     "ai3_narrate": _p(
         "light",
