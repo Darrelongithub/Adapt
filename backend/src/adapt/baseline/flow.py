@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from .games import (
+    TRAPS,
     Trial,
     codewords_cued,
     codewords_delayed,
@@ -115,13 +116,16 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
     if stage == "locked_box":
         # One puzzle per sitting, and three ways out: solve it, walk away, or run out of attempts.
         # The measurement is the *first* attempt at something hard — replaying it after seeing the
-        # answer would measure something else — so the stage ends rather than looping.
+        # answer would measure something else — so the stage ends rather than looping. Every action
+        # (a hint, an attempt, walking away) is its own trial and has its own task id.
         done = [t for t in trials if t.game == "locked_box"]
         if any(t.task.get("action") == "walk_away" for t in done) or any(t.correct for t in done):
             return None
         if len([t for t in done if t.task.get("action") == "attempt"]) >= 3:
             return None
-        return locked_box_task(seed)
+        attempts = len([t for t in done if t.task.get("action") == "attempt"])
+        bought = [str(t.response.get("hint_id")) for t in done if t.task.get("action") == "hint" and t.response.get("hint_id")]
+        return locked_box_task(seed, len(done), attempts_used=attempts, bought_hints=bought)
     if stage in QUICK_BUDGET:
         used = quick_index(trials, stage)
         if used >= QUICK_BUDGET[stage]:
@@ -131,8 +135,9 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
         task["stage"] = stage
         return task
     if stage == "trap":
+        # Two questions, one after the other, as the screen says. (Only the first was ever served.)
         done = [t for t in trials if t.game == "trap"]
-        return None if done else trap_task(0)
+        return trap_task(len(done)) if len(done) < len(TRAPS) else None
     if stage == "codewords_delayed":
         free = codewords_delayed(seed, [t for t in trials if t.task.get("kind") == "free"], kind="free")
         if free is not None:
@@ -177,8 +182,12 @@ def stage_report(trials: Sequence[Trial], *, seed: int, format_done: bool, quest
     """
     rows: list[dict[str, Any]] = []
     for stage in STAGE_KEYS:
-        if stage in ("format", "questions", "snapshot"):
-            done = {"format": format_done, "questions": questions_done, "snapshot": False}[stage]
+        # The snapshot is what the steps lead to, not one of them: thirteen steps, and "not measured"
+        # is only ever said about a step.
+        if stage == "snapshot":
+            continue
+        if stage in ("format", "questions"):
+            done = {"format": format_done, "questions": questions_done}[stage]
             rows.append({"stage": stage, "state": "complete" if done else "not_started", "trials": 0})
             continue
         count = len([t for t in trials if _stage_of(t) == stage])

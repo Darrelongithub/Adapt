@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from ..db.models import BaselineRun, BaselineTrial, MindSnapshot, utcnow
@@ -24,6 +25,7 @@ from .games import (
     Trial,
     choice_score,
     codewords_pairs,
+    locked_box_coins_left,
     locked_box_score,
     machine_respond,
     machine_switched,
@@ -36,9 +38,39 @@ from .games import (
 
 log = logging.getLogger("adapt.baseline")
 
+#: Every codeword-check task id starts with this, so the submit path can tell it from a flow task.
+NEXT_DAY_PREFIX = "codewords_next_day_"
+
 
 class BaselineError(RuntimeError):
     """Something the caller did that the flow will not accept."""
+
+
+#: Keys that name the right answer. They are used by the scorer and are never sent to the page
+#: before the learner has answered: a served task that carries its own answer measures nothing.
+PRIVATE_TASK_KEYS: tuple[str, ...] = ("answer", "intuitive", "explain", "expected")
+
+
+def public_scored(scored: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The verdict on a trial as the page may see it. The stored record keeps everything.
+
+    ``expected`` is the right answer to the item just answered. A learner who is told it has the
+    answer to a measured item they got wrong, and the same pairs come back in the delayed check, so
+    the reply to a *measured* answer does not carry it. (Practice answers are feedback, and the
+    practice reply keeps it.)
+    """
+    return {k: v for k, v in dict(scored or {}).items() if k not in ("expected",)}
+
+
+def public_task(task: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The task as the page may see it: everything it needs to ask, nothing that tells the answer."""
+    if not task:
+        return None
+    out = {k: v for k, v in dict(task).items() if k not in PRIVATE_TASK_KEYS}
+    if isinstance(out.get("distractors"), list):
+        # A true/false statement without its answer; the id and text are all the page needs.
+        out["distractors"] = [{"id": d["id"], "text": d["text"]} for d in out["distractors"]]
+    return out
 
 
 #: Questions asked before the games (brief §5.3). Each one records *why* it is asked, because a
@@ -315,7 +347,7 @@ class Baseline:
                 "stage": step.stage,
                 "stage_title": next((x["title"] for x in flow.STAGES if x["key"] == step.stage), step.stage),
                 "kind": step.kind,
-                "task": dict(step.task) if step.task else None,
+                "task": public_task(step.task),
                 "progress": step.progress,
                 "note": step.note,
                 "format_pick": run.format_pick,
@@ -400,6 +432,10 @@ class Baseline:
         wager: int | None = None,
     ) -> dict[str, Any]:
         """Judge one response and return the next step. Idempotent by ``task_id``."""
+        if task_id.startswith(NEXT_DAY_PREFIX):
+            return self._submit_next_day(
+                student_id, run_id, task_id=task_id, response=response, latency_ms=latency_ms, wager=wager
+            )
         with self._sess() as s:
             run = self._run(s, run_id)
             trials = self.trials_of(run_id, session=s)
@@ -479,9 +515,137 @@ class Baseline:
                     log.exception("baseline: could not ingest a trial into the evidence log")
             s.flush()
         out = self.view(student_id, run_id)
-        out["scored"] = scored
+        out["scored"] = public_scored(scored)
         out["duplicate"] = False
         return out
+
+    def _submit_next_day(
+        self,
+        student_id: str,
+        run_id: str,
+        *,
+        task_id: str,
+        response: Mapping[str, Any],
+        latency_ms: int | None,
+        wager: int | None,
+    ) -> dict[str, Any]:
+        """Judge one answer to the codeword check, which is offered after the run is over.
+
+        The check is not part of the flow (``next_step`` only serves the open run), so it has its own
+        path: the task must be one the check is offering *now*, and a re-sent answer is reported, not
+        recorded twice. A new answer changes the measurement, so the sealed snapshot is re-sealed
+        as a new row -- the old one stays, as a snapshot should.
+        """
+        with self._sess() as s:
+            run = self._run(s, run_id)
+            if run.student_id != student_id:
+                raise BaselineError(f"unknown baseline run {run_id!r}")
+            trials = self.trials_of(run_id, session=s)
+            already = next((t for t in trials if t.task_id == task_id), None)
+            if already is not None:
+                out_scored: dict[str, Any] = dict(already.response.get("scored") or {})
+                status = run.status
+                duplicate = True
+            else:
+                offered = flow.next_day_tasks(int(run.seed or 0), trials)
+                task = next((t for t in offered if t.get("id") == task_id), None)
+                if task is None:
+                    raise BaselineError(f"task {task_id!r} is not the codeword check on offer")
+                response = dict(response or {})
+                scored = recall_score(task, response)
+                out_scored = scored
+                status = run.status
+                duplicate = False
+                row = BaselineTrial(
+                    run_id=run_id,
+                    student_id=student_id,
+                    game="codewords_next_day",
+                    task_id=task_id,
+                    index=len(trials),
+                    phase="measure",
+                    correct=bool(scored.get("correct")),
+                    latency_ms=int(latency_ms) if latency_ms is not None else None,
+                    wager=int(wager) if wager is not None and wager_allowed(task) else None,
+                    task=dict(task),
+                    response={**response, "scored": scored},
+                    score=scored,
+                )
+                s.add(row)
+                s.flush()
+                if self.state is not None:
+                    try:
+                        self.state.ingest(
+                            student_id,
+                            self._event(run_id, task, scored, bool(scored.get("correct"))),
+                            module="code",
+                            session=s,
+                        )
+                    except Exception:  # pragma: no cover - the check must never fail on the store
+                        log.exception("baseline: could not ingest a next-day answer into the evidence log")
+                s.flush()
+        if not duplicate and status == "complete":
+            self._reseal(student_id, run_id)
+        out = self.view(student_id, run_id)
+        out["scored"] = public_scored(out_scored)
+        out["duplicate"] = duplicate
+        return out
+
+    def _reseal(self, student_id: str, run_id: str) -> str:
+        """Write a new snapshot row for a finished run, from the trial log as it is now."""
+        model = self.state.get_snapshot(student_id).model if self.state is not None else {}
+        with self._sess() as s:
+            run = self._run(s, run_id)
+            trials = self.trials_of(run_id, session=s)
+            payload, report = self._sealed_payload(student_id, run, trials, model=model)
+            row = MindSnapshot(
+                student_id=student_id,
+                run_id=run_id,
+                factors=payload["factors"],
+                levers=payload["levers"],
+                completion={**report, "preference_vs_performance": payload["preference_vs_performance"]},
+            )
+            s.add(row)
+            s.flush()
+            return row.id
+
+    def _sealed_payload(self, student_id: str, run: Any, trials: Sequence[Trial], *, model: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The snapshot payload and the stage report for one run. Used by sealing and re-sealing alike."""
+        report = flow.stage_report(
+            trials,
+            seed=int(run.seed or 0),
+            format_done=bool(run.format_pick),
+            questions_done=bool((run.completion or {}).get("questions")),
+        )
+        prefs = dict((run.completion or {}).get("answers") or {})
+        built = F.build_factors(trials, model=model, preferences=prefs)
+        levers = F.levers(built, preferences=prefs)
+        payload = F.snapshot_payload(
+            built,
+            levers_data=levers,
+            preferences=prefs,
+            completion=report,
+            preference_row=self._method_comparison(student_id),
+        )
+        return payload, report
+
+    def internal_task(self, run_id: str) -> dict[str, Any] | None:
+        """The task on offer *with* its answer key. For the scorer and for tests only: no route returns it."""
+        with self._sess() as s:
+            run = self._run(s, run_id)
+            trials = self.trials_of(run_id, session=s)
+            step = flow.next_step(
+                seed=int(run.seed or 0),
+                trials=trials,
+                format_done=bool(run.format_pick),
+                questions_done=bool((run.completion or {}).get("questions")),
+            )
+            return dict(step.task) if step.task else None
+
+    def internal_next_day(self, run_id: str) -> list[dict[str, Any]]:
+        """The codeword check with its answers. Same caveat as :meth:`internal_task`."""
+        with self._sess() as s:
+            run = self._run(s, run_id)
+            return flow.next_day_tasks(int(run.seed or 0), self.trials_of(run_id, session=s))
 
     # ------------------------------------------------------------------ #
     # scoring dispatch (all of it in code)
@@ -495,8 +659,12 @@ class Baseline:
             return {"correct": None, "action": "studied", "seconds_seen": response.get("seconds_seen")}
         if game == "machine":
             out = machine_respond(seed, int(task.get("round") or 1), task, response, trials)
-            if out.get("action") == "guess":
-                switched = machine_switched(seed, int(task.get("round") or 1), [*trials, _self_trial(task, response, out)])
+            if out.get("action") in ("guess", "probe") and "error" not in out:
+                # Noticing the switch is read from the graded outputs, and a probe can be where it
+                # happens first, so every machine action carries the read-out, not only guesses.
+                switched = machine_switched(
+                    seed, int(task.get("round") or 1), [*trials, _self_trial(task, response, out)]
+                )
                 out.update({k: v for k, v in switched.items() if k != "switched"})
             return out
         if game == "vault":
@@ -522,6 +690,13 @@ class Baseline:
                 hint = next((h for h in task.get("hint_shop") or [] if h["id"] == response.get("hint_id")), None)
                 if hint is None:
                     raise BaselineError("that hint is not in this shop")
+                if any(
+                    t.task.get("action") == "hint" and t.response.get("hint_id") == hint["id"] for t in trials
+                ):
+                    raise BaselineError("that hint is already bought")
+                bought = [str(t.response.get("hint_id")) for t in trials if t.task.get("action") == "hint"]
+                if int(hint["cost"]) > locked_box_coins_left(bought):
+                    raise BaselineError("not enough coins for that hint")
                 return {"correct": None, "action": "hint", "cost": hint["cost"], "hint": hint["text"]}
             if action == "walk_away":
                 return {"correct": None, "action": "walk_away"}
@@ -569,16 +744,7 @@ class Baseline:
                 format_done=bool(run.format_pick),
                 questions_done=bool((run.completion or {}).get("questions")),
             )
-            prefs = dict((run.completion or {}).get("answers") or {})
-            built = F.build_factors(trials, model=model, preferences=prefs)
-            levers = F.levers(built, preferences=prefs)
-            payload = F.snapshot_payload(
-                built,
-                levers_data=levers,
-                preferences=prefs,
-                completion=report,
-                preference_row=self._method_comparison(student_id),
-            )
+            payload, report = self._sealed_payload(student_id, run, trials, model=model)
             row = MindSnapshot(
                 student_id=student_id,
                 run_id=run_id,
@@ -651,26 +817,38 @@ class Baseline:
 
         return FailureLoop(self.state).report(student_id)["preference_vs_performance"]
 
-    def next_day(self, student_id: str, *, run_id: str | None = None) -> dict[str, Any]:
-        """The codeword check for a learner who has come back (brief §5.2)."""
+    def next_day(self, student_id: str, *, run_id: str | None = None, finished: bool = False) -> dict[str, Any]:
+        """The codeword check for a learner who has come back (brief §5.2).
+
+        Without a run id it is the check for the learner's last *finished* sitting, so a returning
+        learner who has already opened a new baseline still gets yesterday's check. Only tasks the
+        page may see are returned; the answers stay with the server.
+        """
         with self._sess() as s:
-            run = (
-                s.query(BaselineRun).filter(BaselineRun.id == run_id).first()
-                if run_id
-                else s.query(BaselineRun)
-                .filter(BaselineRun.student_id == student_id)
-                .order_by(BaselineRun.started_at.desc())
-                .first()
-            )
+            query = s.query(BaselineRun).filter(BaselineRun.student_id == student_id)
+            if run_id:
+                run = query.filter(BaselineRun.id == run_id).first()
+            elif finished:
+                # The return visit's check: the last sitting that was *finished*. The open one is not
+                # "last time", and its check must not appear on the page the learner is working in.
+                run = query.filter(BaselineRun.status == "complete").order_by(BaselineRun.started_at.desc()).first()
+            else:
+                run = query.order_by((BaselineRun.status == "complete").desc(), BaselineRun.started_at.desc()).first()
             if run is None:
-                return {"student_id": student_id, "tasks": [], "note": "no baseline yet"}
+                return {"student_id": student_id, "tasks": [], "note": "no finished baseline to check yet" if finished else "no baseline yet"}
             trials = self.trials_of(run.id, session=s)
-            tasks = flow.next_day_tasks(int(run.seed or 0), trials)
+            tasks = [public_task(t) for t in flow.next_day_tasks(int(run.seed or 0), trials)]
+            studied = any(t.game == "codewords_study" for t in trials)
+            # The check measures a gap. Asked on the day of the sitting, the gap is short, and the page
+            # says so: "next day" is only a name for the gap when the day has actually passed.
+            finished = run.finished_at
+            same_day = bool(finished and finished.date() == datetime.now(timezone.utc).replace(tzinfo=None).date())
             return {
                 "student_id": student_id,
                 "run_id": run.id,
                 "tasks": tasks,
-                "studied": codewords_pairs(int(run.seed or 0))[:1] and len([t for t in trials if t.game == "codewords_study"]) > 0,
+                "studied": studied,
+                "same_day": same_day,
                 "note": (
                     "these are the pairs you learned last time, asked again with no new study"
                     if tasks
@@ -684,15 +862,20 @@ def _game_of(task: Mapping[str, Any]) -> str:
 
 
 def _self_trial(task: Mapping[str, Any], response: Mapping[str, Any], scored: Mapping[str, Any]) -> Trial:
-    """The trial being scored right now, so a scorer can see it alongside the earlier ones."""
+    """The trial being scored right now, shaped as it will be stored, so a scorer can see it.
+
+    It carries the action and the verdict the same way a stored trial does (the verdict under
+    ``response["scored"]``), because the readers of the trial log look in those places and nowhere else.
+    """
+    action = str(response.get("action") or task.get("action") or "")
     return Trial(
         task_id=str(task.get("id")),
         game=_game_of(task),
         index=10_000,
         phase=str(task.get("phase") or "measure"),
         correct=scored.get("correct"),
-        response=dict(response),
-        task=dict(task),
+        response={**dict(response), "scored": dict(scored)},
+        task={**dict(task), **({"action": action} if action else {})},
     )
 
 

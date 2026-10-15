@@ -314,7 +314,15 @@ def resolve_topic(
             bank_code=spec.bank_code,
             bank_topic_id=(topic_ids or {}).get(spec.bank_code) if spec.bank_code else None,
             alternatives=tuple(authored_alts)[:_MAX_ALTERNATIVES],
-            note="we have written-down skill ratings and a prerequisite chain for this topic",
+            note=(
+                "we have written-down skill ratings and a prerequisite chain for this topic"
+                if norm in authored_aliases()
+                else (
+                    f"we have no written-down ratings for {topic_text or raw!r} itself; the closest topic we "
+                    f"have is {spec.title}, so its ratings are used. That is a near match, not a finding about "
+                    "your topic"
+                )
+            ),
             topic_text=topic_text,
         )
 

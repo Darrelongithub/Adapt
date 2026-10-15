@@ -23,6 +23,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import "./baseline.css";
+
 import { Btn, Card, Notice, Tag, Trace, announce } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useRovingTabIndex } from "@/lib/a11y/useRovingTabIndex";
@@ -40,8 +42,10 @@ import {
   seconds_left,
   source_label,
   start_baseline,
+  step_label,
   submit_trial,
   timers_visible,
+  timers_visible_in,
   vault_expected,
   vault_prefix_ok,
   type BaselineSnapshot,
@@ -58,6 +62,10 @@ export default function Baseline() {
   const [wager, setWager] = useState<number | null>(null);
   const [resumed, setResumed] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
+  // Yesterday's codeword check, if the last finished sitting has one waiting. It is loaded alongside
+  // the run, never instead of it: a learner who came back gets the new baseline as well.
+  const [pending, setPending] = useState<NextDay | null>(null);
+  const [pending_hidden, setPendingHidden] = useState(false);
 
   // When the current task appeared. Latency is measured here because only the browser knows it;
   // the server clamps anything absurd, and the questions screen tells the learner it happens.
@@ -93,6 +101,10 @@ export default function Baseline() {
         setError(err instanceof ApiError ? err.shown : (err as Error).message);
       }
     })();
+    // The return visit's check is the last *finished* sitting's: never the sitting that is open now.
+    load_next_day(null, true)
+      .then(setPending)
+      .catch(() => setPending(null));
   }, [advance]);
 
   const stop = useCallback(async () => {
@@ -174,7 +186,7 @@ export default function Baseline() {
 
   if (error && !view) {
     return (
-      <section className="wrap">
+      <section className="wrap baseline-page">
         <Card title="The baseline could not open">
           <Notice tone="bad">{error}</Notice>
           <p className="muted">Nothing was recorded. If you are signed out, the front door will ask you in.</p>
@@ -185,7 +197,7 @@ export default function Baseline() {
 
   if (!view) {
     return (
-      <section className="wrap" aria-busy="true">
+      <section className="wrap baseline-page" aria-busy="true">
         <Card title="Opening the baseline">
           <p className="muted">One sitting of short games. Nothing here is a grade.</p>
         </Card>
@@ -198,11 +210,11 @@ export default function Baseline() {
   const progress = Math.round((view.progress ?? 0) * 100);
 
   return (
-    <section className="wrap">
+    <section className="wrap baseline-page">
       <header className="baseline-head">
         <div>
           <p className="muted small" style={{ margin: 0 }}>
-            {show_snapshot ? "What we noticed" : `Step ${Math.min(13, Math.round(view.progress * 13) + 1)} of 13`} · {progress}% through
+            {show_snapshot ? "What we noticed" : step_label(view.stage) || "The baseline"} · {progress}% through
           </p>
           <h1 style={{ margin: "2px 0 0" }}>{show_snapshot ? "What we noticed" : view.stage_title}</h1>
         </div>
@@ -226,8 +238,17 @@ export default function Baseline() {
       {error ? <Notice tone="bad">{error}</Notice> : null}
       {view.note && !show_snapshot ? <p className="muted small">{view.note}</p> : null}
 
+      {pending && pending.tasks.length > 0 && pending.run_id && pending.run_id !== view.run_id && !pending_hidden && !show_snapshot ? (
+        <ReturnCheck
+          check={pending}
+          timers={timers_visible(view)}
+          onChanged={setPending}
+          onHide={() => setPendingHidden(true)}
+        />
+      ) : null}
+
       {show_snapshot ? (
-        <><SnapshotScreen snap={snap} view={view} /><div className="mt-5 flex gap-3"><Btn href="/" kind="primary">Go to your dashboard</Btn><Btn href="/subject">Choose a subject</Btn></div></>
+        <><SnapshotScreen snap={snap} view={view} onChanged={async () => { if (snap) setSnap(await load_snapshot(snap.run_id)); }} /><div className="mt-5 flex gap-3"><Btn href="/" kind="primary">Go to your dashboard</Btn><Btn href="/subject">Choose a subject</Btn></div></>
       ) : view.kind === "format" ? (
         <FormatScreen view={view} onPick={choose_format} busy={busy} />
       ) : view.kind === "questions" ? (
@@ -265,14 +286,13 @@ function FormatScreen({ view, onPick, busy }: { view: BaselineView; onPick: (v: 
         This is a preference, not a diagnosis: it sets where the app starts, and later it is compared
         with what actually worked. Changing your mind is allowed.
       </p>
-      <div className="baseline-options" role="radiogroup" aria-label="format preference">
+      <div className="baseline-options" role="group" aria-label="format preference">
         {view.format_options.map((opt, i) => (
           <button
             key={opt.value}
             ref={i === 0 ? opener : undefined}
             type="button"
-            role="radio"
-            aria-checked={picked === opt.value}
+            aria-pressed={picked === opt.value}
             className={`baseline-option${picked === opt.value ? " on" : ""}`}
             onClick={() => {
               setPicked(opt.value);
@@ -329,30 +349,30 @@ function QuestionsScreen({ view, onDone, busy }: { view: BaselineView; onDone: (
                 <input
                   className="input"
                   aria-label={q.question}
-                  value={free}
-                  onChange={(e) => {
-                    setFree(e.target.value);
-                    set(q.key, e.target.value);
-                  }}
+                  value={typeof value === "string" ? value : ""}
+                  disabled={busy}
+                  onChange={(e) => set(q.key, e.target.value)}
                 />
-              ) : multi ? (
-                options.map((opt) => (
-                  <label key={String(opt)} className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={Array.isArray(value) && value.includes(opt)}
-                      onChange={() => toggle(q.key, opt)}
-                    />
-                    <span>{String(opt)}</span>
-                  </label>
-                ))
               ) : (
-                options.map((opt) => (
-                  <label key={String(opt)} className="check-row">
-                    <input type="radio" name={q.key} checked={value === opt} onChange={() => set(q.key, opt)} />
-                    <span>{String(opt)}</span>
-                  </label>
-                ))
+                // Choices are buttons with a pressed state, not radios or checkboxes inside labels:
+                // one control kind across the baseline, and a keyboard path that is the same everywhere.
+                <div className="baseline-options">
+                  {options.map((opt) => {
+                    const on = multi ? Array.isArray(value) && value.includes(opt) : value === opt;
+                    return (
+                      <button
+                        key={String(opt)}
+                        type="button"
+                        className={`baseline-option${on ? " on" : ""}`}
+                        aria-pressed={on}
+                        disabled={busy}
+                        onClick={() => (multi ? toggle(q.key, opt) : set(q.key, opt))}
+                      >
+                        <strong>{String(opt)}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </fieldset>
           );
@@ -455,8 +475,8 @@ function TaskScreen({
       {task.game === "codewords_delayed" ? <Delayed task={task} busy={busy} onSend={onSend} /> : null}
       <p className="muted small">
         {task.game === "vault"
-          ? "Arrow keys move, Enter taps. The tiles you saw are flashed once, then it is your turn."
-          : "Keyboard works everywhere: Tab and Enter on the controls, or the number keys."}
+          ? "Arrow keys move, Enter taps, or press 1 to 9 for a tile. The tiles you saw are flashed once, then it is your turn."
+          : "Tab moves between the controls; Enter or Space presses the one in focus."}
       </p>
       {now ? null : null}
     </div>
@@ -524,13 +544,9 @@ function Choice({ task, busy, onSend }: { task: BaselineTask; busy: boolean; onS
           ref={roving.registerRef(i)}
           type="button"
           tabIndex={roving.getTabIndex(i)}
-          onKeyDown={(e) => {
-            roving.onKeyDown(e, i);
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onSend(task, { value: opt });
-            }
-          }}
+          // Enter and Space press the button natively (one click, one answer); the roving handler is
+          // for the arrows only. Handling Enter here as well sent every keyboard answer twice.
+          onKeyDown={(e) => roving.onKeyDown(e, i)}
           className="baseline-option"
           onClick={() => onSend(task, { value: opt })}
           disabled={busy}
@@ -687,13 +703,9 @@ function Vault({
             aria-label={`tile ${i + 1}`}
             tabIndex={grid.getTabIndex(i)}
             className={`vault-tile${flash === i ? " flash" : ""}${taps.includes(i) ? " tapped" : ""}`}
-            onKeyDown={(e) => {
-              grid.onKeyDown(e, i);
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                tap(i);
-              }
-            }}
+            // Enter and Space tap through the native click; the grid handles the arrows only, so a
+            // keyboard tap is recorded once.
+            onKeyDown={(e) => grid.onKeyDown(e, i)}
             onClick={() => tap(i)}
             disabled={showing || busy}
           >
@@ -784,49 +796,34 @@ function Machine({
   onSend: (t: BaselineTask, r: Record<string, unknown>) => void;
 }) {
   const [input, set_input] = useState("");
-  const [probes, set_probes] = useState<{ x: number; out: unknown; falsifying?: boolean }[]>([]);
   const [guess, set_guess] = useState("");
   const max_probes = Number(task.max_probes ?? 5);
   const max_wrong = Number(task.max_wrong_guesses ?? 2);
-
-  // Local probe history is for the learner's eyes only; the server keeps the real record. The
-  // scored reply from the last submission is what tells us what the machine said back.
+  // Everything the page shows about the machine comes from the server's record: the probes used
+  // and what the machine said to each (`history`). A reload therefore shows the same round, and a
+  // probe is never counted twice. The last reply only decides the guess message below.
   const last = view.scored ?? null;
   const wrong_guesses = Number(task.wrong_guesses ?? 0);
   const probes_used = Number(task.probes_used ?? 0);
+  const history = (task.history as { x: unknown; out: unknown; falsifying?: boolean }[] | undefined) ?? [];
+  const at_limit = probes_used >= max_probes;
 
   useEffect(() => {
-    set_probes([]);
     set_input("");
     set_guess("");
   }, [task.id]);
 
-  const reply = (r: Record<string, unknown>) => {
-    const before = probes.length;
-    void before;
-    onSend(task, r);
-  };
-
-  useEffect(() => {
-    if (last && last.action === "probe" && typeof last.value === "number") {
-      set_probes((p) => {
-        if (p.some((row) => row.x === last.value && row.out === last.output)) return p;
-        return [...p, { x: last.value as number, out: last.output, falsifying: Boolean(last.falsifying) }];
-      });
-    }
-  }, [last]);
-
   return (
     <div>
       <p className="muted small">
-        Probes used: {probes_used + probes.length} of {max_probes}. Wrong guesses: {wrong_guesses} of {max_wrong}.
+        Probes used: {probes_used} of {max_probes}. Wrong guesses: {wrong_guesses} of {max_wrong}.
       </p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           const value = Number(input);
-          if (input.trim() === "" || Number.isNaN(value)) return;
-          reply({ action: "probe", value });
+          if (input.trim() === "" || Number.isNaN(value) || at_limit) return;
+          onSend(task, { action: "probe", value });
           set_input("");
         }}
       >
@@ -840,22 +837,21 @@ function Machine({
           autoComplete="off"
           value={input}
           onChange={(e) => set_input(e.target.value)}
-          disabled={busy}
+          disabled={busy || at_limit}
         />
         <div className="row">
-          <Btn type="submit" disabled={busy || input.trim() === "" || probes_used + probes.length >= max_probes}>
+          <Btn type="submit" disabled={busy || input.trim() === "" || at_limit}>
             Send it in
           </Btn>
         </div>
       </form>
       <ul className="baseline-machine-out" aria-live="polite">
-        {probes.map((p, i) => (
-          <li key={`${p.x}-${i}`}>
-            {p.x} → <strong>{String(p.out)}</strong>
-            {p.falsifying ? <Tag tone="think"> boundary test</Tag> : null}
+        {history.map((p, i) => (
+          <li key={`${String(p.x)}-${i}`}>
+            {String(p.x)} → <strong>{String(p.out)}</strong>
           </li>
         ))}
-        {probes.length === 0 ? <li className="muted">Nothing in yet: the machine answers every number you send.</li> : null}
+        {history.length === 0 ? <li className="muted">Nothing in yet: the machine answers every number you send.</li> : null}
       </ul>
       <form
         onSubmit={(e) => {
@@ -895,10 +891,17 @@ function Machine({
 function LockedBox({ task, busy, onSend }: { task: BaselineTask; busy: boolean; onSend: (t: BaselineTask, r: Record<string, unknown>) => void }) {
   const cases = (task.cases as { n: number; value: number }[]) ?? [];
   const shop = (task.hint_shop as { id: string; cost: number; text: string; level: string }[]) ?? [];
+  // The attempts, the hints bought and the coins left are the server's (the task carries them), so a
+  // reload shows the same box. Only the answer being typed is local.
+  const attempts_used = Number(task.attempts_used ?? 0);
+  const max_attempts = Number(task.max_attempts ?? 3);
+  const bought = (task.bought_hints as string[] | undefined) ?? [];
+  const coins = Number(task.coins_left ?? 0);
   const [value, set_value] = useState("");
-  const [bought, set_bought] = useState<string[]>([]);
-  const [coins, set_coins] = useState(3);
-  const [attempt, set_attempt] = useState(1);
+  useEffect(() => {
+    set_value("");
+  }, [task.id]);
+  const out_of_attempts = attempts_used >= max_attempts;
   return (
     <div>
       <p className="baseline-story">
@@ -906,12 +909,12 @@ function LockedBox({ task, busy, onSend }: { task: BaselineTask; busy: boolean; 
       </p>
       <p className="muted small">
         This one is hard on purpose. You can buy a hint, try again, or walk away — all three are
-        useful information and none of them is a failure.
+        useful information and none of them is a failure. Attempts: {attempts_used} of {max_attempts}.
       </p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (value.trim()) onSend(task, { action: "attempt", value: Number(value) });
+          if (value.trim() && !out_of_attempts) onSend(task, { action: "attempt", value: Number(value) });
         }}
       >
         <label className="baseline-label" htmlFor="box-answer">
@@ -923,10 +926,10 @@ function LockedBox({ task, busy, onSend }: { task: BaselineTask; busy: boolean; 
           inputMode="numeric"
           value={value}
           onChange={(e) => set_value(e.target.value)}
-          disabled={busy || attempt > 3}
+          disabled={busy || out_of_attempts}
         />
         <div className="row">
-          <Btn type="submit" kind="primary" disabled={busy || attempt > 3} onClick={() => set_attempt((a) => a + 1)}>
+          <Btn type="submit" kind="primary" disabled={busy || out_of_attempts || value.trim() === ""}>
             Try this answer
           </Btn>
           <Btn kind="ghost" disabled={busy} onClick={() => onSend(task, { action: "walk_away" })} title="stop here; walking away is recorded as what it is">
@@ -935,7 +938,9 @@ function LockedBox({ task, busy, onSend }: { task: BaselineTask; busy: boolean; 
         </div>
       </form>
       <details className="baseline-hints">
-        <summary>Hint shop — you have {coins} coin{coins === 1 ? "" : "s"}</summary>
+        <summary>
+          Hint shop — you have {coins} coin{coins === 1 ? "" : "s"}
+        </summary>
         <ul>
           {shop.map((h) => {
             const got = bought.includes(h.id);
@@ -945,11 +950,7 @@ function LockedBox({ task, busy, onSend }: { task: BaselineTask; busy: boolean; 
                 <Btn
                   kind={got ? "ghost" : "quiet"}
                   disabled={busy || got || coins < h.cost}
-                  onClick={() => {
-                    set_bought((b) => [...b, h.id]);
-                    set_coins((c) => c - h.cost);
-                    onSend(task, { action: "hint", hint_id: h.id });
-                  }}
+                  onClick={() => onSend(task, { action: "hint", hint_id: h.id })}
                 >
                   {got ? "bought" : `buy (${h.cost})`}
                 </Btn>
@@ -968,7 +969,7 @@ function Delayed({ task, busy, onSend }: { task: BaselineTask; busy: boolean; on
     return <Predict task={task} busy={busy} onSend={onSend} />;
   }
   if (task.kind === "free") {
-    return <FreeText task={task} busy={busy} onSend={onSend} label="Write the pairs you remember: the code word and its place, separated by a comma; one pair per line." placeholder="Mebra, the old well" />;
+    return <FreeText task={task} busy={busy} onSend={onSend} label="Type the code words you remember, separated by commas. The places can wait." placeholder="type the words here" />;
   }
   return <FreeText task={task} busy={busy} onSend={onSend} label={String(task.prompt ?? "which code word went with it?")} />;
 }
@@ -978,13 +979,12 @@ function Predict({ task, busy, onSend }: { task: BaselineTask; busy: boolean; on
   const [value, set_value] = useState<number | null>(null);
   return (
     <div>
-      <div className="baseline-options" role="radiogroup" aria-label="how many will you remember">
+      <div className="baseline-options" role="group" aria-label="how many will you remember">
         {Array.from({ length: max + 1 }, (_, n) => (
           <button
             key={n}
             type="button"
-            role="radio"
-            aria-checked={value === n}
+            aria-pressed={value === n}
             className={`baseline-option${value === n ? " on" : ""}`}
             onClick={() => set_value(n)}
             disabled={busy}
@@ -1003,9 +1003,141 @@ function Predict({ task, busy, onSend }: { task: BaselineTask; busy: boolean; on
   );
 }
 
+/* ------------------------------------------------------------ codeword check ---- */
+
+/**
+ * The codeword check, one answer at a time, from the server's list. It is the same whether it is
+ * reached from the snapshot or from a return visit: the server says what is still owed, and each
+ * answer is recorded against the run it belongs to (which may be an earlier sitting).
+ */
+function CodewordCheck({
+  check,
+  timers,
+  onChanged,
+}: {
+  check: NextDay;
+  timers: boolean;
+  onChanged: (next: NextDay) => void | Promise<void>;
+}) {
+  const task = check.tasks[0] ?? null;
+  const run_id = check.run_id ?? null;
+  const [text, set_text] = useState("");
+  const [wager, set_wager] = useState<number | null>(null);
+  const [busy, set_busy] = useState(false);
+  const [err, set_err] = useState<string | null>(null);
+  const [recorded, set_recorded] = useState(0);
+  const shown_at = useRef<number>(Date.now());
+  const box = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    set_text("");
+    set_wager(null);
+    shown_at.current = Date.now();
+    box.current?.focus();
+  }, [task?.id]);
+
+  if (!task || !run_id) {
+    return (
+      <p>
+        {check.note ?? "Nothing left to re-check."}
+        {recorded ? ` Recorded ${recorded} answer${recorded === 1 ? "" : "s"}.` : ""}
+      </p>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!text.trim() || busy) return;
+        set_busy(true);
+        set_err(null);
+        try {
+          await submit_trial(run_id, {
+            task_id: task.id,
+            response: { text: text.trim() },
+            latency_ms: Math.max(0, Date.now() - shown_at.current),
+            wager: timers ? wager : null,
+          });
+          set_recorded((n) => n + 1);
+          const after = await load_next_day(run_id);
+          await onChanged({ ...after, run_id });
+          announce("Recorded.");
+        } catch (error) {
+          set_err(error instanceof ApiError ? error.shown : (error as Error).message);
+        } finally {
+          set_busy(false);
+        }
+      }}
+    >
+      {check.same_day ? (
+        <Notice tone="info">
+          You are doing this on the day of the sitting, so this measures a short gap, not the next-day one.
+        </Notice>
+      ) : null}
+      {timers ? <Coins value={wager} onChange={set_wager} /> : null}
+      <label className="baseline-label" htmlFor="next-day-answer">
+        {String(task.prompt ?? "Which place went with it?")}
+      </label>
+      <input
+        id="next-day-answer"
+        ref={box}
+        className="input"
+        autoComplete="off"
+        value={text}
+        placeholder="type it"
+        onChange={(e) => set_text(e.target.value)}
+        disabled={busy}
+      />
+      <div className="row">
+        <Btn type="submit" kind="primary" disabled={busy || !text.trim()}>
+          Answer
+        </Btn>
+      </div>
+      <p className="muted small">{check.tasks.length} left to answer.</p>
+      {err ? <Notice tone="warn">{err}</Notice> : null}
+    </form>
+  );
+}
+
+/** Yesterday's check, offered at the top of a return visit. It can be skipped, and it never blocks the baseline. */
+function ReturnCheck({
+  check,
+  timers,
+  onChanged,
+  onHide,
+}: {
+  check: NextDay;
+  timers: boolean;
+  onChanged: (next: NextDay) => void;
+  onHide: () => void;
+}) {
+  return (
+    <Card title="From your last sitting: a codeword check" tone="ask">
+      <p className="muted small">
+        These are pairs you learned last time, asked again with no new study. It is optional: answer now,
+        or leave it for later.
+      </p>
+      <CodewordCheck check={check} timers={timers} onChanged={onChanged} />
+      <div className="row">
+        <Btn kind="ghost" onClick={onHide}>
+          Not now
+        </Btn>
+      </div>
+    </Card>
+  );
+}
+
 /* ----------------------------------------------------------------- snapshot ---- */
 
-function SnapshotScreen({ snap, view }: { snap: BaselineSnapshot | null; view: BaselineView }) {
+function SnapshotScreen({
+  snap,
+  view,
+  onChanged,
+}: {
+  snap: BaselineSnapshot | null;
+  view: BaselineView;
+  onChanged: () => Promise<void>;
+}) {
   const [next, set_next] = useState<NextDay | null>(null);
   const [busy, set_busy] = useState(false);
   const [err, set_err] = useState<string | null>(null);
@@ -1092,31 +1224,25 @@ function SnapshotScreen({ snap, view }: { snap: BaselineSnapshot | null; view: B
 
       <Card title="Come back later">
         {next ? (
-          next.tasks.length ? (
-            <div>
-              <p>{next.note}</p>
-              <ul className="baseline-pairs">
-                {next.tasks.map((t) => (
-                  <li key={t.id}>{String(t.prompt ?? "a codeword check")}</li>
-                ))}
-              </ul>
-              <p className="muted small">
-                These run on the day you return; they are the delayed half of the memory measurement.
-              </p>
-            </div>
-          ) : (
-            <p>{next.note ?? "Nothing to re-check yet."}</p>
-          )
+          <CodewordCheck
+            check={next}
+            timers={timers_visible_in(snap.preferences)}
+            onChanged={async (after) => {
+              set_next(after);
+              await onChanged();
+            }}
+          />
         ) : (
           <div>
             <p>
-              The codeword check is meant for another day. Asking for it now is allowed — it just
-              measures a shorter gap than the one it is designed for, and the snapshot will say so.
+              The codeword check is meant for another day. You can ask for it now: it measures a shorter gap
+              than the one it is designed for, and the check says so when you answer.
             </p>
             <Btn
               disabled={busy}
               onClick={async () => {
                 set_busy(true);
+                set_err(null);
                 try {
                   set_next(await load_next_day(snap.run_id));
                 } catch (e) {
@@ -1126,7 +1252,7 @@ function SnapshotScreen({ snap, view }: { snap: BaselineSnapshot | null; view: B
                 }
               }}
             >
-              Show today&rsquo;s codeword check
+              Show the codeword check
             </Btn>
             {err ? <Notice tone="warn">{err}</Notice> : null}
           </div>

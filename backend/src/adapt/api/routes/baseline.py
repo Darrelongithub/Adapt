@@ -84,12 +84,20 @@ def snapshot(run_id: str | None = None, student: Student = Depends(student_from_
 
 
 @router.get("/next-day")
-def next_day(run_id: str | None = None, student: Student = Depends(student_from_request)) -> dict[str, Any]:
-    """The delayed codeword check, for a learner who has come back since."""
+def next_day(
+    run_id: str | None = None,
+    finished: bool = False,
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    """The delayed codeword check, for a learner who has come back since.
+
+    ``finished=true`` asks for the check of the last sitting that was finished (the return visit).
+    Without it, the check belongs to the run named, or to the newest run.
+    """
     svcs = current()
     if run_id:
         _owned(run_id, student.id)
-    return svcs.baseline.next_day(student.id, run_id=run_id)
+    return svcs.baseline.next_day(student.id, run_id=run_id, finished=finished)
 
 
 @router.get("/{run_id}")

@@ -532,8 +532,11 @@ function TaskCard({
     );
   }
 
+  // "met" is the ladder's first question (have you met this idea?): two options, answered like a choice.
+  // It had no control at all before, so a learner could not get past the first rung of a ladder.
+  const isChoice = kind === "choice" || kind === "met";
   const canSubmit =
-    kind === "choice"
+    isChoice
       ? choice !== null
       : kind === "order"
         ? order.length === (task.items?.length ?? 0)
@@ -542,7 +545,7 @@ function TaskCard({
           : textValue.trim().length > 0;
 
   function submit() {
-    if (kind === "choice") onAnswer({ choice });
+    if (isChoice) onAnswer({ choice });
     else if (kind === "numeric") onAnswer({ value: textValue });
     else if (kind === "order") onAnswer({ order });
     else if (kind === "match") onAnswer({ pairs: Object.entries(pairs).map(([l, r]) => [Number(l), r]) });
@@ -562,14 +565,13 @@ function TaskCard({
         </ul>
       ) : null}
 
-      {kind === "choice" && task.options ? (
-        <div className="space-y-2" role="radiogroup" aria-label="Choices">
+      {isChoice && task.options ? (
+        <div className="space-y-2" role="group" aria-label="Choices">
           {task.options.map((opt, i) => (
             <button
               key={i}
               type="button"
-              role="radio"
-              aria-checked={choice === i}
+              aria-pressed={choice === i}
               onClick={() => setChoice(i)}
               className={`block w-full rounded border px-3 py-2 text-left text-sm ${choice === i ? "border-[var(--accent)] font-medium" : ""}`}
             >
