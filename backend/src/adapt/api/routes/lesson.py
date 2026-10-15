@@ -114,12 +114,35 @@ def _as_mapping(value: Any) -> dict[str, Any]:
 
 
 def _topic_from_frozen(topic: str, level: int, language: str) -> Any:
-    """Use B's frozen API when present; this branch's authored engine is the fallback."""
+    """Use B's frozen API when present; this branch's authored engine is the fallback.
+
+    Phase G seam fix: a Pack that ``/content/prepare`` validated and cached is the Pack the
+    lesson is written from. Before this, the route always rebuilt with ``force_simple=True``,
+    which never sees the cache — so a typed topic that had just been prepared could not be
+    taught from its prepared Pack. The cache lookup is best-effort: anything unexpected falls
+    through to the deterministic pack, which is the honest fallback anyway.
+    """
     try:
         module = importlib.import_module("adapt.content.skeleton")
-        get_pack = module.get_pack
-        return get_pack(topic, level=level, language=language, model=None, force_simple=True)
-    except (ImportError, AttributeError, TypeError):
+    except ImportError:
+        return None
+    try:
+        from ...services import current as current_services
+
+        identity = module.cache_identity(
+            module.canonical_topic_key(topic), level=level, language=language
+        )
+        services = current_services()
+        with services.scope() as session:
+            cached = module.get_cached(session, identity)
+        if cached is not None:
+            pack, _digest = cached
+            return pack
+    except Exception:  # cache unavailable or unreadable: fall through to the built-in paths
+        log.debug("lesson pack cache miss for topic", exc_info=True)
+    try:
+        return module.get_pack(topic, level=level, language=language, model=None, force_simple=True)
+    except (AttributeError, TypeError):
         return None
 
 

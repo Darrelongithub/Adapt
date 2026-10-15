@@ -420,7 +420,7 @@ def test_a_topic_nobody_authored_falls_back_to_the_generic_profile_and_says_so()
     leanings = LE.rate_leanings(resolved.as_dict())
     assert leanings.source == "generic_fallback", "an invented profile has to name itself"
     assert leanings.profile == "universal"
-    assert "no model is configured" in leanings.model_note, leanings.model_note
+    assert "not available on this machine" in leanings.ratings_note, leanings.ratings_note
     assert set(leanings.ratings) == set(T.known_skill_ids("generic"))
     assert "could not place it in a subject" in leanings.reason
     # And the plan it produces is the generic set, still with a reason and still skipping skills.
@@ -474,7 +474,7 @@ def test_a_degenerate_model_answer_is_refused_rather_than_used():
     flat = {"ratings": [{"skill": sid, "rating": 3} for sid in allowed], "reason": "all of them"}
     leanings = LE.rate_leanings(hint, llm=_FakeLLM(flat))
     assert leanings.source == "generic_fallback"
-    assert "every skill rated 3" in leanings.model_note, leanings.model_note
+    assert "every skill rated 3" in leanings.ratings_note, leanings.ratings_note
 
 
 def test_a_model_that_does_not_answer_falls_back_instead_of_failing():
@@ -487,7 +487,7 @@ def test_a_model_that_does_not_answer_falls_back_instead_of_failing():
     for llm in (_FakeLLM(None, ok=False, status="quota"), _FakeLLM({}), _FakeLLM(None, status="error")):
         leanings = LE.rate_leanings(hint, llm=llm)
         assert leanings.source == "generic_fallback", llm.status
-        assert leanings.model_note
+        assert leanings.ratings_note
     # ``allow_model=False`` is the switch a caller uses when it must not spend budget at all.
     assert LE.rate_leanings(hint, llm=_FakeLLM({"ratings": []}), allow_model=False).source == "generic_fallback"
     # And an unconfigured client is not asked at all.
@@ -578,7 +578,7 @@ def test_instruction_shaped_text_is_data_and_changes_nothing():
             # The fallback is every skill at 2 ("often") because nothing is ranked. The text
             # asked for 3s; getting 2s is the refusal, and it has to be labelled as a fallback.
             assert set(leanings.ratings.values()) == {2}, f"{text}: the text set the ratings"
-            assert "no model is configured" in leanings.model_note
+            assert "not available on this machine" in leanings.ratings_note
         else:
             # Naming a real topic inside an instruction still resolves to that topic's
             # *authored* table — the words were read as a topic, not obeyed as a command.

@@ -85,7 +85,7 @@ def _placement_parse(data: Mapping[str, Any], context: dict[str, Any]) -> tuple[
             bank_topic_id=deterministic.bank_topic_id,
             alternatives=deterministic.alternatives,
             note=(
-                f"a model placed this in {accepted['family']} with confidence "
+                f"a written-for-you rating placed this in {accepted['family']} with confidence "
                 f"{accepted['confidence']:.2f}, and rated that family's skills in the same call; "
                 "both answers were validated against the taxonomy before anything was chosen"
             ),
@@ -105,7 +105,7 @@ def _ratings_parse(data: Mapping[str, Any], context: dict[str, Any]) -> tuple[An
         return None, notes or ["the ratings were not usable"]
     reason = str(data.get("reason") or "").strip()[:220]
     if reason:
-        notes.append(f"model's own reason: {reason}")
+        notes.append(f"the rating's own reason: {reason}")
     hint = {**context["hint"], "family": family}
     return (
         model_leanings(hint=hint, family=family, ratings=ratings, notes=notes),
@@ -134,9 +134,9 @@ def _ratings_fallback(context: dict[str, Any]) -> Leanings:
         title=str(hint.get("title") or "this topic"),
         subject=str(hint.get("subject") or ""),
         family=family,
-        model_note=(
-            "the model's placement or ratings did not pass the taxonomy check, so this is the "
-            "generic profile for that family rather than a claim about your topic"
+        ratings_note=(
+            "The written-for-you placement or ratings did not pass the taxonomy check, so this is "
+            "the generic profile for that family rather than a claim about your topic"
         ),
     )
 

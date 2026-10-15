@@ -99,7 +99,7 @@ class Leanings:
     validation: tuple[str, ...] = ()
     #: Set when a model was asked and did not answer (no key, quota, malformed JSON). The wording is
     #: calm and honest, per §2A: "one AI unavailable" must never read as "the app is broken".
-    model_note: str = ""
+    ratings_note: str = ""
 
     @property
     def from_model(self) -> bool:
@@ -131,7 +131,7 @@ class Leanings:
             "taxonomy_version": self.taxonomy_version,
             "reason": self.reason,
             "validation": list(self.validation),
-            "model_note": self.model_note,
+            "ratings_note": self.ratings_note,
             "skills": [
                 {
                     "id": sid,
@@ -180,7 +180,7 @@ def authored(spec: TopicSpec) -> Leanings:
     )
 
 
-def generic_fallback(*, topic_key: str, title: str, subject: str, family: str, model_note: str = "") -> Leanings:
+def generic_fallback(*, topic_key: str, title: str, subject: str, family: str, ratings_note: str = "") -> Leanings:
     """The generic profile, labelled as a fallback rather than dressed up as a rating.
 
     §6.3 asks for the generic profile when nothing else answered, and §6.2 defines it as the
@@ -220,8 +220,8 @@ def generic_fallback(*, topic_key: str, title: str, subject: str, family: str, m
         source="generic_fallback",
         profile="family" if known_family else "universal",
         reason=reason,
-        model_note=model_note
-        or "no model was asked (none is configured here), so this is the generic profile, not a claim about your topic",
+        ratings_note=ratings_note
+        or "Nothing extra was asked, so this is the generic profile, not a claim about your topic.",
     )
 
 
@@ -348,7 +348,7 @@ async def _ask_model(
         return None, "the model's answer did not pass the skill check", notes
     reason = str(data.get("reason") or "").strip()[:220]
     if reason:
-        notes.append(f"model's own reason: {reason}")
+        notes.append(f"the rating's own reason: {reason}")
     return ratings, "", notes
 
 
@@ -369,7 +369,7 @@ def model_leanings(
     family: str,
     ratings: Mapping[str, int],
     notes: Sequence[str] = (),
-    model_note: str = "",
+    ratings_note: str = "",
 ) -> Leanings:
     """The ``source="model"`` result, built in one place.
 
@@ -388,11 +388,11 @@ def model_leanings(
         ratings=dict(ratings),
         source="model",
         reason=(
-            f"A model rated how much {title} leans on each skill, and the ratings were "
+            f"A written-for-you rating scored how much {title} leans on each skill, and the ratings were "
             f"checked against the {len(skill_ids)} skills in the {family} list before anything was chosen."
         ),
         validation=tuple(notes),
-        model_note=model_note,
+        ratings_note=ratings_note,
     )
 
 
@@ -429,32 +429,32 @@ def rate_leanings(
                 title=title,
                 subject=subject,
                 family=family,
-                model_note="the model could not be asked from here, so the universal skill list was used instead",
+                ratings_note="The written-for-you rating could not be reached from here, so the universal skill list was used instead.",
             )
-        ratings, model_note, notes = outcome
+        ratings, ratings_note, notes = outcome
         if ratings:
             return model_leanings(
-                hint=hint, family=family, ratings=ratings, notes=notes, model_note=model_note
+                hint=hint, family=family, ratings=ratings, notes=notes, ratings_note=ratings_note
             )
         return generic_fallback(
             topic_key=str(hint.get("topic_key") or title),
             title=title,
             subject=subject,
             family=family,
-            model_note="; ".join(notes) or "the model's answer was not usable",
+            ratings_note="; ".join(notes) or "The written-for-you rating was not usable.",
         )
 
     note = (
-        "no model is configured on this machine, so nothing was asked"
+        "A written-for-you rating is not available on this machine, so nothing was asked."
         if llm is None or not getattr(llm, "configured", False)
-        else "the model was not asked for this round"
+        else "Nothing was asked for this round."
     )
     return generic_fallback(
         topic_key=str(hint.get("topic_key") or title),
         title=title,
         subject=subject,
         family=family,
-        model_note=note,
+        ratings_note=note,
     )
 
 

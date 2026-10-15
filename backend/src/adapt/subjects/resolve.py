@@ -487,7 +487,7 @@ def refine_with_model(resolved: Resolved, *, llm: Any, student_id: str | None = 
         bank_topic_id=resolved.bank_topic_id,
         alternatives=resolved.alternatives,
         note=(
-            f"a model placed this in {family_title(family).lower()} with confidence "
+            f"a written-for-you rating placed this in {family_title(family).lower()} with confidence "
             f"{out.get('confidence'):.2f}; the skill list was validated against that family"
         ),
         topic_text=resolved.topic_text,
