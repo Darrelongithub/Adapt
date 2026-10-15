@@ -55,6 +55,8 @@ export default defineConfig({
   use: {
     baseURL: base,
     trace: "retain-on-failure",
+    // A selector that does not match fails in seconds, not at the full test timeout.
+    actionTimeout: 20_000,
     screenshot: "off",
     launchOptions,
     // The vault flash is shorter under reduced motion; the sequence itself is the same.

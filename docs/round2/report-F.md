@@ -82,3 +82,14 @@ These are in `unverified-F.md` and `handoff-F.md`:
 * The cue appears twice in cued practice (cosmetic, not fixed).
 * The snapshot copy runs two sentences together ("…can stay long On the two questions…"). It comes from the baseline service's statement text and was not changed.
 * Subject ratings from a real model, Firefox and WebKit, real devices, screen readers, and keyboard-only subject round are not verified.
+
+## Merge with main (after the first PR)
+
+PR #23 conflicted with `main`, which had moved from `4c027b7` to `693dec6` (phase D and cost-round work). The branch was merged with `main` (a merge commit, not a rebase, so no history was rewritten). Conflicts:
+
+* `frontend/src/app/baseline/page.tsx`: six hunks. Main's side was kept (its `section.wrap` wrappers and the snapshot's dashboard and subject links). Two things from this branch were kept on top: the `baseline-page` class on main's wrappers (it scopes `baseline.css`), and an `onChanged` prop on the snapshot call, which main's call site omitted and which the type check requires.
+* `backend/src/adapt/subjects/resolve.py` and `frontend/src/app/subject/page.tsx` merged without conflict. Both sides are present: my near-match note and my choice-button fixes survived, and main's outline and selection flow is in place.
+
+Main's subject flow changed: the subject form is now one "Subject" field with "Preview outline", then a checkbox outline, then "Confirm outline and start". `e2e/games/subject-round.spec.ts` was updated to that flow, and `actionTimeout: 20_000` was added to the Playwright config so a missed selector fails in seconds rather than at the 20-minute test limit (the first attempt at the new flow hung for that long).
+
+After the merge: backend `1268 passed, 1 skipped` (main added tests; all F tests included); tsc, lint, `test:lib`, `test:engine`, and the production build pass. The gate passed twice in a row on the merged code (desktop 5/5, mobile 3/3, keyboard 1/1 each run, exit 0).

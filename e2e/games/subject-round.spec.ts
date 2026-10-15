@@ -19,9 +19,10 @@ const viewport = (): string => test.info().project.name;
 
 async function findSubject(page: Page, topic: string): Promise<void> {
   await page.goto("/subject");
-  await page.getByRole("textbox", { name: "Topic", exact: true }).fill(topic);
-  await page.getByRole("button", { name: "Find my subject", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start the round", exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("textbox", { name: "Subject", exact: true }).fill(topic);
+  await page.getByRole("button", { name: "Preview outline", exact: true }).click();
+  // The outline comes first: every check is ticked by default, and the round starts only on confirmation.
+  await expect(page.getByRole("button", { name: "Confirm outline and start", exact: true })).toBeVisible({ timeout: 30_000 });
 }
 
 test("the plan says why these skills, and the reason matches what was actually found", async ({ page }) => {
@@ -51,7 +52,7 @@ test("a whole subject round, answered by the bot, ends in a map that says what i
   test.setTimeout(15 * 60_000);
   await newGuest(page);
   await findSubject(page, "world history");
-  await page.getByRole("button", { name: "Start the round", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm outline and start", exact: true }).click();
 
   let shots = 0;
   let idle = 0;
@@ -98,7 +99,7 @@ test("a whole subject round, answered by the bot, ends in a map that says what i
 
 /** Answer whatever the round is showing right now. Returns false when there is nothing to answer yet. */
 async function answerOnce(page: Page): Promise<boolean> {
-  const start = page.getByRole("button", { name: "Start the round", exact: true });
+  const start = page.getByRole("button", { name: "Confirm outline and start", exact: true });
   if (await start.count()) return false;
   // Choices are buttons with a pressed state (not radios), inside a group labelled "Choices".
   const choices = page.locator('[role="group"][aria-label="Choices"] button[aria-pressed]');
