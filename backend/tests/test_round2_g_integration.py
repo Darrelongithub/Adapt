@@ -73,7 +73,15 @@ def test_typed_topic_flows_from_prepare_through_all_three_lesson_moments(
     assert cached is not None, "a ready job has to leave the validated pack in the cache"
     pack, _digest = cached
     assert pack.source == "model"
-    concept = pack.concepts[0]
+
+    # concept discovery is HTTP too: ids and names only, never keys
+    listed = client.get(
+        "/api/v1/lesson/concepts", params={"topic": topic}, headers=learner["headers"]
+    )
+    assert listed.status_code == 200, listed.text
+    concepts = listed.json()["concepts"]
+    assert concepts and all(set(row) == {"id", "name"} for row in concepts)
+    concept = next(row for row in pack.concepts if row.id == concepts[0]["id"])
     item = next(
         (
             candidate
@@ -158,3 +166,68 @@ def test_typed_topic_flows_from_prepare_through_all_three_lesson_moments(
         "ai3_explain_wrong",
         "ai3_reteach",
     }, fake.calls
+
+
+def test_prepare_without_a_level_still_teaches_the_prepared_pack(client, learner, services, monkeypatch):
+    """The browser's exact pattern, which the first test's explicit ``level: 2`` hid.
+
+    A learner screen POSTs ``{topic}`` and nothing else, so prepare caches at level 0,
+    while the lesson routes resolve at the learner's rung (2 for a learner with no
+    subject history). Keyed strictly by level the prepared Pack was unreachable and the
+    lesson silently downgraded to the deterministic fallback; the nearest-level lookup
+    in ``_topic_from_frozen`` is the fix this pins.
+    """
+    e2e = _load_e2e_model()
+    fake = e2e.FakeAsyncLLM()
+    monkeypatch.setattr(services.ai2, "llm", fake)
+
+    topic = f"paper aerodynamics {uuid.uuid4().hex[:8]}"
+
+    prepared = client.post(
+        "/api/v1/content/prepare", json={"topic": topic}, headers=learner["headers"]
+    )
+    assert prepared.status_code == 200, prepared.text
+    job_id = prepared.json()["job_id"]
+
+    state: dict = {}
+    for _ in range(200):
+        status = client.get(f"/api/v1/content/prepare/{job_id}", headers=learner["headers"])
+        assert status.status_code == 200, status.text
+        state = status.json()
+        if state.get("state") != "running":
+            break
+        time.sleep(0.1)
+    assert state.get("state") == "ready", state
+    assert state.get("pack_source") == "model", state
+
+    listed = client.get(
+        "/api/v1/lesson/concepts", params={"topic": topic}, headers=learner["headers"]
+    )
+    assert listed.status_code == 200, listed.text
+    concepts = listed.json()["concepts"]
+    assert concepts, "the prepared pack's concepts must be discoverable over HTTP"
+
+    planned = client.post(
+        "/api/v1/lesson/plan",
+        json={"topic": topic, "concept_id": concepts[0]["id"]},
+        headers=learner["headers"],
+    )
+    assert planned.status_code == 200, planned.text
+    body = planned.json()
+    assert body.get("job_id"), "a level-0 pack taught at rung 2 must still schedule an upgrade"
+
+    upgraded: dict = {}
+    for _ in range(100):
+        response = client.get(
+            f"/api/v1/lesson/upgrade/{body['job_id']}", headers=learner["headers"]
+        )
+        assert response.status_code == 200, response.text
+        upgraded = response.json()
+        if upgraded.get("state") != "running":
+            break
+        time.sleep(0.1)
+    assert upgraded.get("state") == "ready", upgraded
+    plan = upgraded["plan"]
+    assert plan["source"] == "written_for_you", plan["source"]
+    assert plan["concept_id"] == concepts[0]["id"]
+    assert any(block["type"] == "check" for block in plan["blocks"])

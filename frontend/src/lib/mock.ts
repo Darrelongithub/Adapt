@@ -1072,7 +1072,7 @@ const lessonValidate = {
 const lessonAuthor = {
   ok: true,
   source: "builtin",
-  note: "no model is configured, so this is the closest scene already in the app for the request, not a new one",
+  note: "a written-for-you scene is not available, so this is the closest scene already in the app for the request, not a new one",
   draft: lessonScene,
   errors: [],
   warnings: [],
@@ -1390,7 +1390,7 @@ const rows: Row[] = [
       ],
       n_scored: 14,
       min_n_for_a_finding: 8,
-      labels: { unit: "actual minus expected success rate", expected: "the model's own prediction for the same items" },
+      labels: { unit: "actual minus expected success rate", expected: "the prediction made before you answered, for the same items" },
       note: "each method is judged on actual minus expected success, so a method that met harder material is not punished for it; under 8 observations is labelled an early signal",
     },
   },
@@ -1473,6 +1473,17 @@ const rows: Row[] = [
   // cannot pretend the write landed: it returns the same state, and the banner on every
   // screen says nothing here is saved.
   { method: "POST", match: /^\/api\/v1\/journey\/advance/, body: journeyState },
+  /* The frozen lesson routes (round 2, Part C) and the prepare job (Part B), wired to a
+     learner screen by the first-lesson page (Phase G). Fixtures cannot read a request, so
+     the re-teach returns the same "another way" every time; that is enough to paint the
+     screen under ?mock=1. The upgrade row answers "fallback" so the renderer stops polling. */
+  { method: "GET", match: /^\/api\/v1\/lesson\/concepts/, body: { topic: "Adding fractions", concepts: [{ id: "c-fraction-add", name: "Adding fractions" }, { id: "c-fraction-why", name: "Why a shared denominator" }] } },
+  { method: "POST", match: /^\/api\/v1\/lesson\/plan/, body: { plan: { source: "simple", concept_id: "c-fraction-add", blocks: [{ type: "explain", body: "A shared denominator works because both fractions use parts of the same size.", fact_ids: ["f-denominator"], why: { evidence_ids: [], n: 0 }, length: 13 }, { type: "check", body: { question: "What does a shared denominator name?", item_id: "item-fraction-a", options: [{ id: "same-size", text: "The same part size" }, { id: "add-both", text: "Add the denominators too" }] }, fact_ids: ["f-denominator"], why: { evidence_ids: [], n: 0 }, length: 14 }] }, job_id: "mock-upgrade-1", upgrade_state: "running" } },
+  { method: "GET", match: /^\/api\/v1\/lesson\/upgrade\//, body: { state: "fallback" } },
+  { method: "POST", match: /^\/api\/v1\/lesson\/explain-wrong/, body: { explanation: { source: "simple", method: "misconception_response", blocks: [{ type: "explain", body: "You added the denominators too. It feels right because adding is what fractions ask for; it breaks because the denominator names the part size, not an amount.", fact_ids: ["f-denominator"], why: { evidence_ids: [], n: 0 }, length: 27 }, { type: "check", body: { question: "Which part names the size?", item_id: "item-fraction-b", options: [{ id: "denominator", text: "The denominator" }, { id: "numerator", text: "The numerator" }] }, fact_ids: ["f-denominator"], why: { evidence_ids: [], n: 0 }, length: 9 }] }, job_id: null } },
+  { method: "POST", match: /^\/api\/v1\/lesson\/reteach/, body: { explanation: { source: "simple", method: "simpler_words", blocks: [{ type: "text", body: "Denominator means the size of the piece. Pieces of the same size can be counted together, which is why only the top numbers add.", fact_ids: ["f-denominator"], why: { evidence_ids: [], n: 0 }, length: 24 }, { type: "check", body: { question: "What must match before you add?", item_id: "item-fraction-c", options: [{ id: "sizes", text: "The part sizes" }, { id: "tops", text: "The top numbers" }] }, fact_ids: ["f-denominator"], why: { evidence_ids: [], n: 0 }, length: 11 }] }, job_id: null } },
+  { method: "POST", match: /^\/api\/v1\/content\/prepare$/, body: { job_id: "mock-prepare-1" } },
+  { method: "GET", match: /^\/api\/v1\/content\/prepare\//, body: { state: "ready", pack_source: "model" } },
   { method: "GET", match: /^\/api\/v1\/journey/, body: { ...journeyState, window_days: 90, nodes: [{ ts: "2026-10-11T09:12:44", kind: "proposal", tone: "ask", title: "Proposed change: worked examples (pending)", detail: proposal.change, meta: {} }, { ts: "2026-10-11T09:20:00", kind: "adaptation", tone: "good", title: "Now applying: worked example before the next attempt", detail: "you approved it", meta: {} }, { ts: "2026-10-10T18:04:11", kind: "attempt", tone: "good", title: "Answered correctly: Adding and subtracting fractions", detail: "63s, no hints", meta: {} }], counts: { attempt: 1, proposal: 1, adaptation: 1 }, phases: [{ name: "practise", from: "2026-10-10", to: "2026-10-11", nodes: 3 }], summary: "11 answers in the last 7 days, 4 of them after opening a hint.", milestones: [{ ts: "2026-10-11T09:20:00", title: "First adaptation approved", detail: "worked examples" }], stats: { sessions: 3, attempts: 11, mean_score: 0.68, events: 84 } } },
 
   { method: "GET", match: /^\/api\/v1\/strategies/, body: { strategies: [{ id: "worked_examples", label: "Worked example before the next attempt", family: "load_reduction", what: "Show a fully solved, step labelled example of the same problem type immediately before the question.", mechanism: "Reduces intrinsic load on first exposure.", watch_metric: "accuracy", n: 0, p_helps: 0.5 }] } },

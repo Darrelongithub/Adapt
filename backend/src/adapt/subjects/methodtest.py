@@ -927,8 +927,8 @@ def assign(learner_id: str, topic_key: str, *, round_no: int = 1) -> Assignment:
         first_concept=first,
         seed=seed & ((1 << 62) - 1),
         why=(
-            f"cell {int(cell['cell']) + 1} of {N_CELLS}: the method pair and the order were chosen by a "
-            "seeded step in code, not by you and not by a model, so the twelve combinations are spread "
+            f"cell {int(cell['cell']) + 1} of {N_CELLS}: the method pair and the order were dealt by a "
+            "seeded step in code, not chosen by you, so the twelve combinations are spread "
             "evenly across learners"
         ),
     )

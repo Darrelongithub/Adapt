@@ -227,7 +227,7 @@ def method_probe(
             "the same kind of question each time, taught a different way"
         ),
         "how_it_is_judged": (
-            "each answer is compared with what the model expected from you on that question, "
+            "each answer is compared with what was expected of you on that question, "
             "so a method is not punished for meeting harder material; under 8 observations on "
             "either side is reported as an early signal, not a finding"
         ),

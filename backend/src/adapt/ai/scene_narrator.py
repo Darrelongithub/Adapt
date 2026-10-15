@@ -120,7 +120,7 @@ class SceneNarrator:
                 frame=int(frame_index),
                 citations=citations,
                 ok=False,
-                note="no model is configured, so this is the simulation's own wording rather than an explanation of it",
+                note="a written-for-you explanation is not available, so this is the simulation's own wording rather than an explanation of it",
             )
         prompt = self._prompt(spec, frame_index, question)
         safe, dropped, _kinds = redact_payload({"q": prompt}, max_chars=7000)  # _audit records the count, not the kinds

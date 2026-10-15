@@ -274,10 +274,10 @@ def place_and_rate(
                 "ratings": "authored" if authored_leanings else "code",
             },
             "note": (
-                "the authored tables answer this topic, so no model was asked: "
+                "the authored tables answer this topic, so nothing else was asked: "
                 f"placement is {deterministic.source} and the ratings are the topic's own"
                 if authored_leanings
-                else "no model is configured on this machine, so nothing was asked"
+                else "a written-for-you rating is not available on this machine, so nothing was asked"
             ),
         }
 
@@ -297,9 +297,9 @@ def place_and_rate(
             "replaces": [],
             "sources": {"placement": "model" if refine else "code", "ratings": "model" if rate else "authored"},
             "note": (
-                "one model call was needed, so one was made"
+                "one written-for-you check was needed, so one was made"
                 if calls_needed == 1
-                else "the merge is switched off on this deployment, so the two questions were asked separately"
+                else "the combined check is switched off on this deployment, so the two questions were asked separately"
             ),
         }
 
@@ -326,8 +326,8 @@ def place_and_rate(
             "calls": 0,
             "replaces": [],
             "note": (
-                "the model could not be asked from inside a running event loop, so the topic was "
-                "placed by code and the generic skill profile was used; both are labelled"
+                "the written-for-you check could not run just now, so the topic was "
+                "placed by the built-in rules and the general skill list was used; both are labelled"
             ),
         }
 
@@ -347,7 +347,7 @@ def place_and_rate(
             "one call answered both questions: which family this belongs to and how much the "
             "topic leans on that family's skills"
             if result.used_model
-            else "the model's answer was not usable, so code placed the topic and the generic skill profile was used"
+            else "the written-for-you answer was not usable, so the built-in rules placed the topic and the general skill list was used"
         ),
     }
     return resolved, leanings, meta

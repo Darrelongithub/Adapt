@@ -1206,7 +1206,7 @@ def test_the_counterbalance_covers_every_cell_and_both_orders():
         payload = assignment.as_dict(pair=M.pair_for("calculus"))
         assert payload["design"] == "counterbalanced by seeded code"
         assert "seeded step in code" in payload["why"], payload["why"]
-        assert "not by a model" in payload["why"], payload["why"]
+        assert "seeded step in code" in payload["why"], payload["why"]
         assert payload["of_cells"] == M.N_CELLS
 
 

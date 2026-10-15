@@ -1097,7 +1097,7 @@ class EducationalIntelligence:
                 "source": "none",
             }
         if self.llm is None:
-            return self._builtin_scene(text, wanted or None, why="no model is configured on this instance")
+            return self._builtin_scene(text, wanted or None, why="a written-for-you scene is not available on this instance")
         hints = list(corrections or [])
         spec_kind = {
             "kind": "str",
@@ -1129,7 +1129,7 @@ class EducationalIntelligence:
         await self._log_llm("ai2_scene_spec", "ai2", res, student_id or "anon", len(user), dropped, kinds=redacted_kinds)
         data = res.data if (res.ok and isinstance(res.data, dict)) else None
         if not data:
-            fallback = self._builtin_scene(text, wanted or None, why=f"the model returned {res.status or 'nothing'}")
+            fallback = self._builtin_scene(text, wanted or None, why="a written-for-you scene could not be built just now")
             fallback["llm_status"] = res.status
             return fallback
         params: Any = {}
@@ -1212,8 +1212,8 @@ class EducationalIntelligence:
         """The closest validated scene for a request, chosen by what the words mention.
 
         This is a real scene the engine can play, not a placeholder: it comes from the same
-        ``builtin_specs`` the database is seeded with, and the reply says in plain words that no
-        model took part in choosing it.
+        ``builtin_specs`` the database is seeded with, and the reply says in plain words that
+        nothing was written for the request — a built-in scene was chosen instead.
         """
         from ..learning import scenespec
 

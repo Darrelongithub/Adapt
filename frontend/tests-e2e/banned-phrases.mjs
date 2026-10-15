@@ -108,10 +108,19 @@ async function createGuest(page) {
   await page.goto(new URL("/", BASE).href, { waitUntil: "domcontentloaded" });
   await page.evaluate(() => sessionStorage.setItem("adapt:seen-opening", "1"));
   await page.reload({ waitUntil: "domcontentloaded" });
-  const guestButton = page.getByRole("button", { name: /continue as a guest/i }).first();
+  // The account gate is consent-first (Phase D): agree, then continue as guest.
+  try {
+    await page.waitForSelector("[data-account-gate]", { timeout: 20_000 });
+  } catch {
+    throw new Error("the signed-out home page did not show the consent step");
+  }
+  const consent = page.locator("[data-account-gate] input[type='checkbox']").first();
+  await consent.check();
+  await page.getByRole("button", { name: /agree and continue/i }).first().click();
+  const guestButton = page.getByRole("button", { name: /^continue as guest$/i }).first();
   if (!(await guestButton.count())) throw new Error("the signed-out home page did not offer guest access");
   await guestButton.click();
-  await page.waitForURL(/\/(onboarding|learn)(?:\?|$)/, { timeout: 20_000 });
+  await page.waitForURL(/\/(baseline|onboarding|learn)(?:\?|$)/, { timeout: 20_000 });
   const me = await page.evaluate(async () => {
     const response = await fetch("/api/v1/me", { credentials: "same-origin" });
     return { status: response.status, body: await response.json().catch(() => null) };

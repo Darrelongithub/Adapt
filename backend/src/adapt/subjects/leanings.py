@@ -277,7 +277,7 @@ def _validate_model_ratings(
     if isinstance(rows, Mapping):  # tolerate {"skill": n} as well as [{"skill":…, "rating":…}]
         rows = [{"skill": k, "rating": v} for k, v in rows.items()]
     if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
-        return {}, ["the model did not return a list of ratings"]
+        return {}, ["the rating check did not return a list of ratings"]
     allowed_set = set(allowed)
     for row in rows:
         if not isinstance(row, Mapping):
@@ -306,7 +306,7 @@ def _validate_model_ratings(
     if ratings and len(set(ratings.values())) == 1:
         return {}, [*notes, f"refused: every skill rated {next(iter(ratings.values()))}, which is not a judgement about this topic"]
     if not ratings:
-        return {}, notes or ["the model returned no usable ratings"]
+        return {}, notes or ["the rating check returned no usable ratings"]
     return ratings, notes
 
 
@@ -337,15 +337,15 @@ async def _ask_model(
         )
     except Exception as exc:  # pragma: no cover - a provider that raises is still a fallback
         log.warning("leanings: model call failed (%s)", type(exc).__name__)
-        return None, "the model could not be asked", [f"model error: {type(exc).__name__}"]
+        return None, "the written-for-you rating could not be reached", ["the rating check did not complete"]
     if not getattr(result, "ok", False) or not getattr(result, "data", None):
         status = str(getattr(result, "status", "error"))
-        return None, f"the model did not answer ({status})", [f"status={status}"]
+        return None, f"the written-for-you rating did not answer ({status})", [f"status={status}"]
     data = dict(result.data or {})
     allowed = list(skill_ids)
     ratings, notes = _validate_model_ratings(data, allowed=allowed, family=str(hint.get("family") or "generic"))
     if not ratings:
-        return None, "the model's answer did not pass the skill check", notes
+        return None, "the written-for-you answer did not pass the skill check", notes
     reason = str(data.get("reason") or "").strip()[:220]
     if reason:
         notes.append(f"the rating's own reason: {reason}")

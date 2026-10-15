@@ -854,7 +854,7 @@ class Subjects:
                     "instructions": "Ninety seconds, then three questions. Read it as it is given: the format is part of what is being measured.",
                     "note": (
                         f"taught with {leg.get('method_label')} — dealt by seeded code (cell "
-                        f"{int(row.cell) + 1} of {M.N_CELLS}), not chosen by you and not chosen by a model"
+                        f"{int(row.cell) + 1} of {M.N_CELLS}), not chosen by you"
                     ),
                     "wagerable": False,
                     "questions_match": pair.question_format,

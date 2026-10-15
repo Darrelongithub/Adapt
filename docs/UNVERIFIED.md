@@ -546,3 +546,33 @@ differentiation, linear and quadratic solving, and the refusals).
    approximated — so an item using them is flagged `unverified` rather than checked. That is a stated
    limit of the checker, not a defect, but it means such items are never scored on this path.
 5. **`docs/screens/` is still empty** for the same reason as before.
+
+## Round 2 (added by Phase G, 2026-10-15)
+
+* **The live model check has not been run.** No key has ever been configured on this build.
+  Everything model-shaped in round 2 — packs for typed topics, the three lesson moments, the
+  contrast screen's model path — is verified against scripted fake models in tests and in a
+  real browser, never against a real provider. The harness is ready and tested with a fake;
+  the owner runs it with one command sequence (`adapt config set-key`, `adapt config test`,
+  `python scripts/live_model_check.py` from the repo root, see `docs/round2/live-check.md`).
+  Until then `MODEL_QUALITY_REPORT.md` remains the template Phase E committed, not a result.
+* **Real-model teaching quality is therefore unknown**: whether a real pack's facts are right,
+  whether real lessons read well, and what the judge scores would be. The deterministic path
+  is the whole of what has been judged (`scripts/teaching_quality_eval.py`: zero gate flags
+  across 273 questions on 2026-10-15; its model pass reports "not run" without a key).
+* **The full-journey browser run uses the fake model too.** `e2e/journey-full/` proves the
+  eight stages and the three lesson moments work as one product on desktop and mobile
+  viewports; it says nothing about latency, cost, or behaviour under a real provider's
+  timeouts and refusals. Those paths are code-reviewed and unit-tested, not observed.
+* **The banned-phrase crawl now runs in real Chromium** (16 routes, signed out and signed in,
+  all clean on 2026-10-15), but it visits pages; it does not play a subject round. During
+  integration, payload notes that only surface mid-round were found still naming the machinery
+  and were reworded (subject placement/ratings notes, method-dealing notes, scene authoring).
+  A crawl that plays a full round and scans every rendered step does not exist yet.
+* **First-lesson grading is self-reported by design.** The frozen lesson contract carries no
+  server-side grade for the pack check questions (the answer key never leaves the server), so
+  the first-lesson screen asks the learner what happened and the lesson responds. Whether
+  learners report honestly, and what that does to later adaptation, is unmeasured.
+* **Handoff E's live fixtures do not exist.** No sanitised real responses have been saved
+  under `backend/tests/fixtures/model/`; the fixtures there are scripted fakes. The first live
+  run creates them (and they should be reviewed before being committed).
