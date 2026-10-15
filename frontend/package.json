@@ -15,6 +15,7 @@
     "test:engine": "node --test src/lib/engine/*.test.mjs",
     "test:lib": "node --test src/lib/*.test.mjs",
     "test:server": "node --test server.test.mjs",
+    "test:e2e:banned": "node tests-e2e/banned-phrases.mjs",
     "host": "npm run build && node host.mjs",
     "dev:web": "node server.mjs",
     "test:dev": "node --test dev.test.mjs"
@@ -33,6 +34,7 @@
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "jsdom": "^30.1.2",
+    "playwright": "^1.64.0",
     "tailwindcss": "^4.1.3",
     "typescript": "^5.7.3"
   },

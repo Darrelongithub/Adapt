@@ -47,6 +47,11 @@ _REDACTED = "[withheld]"
 _SAFE_LIMIT = "optional service limit reached"
 _WITHHELD_COMPRESSED_BODY = b'{"detail":"Compressed response withheld by the privacy boundary."}'
 _MAX_BUFFERED_TEXT = 16 * 1024 * 1024
+# Preserve %-format fields such as uvicorn.access's five positional values while
+# scrubbing only literal parts of its message template.
+_LOG_FORMAT_FIELD_RE = re.compile(
+    r"%(?:\([^)]+\))?[#0\- +]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[hlL]?[diouxXeEfFgGcrsa%]"
+)
 
 
 def _normal_key(key: object) -> str:
@@ -570,6 +575,49 @@ def _safe_log_argument(value: Any, settings: Any) -> Any:
         return [_safe_log_argument(child, settings) for child in value]
     if isinstance(value, Mapping):
         return _scrub_value(value, settings)
+    if isinstance(value, tuple):
+        # LogRecord.args is often a tuple whose positions are part of a formatter's
+        # contract (notably uvicorn.access: client, method, path, HTTP version, status).
+        # Preserve that shape all the way to the handler.
+        return tuple(_safe_log_argument(child, settings) for child in value)
+    if isinstance(value, list):
+        return [_safe_log_argument(child, settings) for child in value]
+    return value
+
+
+def _safe_log_template(value: str, settings: Any) -> str:
+    """Scrub the literal portions of a %-format string without consuming its fields."""
+    pieces: list[str] = []
+    cursor = 0
+    for match in _LOG_FORMAT_FIELD_RE.finditer(value):
+        pieces.append(_safe_log_text(value[cursor : match.start()], settings))
+        pieces.append(match.group(0))
+        cursor = match.end()
+    pieces.append(_safe_log_text(value[cursor:], settings))
+    return "".join(pieces)
+
+
+def _withhold_log_argument(value: Any) -> Any:
+    """Replace an argument whose meaning is only clear after interpolation.
+
+    The type and container shape are kept so a formatter can still consume its fields.
+    This is a last resort for cases such as ``\"api_key=%s\", unknown_value`` where the
+    argument by itself contains no clue that it is secret.
+    """
+    if isinstance(value, str):
+        return _REDACTED
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return 0
+    if isinstance(value, float):
+        return 0.0
+    if isinstance(value, Mapping):
+        return {key: _withhold_log_argument(child) for key, child in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_withhold_log_argument(child) for child in value)
+    if isinstance(value, list):
+        return [_withhold_log_argument(child) for child in value]
     return value
 
 
@@ -579,6 +627,30 @@ def _redact_log_record(record: logging.LogRecord, settings: Any) -> logging.LogR
             safe_message = _safe_log_argument(record.msg, settings)
             record.msg = _safe_log_text(str(safe_message), settings)
             record.args = ()
+        elif record.args:
+            original_args = record.args
+            rendered = record.getMessage()
+            is_uvicorn_access = (
+                record.name == "uvicorn.access"
+                and isinstance(original_args, tuple)
+                and len(original_args) == 5
+            )
+            if rendered.lstrip().startswith(("{", "[")) and not is_uvicorn_access:
+                # A structured log can contain private field names as well as private values.
+                # Scrub the completed JSON rather than only its interpolated values.
+                record.msg = _safe_log_text(rendered, settings)
+                record.args = ()
+            else:
+                # Preserve the original format and arguments. Uvicorn's access formatter
+                # consumes its five positional values itself, so its tuple must remain intact.
+                record.msg = _safe_log_template(str(record.msg), settings)
+                record.args = _safe_log_argument(original_args, settings)
+                rendered = record.getMessage()
+                if _safe_log_text(rendered, settings) != rendered:
+                    # A sensitive label can be split across the template and an otherwise
+                    # innocuous value. Withhold dynamic values in that record while retaining
+                    # the formatter's argument shape.
+                    record.args = _withhold_log_argument(record.args)
         else:
             # Redact each argument in place *by position* and leave the tuple
             # (or mapping) the caller supplied intact in shape and length.
@@ -607,7 +679,8 @@ def _redact_log_record(record: logging.LogRecord, settings: Any) -> logging.LogR
                 record.args = record.args
     except Exception:
         record.msg = "[log detail withheld]"
-        record.args = ()
+        # Keep the formatter's expected argument shape even on the fail-closed path.
+        record.args = _withhold_log_argument(record.args)
     # Avoid formatting the original exception or traceback after the message has
     # been sanitized. The event itself remains in the application response path.
     if record.exc_info:

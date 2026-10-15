@@ -36,18 +36,15 @@ export function MockBanner() {
     // pl-4: there is no fixed corner control any more, so the banner starts at the edge
     // on every screen size.
     <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 py-2 pl-4 pr-4 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
-      <strong>DEMO DATA.</strong> This screen is running on fixtures (<code>?mock=1</code>), so nothing you see here was
-      measured from a learner and nothing on it was saved.{" "}
+      <strong>EXAMPLE DATA.</strong> This preview uses sample information and does not change your saved data.{" "}
       <Link className="link-inline" href="/?mock=off">
-        turn it off
+        Exit the preview
       </Link>
     </div>
   );
 }
 
-/** What the app is actually running on. Two AI roles, an encryption driver and a
- *  network reach are all optional, so the UI says which ones are live instead of
- *  assuming the configured-by-default story. */
+/** A small learner-safe readout of lesson availability and saved-data protection. */
 export function StatusChip() {
   const [health, setHealth] = useState<Health | null>(null);
   const [status, setStatus] = useState<Status | null>(null);

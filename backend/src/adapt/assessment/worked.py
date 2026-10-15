@@ -319,7 +319,6 @@ def _steps_from_rubric(item: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def generate_example(item: Mapping[str, Any]) -> list[dict[str, Any]]:
     """A worked example derived from the item's own content, never from a template of clichés."""
-    kind = str(item.get("kind") or "")
     if item.get("choices"):
         steps = _steps_from_options(item)
     elif (item.get("answer_spec") or {}).get("formula") or (item.get("answer_spec") or {}).get("value") is not None:
@@ -636,6 +635,29 @@ def verify_example(item: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]) 
         if len(steps) > 2 and needle and needle in str(steps[0].get("text") or "").lower():
             flags.append("answer_leaked_early")
     return Verdict(not flags, flags)
+
+
+def hint_template_body(item: Mapping[str, Any], hint: str) -> str:
+    """Normalize a hint after removing its item stem and quoted choice text.
+
+    The teaching-quality evaluator uses this to detect reusable boilerplate across items:
+    two hints that differ only because they repeat a stem or name a distractor should still
+    have the same template body.
+    """
+    text = str(hint or "").casefold()
+    targets = [str(item.get("stem") or "")]
+    for choice in item.get("choices") or item.get("options") or []:
+        if isinstance(choice, Mapping):
+            targets.append(str(choice.get("text") or ""))
+        else:
+            targets.append(str(choice or ""))
+    # Remove longer terms first so an option embedded in the stem does not leave fragments.
+    for target in sorted((t.strip().casefold() for t in targets if t.strip()), key=len, reverse=True):
+        escaped = re.escape(target)
+        pattern = rf"(?<!\w){escaped}(?!\w)" if re.fullmatch(r"\w+", target) else escaped
+        text = re.sub(pattern, " ", text)
+    # Case, punctuation, and whitespace do not make two otherwise identical templates distinct.
+    return " ".join(re.findall(r"[a-z0-9]+", text))
 
 
 def verify_hints(item: Mapping[str, Any], hints: Sequence[str]) -> Verdict:

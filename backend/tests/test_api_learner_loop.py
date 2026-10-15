@@ -1351,6 +1351,18 @@ def test_status_quotas_and_privacy_say_only_what_a_learner_may_know(client, lear
     assert "keystrokes" in allow["forbidden_keys"] and allow["rule"]
 
 
+def test_privacy_notice_is_public_and_contains_no_learner_specific_data(client, learner):
+    signed_out = client.get("/api/v1/privacy")
+    signed_in = client.get("/api/v1/privacy", headers=learner["headers"])
+
+    assert signed_out.status_code == 200, signed_out.text
+    assert signed_in.status_code == 200, signed_in.text
+    assert signed_out.json() == signed_in.json()
+    body = json.dumps(signed_out.json()).lower()
+    assert "student_id" not in body and "display_name" not in body
+    assert signed_out.json()["telemetry"]["allowed_event_types"]
+
+
 def test_the_learner_reads_their_own_audit_trail(client, learner, services):
     """Nothing about the learner may be visible only to the operator."""
     empty = client.get("/api/v1/audit?limit=20", headers=learner["headers"]).json()["entries"]

@@ -202,6 +202,31 @@ TASKS: dict[str, TaskPolicy] = {
         "three sentences about frames a simulation already produced, using its numbers; "
         "the deterministic path is checked first and this only fills the gap",
     ),
+    "ai3_lesson_plan": _p(
+        "standard",
+        0.4,
+        1400,
+        "authors a whole lesson plan against the frozen Pack; the proposal is only "
+        "shown after strict whole-plan validation (block contract, cited facts, "
+        "length budgets, no answer leakage) and any rejection falls back to the "
+        "deterministic lesson, so the wording is the product but never unchecked",
+    ),
+    "ai3_explain_wrong": _p(
+        "standard",
+        0.35,
+        700,
+        "a misconception-specific reply to an answer the learner already gave; it is "
+        "checked against that item's key and matched misconception before it is "
+        "shown, and the deterministic misconception reply stands when it is refused",
+    ),
+    "ai3_reteach": _p(
+        "standard",
+        0.4,
+        900,
+        "re-teaches one concept by a method code chose (simpler words, smaller step, "
+        "example or visual) with the attempts so far as context; validated like the "
+        "lesson plan, with the deterministic re-teach as the fallback",
+    ),
     # -- subject placement (the round) ------------------------------------- #
     "subject_placement": _p(
         "light",

@@ -48,6 +48,30 @@ def walk():
     return module, gate, notes, coverage
 
 
+def test_reused_item_free_hint_bodies_fail_only_after_three_distinct_items():
+    """Removing each question and its quoted options must expose repeated boilerplate."""
+    module = _eval_module()
+    samples = []
+    for index, (stem, option) in enumerate(
+        [
+            ("Which fraction is greater, 1/2 or 2/3?", "1/2"),
+            ("Which fraction is greater, 3/4 or 4/5?", "3/4"),
+            ("Which fraction is greater, 5/6 or 6/7?", "5/6"),
+        ],
+        start=1,
+    ):
+        item = {"stem": stem, "choices": [{"text": option}, {"text": "other"}]}
+        samples.append((f"item-{index}", item, f"Check {stem} Is “{option}” the answer?"))
+
+    flags = module.generic_hint_reuse_flags(samples, scope="test")
+    assert len(flags) == 1
+    assert flags[0].kind == "generic_hint"
+    assert "3 distinct items" in flags[0].detail
+    assert module.generic_hint_reuse_flags(samples[:2], scope="test") == []
+    same_item = [("only-one-item", samples[0][1], samples[0][2])] * 3
+    assert module.generic_hint_reuse_flags(same_item, scope="test") == []
+
+
 def test_the_deterministic_path_carries_no_gate_flags(walk):
     """The five flags the brief names, across every deterministic item in the repository.
 

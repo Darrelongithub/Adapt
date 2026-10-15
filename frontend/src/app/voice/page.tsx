@@ -378,8 +378,8 @@ export default function VoicePage() {
         </Card>
 
         <div className="space-y-4">
-          <Card title="What the voice path is" tone="muted">
-            {caps.error ? <Err error={caps.error} status={caps.status} /> : null}
+          <Card title="Voice and speech" tone="muted">
+            {caps.error ? <p className="text-sm text-[var(--bad)]">Voice settings could not be loaded just now.</p> : null}
             <ul className="space-y-2 text-sm">
               <li>
                 <Tag tone={c?.stt?.local_stt ? "good" : "warn"}>listening: {c?.stt?.local_stt ? "on this machine" : "in the browser"}</Tag>

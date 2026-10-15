@@ -186,6 +186,99 @@ TOPIC_NOTES: dict[str, str] = {
     ),
 }
 
+# One short authored idea and one reason for each bank concept. These are the
+# simple-mode explanation spine: they state the idea before an example shows it.
+TOPIC_TEACHING: dict[str, dict[str, str]] = {
+    "integer_ops": {
+        "key_idea": "Addition and subtraction are evaluated left to right, while multiplication and division come first.",
+        "why_it_works": "Following the shared order keeps the expression's value unchanged while each operation is carried out.",
+    },
+    "fractions_intro": {
+        "key_idea": "The denominator counts the equal parts in a whole, and the numerator counts the parts being named.",
+        "why_it_works": "Equal-sized parts make the fraction a consistent share of the whole.",
+    },
+    "equivalent_fractions": {
+        "key_idea": "Multiplying or dividing a numerator and denominator by the same nonzero number keeps a fraction's value.",
+        "why_it_works": "The two changes balance because the numerator and denominator are scaled equally.",
+    },
+    "fraction_add": {
+        "key_idea": "Add or subtract fractions only after writing them with a common denominator.",
+        "why_it_works": "A common denominator gives both numerators the same-sized parts to count.",
+    },
+    "fraction_mult": {
+        "key_idea": "Multiply fractions by multiplying their numerators and denominators, and divide by multiplying by the reciprocal.",
+        "why_it_works": "These rules follow from counting equal-sized parts and asking how many fractional parts fit.",
+    },
+    "decimals": {
+        "key_idea": "Each decimal place is one tenth of the place to its left, and a zero at the end of the decimal part does not change the value.",
+        "why_it_works": "Place value makes each digit's amount depend on its position relative to the decimal point.",
+    },
+    "percentages": {
+        "key_idea": "A percentage is a number of parts per hundred, so convert it to a decimal before using it on an amount.",
+        "why_it_works": "Multiplying by that decimal scales the whole amount by the stated share.",
+    },
+    "ratio": {
+        "key_idea": "A ratio compares quantities while keeping the same scale for every part.",
+        "why_it_works": "Scaling every part equally preserves the relationship between the quantities.",
+    },
+    "negative_numbers": {
+        "key_idea": "On a number line, adding moves right and subtracting moves left, including below zero.",
+        "why_it_works": "The direction rule stays consistent across zero, so negative values need no special exception.",
+    },
+    "order_of_operations": {
+        "key_idea": "Evaluate brackets, powers, multiplication and division, then addition and subtraction, handling equal ranks left to right.",
+        "why_it_works": "A shared order makes the same expression mean the same thing to everyone.",
+    },
+    "collecting_terms": {
+        "key_idea": "Only terms with the same variables raised to the same powers can be combined.",
+        "why_it_works": "Like terms represent counts of the same quantity, while unlike terms represent different quantities.",
+    },
+    "linear_equations": {
+        "key_idea": "Keep an equation balanced by doing the same operation to both sides.",
+        "why_it_works": "Equal changes on both sides preserve the values that make the original statement true.",
+    },
+    "rearranging": {
+        "key_idea": "To make a different variable the subject, isolate it using inverse operations on both sides.",
+        "why_it_works": "Inverse operations undo the expression while preserving equality.",
+    },
+    "graphs_lines": {
+        "key_idea": "In a straight-line equation y = mx + c, m is the gradient and c is the y-intercept.",
+        "why_it_works": "The gradient controls how y changes with x, while c gives the value where the line crosses the y-axis.",
+    },
+    "indices": {
+        "key_idea": "Powers count repeated multiplication, and index laws combine powers with the same base.",
+        "why_it_works": "The laws count how many times that base appears in the product.",
+    },
+    "standard_form": {
+        "key_idea": "Standard form writes a number as A multiplied by a power of ten, where A is at least 1 and less than 10.",
+        "why_it_works": "Separating the size into a power of ten makes very large and very small values easier to compare.",
+    },
+    "statistical_mean": {
+        "key_idea": "Mean is the total divided by the count, median is the middle value after sorting or the mean of the two middle values for an even count, and range is the maximum minus the minimum.",
+        "why_it_works": "Each statistic summarizes a different feature of the data and depends on its total or order.",
+    },
+    "area_perimeter": {
+        "key_idea": "Perimeter measures the boundary length, while area measures the space inside a two-dimensional shape.",
+        "why_it_works": "Lengths trace the edge, but area counts the surface covered.",
+    },
+    "unit_conversion": {
+        "key_idea": "Convert a measurement by multiplying or dividing by the scale factor between its units.",
+        "why_it_works": "The physical amount stays the same when its number is rescaled to a different unit.",
+    },
+    "probability": {
+        "key_idea": "For equally likely outcomes, probability is the number of favourable outcomes divided by the total number of outcomes.",
+        "why_it_works": "This ratio compares the part of the outcome space that works with the whole space.",
+    },
+    "history_ww1": {
+        "key_idea": "The First World War began after the assassination of Archduke Franz Ferdinand triggered a crisis among rival powers.",
+        "why_it_works": "Alliances, military planning and imperial rivalries turned a regional crisis into a wider conflict.",
+    },
+    "bio_photosynthesis": {
+        "key_idea": "Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen.",
+        "why_it_works": "Chlorophyll captures light energy that drives the reaction building sugar for the plant.",
+    },
+}
+
 
 def mcq(stem, choices, correct, *, hints=(), steps=(), difficulty=0.4, mode="read", est=70, misc=None, prompt=None, **kw):
     """choices: list of (text, why_wrong_or_None)."""
@@ -760,6 +853,8 @@ def topic_catalog() -> list[dict[str, Any]]:
             "est_seconds": t["est"],
             "prerequisites": t["prereqs"],
             "note": TOPIC_NOTES.get(t["code"], ""),
+            "key_idea": TOPIC_TEACHING.get(t["code"], {}).get("key_idea", ""),
+            "why_it_works": TOPIC_TEACHING.get(t["code"], {}).get("why_it_works", ""),
             "item_count": len(ITEMS.get(t["code"], [])),
         }
         for t in TOPICS

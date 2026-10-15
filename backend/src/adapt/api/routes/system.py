@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api/v1", tags=["system"])
 
 @router.get("/health")
 def health() -> dict[str, Any]:
-    st = get_settings()
+    get_settings()
     svcs = current()
     db_ok = True
     db_error: str | None = None
@@ -126,27 +126,24 @@ def data_protection() -> dict[str, Any]:
         # prevent. What is dropped is the deployment detail around it (paths, key source, config).
         "underlying_engine": f"{(driver.name if driver else 'sqlite')} + field-level encryption",
         "file_level": (
-            "the whole database file is encrypted"
+            "The whole database file is encrypted."
             if file_encrypted
-            else "the file itself is not encrypted; the answers and notes listed below are"
+            else "Only the information marked as protected below is encrypted; the database file itself is not."
         ),
         "protected": [
-            "learner answers + feedback",
-            "event payloads",
-            "hypotheses/evidence facts",
-            "chat + voice transcripts",
-            "profile snapshots",
-            "display name + email",
+            "your answers and feedback",
+            "details about your practice activity",
+            "learning suggestions and the evidence behind them",
+            "tutor conversations and recorded voice transcripts",
+            "saved progress summaries",
+            "your name and email",
         ],
         "not_protected": [
-            "study preferences (goal, minutes per week, word limits)",
-            "table names and numeric foreign keys (needed to query at all)",
-            "topic ids and timestamps (used for scheduling)",
+            "study preferences, such as your goal, weekly time, and answer length",
+            "the record structure used to organize saved information",
+            "study topics and dates used to plan reviews",
         ],
-        "note": (
-            "The database format has no encryption of its own, so this says exactly which fields "
-            "are protected and which are not instead of implying all of it is."
-        ),
+        "note": "Protection applies only to the information listed as protected; other saved details are not encrypted.",
     }
 
 

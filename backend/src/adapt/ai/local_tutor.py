@@ -26,8 +26,9 @@ import math
 import random
 import re
 from collections import Counter, defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 log = logging.getLogger("adapt.tutor")
 
@@ -500,6 +501,16 @@ def _idea_key(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
 
+def _bank_topic_teaching() -> tuple[Mapping[str, Any], Sequence[Mapping[str, Any]]]:
+    """The bank's authored teaching table, read lazily to avoid an import cycle."""
+    try:
+        from ..assessment.bank import TOPIC_TEACHING, TOPICS
+
+        return TOPIC_TEACHING, TOPICS
+    except (ImportError, AttributeError):  # pragma: no cover - the bank ships with the tutor
+        return {}, ()
+
+
 def concept_idea_for(
     topic_id: object = None,
     topic_title: object = None,
@@ -507,9 +518,11 @@ def concept_idea_for(
 ) -> dict[str, str] | None:
     """The authored key idea for a concept, by bank code, by row id suffix, or by title.
 
-    Returns ``None`` for a topic with no authored entry rather than
-    inventing one: a concept this table does not cover gets the
-    explanation without this section, exactly as before.
+    The bank's ``TOPIC_TEACHING`` is the authored source for bank topics and
+    wins when it covers the concept; the ``CONCEPT_IDEAS`` table above covers
+    topics the bank table does not. Returns ``None`` for a topic with no
+    authored entry rather than inventing one: a concept neither table covers
+    gets the explanation without this section, exactly as before.
     """
     item = item or {}
     candidates = [
@@ -520,12 +533,24 @@ def concept_idea_for(
         topic_title,
         item.get("topic_title"),
     ]
+    teaching, topics = _bank_topic_teaching()
     for candidate in candidates:
         key = _idea_key(candidate)
         if not key:
             continue
-        if key.replace(" ", "_") in CONCEPT_IDEAS:
-            return CONCEPT_IDEAS[key.replace(" ", "_")]
+        normalized = key.replace(" ", "_")
+        if normalized in teaching:
+            return dict(teaching[normalized])
+        # A database row id ends in the bank code for seeded items, and a
+        # topic may also be named by its bank title.
+        for code, entry in teaching.items():
+            if normalized.endswith(code):
+                return dict(entry)
+        for topic in topics:
+            if key == _idea_key(topic.get("title")) and str(topic.get("code")) in teaching:
+                return dict(teaching[str(topic["code"])])
+        if normalized in CONCEPT_IDEAS:
+            return CONCEPT_IDEAS[normalized]
         # A database row id ends in the bank code for seeded items
         # (``itm_fraction_add_02`` / a topic id built from the code).
         for code, entry in CONCEPT_IDEAS.items():
@@ -560,11 +585,11 @@ def closing_prompt(item: Mapping[str, Any] | None, *, has_example: bool = True) 
     if kind in _NUMERIC_KINDS:
         if has_example:
             return "Try one: copy the first line of the example and change only the numbers."
-        return "Try one with the smallest numbers you can think of, and say each step out loud."
+        return "Try one: change the numbers and work it out again, saying each step out loud."
     if kind in _CHOICE_KINDS or item.get("choices") or item.get("options"):
         return "Try one: cover the options, say which you would pick and why, then uncover them and check."
     if kind in _FACTUAL_KINDS:
-        return "Try one: recall the answer without looking, say it out loud, then check what you said."
+        return "Try one: recall the key fact without looking, say it out loud, then check what you said."
     return None
 
 
@@ -741,7 +766,6 @@ def explain(
         add(prereq_note, "first, the prerequisite")
 
     opener = _opener(level, context, topic_title=topic_title, seed=seed or str((item or {}).get("id") or query))
-
     # Content: pick the most relevant material sentences, de-duplicated.
     seen: set[str] = set()
     chosen: list[Doc] = []

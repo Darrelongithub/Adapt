@@ -131,7 +131,10 @@ Fourteen tasks, three classes:
 | `ai2_scene_fix` | standard | 0.0 | 700 | yes | 1 | — |
 | `ai2_scene_spec` | deep | 0.2 | 700 | yes | 1 | — |
 | `ai2_teachback` | standard | 0.0 | 420 | yes | 1 | — |
+| `ai3_explain_wrong` | standard | 0.35 | 700 | yes | 1 | — |
+| `ai3_lesson_plan` | standard | 0.4 | 1400 | yes | 1 | — |
 | `ai3_narrate` | light | 0.2 | 320 | yes | 1 | — |
+| `ai3_reteach` | standard | 0.4 | 900 | yes | 1 | — |
 | `console_connection_test` | light | 0.0 | 8 | no | 1 | — |
 | `subject_leanings` | light | 0.1 | 520 | yes | 1 | — |
 | `subject_placement` | light | 0.0 | 700 | yes | 1 | `topic_resolve`, `subject_leanings` |

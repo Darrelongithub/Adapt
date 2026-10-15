@@ -104,6 +104,8 @@ class LearnerSnapshot:
     #: timestamps; a module that wants continuity reads the fields above.
     this_session: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     session: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
+    #: Method, analogy and encrypted text for previous AI 3 explanations, in display order.
+    teaching_memory_records: tuple[Mapping[str, Any], ...] = ()
 
     # -- convenience readers ------------------------------------------------- #
     @property
@@ -157,6 +159,7 @@ class LearnerSnapshot:
                 "misconceptions": list(self.misconceptions),
             },
             "teaching_memory_this_session": {k: list(v) for k, v in sorted(self.this_session.items())},
+            "teaching_memory_records": [thaw(record) for record in self.teaching_memory_records],
             "session": thaw(self.session),
         }
 
@@ -169,6 +172,7 @@ def snapshot_from_row(
     memory: Mapping[str, Sequence[str]],
     session: Mapping[str, Any],
     session_memory: Mapping[str, Sequence[str]] | None = None,
+    teaching_memory_records: Sequence[Mapping[str, Any]] = (),
 ) -> LearnerSnapshot:
     """Build a snapshot from the store's rows. Used by ``LearnerState.get_snapshot``."""
     return LearnerSnapshot(
@@ -185,4 +189,5 @@ def snapshot_from_row(
         misconceptions=tuple(memory.get("misconceptions") or ()),
         session=freeze(dict(session or {})),
         this_session=freeze({k: list(v) for k, v in (session_memory or {}).items()}),
+        teaching_memory_records=tuple(freeze(dict(row)) for row in teaching_memory_records),
     )

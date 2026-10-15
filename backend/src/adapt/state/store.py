@@ -550,6 +550,9 @@ class LearnerState:
         ref: str,
         text: str | None = None,
         session_id: str | None = None,
+        method: str | None = None,
+        analogy_id: str | None = None,
+        moment: str | None = None,
         session: Any = None,
         module: str = "ai3",
     ) -> bool:
@@ -575,6 +578,9 @@ class LearnerState:
                     kind=kind,
                     ref=ref,
                     text=text,
+                    method=method,
+                    analogy_id=analogy_id,
+                    moment=moment,
                     created_at=utcnow(),
                 )
             )
@@ -587,6 +593,105 @@ class LearnerState:
             if own:
                 s.rollback()
             return False
+        finally:
+            if own:
+                s.close()
+
+    def remember_explanation(
+        self,
+        learner_id: str,
+        *,
+        explanation_id: str,
+        method: str,
+        analogy_id: str | None,
+        moment: str,
+        text: str,
+        session_id: str | None = None,
+        session: Any = None,
+        module: str = "ai3",
+    ) -> bool:
+        """Upsert the text for one displayed explanation without duplicating its method.
+
+        The immediate simple response and a later fully validated upgrade share the same
+        explanation id. Updating that row preserves the fact that only one teaching
+        decision was shown while keeping the final rendered wording for future retries.
+        """
+        PERM.check_write(module, "teaching_memory")
+        own = session is None
+        s = session or self.sf()
+        try:
+            stmt = select(TeachingMemoryEntry).where(
+                TeachingMemoryEntry.student_id == learner_id,
+                TeachingMemoryEntry.session_id == session_id,
+                TeachingMemoryEntry.kind == "lesson_explanation",
+                TeachingMemoryEntry.ref == explanation_id,
+            )
+            existing = s.execute(stmt).scalars().first()
+            if existing is None:
+                s.add(
+                    TeachingMemoryEntry(
+                        student_id=learner_id,
+                        session_id=session_id,
+                        kind="lesson_explanation",
+                        ref=explanation_id,
+                        text=text,
+                        method=method,
+                        analogy_id=analogy_id,
+                        moment=moment,
+                        created_at=utcnow(),
+                    )
+                )
+                changed = True
+            else:
+                changed = any(
+                    (
+                        existing.text != text,
+                        existing.method != method,
+                        existing.analogy_id != analogy_id,
+                        existing.moment != moment,
+                    )
+                )
+                if changed:
+                    existing.text = text
+                    existing.method = method
+                    existing.analogy_id = analogy_id
+                    existing.moment = moment
+            if own:
+                s.commit()
+            else:
+                s.flush()
+            return changed
+        except IntegrityError:
+            if own:
+                s.rollback()
+            return False
+        finally:
+            if own:
+                s.close()
+
+    def memory_details(
+        self, learner_id: str, *, session_id: str | None = None, session: Any = None
+    ) -> list[dict[str, Any]]:
+        """Private teaching-memory rows needed to avoid repeating a method or analogy."""
+        own = session is None
+        s = session or self.sf()
+        try:
+            stmt = select(TeachingMemoryEntry).where(TeachingMemoryEntry.student_id == learner_id)
+            if session_id:
+                stmt = stmt.where(TeachingMemoryEntry.session_id == session_id)
+            return [
+                {
+                    "id": row.ref,
+                    "kind": row.kind,
+                    "text": row.text or "",
+                    "method": row.method,
+                    "analogy_id": row.analogy_id,
+                    "moment": row.moment,
+                    "session_id": row.session_id,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in s.execute(stmt.order_by(TeachingMemoryEntry.created_at, TeachingMemoryEntry.id)).scalars().all()
+            ]
         finally:
             if own:
                 s.close()
@@ -871,6 +976,7 @@ class LearnerState:
             # and this session's slice (what has happened since the lesson started).
             memory = self.memory(learner_id, session=s)
             session_memory = self.memory(learner_id, session_id=session_id, session=s) if session_id else {}
+            teaching_memory_records = self.memory_details(learner_id, session=s)
             session_state = (
                 self.session_state(learner_id, session_id, session=s) if session_id else {}
             )
@@ -881,6 +987,7 @@ class LearnerState:
                 memory=memory,
                 session=session_state,
                 session_memory=session_memory,
+                teaching_memory_records=teaching_memory_records,
             )
         finally:
             if own:
