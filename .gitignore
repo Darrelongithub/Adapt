@@ -23,3 +23,8 @@ htmlcov/
 # Local development data directory (a SQLCipher database that the app recreates on
 # start-up). It was tracked, which meant every run of the app produced a 5 MB binary diff.
 .data_dev/
+
+# Browser-suite artifacts (round 2, e2e/)
+test-results/
+playwright-report/
+results.json

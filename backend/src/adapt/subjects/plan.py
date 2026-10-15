@@ -160,7 +160,7 @@ class TestPlan:
             "cross_check": self.cross_check,
             "time_capped": self.time_capped,
             "notes": list(self.notes),
-            "model_note": self.leanings.model_note,
+            "ratings_note": self.leanings.ratings_note,
         }
         if with_tasks and tasks:
             out["tasks"] = {skill_id: list(rows) for skill_id, rows in tasks.items()}

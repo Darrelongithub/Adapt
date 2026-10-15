@@ -114,12 +114,44 @@ def _as_mapping(value: Any) -> dict[str, Any]:
 
 
 def _topic_from_frozen(topic: str, level: int, language: str) -> Any:
-    """Use B's frozen API when present; this branch's authored engine is the fallback."""
+    """Use B's frozen API when present; this branch's authored engine is the fallback.
+
+    Phase G seam fix: a Pack that ``/content/prepare`` validated and cached is the Pack the
+    lesson is written from. Before this, the route always rebuilt with ``force_simple=True``,
+    which never sees the cache — so a typed topic that had just been prepared could not be
+    taught from its prepared Pack. The cache lookup is best-effort: anything unexpected falls
+    through to the deterministic pack, which is the honest fallback anyway.
+
+    Second Phase G seam fix (found by the browser journey, not by any unit test): prepare
+    caches at the level its caller asks for — the request default is 0, and a learner screen
+    has no honest way to know the per-topic subject rung — while this route resolves at the
+    learner's rung. Keyed strictly by level, the prepared Pack is unreachable in the exact
+    case prepare exists for. The lookup therefore tries the learner's rung first and then
+    the nearest cached levels for the same topic and language: a Pack B validated at a
+    neighbouring rung is better source material than the deterministic fallback, and every
+    downstream validator still guards the lesson written from it.
+    """
     try:
         module = importlib.import_module("adapt.content.skeleton")
-        get_pack = module.get_pack
-        return get_pack(topic, level=level, language=language, model=None, force_simple=True)
-    except (ImportError, AttributeError, TypeError):
+    except ImportError:
+        return None
+    try:
+        from ...services import current as current_services
+
+        services = current_services()
+        topic_key = module.canonical_topic_key(topic)
+        for probe in sorted(range(6), key=lambda rung: (abs(rung - level), rung)):
+            identity = module.cache_identity(topic_key, level=probe, language=language)
+            with services.scope() as session:
+                cached = module.get_cached(session, identity)
+            if cached is not None:
+                pack, _digest = cached
+                return pack
+    except Exception:  # cache unavailable or unreadable: fall through to the built-in paths
+        log.debug("lesson pack cache miss for topic", exc_info=True)
+    try:
+        return module.get_pack(topic, level=level, language=language, model=None, force_simple=True)
+    except (AttributeError, TypeError):
         return None
 
 
@@ -689,6 +721,48 @@ def _run_upgrade(
             job = _JOBS.get(job_id)
             if job:
                 job.state = "fallback"
+
+
+@router.get("/concepts")
+def list_frozen_concepts(
+    topic: str,
+    session: Session = Depends(db_session),
+    student: Student = Depends(rate("content")),
+) -> dict[str, Any]:
+    """Name the concepts a topic can teach, so a lesson can be asked for one.
+
+    Phase G seam addition. The frozen lesson routes take a ``concept_id``, but nothing
+    exposed one: pack payloads (with their keys) never leave the server, so a learner
+    screen had no honest way to choose a concept. This answers with ids and names only —
+    enough to ask for a lesson, never enough to leak a key. It resolves through the same
+    path the plan route uses, so a Pack that ``/content/prepare`` cached is the Pack whose
+    concepts are listed here.
+    """
+    snapshot = _snapshot(session, student.id, {}, None, topic_key=topic, concept_id="")
+    level = _learner_level(snapshot)
+    language = str((snapshot.get("preferences") or {}).get("language") or "en")
+    try:
+        pack = _topic_from_frozen(topic, level, language)
+        if pack is None:
+            pack = _current_authored_pack(topic, "")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404, detail={"error": "pack_unavailable", "message": type(exc).__name__}
+        ) from exc
+    raw = _as_mapping(pack)
+    concepts = [
+        {"id": str(row.get("id") or ""), "name": str(row.get("name") or "")}
+        for row in raw.get("concepts") or []
+        if isinstance(row, Mapping) and str(row.get("id") or "")
+    ]
+    if not concepts:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "no_concepts", "message": "nothing teachable for this topic yet"},
+        )
+    return {"topic": topic, "concepts": concepts}
 
 
 @router.post("/plan")

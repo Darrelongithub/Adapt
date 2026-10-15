@@ -549,7 +549,7 @@ def method_report(
         "n_scored": sum(len(g) for g in buckets.values()),
         "n_pilot": sum(int(row.get("n_pilot") or 0) for row in out),
         "min_n_for_a_finding": min_n,
-        "labels": {"unit": "actual minus expected success rate", "expected": "the model's own prediction for the same items"},
+        "labels": {"unit": "actual minus expected success rate", "expected": "the prediction made before you answered, for the same items"},
     }
 
 

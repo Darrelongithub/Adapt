@@ -107,7 +107,7 @@ export const STEPS: Record<
   first_lesson: {
     n: 7,
     title: "Your first lesson",
-    href: "/lesson",
+    href: "/first-lesson",
     action: "open the lesson",
     what: "One idea, explained for the way you answered — with the reasons it looks the way it does.",
     skipNote: "no lesson yet: the practice screen still works from the questions you answer there",

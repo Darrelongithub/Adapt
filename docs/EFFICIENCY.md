@@ -118,7 +118,7 @@ The saving is measured, not assumed: `cachedContentTokenCount` from the provider
 
 `adapt/ai/routing.py` holds the whole decision in one table: every `purpose=` a call site
 passes maps to a **class of work**, and each class is a model name from configuration.
-Fourteen tasks, three classes:
+Twenty tasks, three classes:
 
 | purpose | class | temperature | max output | static head | model calls | replaces |
 | --- | --- | ---: | ---: | --- | ---: | --- |
@@ -136,6 +136,9 @@ Fourteen tasks, three classes:
 | `ai3_narrate` | light | 0.2 | 320 | yes | 1 | — |
 | `ai3_reteach` | standard | 0.4 | 900 | yes | 1 | — |
 | `console_connection_test` | light | 0.0 | 8 | no | 1 | — |
+| `content_item_verifier` | light | 0.0 | 450 | no | 1 | — |
+| `content_items` | deep | 0.2 | 1600 | no | 1 | — |
+| `content_skeleton` | deep | 0.2 | 3000 | no | 1 | — |
 | `subject_leanings` | light | 0.1 | 520 | yes | 1 | — |
 | `subject_placement` | light | 0.0 | 700 | yes | 1 | `topic_resolve`, `subject_leanings` |
 | `topic_resolve` | light | 0.0 | 160 | yes | 1 | — |

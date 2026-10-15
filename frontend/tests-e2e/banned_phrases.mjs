@@ -13,9 +13,9 @@
  * recorded about you" list must be readable — the privacy list is public —
  * and must not fall back to "could not be read just now".
  *
- * The onboarding screen's own copy belongs to another phase; until that
- * lands, run with `BANNED_PHRASES_KNOWN=/onboarding` to report (not fail)
- * that route's hits. Every other route fails hard.
+ * Every route fails hard. (`BANNED_PHRASES_KNOWN=/some/route` downgrades a
+ * route to report-only; the list is empty by default and Phase D removed the
+ * onboarding exemption this paragraph used to advertise.)
  *
  * Run it (needs a Chromium — never `playwright install` in CI sandboxes;
  * point `PW_CHROMIUM` at an existing binary if the default path is absent):

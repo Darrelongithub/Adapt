@@ -854,7 +854,7 @@ class Subjects:
                     "instructions": "Ninety seconds, then three questions. Read it as it is given: the format is part of what is being measured.",
                     "note": (
                         f"taught with {leg.get('method_label')} — dealt by seeded code (cell "
-                        f"{int(row.cell) + 1} of {M.N_CELLS}), not chosen by you and not chosen by a model"
+                        f"{int(row.cell) + 1} of {M.N_CELLS}), not chosen by you"
                     ),
                     "wagerable": False,
                     "questions_match": pair.question_format,
@@ -1625,7 +1625,9 @@ def _leanings_of(run: SubjectRound) -> Leanings:
         taxonomy_version=str(data.get("taxonomy_version") or TAXONOMY_VERSION),
         reason=str(data.get("reason") or ""),
         validation=tuple(data.get("validation") or ()),
-        model_note=str(data.get("model_note") or ""),
+        # ``model_note`` is the field's pre-round-2 name; stored rounds from before the rename
+        # still carry it, so both keys are read (handoff-F.md asked for the rename).
+        ratings_note=str(data.get("ratings_note") or data.get("model_note") or ""),
     )
 
 

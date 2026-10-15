@@ -1220,8 +1220,19 @@ def main(
         )
         return 2
 
+    # The self-test drives the run with the scripted fake, and both the fake's replies and the
+    # red-team assertions are written against the pass-through contract stub. Once Phases B and C
+    # are merged, `auto` resolves to the real modules, whose validators would reject the
+    # stub-shaped replies before the harness's own checks ever saw them — the red-team tests
+    # would then all fail for one reason (fallback), which is not what they test. So a self-test
+    # stays on the stub unless an explicit --pipeline says otherwise; the live run (no
+    # --selftest) still gets the real pipeline from `auto`. Phase G pinned this while integrating.
+    pipeline_choice = args.pipeline
+    if args.selftest and pipeline_choice == "auto":
+        pipeline_choice = "stub"
+
     try:
-        pipeline, pipeline_label = load_pipeline(args.pipeline)
+        pipeline, pipeline_label = load_pipeline(pipeline_choice)
     except Refused as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2

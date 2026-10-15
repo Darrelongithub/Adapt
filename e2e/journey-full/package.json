@@ -1,0 +1,14 @@
+{
+  "name": "adapt-e2e-journey",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Round 2, phase G: the full journey in a real browser, against a scripted fake model.",
+  "scripts": {
+    "test": "playwright test",
+    "test:desktop": "playwright test --project=desktop",
+    "test:mobile": "playwright test --project=mobile"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0"
+  }
+}

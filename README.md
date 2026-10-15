@@ -64,6 +64,21 @@ side of a change, and a live demo does not have them. The bar is not lowered for
 rows are written beforehand and *labelled*, so the numbers on screen are numbers, and the label
 travels with them ("14 of 41 scored answers are pilot data"). See `docs/PILOT.md`.
 
+## Round 2: the typed-topic journey
+
+Round 2 added the path a new learner actually walks: account → preferences → mind games →
+subject → subject round → snapshot → a first lesson written for a topic they type themselves →
+practice. A typed topic is turned into a checked knowledge pack in the background
+(`POST /api/v1/content/prepare`), and the lesson screen teaches from that pack: the lesson is
+written for the learner, a wrong answer gets an explanation that starts from the answer they
+actually gave, and "I don't get it" re-teaches the same idea a different way every time. With
+no model key configured, every one of those steps still answers — deterministically, and
+labelled "Simple lesson" rather than pretending otherwise. `docs/ROUND2.md` is the round's
+summary; `docs/round2/demo.md` is the three-minute demo for it (live path, contrast screen,
+mock fallback); `docs/round2/report-g.md` is the integration report, including what is still
+unverified. The live model check has **not** been run — no key has ever been configured on
+this build; the owner's commands are in `docs/round2/live-check.md`.
+
 ## Run it
 
 One-time setup (Python 3.11+ and Node 20.11+):
@@ -114,7 +129,7 @@ For fixture-only previews: `ADAPT_API=offline npm run dev:web`, then open `/?moc
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e "./backend[dev]"          # fastapi, sqlalchemy, numpy, cryptography, argon2…
-cd backend && pytest -q                  # 645 tests, no network, no model call needed
+cd backend && pytest -q                  # 1333 passed, 2 skipped (measured 2026-10-15, round 2 integration); no network, no model call needed
 adapt demo --turns 3                     # the whole loop, in a terminal, on a temp database
 adapt pilot --student-id <id> --seed     # the pre-demo pilot, written and labelled
 

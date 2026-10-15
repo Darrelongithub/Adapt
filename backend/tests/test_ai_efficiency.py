@@ -261,7 +261,7 @@ def test_a_topic_with_authored_answers_is_never_asked_about():
     assert llm.calls == [], f"a model was asked about an authored topic: {[c['purpose'] for c in llm.calls]}"
     assert meta["calls"] == 0
     assert meta["sources"] == {"placement": "authored", "ratings": "authored"}
-    assert "no model was asked" in meta["note"]
+    assert "nothing else was asked" in meta["note"]
 
 
 def test_a_caller_that_only_wants_the_topic_does_not_buy_the_ratings():

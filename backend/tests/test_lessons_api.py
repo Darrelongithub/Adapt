@@ -628,7 +628,7 @@ def test_authoring_without_a_model_returns_a_real_scene_and_says_which(client, l
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True and body["source"] == "builtin"
-    assert "no model is configured" in body["note"], body["note"]
+    assert "a written-for-you scene is not available" in body["note"], body["note"]
     assert body["stored"]["kind"] == "binary_search"
     assert body["already_existed"] is True, "an identical scene was stored as if it were new"
     assert "nothing was duplicated" in body["stored_note"], body["stored_note"]

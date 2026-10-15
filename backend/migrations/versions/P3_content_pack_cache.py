@@ -1,12 +1,16 @@
 """Encrypted generated Pack cache and asynchronous prepare jobs.
 
 Revision ID: P3
-Revises: P2
+Revises: C1
 Create Date: 2026-10-14
 
 The cache is keyed by a one-way topic digest plus level, language and spec version; raw topic
 text is never stored in the job table. The validated payload contains answer keys and uses the
 same field-encryption type as the existing content registry.
+
+Originally chained from ``P2``. Phase G re-pointed it at ``C1`` because Phase D's ``0009`` and
+Phase C's ``C1`` also descend from ``P2``/``0010``; without this, ``alembic upgrade head`` sees
+two heads and refuses. The revision body is unchanged.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ import adapt.content.skeleton.cache  # noqa: F401
 from adapt.crypto.fields import EncryptedJSON
 
 revision: str = "P3"
-down_revision: str | None = "P2"
+down_revision: str | None = "C1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

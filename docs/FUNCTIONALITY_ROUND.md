@@ -774,3 +774,32 @@ there reads as a broken route rather than as the harness's own traffic.
 right *place* in the subject round. It sits below the resolve card and before the plan; whether a
 learner should meet the material before or after the round that measures them is a design
 judgement, not a defect, and it is a human's to make.
+
+---
+
+## Round 2 reconciliation (Phase G, 2026-10-15)
+
+This document is the round-1 record; the boxes above are left exactly as round 1 left them.
+What follows is what round 2 measured, so a reader is not left comparing two documents that
+disagree about the present.
+
+* **Suite size.** The backend suite is **1333 passed, 2 skipped** (`cd backend && pytest -q`,
+  2026-10-15), up from the 1097 recorded at the end of round 1. The README's stale "645 tests"
+  line now says so. Frontend gates on the same day: `npm run lint` (contract: 116 backend
+  routes against 102 frontend calls), `test:engine` 15, `test:lib` 42, `test:server` 2 — all
+  green; `npm run build` compiled successfully.
+* **The browser admission above is out of date.** Round 1 could only drive jsdom. Round 2 ran
+  real Chromium: Phase F's games suite (`e2e/games/`), Phase D's journey checks, and Phase G's
+  full-journey run (`e2e/journey-full/`, desktop and mobile projects, both passing) against
+  the real API with a scripted fake model. Screenshots are in `docs/screens/F/`, `docs/screens/D/`
+  and `docs/screens/G/`. What is still not browser-verified is listed in `docs/UNVERIFIED.md`.
+* **The generative half has now landed** (it had not, at the end of round 1): Phase B's pack
+  service (`adapt.content.skeleton`), the prepare job, and Phase C's lesson writer are merged,
+  and Phase G proved the chain over HTTP and in the browser with a scripted fake model. With a
+  real key it has still never run — see `docs/UNVERIFIED.md`, round-2 section.
+* **Placement is eight questions** (adaptive, four to twelve, eight by default) in the UI, the
+  CLI demo and these docs; they agree.
+* The round-1 boxes still unticked (1.1–1.10 fixes, 1.4.2 BKT calibration, Phase 6, Phase 7,
+  final report) were not re-audited line by line in round 2. Their tests are inside
+  the 1333 above and pass; the boxes stay unticked rather than being checked on the strength
+  of a suite number alone. Round 2's own final report is `docs/round2/report-g.md`.

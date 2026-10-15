@@ -1791,7 +1791,7 @@ def _score_rule_text(task: Mapping[str, Any], text: str) -> dict[str, Any]:
             if correct
             else ("; ".join(notes) + f". {task.get('why', '')}").strip(". ") + "."
         ),
-        "note": "graded by a fixed rule in code; no model read your answer",
+        "note": "graded by a fixed rule in code; nothing else read your answer",
     }
 
 

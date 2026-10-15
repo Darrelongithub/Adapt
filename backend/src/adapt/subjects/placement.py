@@ -85,7 +85,7 @@ def _placement_parse(data: Mapping[str, Any], context: dict[str, Any]) -> tuple[
             bank_topic_id=deterministic.bank_topic_id,
             alternatives=deterministic.alternatives,
             note=(
-                f"a model placed this in {accepted['family']} with confidence "
+                f"a written-for-you rating placed this in {accepted['family']} with confidence "
                 f"{accepted['confidence']:.2f}, and rated that family's skills in the same call; "
                 "both answers were validated against the taxonomy before anything was chosen"
             ),
@@ -105,7 +105,7 @@ def _ratings_parse(data: Mapping[str, Any], context: dict[str, Any]) -> tuple[An
         return None, notes or ["the ratings were not usable"]
     reason = str(data.get("reason") or "").strip()[:220]
     if reason:
-        notes.append(f"model's own reason: {reason}")
+        notes.append(f"the rating's own reason: {reason}")
     hint = {**context["hint"], "family": family}
     return (
         model_leanings(hint=hint, family=family, ratings=ratings, notes=notes),
@@ -134,9 +134,9 @@ def _ratings_fallback(context: dict[str, Any]) -> Leanings:
         title=str(hint.get("title") or "this topic"),
         subject=str(hint.get("subject") or ""),
         family=family,
-        model_note=(
-            "the model's placement or ratings did not pass the taxonomy check, so this is the "
-            "generic profile for that family rather than a claim about your topic"
+        ratings_note=(
+            "The written-for-you placement or ratings did not pass the taxonomy check, so this is "
+            "the generic profile for that family rather than a claim about your topic"
         ),
     )
 
@@ -274,10 +274,10 @@ def place_and_rate(
                 "ratings": "authored" if authored_leanings else "code",
             },
             "note": (
-                "the authored tables answer this topic, so no model was asked: "
+                "the authored tables answer this topic, so nothing else was asked: "
                 f"placement is {deterministic.source} and the ratings are the topic's own"
                 if authored_leanings
-                else "no model is configured on this machine, so nothing was asked"
+                else "a written-for-you rating is not available on this machine, so nothing was asked"
             ),
         }
 
@@ -297,9 +297,9 @@ def place_and_rate(
             "replaces": [],
             "sources": {"placement": "model" if refine else "code", "ratings": "model" if rate else "authored"},
             "note": (
-                "one model call was needed, so one was made"
+                "one written-for-you check was needed, so one was made"
                 if calls_needed == 1
-                else "the merge is switched off on this deployment, so the two questions were asked separately"
+                else "the combined check is switched off on this deployment, so the two questions were asked separately"
             ),
         }
 
@@ -326,8 +326,8 @@ def place_and_rate(
             "calls": 0,
             "replaces": [],
             "note": (
-                "the model could not be asked from inside a running event loop, so the topic was "
-                "placed by code and the generic skill profile was used; both are labelled"
+                "the written-for-you check could not run just now, so the topic was "
+                "placed by the built-in rules and the general skill list was used; both are labelled"
             ),
         }
 
@@ -347,7 +347,7 @@ def place_and_rate(
             "one call answered both questions: which family this belongs to and how much the "
             "topic leans on that family's skills"
             if result.used_model
-            else "the model's answer was not usable, so code placed the topic and the generic skill profile was used"
+            else "the written-for-you answer was not usable, so the built-in rules placed the topic and the general skill list was used"
         ),
     }
     return resolved, leanings, meta

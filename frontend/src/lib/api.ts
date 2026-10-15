@@ -100,8 +100,9 @@ export async function api<T = Record<string, unknown>>(path: string, opts: Optio
     return found.body as T;
   }
   const headers: Record<string, string> = { accept: "application/json", ...(opts.headers ?? {}) };
-  // `csrf` is opt-in on safe methods: one GET in this API demands the token anyway
-  // (the answer-reveal route, because it is the one read that spoils a question).
+  // `csrf` is opt-in on safe methods: some GETs demand the token anyway — the
+  // answer-reveal route (the one read that spoils a question) and any rate-limited
+  // read, because the rate guard checks the token on every method.
   if (method !== "GET" || opts.csrf) {
     const token = csrfToken();
     if (token) headers["x-csrf-token"] = token;
