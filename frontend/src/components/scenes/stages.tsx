@@ -115,7 +115,7 @@ export function BinarySearchStage({ frame }: { frame: Frame }) {
           {num(st.live, Math.max(hi - lo + 1, 0))} of {values.length} places left
         </span>
       </Row>
-      <Row label="target / probes">
+      <Row label="target and probes">
         <span className="font-mono text-[13px]">{st.target === undefined ? "—" : String(st.target)}</span>
         <span className={`${MUTED} ml-2`}>
           compared {compared.length ? compared.map((i) => `arr[${i}]`).join(", ") : "nothing yet"}

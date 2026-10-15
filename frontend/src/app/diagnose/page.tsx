@@ -47,7 +47,7 @@ export default function Diagnose() {
         setStarted(Date.now());
         const data = await get<DiagnosticResponse>("/api/v1/assessment/diagnostic");
         if (cancelled) return;
-        if (data.error || !data.data) setError(data.error ?? "The assessment could not be prepared just now.");
+        if (data.error || !data.data) setError(data.error ?? "placement did not answer");
         else {
           setItems(data.data.items);
           if (data.data.items.length) painted.current = true;

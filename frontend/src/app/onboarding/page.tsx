@@ -1,36 +1,45 @@
 "use client";
 
-/** Setup, and the one screen that has to be explicit about what it is *not* asking.
+/**
+ * Setup: the account-level settings, and nothing that gets asked twice.
  *
- * There is no learning styles question here by design: the onboarding payload has no
- * key for it, and the note the server sends back says the same thing the blueprint does
- * — how you learn best is measured from what happens during practice. Free text about
- * what you want more or less of is welcome, because that is a request you are making,
- * not a label you are being given.
+ * This screen used to ask a learner how long a sitting they wanted, what they were
+ * working towards and which language explanations should be in — all of which the mind
+ * check asks, once, in a screen built to ask them together (thirteen questions, one
+ * submit, each with the sentence that says what it changes). Being asked the same thing
+ * on two screens is how a learner ends up believing the two answers mean different
+ * things; the journey asked for one source, so this screen keeps the settings that
+ * belong to the *account* and hands over the rest:
+ *
+ * * **time** — how many minutes a week they want to plan for;
+ * * **voice** — whether replies should be spoken, and which voice;
+ * * **consent** — the interaction log, and whether a written-for-you summary may be used;
+ * * **two free-text requests** — "more of this / less of this", which land in the same
+ *   preference store everything else reads, so the tutor sees them in one place.
+ *
+ * There is still no learning-styles question, and the note the server sends back says
+ * the same thing the blueprint does: how you learn best is measured from what happens
+ * during practice.
  */
-import { useRouter } from "next/navigation";
+
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, Input, Tag, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, Input, Notice, useSession } from "@/components/ui";
 import { get, post, useApi, type Me } from "@/lib/api";
 
 type Prefs = {
   preferences: Record<string, unknown>;
-  allowed_keys: string[];
 };
 
+/** The four preferences this screen owns. Anything else is asked once, elsewhere. */
+const OWN_KEYS = ["weekly_minutes", "encourage", "avoid"] as const;
+
 export default function Onboarding() {
-  const router = useRouter();
-  const { me, refresh } = useSession();
+  const { refresh } = useSession();
   const prefs = useApi<Prefs>("me/preferences");
   const [form, setForm] = useState<Record<string, string | boolean | number>>({
-    goal: "",
     weekly_minutes: 90,
-    session_minutes: 20,
-    max_explanation_words: 90,
-    push_me: true,
-    want_voice: false,
-    language: "en",
     encourage: "",
     avoid: "",
   });
@@ -40,6 +49,7 @@ export default function Onboarding() {
   const [consentAnalytics, setConsentAnalytics] = useState(false);
   const [consentLlm, setConsentLlm] = useState(false);
   const [carriedConsent, setCarriedConsent] = useState<string | null>(null);
+  const [voiceWant, setVoiceWant] = useState(false);
   const [voiceGender, setVoiceGender] = useState("female");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
@@ -48,7 +58,7 @@ export default function Onboarding() {
   useEffect(() => {
     const p = prefs.data?.preferences;
     if (!p) return;
-    setForm((f) => ({ ...f, ...pick(p, Object.keys(f)) }) as Record<string, string | boolean | number>);
+    setForm((f) => ({ ...f, ...pick(p, [...OWN_KEYS]) }) as Record<string, string | boolean | number>);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefs.data?.preferences && JSON.stringify(prefs.data?.preferences)]);
 
@@ -64,6 +74,7 @@ export default function Onboarding() {
       if (!r.data) return;
       if (carried !== "yes" && carried !== "no") setConsentAnalytics(Boolean(r.data.consent_analytics));
       setConsentLlm(Boolean(r.data.consent_share_with_ai));
+      setVoiceWant(Boolean(r.data.voice_enabled));
       setVoiceGender(r.data.voice_gender || "female");
     });
   }, []);
@@ -78,7 +89,7 @@ export default function Onboarding() {
         preferences: clean(form),
         consent_analytics: consentAnalytics,
         consent_share_with_llm: consentLlm,
-        voice_enabled: Boolean(form.want_voice),
+        voice_enabled: voiceWant,
         voice_gender: voiceGender,
       });
       setResult(out);
@@ -90,158 +101,174 @@ export default function Onboarding() {
     }
   }
 
-  const ignored = (result?.ignored_keys as string[] | undefined) ?? [];
-  const reasons = (result?.rejected_reasons as Record<string, string> | undefined) ?? {};
+  // Whether anything was refused, read from the reasons map rather than the list of
+  // rejected key names: the names are for the operator's log, and renaming what the
+  // server calls them is not this screen's business.
+  const notStored = Object.keys((result?.rejected_reasons as Record<string, string> | undefined) ?? {}).length > 0;
 
   return (
     <div className="mx-auto max-w-5xl px-3 py-4" style={{ padding: "clamp(24px,4vw,48px) clamp(16px,4vw,32px)" }}>
       <div className="grid gap-6 md:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-6">
           <div>
-            <div className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ Onboarding</div>
-            <h1 className="mt-2 text-[clamp(24px,3.4vw,36px)] font-medium leading-tight" style={{ fontFamily: "var(--font-serif)" }}>Set up how this should run</h1>
+            <div className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+              § Setup
+            </div>
+            <h1 className="mt-2 text-[clamp(24px,3.4vw,36px)] font-medium leading-tight" style={{ fontFamily: "var(--font-serif)" }}>
+              Set up how this should run
+            </h1>
             <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-              Everything here is a request you are making, so it applies straight away and needs no approval — the approval gate is
-              for changes the system proposes from measurement. Change any of it later on the settings screen.
+              Everything here is a request you are making, so it applies straight away and needs no approval — the approval gate
+              is for changes proposed from measurement. Change any of it later on the{" "}
+              <Link href="/settings" className="link-inline">
+                settings screen
+              </Link>
+              .
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
+              The questions about <em>how you work</em> are asked once, on the mind check: thirteen of them, in one go, each
+              with the sentence that says what it changes. This screen is only about the account itself, so nothing is asked
+              twice.
             </p>
           </div>
-        <Card title="Time and words">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="What are you working towards?" hint="Shown back to you in the plan, and used to pick wording.">
-              <Input value={String(form.goal)} onChange={(e) => set("goal")(e.target.value)} placeholder="GCSE maths, higher tier" />
-            </Field>
-            <Field label="Minutes a week" hint="A number, not a promise. It only decides how much to put in the plan.">
-              <Input
-                type="number"
-                min={10}
-                step={5}
-                value={String(form.weekly_minutes)}
-                onChange={(e) => set("weekly_minutes")(Number(e.target.value))}
-              />
-            </Field>
-            <Field label="Minutes in one sitting">
-              <Input
-                type="number"
-                min={5}
-                step={5}
-                value={String(form.session_minutes)}
-                onChange={(e) => set("session_minutes")(Number(e.target.value))}
-              />
-            </Field>
-            <Field label="Longest explanation you want to read" hint="The full version is always one click away. This is the default length.">
-              <Input
-                type="number"
-                min={20}
-                step={10}
-                value={String(form.max_explanation_words)}
-                onChange={(e) => set("max_explanation_words")(Number(e.target.value))}
-              />
-            </Field>
-          </div>
-        </Card>
 
-        <Card title="Teaching you can ask for">
-          <div className="space-y-3">
-            <Check
-              label="Push me to try before showing"
-              checked={Boolean(form.push_me)}
-              onChange={set("push_me")}
-              hint="Turns rereading off and puts a short attempt first. It feels harder, and that is the mechanism rather than a side effect."
-            />
-            <Field label="More of this" hint="Free text. It becomes a stated preference, and the tutor reads it.">
-              <Input value={String(form.encourage)} onChange={(e) => set("encourage")(e.target.value)} placeholder="diagrams before symbols" />
-            </Field>
-            <Field label="Less of this">
-              <Input value={String(form.avoid)} onChange={(e) => set("avoid")(e.target.value)} placeholder="anything that feels like a sticker chart" />
-            </Field>
-          </div>
-        </Card>
-
-        <Card title="Voice and speech">
-          <div className="space-y-3">
-            <Check label="Use voice when I want it" checked={Boolean(form.want_voice)} onChange={set("want_voice")} hint="Nothing is recorded until you press the button on the voice screen." />
-            {form.want_voice ? (
-              <Field label="Which voice replies">
-                <select
-                  className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
-                  value={voiceGender}
-                  onChange={(e) => setVoiceGender(e.target.value)}
-                >
-                  <option value="female">female</option>
-                  <option value="male">male</option>
-                </select>
+          <Card title="Time">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Minutes a week" hint="A number, not a promise. It only decides how much to put in the plan.">
+                <Input
+                  type="number"
+                  min={10}
+                  step={5}
+                  value={String(form.weekly_minutes)}
+                  onChange={(e) => set("weekly_minutes")(Number(e.target.value))}
+                />
               </Field>
-            ) : null}
-          </div>
-        </Card>
-
-        <Card title="What may be measured" tone="warn">
-          <div className="space-y-3">
-            {carriedConsent ? (
-              <p className="text-xs text-[var(--muted)]">
-                You answered this before your account existed, and this screen stores the answer:{" "}
-                {carriedConsent === "yes" ? "analytics consent given" : "analytics consent declined"}. Change it here if you
-                want to — the boxes are never set on your behalf.
+              <p className="self-end text-xs text-[var(--muted)]">
+                How long a single sitting should be, and which days you study, are two of the thirteen questions — they are
+                asked there, once.
               </p>
-            ) : null}
-            <Check
-              label="Keep the interaction log"
-              checked={consentAnalytics}
-              onChange={setConsentAnalytics}
-              hint="The order of events and timings — not keystrokes, not screenshots, not other tabs. Without it there is no evidence and no proposals, only questions."
-            />
-            <Check
-              label="Let a model read a summary when it would help"
-              checked={consentLlm}
-              onChange={setConsentLlm}
-              hint="The summary is topic mastery, hypotheses and approved changes — never your name or contact details. With no API key configured this changes nothing, because nothing is sent anyway."
-            />
-          </div>
-        </Card>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Btn kind="primary" onClick={save} disabled={busy}>
-            {busy ? "…" : "Save and continue"}
-          </Btn>
-          <Btn href="/diagnose" kind="ghost">
-            skip for now
-          </Btn>
-          {error ? <span className="text-xs text-[var(--bad)]">{error}</span> : null}
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {result ? (
-          <Card title="Saved" tone="good">
-            <p className="text-sm">{String(result.note ?? "")}</p>
-            {ignored.length ? (
-              <div className="mt-2 text-xs text-[var(--muted)]">
-                not stored: {ignored.map((k) => <Tag key={k} tone="warn">{k} — {reasons[k] ?? "unknown key"}</Tag>)}
-              </div>
-            ) : null}
-            <div className="mt-3 flex gap-2">
-              <Btn kind="primary" href="/diagnose">
-                Start placement
-              </Btn>
-              <Btn onClick={() => router.push("/learn")}>Skip to practice</Btn>
             </div>
           </Card>
-        ) : null}
-        <Card title="Allowed preference keys" tone="muted" right={<span>from the API</span>}>
-          {prefs.loading ? <p className="text-sm text-[var(--muted)]">…</p> : null}
-          {prefs.error ? <Err error={prefs.error} status={prefs.status} /> : null}
-          <div className="flex flex-wrap gap-1">
-            {(prefs.data?.allowed_keys ?? []).map((k) => (
-              <Tag key={k}>{k}</Tag>
-            ))}
+
+          <Card title="Teaching you can ask for">
+            <div className="space-y-3">
+              <Field label="More of this" hint="Free text. It becomes a stated preference, and the tutor reads it.">
+                <Input value={String(form.encourage)} onChange={(e) => set("encourage")(e.target.value)} placeholder="diagrams before symbols" />
+              </Field>
+              <Field label="Less of this">
+                <Input value={String(form.avoid)} onChange={(e) => set("avoid")(e.target.value)} placeholder="anything that feels like a sticker chart" />
+              </Field>
+              <p className="text-xs text-[var(--muted)]">
+                How long an explanation may be, and whether to be pushed to try before being shown, live on the settings screen
+                — they are settings rather than questions, so they can be changed in a second whenever you like.
+              </p>
+            </div>
+          </Card>
+
+          <Card title="What may be measured" tone="warn">
+            <div className="space-y-3">
+              {carriedConsent ? (
+                <p className="text-xs text-[var(--muted)]">
+                  You answered this before your account existed, and this screen stores the answer:{" "}
+                  {carriedConsent === "yes" ? "analytics consent given" : "analytics consent declined"}. Change it here if you
+                  want to — the boxes are never set on your behalf.
+                </p>
+              ) : null}
+              <Check
+                label="Keep the interaction log"
+                checked={consentAnalytics}
+                onChange={setConsentAnalytics}
+                hint="The order of events and timings — not keystrokes, not screenshots, not other tabs. Without it there is no evidence and no proposals, only questions."
+              />
+              <Check
+                label="Allow a written-for-you summary when it would help"
+                checked={consentLlm}
+                onChange={setConsentLlm}
+                hint="The summary is topic mastery, hypotheses and approved changes — never your name or contact details. Off means every reply is written from your own material. A summary is shared only when this is on and a written-for-you reply is available."
+              />
+            </div>
+          </Card>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Btn kind="primary" onClick={save} disabled={busy}>
+              {busy ? "…" : "Save and continue"}
+            </Btn>
+            <Btn href="/journey" kind="ghost">
+              skip for now
+            </Btn>
+            {error ? <span className="text-xs text-[var(--bad)]">{error}</span> : null}
           </div>
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            Anything else the client sends comes back in <code>ignored_keys</code> with a reason, rather than being stored as a
-            string nobody can interpret.
-          </p>
-        </Card>
+        </div>
+
+        <div className="space-y-4">
+          {result ? (
+            <Card title="Saved" tone="good">
+              <p className="text-sm">{String(result.note ?? "")}</p>
+              {notStored ? (
+                <p className="mt-2 text-xs text-[var(--muted)]">
+                  Some of what was sent was not stored. Only the questions on this page are kept.
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Btn kind="primary" href="/journey">
+                  Continue to your path
+                </Btn>
+                <Btn href="/learn" kind="ghost">
+                  Skip to practice
+                </Btn>
+              </div>
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Your path takes you to the questions, then the games, then a subject — in that order, and you can stop after any
+                step.
+              </p>
+            </Card>
+          ) : (
+            <>
+              <Card title="What happens next" tone="muted">
+                <ol className="space-y-2 text-sm">
+                  <li>
+                    <strong>1. How you work</strong> — thirteen questions, in one sitting, on the mind check.
+                  </li>
+                  <li>
+                    <strong>2. Mind games</strong> — six short games that measure attention, recall and what you do when you are
+                    stuck.
+                  </li>
+                  <li>
+                    <strong>3. A subject, then a lesson</strong> — the first lesson says why it looks the way it does.
+                  </li>
+                </ol>
+                <p className="mt-2 text-xs text-[var(--muted)]">
+                  Every step can be skipped, and a skipped step is recorded as not measured rather than as a zero.
+                </p>
+              </Card>
+              <Card title="Voice and speech">
+                <div className="space-y-3">
+                  <Check
+                    label="Use voice when I want it"
+                    checked={voiceWant}
+                    onChange={setVoiceWant}
+                    hint="Nothing is recorded until you press the button on the voice screen."
+                  />
+                  {voiceWant ? (
+                    <Field label="Which voice replies">
+                      <select
+                        className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
+                        value={voiceGender}
+                        onChange={(e) => setVoiceGender(e.target.value)}
+                      >
+                        <option value="female">female</option>
+                        <option value="male">male</option>
+                      </select>
+                    </Field>
+                  ) : null}
+                </div>
+              </Card>
+              {prefs.error ? <Err error={prefs.error} status={prefs.status} /> : null}
+              {prefs.loading ? <Notice tone="info">reading the settings already saved…</Notice> : null}
+            </>
+          )}
+        </div>
       </div>
-    </div>
     </div>
   );
 }

@@ -338,6 +338,7 @@ def build_web_env(
     api_port: int,
     web_port: int,
     production: bool,
+    lan_ip: str | None = None,
 ) -> dict[str, str]:
     """The web child's environment.
 
@@ -352,6 +353,10 @@ def build_web_env(
     env["HOST"] = "0.0.0.0"
     env["PORT"] = str(web_port)
     env["NODE_ENV"] = "production" if production else "development"
+    if lan_ip:
+        env["ADAPT_DEV_ORIGIN"] = ",".join(dict.fromkeys([
+            *as_list(base.get("ADAPT_DEV_ORIGIN", "")), lan_ip,
+        ]))
     return env
 
 
@@ -603,7 +608,7 @@ class HostSession:
         return None
 
     def wait_http(self, url: str, *, timeout: float) -> bool:
-        """Poll a URL until it answers anything at all. Bypasses any configured http_proxy."""
+        """Wait for a successful HTTP response, bypassing any configured http_proxy."""
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -612,8 +617,6 @@ class HostSession:
             try:
                 with opener.open(url, timeout=2):
                     return True
-            except urllib.error.HTTPError:
-                return True  # answered, whatever it said: the socket is listening
             except Exception:
                 time.sleep(0.3)
         return False
@@ -704,6 +707,9 @@ def uvicorn_command(settings, *, host: str, port: int) -> list[str]:
         "-m",
         "uvicorn",
         "adapt.api.app:app",
+        # Request targets can carry private query parameters. Keep startup/error logs,
+        # not raw per-request access logs (also incompatible with our log scrubber).
+        "--no-access-log",
         "--host",
         host,
         "--port",

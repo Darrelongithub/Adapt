@@ -14,7 +14,7 @@
  *
  * The two profiles are demo profiles, labelled as such everywhere they
  * appear. They are made up so the difference is visible on first load; a
- * signed-in learner's own lesson is at `POST /api/v1/lesson-plan`.
+ * signed-in learner's own lesson is on the lesson screen.
  */
 import { useEffect, useState } from "react";
 
@@ -22,6 +22,7 @@ import { VisualFigure } from "@/components/visual";
 import { LessonRenderer, type LessonValue } from "@/components/lesson/LessonRenderer";
 import { Btn, Card, Err, Tag } from "@/components/ui";
 import { post } from "@/lib/api";
+import { contrastFoot, evidenceMark } from "@/lib/learnerCopy";
 
 /* ------------------------------------------------------------------ types ---- */
 
@@ -212,6 +213,7 @@ export default function Contrast() {
   const [sameTwice, setSameTwice] = useState(false);
   const [data, setData] = useState<Contrast | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const concept = CONCEPTS.find((c) => c.id === conceptId) ?? CONCEPTS[0];
@@ -221,6 +223,7 @@ export default function Contrast() {
     (async () => {
       setLoading(true);
       setError(null);
+      setErrorStatus(null);
       try {
         const profiles = sameTwice ? [PROFILE_A, { ...PROFILE_A, name: "Demo profile 1 — again" }] : [PROFILE_A, PROFILE_B];
         const out = await post<Contrast>("/api/v1/lesson-plan/contrast", {
@@ -229,7 +232,11 @@ export default function Contrast() {
         });
         if (alive) setData(out);
       } catch (err) {
-        if (alive) setError((err as Error).message);
+        if (alive) {
+          const status = err && typeof err === "object" && "status" in err ? Number((err as { status: number }).status) : null;
+          setErrorStatus(Number.isFinite(status) ? status : null);
+          setError(status === 401 ? "not signed in" : "The comparison could not be loaded just now.");
+        }
       } finally {
         if (alive) setLoading(false);
       }
@@ -278,7 +285,7 @@ export default function Contrast() {
       </Card>
 
       {error ? (
-        <Err error="We could not prepare the comparison just now. Please try again." />
+        <Err error={error} status={errorStatus} />
       ) : null}
       {loading && !data ? (
         <Card title="building both lessons">
@@ -365,7 +372,8 @@ function BlockView({ block }: { block: Block }) {
       <div className="mb-1.5 flex items-center gap-2">
         <Tag tone="line">{block.kind.replaceAll("_", " ")}</Tag>
         <span className="text-[11px] text-[var(--muted)]">
-          why: {block.why.text} <span className="font-mono">({evidenceLabel(block.why.source, block.why.n)})</span>
+          why: {block.why.text}{" "}
+          <span className="font-mono">{evidenceMark(block.why.source, block.why.n, block.why.evidence_ids)}</span>
         </span>
       </div>
       {block.kind === "visual" ? (
@@ -410,8 +418,7 @@ function WhyPanel({ plan }: { plan: Plan }) {
           <li key={i}>
             <span className="font-medium">{row.decision}.</span> {row.text}{" "}
             <span className="font-mono text-[var(--muted)]">
-              ({evidenceLabel(row.source, row.n)}
-              {row.evidence_ids.length ? `, from ${row.evidence_ids.join(", ")}` : ""})
+              ({evidenceMark(row.source, row.n, row.evidence_ids, { includeSource: true })})
             </span>
           </li>
         ))}
@@ -430,7 +437,7 @@ function WhyPanel({ plan }: { plan: Plan }) {
         </ul>
       ) : null}
       <p className="mt-2 text-[11px] text-[var(--muted)]">
-        These are made-up example profiles; no real learner history is included.
+        {contrastFoot({ modelVersion: plan.provenance.model_version, evidenceN: plan.provenance.evidence_n })}
       </p>
     </section>
   );

@@ -8,9 +8,8 @@ Wiring decisions worth naming, because the blueprint asked for them:
 * Every response carries the security headers; every request carries an origin/host
   check, because in tunnel mode this app is briefly *public* and DNS-rebinding is the
   specific attack that a localhost-plus-tunnel setup invites.
-* The schema is created on startup (``create_all``) *and* Alembic owns migrations.
-  That is not redundancy: a judge cloning the repo must get a working app without
-  reading a migration guide, while the developer's upgrade path stays versioned.
+* Startup runs Alembic before any ORM reads, adopting older unversioned
+  ``create_all`` databases without discarding learner history.
 """
 
 from __future__ import annotations
@@ -38,6 +37,7 @@ from .routes import (
     baseline,
     content,
     evidence,
+    journey,
     learning,
     lesson,
     lessons,
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     # report what is really in force.
     svcs = build(st, limiter=getattr(app.state, "limiter", None))
     attach(svcs)
-    svcs.db.create_all()
+    svcs.db.upgrade_schema()
     from ..services import sessions as sessions_service
 
     with svcs.db.session() as s:
@@ -86,8 +86,8 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "startup refused: this database was made by an earlier build and is missing "
             f"{len(check['missing'])} column(s) this build declares: {', '.join(check['missing'][:4])}. "
-            "Migrate it rather than deleting it: `alembic -c alembic.ini stamp 0002 && "
-            "alembic -c alembic.ini upgrade head` (see README, Migrations)."
+            "Do not delete the database or blindly stamp a revision; check the migration "
+            "history (see README, Migrations)."
         )
     if check["checked"] and check["unreadable"]:
         # Spelled out here rather than interpolated, because an exception message about key
@@ -168,6 +168,7 @@ def create_app() -> FastAPI:
         lesson.router,
         content.router,
         adaptations.router,
+        journey.router,
         lesson_plan.router,
         subjects.router,
         tutor.router,

@@ -1,7 +1,6 @@
 """Schema bootstrap and data seeding, from the command line.
 
-``create_all`` is enough for a fresh clone, and Alembic is the answer for an
-existing database; both are provided because they solve different problems (see
+The same startup migration path handles both new and existing databases (see
 ``docs/DATA_MODEL.md``). Seeding is idempotent by design -- a reseed updates the
 bank in place rather than churning ids, because attempt history points at item ids
 and a reseed that minted new ones would silently orphan a learner's record.
@@ -60,7 +59,7 @@ def init(settings: Settings | None = None, *, seed_demo: bool = False, db: Datab
     st = settings or get_settings()
     database = db or Database(st)
     before = set(_table_names(database))
-    database.create_all()
+    database.upgrade_schema()
     after = _table_names(database)
     report = InitReport(created_tables=sorted(set(after) - before))
     report.encryption = {

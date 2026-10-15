@@ -1,6 +1,15 @@
-# Part A items not verified
+# Unverified — Phase A
 
-- **Real-browser route crawl and visual review:** `frontend/tests-e2e/banned-phrases.mjs` is syntax-checked and covers discovered page routes in signed-out and guest-signed-in contexts, but no DOM crawl or screenshots were produced. The configured Chromium executable `/opt/pw-browsers/chromium` is absent. No Playwright browser was installed, as instructed.
-- **Cross-owner onboarding copy:** `frontend/src/app/onboarding/page.tsx` remains untouched because Phase D owns it. The route still contains the flagged consent/configuration and preference-key copy until Phase D applies `docs/round2/handoff-A.md`; therefore the all-routes banned-phrase crawl cannot yet be reported clean.
-- **Real model-written output:** no model pass was run because no model key is configured. The teaching-quality evaluator reports zero gate flags on the deterministic path; this does not verify any live model response.
-- **Integration branch operations:** this workspace is pinned to `arena/7efe7537-adapt`. No rebase, merge to `main`, or push was performed.
+Do not treat these as passed.
+
+## Chromium
+
+Chromium is not installed at `/opt/pw-browsers/chromium`. `playwright install` was not run. `frontend/tests-e2e/banned_phrases.mjs` was not executed after the merge with `main`. There are no screenshots in `docs/screens/a/`. Paint and layout were not checked.
+
+## Live model
+
+No Gemini key is configured. No live model output was judged. `adapt config set-key`, `adapt config test`, and `scripts/live_model_check.py` were not run.
+
+## Still in other phases' files
+
+`backend/src/adapt/subjects/leanings.py` still contains learner-visible `model` sentences. Phase F owns that file. Starting a subject round was not walked.

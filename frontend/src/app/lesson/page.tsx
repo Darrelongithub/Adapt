@@ -719,6 +719,10 @@ function WhyPanel({
         {answer ? (
           <div className="flex flex-col gap-1">
             <p className="text-[13px] whitespace-pre-wrap">{answer.text}</p>
+            <p className="text-[11px] text-[var(--muted)]">
+              source: <span className="font-mono">{answer.source}</span>
+              {answer.cached ? " · from the cache" : ""}
+            </p>
             {answer.note ? <p className="text-[12px] text-[var(--warn)]">{answer.note}</p> : null}
             {answer.citations?.length ? (
               <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-[var(--muted)]">
@@ -889,6 +893,9 @@ function EvidencePanel({ evidence }: { evidence: Evidence }) {
           {s.accuracy === null ? "" : ` · ${Math.round(s.accuracy * 100)}% right before the answer was shown`}
         </p>
         <p className="text-[var(--muted)]">{s.note}</p>
+        <p className="text-[var(--muted)]">
+          narration cache: {evidence.narration_cache.entries} repeated explanations reused from earlier in this lesson
+        </p>
         <ul className="mt-1 flex flex-col gap-0.5 text-[var(--muted)]">
           {evidence.not_evidence.map((line, li) => (
             <li key={`ne-${li}`}>· {line}</li>

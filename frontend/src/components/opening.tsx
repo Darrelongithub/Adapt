@@ -1,6 +1,6 @@
 'use client';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 // Exported so this is trivial to extend later — exact wording and blue word preserved
 // from product requirements; do not reorder or reword without explicit approval.
@@ -25,67 +25,65 @@ function pickPhrase() {
   return OPENING_PHRASES[i % OPENING_PHRASES.length];
 }
 
-export function Opening() {
-  // SSR-safe: never show the opening during server render or hydration mismatch risk —
-  // default to "already seen" until we've checked sessionStorage on the client.
-  const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const [exiting, setExiting] = useState(false);
-  const phraseRef = useRef(OPENING_PHRASES[0]);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Where the overlay is allowed to appear. It is a full-screen layer (`position: fixed;
-  // inset: 0; z-index: 200`), so anywhere it renders, it is *in front of* the page's own
-  // controls. On a question screen that meant a learner's first click on a choice was
-  // received by the overlay ("click anywhere to continue") and never reached the option:
-  // the answer looked selected-by-intent but the box stayed empty and the submit control
-  // stayed closed. The welcome only belongs on the front door, where there is nothing to
-  // swallow but the door itself.
+export function Opening({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const allowedHere = pathname === "/" || pathname === "";
+  const [phase, setPhase] = useState<"checking" | "showing" | "leaving" | "done">("checking");
+  const phraseRef = useRef(OPENING_PHRASES[0]);
+  const decision = useRef<"showing" | "done" | null>(null);
+  const skipRef = useRef<HTMLButtonElement>(null);
+  const dismiss = useCallback(() => {
+    try { sessionStorage.setItem(SEEN_KEY, "1"); } catch { /* storage may be blocked */ }
+    setPhase("leaving");
+  }, []);
 
   useEffect(() => {
-    setMounted(true);
     if (!allowedHere) return;
-    let seen = false;
-    try { seen = sessionStorage.getItem(SEEN_KEY) === '1'; } catch { /* storage blocked — fail open, don't show */ seen = true; }
-    if (!seen) {
-      phraseRef.current = pickPhrase();
-      setVisible(true);
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      // Long enough for the last word to arrive and then be read: the reveal now takes
-      // ``stagger * (words - 1) + 1.15s`` and the longest phrase is seven words, so 4.2s leaves
-      // about a second and a half of settled text. Reduced motion keeps a short hold, because
-      // there is no reveal to wait for.
-      timerRef.current = setTimeout(dismiss, reduced ? 900 : 4200);
+    if (phase === "checking") {
+      if (!decision.current) {
+        try {
+          decision.current = sessionStorage.getItem(SEEN_KEY) === "1" ? "done" : "showing";
+          if (decision.current === "showing") phraseRef.current = pickPhrase();
+        } catch {
+          // Blocked storage must never trap someone behind a splash screen.
+          decision.current = "done";
+        }
+      }
+      setPhase(decision.current);
+    } else if (phase === "showing") {
+      skipRef.current?.focus();
+      const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      const timer = setTimeout(dismiss, reduced ? 900 : 4200);
+      return () => clearTimeout(timer);
+    } else if (phase === "leaving") {
+      const timer = setTimeout(() => setPhase("done"), 500);
+      return () => clearTimeout(timer);
     }
-    return () => clearTimeout(timerRef.current);
-  }, [allowedHere]);
+  }, [allowedHere, phase, dismiss]);
 
-  function dismiss() {
-    clearTimeout(timerRef.current);
-    try { sessionStorage.setItem(SEEN_KEY, '1'); } catch { /* ignore */ }
-    setExiting(true);
-    // Matches the overlay's own `transition: opacity`; a shorter timer would remove the node
-    // mid-fade and the exit would read as a blink.
-    setTimeout(() => setVisible(false), 500);
-  }
-
-  if (!mounted || !visible || !allowedHere) return null;
-
+  // This cover is present in server HTML, not inserted after hydration. The shell and
+  // its requests can mount underneath, but never flash or accept focus before the welcome.
+  const covering = allowedHere && phase !== "done";
   const { text, blue } = phraseRef.current;
   const words = text.split(' ');
 
   return (
-    <div
-      className={`opening-overlay${exiting ? ' exiting' : ''}`}
+    <>
+    <div data-app-shell hidden={covering && phase !== "leaving"} inert={covering || undefined}>{children}</div>
+    {covering ? <div
+      className={`opening-overlay${phase === "leaving" ? ' exiting' : ''}`}
       role="dialog"
+      aria-modal="true"
       aria-label="Welcome"
       onClick={dismiss}
-      onKeyDown={dismiss}
+      onKeyDown={(e) => {
+        if (e.key === "Tab") { e.preventDefault(); skipRef.current?.focus(); }
+        else dismiss();
+      }}
       tabIndex={-1}
     >
       <p className="opening-mark">A·D·A·P·T</p>
-      <p className="opening-phrase" aria-live="off" aria-label={text}>
+      {phase !== "checking" ? <p className="opening-phrase" aria-live="off" aria-label={text}>
         {/* One word per span, and the *space is the CSS* (`margin-right` on .opening-word).
             A trailing text space inside an `inline-block` span is trimmed by the line box, so
             "Let's learn the right way" rendered as "Let'slearntherightway". */}
@@ -102,11 +100,12 @@ export function Opening() {
             </span>
           );
         })}
-      </p>
-      <button className="btn-ctl btn-ghost opening-skip" onClick={(e) => { e.stopPropagation(); dismiss(); }}>
+      </p> : <p role="status">Opening ADAPT…</p>}
+      <button ref={skipRef} className="btn-ctl btn-ghost opening-skip" onClick={(e) => { e.stopPropagation(); dismiss(); }}>
         Skip →
       </button>
       <span className="sr-only">Press any key or click anywhere to continue.</span>
-    </div>
+    </div> : null}
+    </>
   );
 }

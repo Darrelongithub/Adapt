@@ -13,10 +13,13 @@ export function useFocusTrap(active: boolean) {
         container?.querySelectorAll<HTMLElement>(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
         ) ?? [],
-      );
+      ).filter(element => !element.matches(":disabled") && element.tabIndex >= 0);
     focusables()[0]?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
+      // The welcome cover may temporarily hide a mounted account gate. Only the
+      // foreground dialog may handle focus while it is visible.
+      if (container?.closest("[hidden], [inert]")) return;
       if (e.key === "Escape") {
         lastFocused.current?.focus();
         return;
@@ -26,7 +29,10 @@ export function useFocusTrap(active: boolean) {
       if (!items.length) return;
       const first = items[0],
         last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      if (!container?.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {

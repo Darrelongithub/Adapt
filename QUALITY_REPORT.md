@@ -91,7 +91,7 @@ Each concept's written variant, visual spec, worked example, pair, hints and che
 
 * `off_topic` — text was shown as grounded while it came from another topic (brief 4.1.2).
 * `missing_example` — the app would refer to a worked example it cannot show (4.1.3).
-* `generic_hint` — a hint that could be pasted onto any question in the bank (4.1.4).
+* `generic_hint` — boilerplate text, including an MCQ hint body repeated on three distinct items (4.1.4).
 * `placeholder` — an unrendered `{a}` reached text a learner reads.
 * `key_disagrees` — the worked example contradicts the item's own answer key.
 * A `no_item_reason` note is not a defect: the reasoning for a bank item is its topic's

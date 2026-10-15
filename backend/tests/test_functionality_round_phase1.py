@@ -148,7 +148,7 @@ def test_closing_prompts_follow_item_kind_instead_of_learner_level():
         "Try one: copy the first line of the example and change only the numbers."
     )
     assert "change the numbers" in LT.closing_prompt({"kind": "numeric"}, has_example=False)
-    assert "Cover the options" in LT.closing_prompt({"kind": "mcq"}, has_example=True)
+    assert "cover the options" in LT.closing_prompt({"kind": "mcq"}, has_example=True)
     assert "recall the key fact without looking" in LT.closing_prompt({"kind": "factual"}, has_example=True)
     assert "recall the key fact without looking" in LT.closing_prompt({"kind": "text"}, has_example=True)
     assert LT.closing_prompt({"kind": "unclassified"}, has_example=False) is None
@@ -310,7 +310,6 @@ def test_placement_never_shows_the_hint_text_a_placement_item_carries(client, le
     draw on this bank happens not to pick any of the eight authored ``prompt_context``
     items, so waiting for one to turn up would be testing the draw, not the fix.
     """
-    from adapt.ai import ai2 as AI2
     from adapt.assessment import selector as SEL
 
     with services.db.session() as s:

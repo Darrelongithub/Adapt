@@ -100,6 +100,30 @@ def correct_choice(item: Mapping[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _misconception_text(choice: Mapping[str, Any], item: Mapping[str, Any]) -> str:
+    """The misconception a distractor was built on, in whichever shape it is stored.
+
+    Bank choices carry it as ``why_wrong`` prose; pack-shaped choices carry a
+    ``misconception`` (text or a mapping with a correction) or a
+    ``misconception_id`` that the item's own misconception list defines.
+    The correct option is excluded by the caller, so this text can be shown
+    to a learner without naming the key.
+    """
+    raw = choice.get("why_wrong") or choice.get("misconception")
+    if isinstance(raw, Mapping):
+        raw = raw.get("correction") or raw.get("wrong_belief") or raw.get("why_tempting")
+    if raw:
+        return str(raw).strip()
+    misc_id = choice.get("misconception_id")
+    if misc_id:
+        for misc in item.get("misconceptions") or []:
+            if isinstance(misc, Mapping) and str(misc.get("id")) == str(misc_id):
+                text = misc.get("correction") or misc.get("wrong_belief") or misc.get("why_tempting")
+                if text:
+                    return str(text).strip()
+    return ""
+
+
 def distractor_reasons(item: Mapping[str, Any]) -> list[tuple[str, str]]:
     """(option text, why it is wrong) for every option the key does not mark correct."""
     out: list[tuple[str, str]] = []
@@ -109,7 +133,7 @@ def distractor_reasons(item: Mapping[str, Any]) -> list[tuple[str, str]]:
             continue
         if correct is not None and c.get("text") == correct.get("text"):
             continue
-        why = str(c.get("why_wrong") or "").strip()
+        why = _misconception_text(c, item)
         if why:
             out.append((str(c.get("text") or ""), why))
     return out
@@ -295,7 +319,6 @@ def _steps_from_rubric(item: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def generate_example(item: Mapping[str, Any]) -> list[dict[str, Any]]:
     """A worked example derived from the item's own content, never from a template of clichés."""
-    kind = str(item.get("kind") or "")
     if item.get("choices"):
         steps = _steps_from_options(item)
     elif (item.get("answer_spec") or {}).get("formula") or (item.get("answer_spec") or {}).get("value") is not None:
@@ -379,45 +402,41 @@ def ensure_example(
 # --------------------------------------------------------------------------- #
 
 
-def _mcq_misconception_hints(item: Mapping[str, Any]) -> list[str]:
-    """Build one MCQ hint from each available distractor misconception."""
-    reasons = distractor_reasons(item)
-    if reasons:
-        templates = (
-            "Watch for this tempting error: {why}.",
-            "Test the idea behind a distractor: {why}.",
-            "Before you choose, rule out this misconception: {why}.",
-        )
-        return [
-            template.format(why=_halt(reasons[i % len(reasons)][1]).rstrip(" .;!?"))
-            for i, template in enumerate(templates)
-        ]
+def _lower_first(text: str) -> str:
+    """Lower-case the first letter, so a distractor reason can follow a colon or a dash."""
+    text = (text or "").strip()
+    return text[:1].lower() + text[1:] if text else text
 
-    # Imported choice items may not carry authored misconception text. In that case,
-    # point at distinct wrong options rather than pretending a generic wrapper is a hint.
-    correct = correct_choice(item)
-    correct_text = str(correct.get("text") or "") if correct else ""
-    distractors = [
-        str(choice.get("text") or "").strip()
-        for choice in (item.get("choices") or [])
-        if isinstance(choice, Mapping) and str(choice.get("text") or "").strip() != correct_text
-    ]
-    stem = _halt(str(item.get("stem") or "the question"))
-    if not distractors:
-        return [
-            f"Put the question in your own words before choosing: {stem}.",
-            f"Name what a correct choice must satisfy for this question: {stem}.",
-            f"Explain how your choice answers the full question: {stem}.",
-        ]
-    templates = (
-        "Ask what makes “{option}” tempting, then compare it with the question.",
-        "Check whether “{option}” answers the exact thing the question asks.",
-        "Before you choose, explain why “{option}” does or does not fit.",
+
+def _trap_hint(index: int, reasons: list[tuple[str, str]]) -> str:
+    """One graded choice hint, built from a distractor's own misconception.
+
+    The old nudge wrapped every choice question in the same sentence —
+    "which one is right: <stem>" — so after the stem was removed nothing
+    item-specific was left. Each grade below instead names a different
+    trap a wrong option was written to catch, in that option's own
+    misconception text, so two items share a hint only if they genuinely
+    share a misconception.
+    """
+    text, why = reasons[min(index, len(reasons) - 1)]
+    reason = _lower_first(_halt(why))
+    quoted = f"“{_halt(text)}”" if str(text).strip() else "one option"
+    if index == 0:
+        return f"Start by ruling out one trap: {quoted} — {reason}. Cross it out and say why before you look at the rest."
+    if index == 1 and len(reasons) > 1:
+        return f"Rule out a second trap the same way: {quoted} — {reason}. Only keep an option you can defend against both traps."
+    if index == 1:
+        return f"Turn that trap into a test for the option you like: does it rely on this — {reason}? If it does, it is the trap, not the answer."
+    if len(reasons) > 2:
+        return (
+            f"Before you commit, run your pick past the last trap: {quoted} — {reason}. "
+            "If your pick survives, say in one sentence why it answers the question that was asked."
+        )
+    traps = "; ".join(_lower_first(_halt(w)) for _, w in reasons)
+    return (
+        f"Before you commit, check your pick against every trap named so far: {traps}. "
+        "If it falls into one of them, choose again and say what changed."
     )
-    return [
-        template.format(option=_halt(distractors[i % len(distractors)]))
-        for i, template in enumerate(templates)
-    ]
 
 
 def _nudge(item: Mapping[str, Any]) -> str:
@@ -425,7 +444,10 @@ def _nudge(item: Mapping[str, Any]) -> str:
     stem = _halt(str(item.get("stem") or ""))
     terms = _words(stem)[:3]
     if item.get("choices"):
-        return _mcq_misconception_hints(item)[0]
+        reasons = distractor_reasons(item)
+        if reasons:
+            return _trap_hint(0, reasons)
+        return f"What is being asked, in your own words: {stem}. Read every option before you choose."
     if terms:
         return f"What is being asked, in your own words: {stem}. The ideas doing the work are {' and '.join(terms)}."
     return f"What is being asked, in your own words: {stem}."
@@ -434,7 +456,9 @@ def _nudge(item: Mapping[str, Any]) -> str:
 def _method(item: Mapping[str, Any]) -> str:
     """The first move, quoted from the item's own worked example."""
     if item.get("choices"):
-        return _mcq_misconception_hints(item)[1]
+        reasons = distractor_reasons(item)
+        if reasons:
+            return _trap_hint(1, reasons)
     steps = ensure_example(item)
     if steps:
         first = str(steps[0].get("text") or "")
@@ -449,11 +473,38 @@ def _method(item: Mapping[str, Any]) -> str:
 def _near_answer(item: Mapping[str, Any]) -> str:
     """How to check yourself, without handing over the answer."""
     if item.get("choices"):
-        return _mcq_misconception_hints(item)[2]
+        reasons = distractor_reasons(item)
+        if reasons:
+            return _trap_hint(2, reasons)
+        return (
+            "Before you commit, check that the option you picked answers the question that was asked, "
+            "not a near-miss of it."
+        )
     value, how, variables = computable_value(item)
     if value is not None:
+        # Name this item's own numbers, not just the answer's size band:
+        # the size sentence on its own is word-for-word the same hint on
+        # every item whose answer happens to fall in the same band, which
+        # is the generic-hint defect in a more specific-looking coat.
+        if variables:
+            # The variable *names and rule*, not their values: a hint
+            # written for the stored template carries placeholders that
+            # the per-learner render substitutes, and quoting a concrete
+            # default value here would quote the wrong draw's numbers.
+            formula = str((item.get("answer_spec") or {}).get("formula") or "").strip()
+            names = ", ".join(str(name) for name in variables)
+            against = (
+                f"this question's rule ({formula}) and the numbers it gives you for {names}"
+                if formula
+                else f"the numbers this question gives you for {names}"
+            )
+        else:
+            numbers = re.findall(r"-?\d+(?:\.\d+)?", str(item.get("stem") or ""))
+            against = (
+                f"the numbers in this question ({', '.join(numbers[:4])})" if numbers else "the numbers in this question"
+            )
         return (
-            f"Check the size of your answer against the question's numbers: it comes out {_magnitude(value)}. "
+            f"Check the size of your answer against {against}: it comes out {_magnitude(value)}. "
             "If yours is a different order of magnitude, the slip is in the arithmetic, not the method."
         )
     rubric = item.get("rubric") or {}
@@ -461,6 +512,12 @@ def _near_answer(item: Mapping[str, Any]) -> str:
     concepts = [c for c in concepts if c]
     if concepts:
         return "Check your answer against the list of ideas being looked for: " + ", ".join(concepts[:4]) + "."
+    terms = _words(str(item.get("stem") or ""))[:3]
+    if terms:
+        return (
+            f"Check your answer by saying it out loud in one sentence about {' and '.join(terms)}. "
+            "If you cannot, the missing piece is usually the reason."
+        )
     return "Check your answer by saying it out loud in one sentence. If you cannot, the missing piece is usually the reason."
 
 

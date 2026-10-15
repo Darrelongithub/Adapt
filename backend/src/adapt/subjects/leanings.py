@@ -30,6 +30,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
+from ..ai import static_context as SC
 from ..security.redact import redact_text
 from .taxonomy import (
     FAMILY_IDS,
@@ -323,6 +324,7 @@ async def _ask_model(
             system=system,
             user=user,
             purpose="subject_leanings",
+            cache_prefix=SC.block("placement"),
             # Educational Intelligence, not Learner Intelligence: this is a judgement about a topic
             # and its skills, never about the learner, and the client the service is handed is
             # ``ai2.llm``. The role is what the audit row records, so it has to say which layer was
@@ -359,6 +361,39 @@ def _run(coro: Any) -> Any:
     # Inside a running loop there is no honest way to block: the fallback is the answer, and saying
     # so beats a deadlock or a silent skip.
     return None
+
+
+def model_leanings(
+    *,
+    hint: Mapping[str, Any],
+    family: str,
+    ratings: Mapping[str, int],
+    notes: Sequence[str] = (),
+    model_note: str = "",
+) -> Leanings:
+    """The ``source="model"`` result, built in one place.
+
+    Both the sequential path (:func:`rate_leanings`) and the fused placement call
+    (:mod:`adapt.subjects.placement`) end here, so a merged prompt cannot produce a
+    differently-shaped claim about where the numbers came from -- which is the property the
+    learner-facing ``source`` field exists for.
+    """
+    title = str(hint.get("title") or hint.get("raw") or "this topic")
+    skill_ids = list(known_skill_ids(family))
+    return Leanings(
+        topic_key=str(hint.get("topic_key") or title),
+        title=title,
+        subject=str(hint.get("subject") or family_title(family)),
+        family=family,
+        ratings=dict(ratings),
+        source="model",
+        reason=(
+            f"A model rated how much {title} leans on each skill, and the ratings were "
+            f"checked against the {len(skill_ids)} skills in the {family} list before anything was chosen."
+        ),
+        validation=tuple(notes),
+        model_note=model_note,
+    )
 
 
 def rate_leanings(
@@ -398,19 +433,8 @@ def rate_leanings(
             )
         ratings, model_note, notes = outcome
         if ratings:
-            return Leanings(
-                topic_key=str(hint.get("topic_key") or title),
-                title=title,
-                subject=subject,
-                family=family,
-                ratings=ratings,
-                source="model",
-                reason=(
-                    f"A model rated how much {title} leans on each skill, and the ratings were "
-                    f"checked against the {len(skill_ids)} skills in the {family} list before anything was chosen."
-                ),
-                validation=tuple(notes),
-                model_note=model_note,
+            return model_leanings(
+                hint=hint, family=family, ratings=ratings, notes=notes, model_note=model_note
             )
         return generic_fallback(
             topic_key=str(hint.get("topic_key") or title),
@@ -484,6 +508,7 @@ __all__ = [
     "authored",
     "family_of_skill",
     "generic_fallback",
+    "model_leanings",
     "rate_leanings",
     "ratings_json",
     "scale_payload",

@@ -398,7 +398,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
                 }
               }}
               disabled={busy || revealed !== null}
-              title="Revealing the answer changes what you can see, so it is linked to your current session."
+              title="This shows the answer for this question. Revealing it is recorded, so it asks you to confirm you meant to."
             >
               {revealed ? "Revealed" : "Reveal it"}
             </Btn>
@@ -487,7 +487,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
               <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
                 {reply.served_by ?? "from your course material"}
                 {reply.meta?.grounded ? " · grounded" : " · not grounded in your material"} ·{" "}
-                {reply.privacy?.sent_to_model ? "your question was shared to prepare this reply" : "your question stayed on this device"}
+                {reply.privacy?.sent_to_model ? "a written-for-you reply was used" : "nothing left this machine"}
               </p>
               {reply.sources?.length ? (
                 <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted)]">

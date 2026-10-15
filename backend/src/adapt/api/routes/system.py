@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api/v1", tags=["system"])
 
 @router.get("/health")
 def health() -> dict[str, Any]:
-    st = get_settings()
+    get_settings()
     svcs = current()
     db_ok = True
     db_error: str | None = None
@@ -218,32 +218,37 @@ def quotas(s: Session = Depends(db_session), student: Student = Depends(student_
 
 @router.get("/privacy")
 def privacy() -> dict[str, Any]:
-    """The public, read-only privacy notice.
+    """The static, non-personal list of what may be recorded.
 
-    This is the same non-personal list for every learner, including someone who has
-    not created an account yet. It deliberately does not look up a learner or open a
-    request-scoped database session.
+    Public and read-only on purpose: the consent screen shows this list
+    *before* anyone has an account, so requiring a signed-in learner made
+    that screen answer 401 and print "could not be read just now" for the
+    one list a person needs in order to decide. Nothing here is about an
+    individual learner, so there is nothing to protect by gating it; every
+    route that returns a learner's own rows still requires a session.
+    The wording is learner-facing, so it names no service, route or
+    internal mechanism (Round 2, Phase A, task 1 and 2).
     """
     return {
         "telemetry": TEL.privacy_summary(),
         "sent_to_model": {
-            "when": "only when the learner chose to share a short learning summary",
-            "identity": "an anonymous code, never the learner's name or email",
-            "redaction": "emails, phone numbers, links, addresses and anything shaped like an ID are stripped before sharing",
-            "on_refusal": "if any of that cannot be honoured, the answer is written locally instead and the reply says so",
+            "when": "only when a written-for-you answer is available and you consented to sharing a summary",
+            "identity": "a made-up name for you, never your real name or email",
+            "redaction": "emails, phone numbers, web addresses, postal addresses and anything shaped like an ID are stripped before anything is shared",
+            "on_refusal": "if any of that cannot be honoured, the answer is put together here instead and the reply says so",
         },
         "voice": {
-            "stt": "spoken words are transcribed on this machine; audio is decoded temporarily and discarded",
-            "tts": "spoken replies are streamed to the browser and are not stored",
-            "stored": "transcript text from turns the learner chose to record, plus basic timing and interruption information",
+            "heard": "speech is turned into text as you speak; the sound itself is not kept",
+            "spoken": "spoken replies are played to you and not stored",
+            "stored": "transcript text for the turns you chose to record, plus timing and interruption notes",
             "off_means": "voice off = no microphone access at all; the keyboard path is identical",
         },
         "storage": data_protection(),
         "learner_controls": [
-            "answer or refuse every adaptation proposal",
-            "revoke an applied adaptation at any time",
-            "delete your history from Settings",
-            "review the activity recorded about you from Settings",
+            "answer or refuse every change that is proposed to you",
+            "revoke an applied change at any time",
+            "delete your history",
+            "see every event recorded about you",
         ],
     }
 

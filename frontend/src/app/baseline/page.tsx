@@ -31,6 +31,7 @@ import {
   finish_baseline,
   format_range,
   load_next_day,
+  load_baseline,
   load_snapshot,
   offers_coins,
   order_factors,
@@ -74,7 +75,8 @@ export default function Baseline() {
     opened.current = true;
     (async () => {
       try {
-        const first = await start_baseline();
+        const run = new URLSearchParams(window.location.search).get("run");
+        const first = run ? await load_baseline(run) : await start_baseline();
         if (first.kind !== "format" && first.kind !== "questions") {
           setResumed(
             first.completion?.complete != null && first.completion?.total != null
@@ -172,22 +174,22 @@ export default function Baseline() {
 
   if (error && !view) {
     return (
-      <main className="wrap" id="main-content">
+      <section className="wrap">
         <Card title="The baseline could not open">
           <Notice tone="bad">{error}</Notice>
           <p className="muted">Nothing was recorded. If you are signed out, the front door will ask you in.</p>
         </Card>
-      </main>
+      </section>
     );
   }
 
   if (!view) {
     return (
-      <main className="wrap" id="main-content" aria-busy="true">
+      <section className="wrap" aria-busy="true">
         <Card title="Opening the baseline">
           <p className="muted">One sitting of short games. Nothing here is a grade.</p>
         </Card>
-      </main>
+      </section>
     );
   }
 
@@ -196,7 +198,7 @@ export default function Baseline() {
   const progress = Math.round((view.progress ?? 0) * 100);
 
   return (
-    <main className="wrap" id="main-content">
+    <section className="wrap">
       <header className="baseline-head">
         <div>
           <p className="muted small" style={{ margin: 0 }}>
@@ -225,7 +227,7 @@ export default function Baseline() {
       {view.note && !show_snapshot ? <p className="muted small">{view.note}</p> : null}
 
       {show_snapshot ? (
-        <SnapshotScreen snap={snap} view={view} />
+        <><SnapshotScreen snap={snap} view={view} /><div className="mt-5 flex gap-3"><Btn href="/" kind="primary">Go to your dashboard</Btn><Btn href="/subject">Choose a subject</Btn></div></>
       ) : view.kind === "format" ? (
         <FormatScreen view={view} onPick={choose_format} busy={busy} />
       ) : view.kind === "questions" ? (
@@ -245,7 +247,7 @@ export default function Baseline() {
         You can stop at any point: a partial baseline keeps what was measured and marks the rest
         &ldquo;not measured&rdquo;. Nothing here is a grade.
       </p>
-    </main>
+    </section>
   );
 }
 
