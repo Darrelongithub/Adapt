@@ -247,9 +247,16 @@ async def test_review_without_a_model_returns_the_master_prompt_contract(service
 
 
 async def test_review_runs_the_pinned_grader_prompt_and_merges_the_judgement(services, learner):
-    """With a model: the system prompt is master prompt 3, and an accepted judgement
+    """With a model: the grader prompt is master prompt 3, and an accepted judgement
     supplies feedback and misconceptions -- while the score stays the one the quoted
-    points add up to, whatever number the model typed next to them."""
+    points add up to, whatever number the model typed next to them.
+
+    The prompt reaches the client in two parts since the cost round: the static head (master
+    prompt 3 + the judge contract) travels as ``cache_prefix`` so it can be registered once
+    and reused, and ``system`` carries only this item's checklist. What the model reads is the
+    two concatenated, which is what this asserts -- a split that lost half the prompt would
+    otherwise look like a passing call with a shorter instruction.
+    """
     stub = _CaptureLLM(_payload(score=0.99))
     saved = services.ai2.llm
     services.ai2.llm = stub
@@ -258,9 +265,13 @@ async def test_review_runs_the_pinned_grader_prompt_and_merges_the_judgement(ser
     finally:
         services.ai2.llm = saved
     assert stub.calls, "the judge call never happened"
-    sent_system = stub.calls[0]["system"]
+    call = stub.calls[0]
+    sent_system = f"{call.get('cache_prefix') or ''}\n\n{call['system']}"
     assert sent_system.startswith(TEACHBACK_GRADER_SYSTEM.strip().splitlines()[0])
     assert 'grading a "teach-back" response' in sent_system
+    # And the split is where the comment says it is: the checklist is per-item, the pinned
+    # grader prompt is not.
+    assert "c1:" in call["system"] and "c1:" not in (call.get("cache_prefix") or "")
     assert out["method"] == "checklist_3_point+model"
     assert out["score"] == 1.0, "the quoted points, not the model's number, are the score"
     assert out["model_score"] == 0.99

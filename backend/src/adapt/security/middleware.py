@@ -28,10 +28,26 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from ..config import Settings, get_settings
-from .ratelimit import Limiter
+from .ratelimit import Limiter, realtime_guard
 from .secrecy import ConfigurationSecrecyMiddleware
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+
+#: Routes where one request can set off a *long* piece of work: a model call, a teaching
+#: turn, a graded teach-back, a scene. The token buckets in ``security/ratelimit.py``
+#: bound how *often* these may start; this list is what the in-flight guard bounds, and
+#: the two are different failures. Twenty simultaneous requests at 3/min each pass every
+#: bucket in the file and still put twenty model calls on the free tier at once.
+REALTIME_PREFIXES: tuple[str, ...] = (
+    "/api/v1/tutor",
+    "/api/v1/subjects",
+    "/api/v1/lessons",
+    "/api/v1/voice",
+    "/api/v1/attempts",
+    "/api/v1/baseline",
+    "/api/v1/adaptations",
+)
+
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"}
 # e2b sandbox previews and localtunnel/cloudflare hosts.
 HOST_PATTERNS = (
@@ -140,12 +156,16 @@ class TrustedHostMiddleware(BaseHTTPMiddleware):
 
 
 class LimitsMiddleware(BaseHTTPMiddleware):
-    """Body-size cap + per-IP rate limit, applied before handlers."""
+    """Body-size cap + per-IP rate limit + in-flight cap, applied before handlers."""
 
     def __init__(self, app, *, settings: Settings, limiter: Limiter) -> None:
         super().__init__(app)
         self.settings = settings
         self.limiter = limiter
+
+    @staticmethod
+    def is_realtime(path: str) -> bool:
+        return path.startswith(REALTIME_PREFIXES)
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -179,11 +199,52 @@ class LimitsMiddleware(BaseHTTPMiddleware):
                 status_code=429,
                 headers={"Retry-After": str(max(1, int(retry) + 1))},
             )
+        # A real-time *mutation* holds a slot for as long as it takes. Everything else -- reads,
+        # static files, the health probe -- is never counted, because a page loading eight
+        # assets is not a spike and a guard that says it is is a guard people turn off.
+        key = ""
+        # Mutating requests only. A GET on a real-time prefix is a read of the same area --
+        # the voice capabilities, a lesson's frames, a run's status -- and counting it would
+        # mean a page that loads one card gets paced for it. What the guard is for is work
+        # that can start a model call, and that is a mutating request.
+        #
+        # The guard is looked up per request rather than captured in ``__init__``: it is the
+        # process-wide counter, and a middleware holding an *old* instance of it would refuse
+        # against numbers nobody else could see (which is exactly the bug that made
+        # "/quotas" report a bucket count that had nothing to do with the buckets refusing).
+        if request.method in MUTATING and self.is_realtime(request.url.path):
+            key = f"rt:{ip}"
+            allowed, reason, wait = realtime_guard(self.settings).begin(key)
+            if not allowed:
+                broker = "already in flight" if reason == "in_flight" else "arrived too fast"
+                return JSONResponse(
+                    {
+                        "detail": {
+                            "error": "too_many_concurrent",
+                            "reason": reason,
+                            "retry_after_s": round(wait, 2),
+                            "scope": "realtime",
+                            "message": (
+                                "too many of your requests are being answered at once "
+                                f"({broker}) - wait for the ones already running instead of sending more"
+                            ),
+                        },
+                        "retry_after_s": round(wait, 2),
+                    },
+                    status_code=429,
+                    headers={"Retry-After": str(max(1, int(wait) + 1))},
+                )
         started = time.monotonic()
         try:
             response = await call_next(request)
         except Exception:
             raise
+        finally:
+            if key:
+                # In `finally` so a handler that raised still frees its slot: a leaked
+                # slot would permanently lower the cap for that key, which is the kind
+                # of bug that only shows up under load.
+                realtime_guard(self.settings).end(key)
         response.headers["X-Elapsed-Ms"] = str(int((time.monotonic() - started) * 1000))
         return response
 

@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { apiErrorSentence } from "./apiCopy";
 import { mockLookup } from "./mock";
 
 export const CSRF_COOKIE = "adapt_csrf";
@@ -30,34 +31,9 @@ export class ApiError extends Error {
     this.status = status;
     this.detail = detail;
   }
-  /**
-   * The sentence to put on screen.
-   *
-   * The backend's `detail` is either a plain string or a structured object, and the
-   * object carries both a machine code (`error`) and, usually, prose written for a
-   * person (`note`, `hint`, `detail`, `next`). Reading only `error` — which this
-   * function used to do — showed a learner the token `model_budget_exhausted` while the
-   * sentence explaining that teaching continues locally sat unused in `note`. So:
-   * prefer the prose, keep the code as the last resort, and say how long to wait when
-   * the answer was "not yet".
-   */
+  /** The sentence to put on screen — see `apiCopy.ts` for the rule and its tests. */
   get shown(): string {
-    if (typeof this.detail === "string") return this.detail;
-    if (this.detail && typeof this.detail === "object") {
-      const d = this.detail as Record<string, unknown>;
-      const prose = ["note", "hint", "detail", "next"]
-        .map((k) => (typeof d[k] === "string" ? (d[k] as string) : ""))
-        .find((v) => v.length > 0);
-      const code = typeof d.error === "string" ? d.error : "";
-      const wait =
-        typeof d.retry_after_s === "number" && d.retry_after_s > 0
-          ? ` (about ${Math.ceil(d.retry_after_s)}s)`
-          : "";
-      if (prose) return `${prose}${code === "rate_limited" || code === "too_many_attempts" ? wait : ""}`;
-      if (code) return wait ? `${code}${wait}` : code;
-      return JSON.stringify(d).slice(0, 220);
-    }
-    return this.message;
+    return apiErrorSentence(this.status, this.message, this.detail);
   }
 }
 
@@ -221,6 +197,7 @@ export type Me = {
   role: string;
   onboarding_complete: boolean;
   diagnostic_complete: boolean;
+  baseline_started?: boolean;
   voice_enabled: boolean;
   voice_gender: string;
   language: string;

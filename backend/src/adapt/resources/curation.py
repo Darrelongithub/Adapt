@@ -107,7 +107,16 @@ def deterministic_picks(
 
 
 def curation_task(query: str, level_hint: str, results: Sequence[Mapping[str, Any]]) -> str:
-    """The instruction half of the curation call: the raw results, as data."""
+    """The *dynamic* half of the curation call: the question and the raw results, as data.
+
+    The output contract ("strict JSON ... at most 4 picks, each url copied exactly") used to
+    be repeated here. It lives in the cached static head instead
+    (``ai/static_context.py::CURATION_TASK``), because it is identical for every learner and
+    every query -- repeating it in the part of the prompt that changes per request is exactly
+    the waste the static/unstatic split removes. What stays is the header the curator and its
+    tests key on: the results are data, they are the only material to curate from, and the
+    model is told so on the same line as it sees them.
+    """
     import json
 
     slim = [
@@ -128,8 +137,6 @@ def curation_task(query: str, level_hint: str, results: Sequence[Mapping[str, An
         + (level_hint or "unknown")
         + "\n\nRAW SEARCH RESULTS (data — curate from these only):\n"
         + json.dumps(slim, ensure_ascii=False)
-        + '\n\nReturn strict JSON: {"picks": [{"title", "url", "source", "why"}]} — at most 4 picks,'
-        + " each url copied exactly from the results above, each why <=140 chars and addressed to the learner."
     )
 
 

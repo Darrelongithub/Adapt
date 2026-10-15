@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Btn, Card, Err, Field, Input, Notice, Tag } from "@/components/ui";
+import { Btn, Card, Err, Field, Input, Notice, Tag, Textarea } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import {
   fetchBreakdown,
@@ -27,6 +27,7 @@ import {
 import { VisualFigure } from "@/components/visual";
 import {
   fetchPlan,
+  fetchRound,
   fetchRechecks,
   fetchSnapshot,
   finishRound,
@@ -57,6 +58,10 @@ function pct(x: number | null | undefined): string {
 
 export default function Subject() {
   const [text, setText] = useState("");
+  const [specific, setSpecific] = useState("");
+  const [plannedTopic, setPlannedTopic] = useState("");
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [comments, setComments] = useState("");
   const [resolved, setResolved] = useState<ResolveResult | null>(null);
   const [plan, setPlan] = useState<SubjectPlan | null>(null);
   const [view, setView] = useState<RoundView | null>(null);
@@ -90,6 +95,26 @@ export default function Subject() {
     void refreshRechecks();
   }, [refreshRechecks]);
 
+  useEffect(() => {
+    const run = new URLSearchParams(window.location.search).get("run");
+    if (!run) return;
+    let alive = true;
+    setBusy(true);
+    fetchRound(run).then(async next => {
+      if (!alive) return;
+      setView(next);
+      setPlan(next.plan);
+      setPackTopic(next.topic.title);
+      setText(next.topic.title);
+      if (next.stage === "snapshot") {
+        const snapshot = await fetchSnapshot(run);
+        if (alive) setSnapshot(snapshot);
+      }
+    }).catch(err => { if (alive) setError(shown(err)); })
+      .finally(() => { if (alive) setBusy(false); });
+    return () => { alive = false; };
+  }, []);
+
   async function onResolve(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -97,10 +122,14 @@ export default function Subject() {
     setSnapshot(null);
     setView(null);
     try {
-      const out = await resolveTopic(text.trim());
+      const requested = [text.trim(), specific.trim()].filter(Boolean).join(": ");
+      const out = await resolveTopic(requested);
       setResolved(out);
       if (out.resolved.title) setPackTopic(out.resolved.title);
-      const p = await fetchPlan(out.resolved.title || text.trim());
+      const p = await fetchPlan(requested);
+      setPlannedTopic(requested);
+      setSelectedSkills(p.tested.map(skill => skill.id));
+      setComments("");
       setPlan(p);
     } catch (err) {
       setError(shown(err));
@@ -112,11 +141,12 @@ export default function Subject() {
   }
 
   async function onStart() {
-    const topic = resolved?.resolved.title || text.trim();
+    if (!plan || !selectedSkills.length || busy) return;
+    const topic = plannedTopic;
     setBusy(true);
     setError(null);
     try {
-      setView(await startRound(topic));
+      setView(await startRound(topic, selectedSkills, comments));
       setSnapshot(null);
     } catch (err) {
       setError(shown(err));
@@ -194,15 +224,14 @@ export default function Subject() {
     <div className="space-y-4">
       <div>
         <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-          § 06 · Subject round
+          § 07 · Subject round
         </div>
         <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>
           Pick a subject, and we measure what it actually asks of you
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-[var(--muted)]">
-          Name a topic. We will show you the handful of skills it leans on and why those ones, test just
-          those, climb a short ladder of prerequisites, and hand you a map that also lists — greyed
-          out — everything we did <em>not</em> measure. Not measured is not the same as not there.
+          Choose a subject, and optionally narrow it to a topic. First review the assessment outline:
+          tick what you want to include, leave a comment, then confirm before any testing starts.
         </p>
       </div>
 
@@ -210,20 +239,26 @@ export default function Subject() {
       {notice && !view ? <Notice tone="info">{notice}</Notice> : null}
 
       {!view && !snapshot ? (
-        <Card title="Your topic">
+        <Card title="Your subject">
           <form onSubmit={onResolve} className="flex flex-wrap items-end gap-3">
             <div className="min-w-64 flex-1">
-              <Field label="What are you studying?" hint="Free text is fine: “GCSE government and politics”, “calculus”, “sarufi”.">
+              <Field label="Subject" hint="For example Mathematics, History, or Kiswahili.">
                 <Input
                   value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="e.g. calculus, or government and civics"
-                  aria-label="Topic"
+                  onChange={(e) => { setText(e.target.value); setPlan(null); setResolved(null); }}
+                  placeholder="e.g. Mathematics"
+                  aria-label="Subject" maxLength={100} disabled={busy}
                 />
               </Field>
             </div>
+            <div className="min-w-64 flex-1">
+              <Field label="Specific topic (optional)" hint="Leave this blank for the broader subject.">
+                <Input value={specific} maxLength={100} disabled={busy} aria-label="Specific topic"
+                  onChange={e => { setSpecific(e.target.value); setPlan(null); setResolved(null); }} placeholder="e.g. Calculus" />
+              </Field>
+            </div>
             <Btn type="submit" disabled={busy || !text.trim()}>
-              {busy ? "…" : "Find my subject"}
+              {busy ? "Preparing outline…" : "Preview outline"}
             </Btn>
             <Btn type="button" onClick={onShowMap} disabled={busy} title="the map from your last finished round">
               My last subject map
@@ -258,7 +293,13 @@ export default function Subject() {
         </Card>
       ) : null}
 
-      {!view && !snapshot ? (
+      {plan && !view && !snapshot ? (
+        <PlanCard plan={plan} busy={busy} onStart={onStart} selected={selectedSkills} comments={comments}
+          onComments={setComments} onToggle={id => setSelectedSkills(old => old.includes(id) ? old.filter(value => value !== id) : [...old, id])} />
+      ) : null}
+
+      {plan && !view && !snapshot ? (
+        <details><summary className="btn-ctl btn-ghost">Preview available teaching material (optional)</summary>
         <Card title="What we'd teach">
           <p className="text-sm text-[var(--muted)]">
             Before any of this is measured, here is the material the topic has authored for it: one
@@ -283,13 +324,11 @@ export default function Subject() {
             {pack ? <span className="text-xs text-[var(--muted)]">{pack.concept_title}</span> : null}
           </div>
           {pack ? <PackPanel pack={pack} /> : null}
-        </Card>
+        </Card></details>
       ) : null}
 
-      {plan && !view && !snapshot ? (
-        <PlanCard plan={plan} busy={busy} onStart={onStart} />
-      ) : null}
 
+      {view?.plan.learner_review?.comments ? <Card title="Your outline comments"><p className="text-sm">{view.plan.learner_review.comments}</p></Card> : null}
       {view ? (
         <RoundRunner
           view={view}
@@ -325,50 +364,27 @@ export default function Subject() {
 
 /* ------------------------------------------------------------------ plan ---- */
 
-function PlanCard({ plan, busy, onStart }: { plan: SubjectPlan; busy: boolean; onStart: () => void }) {
-  return (
-    <Card
-      title={`What we will check for ${plan.topic.title}`}
-      right={<span>about {Math.round(plan.estimated_seconds / 60) || 1}–{Math.ceil(plan.budget_seconds / 60)} minutes</span>}
-    >
-      <p className="text-sm">
-        <strong>Why these?</strong> {plan.reason}
-      </p>
-      <ol className="mt-3 space-y-2">
-        {plan.tested.map((s) => (
-          <li key={s.id} className="flex flex-wrap items-baseline gap-2 text-sm">
-            <span className="font-medium">{s.title}</span>
-            <Tag tone={s.role === "cross_check" ? "think" : "accent"}>{s.role === "cross_check" ? "cross-check" : `leans ${s.rating_label}`}</Tag>
-            <span className="text-[var(--muted)]">
-              {s.measures} · {s.items ?? 3} quick tasks, about {s.game?.seconds ?? s.seconds ?? 40}s
-            </span>
-            <span className="w-full text-xs text-[var(--muted)]">{s.reason}</span>
-          </li>
-        ))}
-      </ol>
-      {plan.not_measured.length ? (
-        <div className="mt-4 border-t border-dashed pt-3">
-          <p className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-            Not measured in this round
-          </p>
-          <ul className="mt-2 space-y-1">
-            {plan.not_measured.map((s) => (
-              <li key={s.id} className="flex flex-wrap items-baseline gap-2 text-sm opacity-55">
-                <span>{s.title}</span>
-                <Tag>not measured yet</Tag>
-                <span className="text-xs">{s.reason}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <div className="mt-4">
-        <Btn onClick={onStart} disabled={busy}>
-          Start the round
-        </Btn>
-      </div>
-    </Card>
-  );
+function PlanCard({ plan, busy, onStart, selected, onToggle, comments, onComments }: {
+  plan: SubjectPlan; busy: boolean; onStart: () => void; selected: string[];
+  onToggle: (id: string) => void; comments: string; onComments: (value: string) => void;
+}) {
+  return <Card title={`Review your outline: ${plan.topic.title}`} right={<span>{selected.length} selected</span>}>
+    <p className="text-sm"><strong>Why these checks?</strong> {plan.reason}</p>
+    <p className="mt-2 text-xs text-[var(--muted)]">This is an assessment outline, not a complete subject syllabus. Unchecked skills will be marked “not measured”, not scored as zero.</p>
+    <fieldset className="mt-4 space-y-3" disabled={busy}>
+      <legend className="sr-only">Choose the checks to include</legend>
+      {plan.tested.map(skill => <label className="check-row" key={skill.id}>
+        <input type="checkbox" checked={selected.includes(skill.id)} onChange={() => onToggle(skill.id)} value={skill.id} />
+        <span><strong>{skill.title}</strong><span className="block text-xs text-[var(--muted)]">{skill.measures} · {skill.items ?? 3} short tasks</span></span>
+      </label>)}
+    </fieldset>
+    {plan.not_measured.length ? <p className="mt-3 text-xs text-[var(--muted)]">Not proposed in this round: {plan.not_measured.map(skill => skill.title).join(", ")}.</p> : null}
+    <div className="mt-4"><Field label="Comments on this outline (optional)" hint="Saved with your round. Comments do not automatically rewrite the outline; use the checkboxes to change what is included.">
+      <Textarea value={comments} onChange={e => onComments(e.target.value)} maxLength={2000} disabled={busy} placeholder="Does this look right? Anything you want to focus on?" />
+    </Field></div>
+    {!selected.length ? <p className="mt-3 text-sm" role="status">Select at least one check to continue.</p> : null}
+    <div className="mt-4"><Btn kind="primary" onClick={onStart} disabled={busy || !selected.length}>{busy ? "Starting…" : "Confirm outline and start"}</Btn></div>
+  </Card>;
 }
 
 /* ----------------------------------------------------------------- round ---- */

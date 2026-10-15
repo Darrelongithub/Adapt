@@ -31,13 +31,56 @@ test("contrast page no longer prints the old footer or the raw mode note", () =>
   assert.doesNotMatch(src, /\(err as Error\)\.message/);
 });
 
-test("onboarding deferred copy is ignored only on that route", () => {
+test("the onboarding exemption is gone: the old copy now fails on every route", () => {
+  // Phase A asked Phase D to replace this sentence and then delete the allowance, so that
+  // a regression cannot hide behind it. Both halves are asserted here: the text is caught
+  // anywhere, and the sentence is not in the page any more.
   const deferred = "Let a model read a summary when it would help";
-  assert.deepEqual(bannedHits(deferred, "/onboarding"), []);
+  assert.ok(bannedHits(deferred, "/onboarding").includes("model"));
   assert.ok(bannedHits(deferred, "/settings").includes("model"));
+  const onboarding = readFileSync(new URL("../app/onboarding/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(onboarding, /Let a model read a summary/);
   assert.ok(bannedHits("Lessons: simple mode").length === 0);
   assert.ok(bannedHits("GET /privacy").includes("get-path"));
   assert.ok(bannedHits("protection: not reported").length === 0);
+});
+
+test("the setup screen asks once: no developer panel and no duplicated question", () => {
+  const onboarding = readFileSync(new URL("../app/onboarding/page.tsx", import.meta.url), "utf8");
+  // The "Allowed preference keys — from the API" panel and its paragraph are gone, and
+  // nothing prints a raw key tag at the learner.
+  assert.doesNotMatch(onboarding, /Allowed preference keys/);
+  assert.doesNotMatch(onboarding, /from the API/);
+  assert.doesNotMatch(onboarding, /ignored_keys/);
+  assert.doesNotMatch(onboarding, /no API key/i);
+  // The thirteen mind-check questions are asked on the mind check, not here: the setup
+  // screen must not carry their fields, or the learner is asked twice.
+  assert.doesNotMatch(onboarding, /max_explanation_words/);
+  assert.doesNotMatch(onboarding, /push_me/);
+  assert.doesNotMatch(onboarding, /session_minutes/);
+  assert.doesNotMatch(onboarding, /Which language/);
+  // What it does keep: the account-level settings.
+  assert.match(onboarding, /weekly_minutes/);
+  assert.match(onboarding, /encourage/);
+  assert.match(onboarding, /Allow a written-for-you summary when it would help/);
+});
+
+test("the journey shell and the sidebar both lead to the one path", () => {
+  const chrome = readFileSync(new URL("../components/chrome.tsx", import.meta.url), "utf8");
+  const journey = readFileSync(new URL("../app/journey/page.tsx", import.meta.url), "utf8");
+  const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(chrome, /href: "\/journey", label: "Your path"/);
+  assert.match(chrome, /label: "Mind check"/, "a returning learner keeps the mind check as its own destination");
+  assert.match(journey, /useJourney/);
+  assert.match(journey, /journey\/state|useJourney/);
+  // The requested entry flow takes priority: first baseline, then returning home.
+  // The guided path remains available from both the dashboard and sidebar.
+  const gate = readFileSync(new URL("../components/account-gate.tsx", import.meta.url), "utf8");
+  const dashboard = readFileSync(new URL("../components/home-dashboard.tsx", import.meta.url), "utf8");
+  assert.match(gate, /profile\.baseline_started \? "\/" : "\/baseline"/);
+  assert.match(home, /HomeDashboard/);
+  assert.match(dashboard, /href="\/journey"/);
+  assert.doesNotMatch(home, /onboarding\?\$\{carry\}/);
 });
 
 test("status chip and home copy no longer use the old developer sentences", () => {
@@ -58,5 +101,10 @@ test("a signed-out privacy list is not called unread while it is loading or afte
   assert.equal(showPrivacyUnread(false, 5), false);
   assert.equal(showPrivacyUnread(false, 0), true);
   const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(home, /showPrivacyUnread\(loading, recorded\.length\)/);
+  // Consent moved out of Home into the global entry card. That card uses a readable
+  // fallback while its privacy request loads, never an inaccurate "could not read" state.
+  assert.match(home, /HomeDashboard/);
+  const gate = readFileSync(new URL("../components/account-gate.tsx", import.meta.url), "utf8");
+  assert.match(gate, /privacy\.data\?\.telemetry\?\.note \?\?/);
+  assert.doesNotMatch(gate, /could not be read just now/);
 });

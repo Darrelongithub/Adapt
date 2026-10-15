@@ -91,8 +91,22 @@ class Settings(BaseSettings):
 
     # -- Gemini (AI 1 + AI 2) -------------------------------------------
     gemini_api_key: str | None = None
-    gemini_model_ai1: str = "gemini-2.5-flash"
-    gemini_model_ai2: str = "gemini-2.5-flash"
+    # Model *names* live here and nowhere else. Which task gets which class is decided in
+    # `ai/routing.py`; these three say what a class is on this deployment. `flash-lite`
+    # for the light class is not a downgrade of the product: every light task is checked
+    # against a rule, a list or a validator, so its failure mode is a fallback nobody sees,
+    # while the deep class is where a weak answer costs a learner a rewrite.
+    gemini_model_light: str = "gemini-2.5-flash-lite"
+    gemini_model_standard: str = "gemini-2.5-flash"
+    gemini_model_deep: str = "gemini-2.5-pro"
+    # Blank means "follow the tiers". Set one of these to pin every task a role performs
+    # to a single model (a deployment with one allowed model, or a comparison run).
+    gemini_model_ai1: str | None = None
+    gemini_model_ai2: str | None = None
+    # Per-task pins, most specific override: {"ai2_explain": "<model>"}. Accepted as JSON
+    # or as `task=model,task=model`, because the docs tell an operator to write the
+    # comma-separated form for lists and the JSON form would then be the odd one out.
+    gemini_task_models: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_timeout_s: float = 45.0
     # Free-tier guard: stop calling before the daily quota is exhausted and let
@@ -101,6 +115,40 @@ class Settings(BaseSettings):
     gemini_daily_token_budget: int = 2_000_000
     gemini_min_interval_ms: int = 700  # smooths RPM limits
     gemini_max_retries: int = 2
+
+    # -- context caching (item 2 of the cost round) ----------------------
+    # The static head of a prompt -- system instructions, rubric, subject catalogue -- is
+    # the same for every learner, and passing it again on every call is what turns a
+    # handful of prompts into a quota problem. When enabled, the client caches that head
+    # server-side and sends only the dynamic tail. Three things keep this safe:
+    #   * only *static* text is ever cached (a test forbids learner text in a prefix),
+    #   * a cache that cannot be created is a warning, never a failed answer,
+    #   * prompts are built static-head-first anyway, so the provider's own implicit
+    #     prefix caching helps even when explicit caching is unavailable.
+    ai_context_cache: bool = True
+    gemini_context_cache_ttl_s: int = 1800  # 30 min: a demo sitting, not a day
+    gemini_context_cache_min_tokens: int = 1024  # the documented floor for a cacheable prompt
+    gemini_context_cache_max_entries: int = 8  # bounded: an unbounded cache is a leak
+    gemini_context_cache_max_tokens: int = 32_000  # refuse to cache a prompt bigger than this
+
+    # -- single-call chains (item 1) -------------------------------------
+    # Where two prompts read the same content and ask two questions about it, one call
+    # answers both. Off means "use the old two-call path", which exists so the change can
+    # be measured rather than believed.
+    ai_single_call: bool = True
+
+    # -- concurrency guards (item 4) -------------------------------------
+    # Real-time routes: how many requests one learner/IP may have in flight at once, and
+    # how fast a burst has to arrive before it is treated as a loop rather than a person.
+    # A person clicking cannot reach these; a runaway tab hits them in under a second.
+    realtime_max_inflight: int = 4
+    realtime_burst_window_ms: int = 1000
+    realtime_burst_max: int = 20
+    # Identical text frames closer together than this are one turn: a double-click, a
+    # key repeat, or a reconnect that replays the last message. The frame *rate* limits
+    # live in security/ratelimit.py with every other token bucket, so there is one table
+    # to read when asking what the server will accept.
+    ws_duplicate_window_ms: int = 900
 
     # -- local reasoner fallback ----------------------------------------
     # Never fail the demo because a network or quota limit tripped.
@@ -163,6 +211,8 @@ class Settings(BaseSettings):
         "gemini_api_key",
         "youtube_api_key",
         "openalex_mailto",
+        "gemini_model_ai1",
+        "gemini_model_ai2",
         "mode",
         mode="before",
     )
@@ -207,6 +257,43 @@ class Settings(BaseSettings):
                     return [str(x).strip() for x in decoded if str(x).strip()]
             return [chunk.strip() for chunk in text.split(",") if chunk.strip()]
         return v
+
+    @field_validator("gemini_task_models", mode="before")
+    @classmethod
+    def _task_model_map(cls, v: object) -> object:
+        """Accept ``{"ai2_explain": "<model>"}`` and ``ai2_explain=<model>,...``.
+
+        A typo'd pin used to be a silent no-op in the obvious implementation (parse,
+        fail, return ``{}``), and a silent no-op is the worst outcome for a setting whose
+        whole purpose is *overriding* something: the operator would believe a task was
+        pinned while it followed the tier. So a value that is neither shape raises, at
+        import time, where the operator is looking.
+        """
+        if not isinstance(v, str):
+            return v
+        text = v.strip()
+        if not text:
+            return {}
+        if text.startswith("{"):
+            try:
+                decoded = json.loads(text)
+            except ValueError as exc:
+                raise ValueError(f"ADAPT_GEMINI_TASK_MODELS is not valid JSON: {exc}") from None
+            if not isinstance(decoded, dict):
+                raise ValueError("ADAPT_GEMINI_TASK_MODELS must be a JSON object of task names")
+            return decoded
+        out: dict[str, str] = {}
+        for chunk in text.split(","):
+            if not chunk.strip():
+                continue
+            if "=" not in chunk:
+                raise ValueError(
+                    "ADAPT_GEMINI_TASK_MODELS wants `task=model` pairs or a JSON object; "
+                    f"`{chunk.strip()}` is neither"
+                )
+            task, _, name = chunk.partition("=")
+            out[task.strip()] = name.strip()
+        return out
 
     @computed_field  # type: ignore[prop-decorator]
     @property

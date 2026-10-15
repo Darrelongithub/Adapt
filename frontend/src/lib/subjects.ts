@@ -70,6 +70,7 @@ export type SubjectPlan = {
   cross_check?: string | null;
   time_capped?: boolean;
   notes?: string[];
+  learner_review?: { selected_skills: string[]; comments: string };
 };
 
 export type ResolvedTopic = {
@@ -270,9 +271,12 @@ export async function fetchPlan(topic: string): Promise<SubjectPlan> {
   return data;
 }
 
-export async function startRound(topic: string): Promise<RoundView> {
-  if (isMock()) return mockStartRound(topic);
-  return post<RoundView>("subjects/round", { topic });
+export async function startRound(topic: string, selected_skills?: string[], comments = ""): Promise<RoundView> {
+  if (isMock()) {
+    if (comments || selected_skills) throw new Error("Custom outlines need the live backend; demo mode cannot save your choices.");
+    return mockStartRound(topic);
+  }
+  return post<RoundView>("subjects/round", { topic, selected_skills, comments });
 }
 
 export async function fetchRound(runId: string): Promise<RoundView> {

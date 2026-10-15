@@ -252,6 +252,9 @@ def profile_summary(s: Session, student_id: str) -> dict[str, Any]:
     student = s.get(Student, student_id)
     if student is None:
         return {}
+    from ..db.models import BaselineRun
+
+    baseline_started = s.scalar(select(BaselineRun.id).where(BaselineRun.student_id == student_id).limit(1)) is not None
     n_sessions = len(s.execute(select(LearningSession.id).where(LearningSession.student_id == student_id)).all())
     last = s.execute(
         select(ProfileSnapshot).where(ProfileSnapshot.student_id == student_id).order_by(ProfileSnapshot.taken_at.desc()).limit(1)
@@ -262,6 +265,7 @@ def profile_summary(s: Session, student_id: str) -> dict[str, Any]:
         "role": student.role,
         "onboarding_complete": student.onboarding_complete,
         "diagnostic_complete": student.diagnostic_complete,
+        "baseline_started": baseline_started,
         "voice_enabled": student.voice_enabled,
         "voice_gender": student.voice_gender,
         "language": student.preferred_language,

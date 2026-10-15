@@ -398,3 +398,67 @@ def test_cli_token_honors_hours_and_doctor_emits_no_argon2_deprecation(services)
     argon_warnings = [w for w in caught if "argon2" in str(w.message).lower()]
     assert not argon_warnings, argon_warnings
 
+
+
+def test_dev_web_environment_allows_exact_lan_hmr_host():
+    env = hosting.build_web_env(
+        {"ADAPT_DEV_ORIGIN": "preview.example"}, api_port=8000, web_port=3000,
+        production=False, lan_ip=LAN_IP,
+    )
+    assert env["NODE_ENV"] == "development"
+    assert env["HOST"] == "0.0.0.0"
+    assert env["ADAPT_DEV_ORIGIN"] == f"preview.example,{LAN_IP}"
+
+
+def test_host_dev_skips_build_and_cleans_up_when_api_fails(monkeypatch):
+    import adapt.cli as cli
+
+    started = {}
+    stopped = []
+
+    class Session:
+        def __init__(self, **kwargs):
+            pass
+
+        def start(self, name, argv, **kwargs):
+            started[name] = (argv, kwargs)
+
+        def wait_http(self, *args, **kwargs):
+            return False
+
+        def exited(self):
+            return ("api", 1)
+
+        def stop(self):
+            stopped.append(True)
+
+        def tail(self, *args):
+            return ["API failed"]
+
+    monkeypatch.setattr(hosting, "HostSession", Session)
+    monkeypatch.setattr(hosting, "port_is_free", lambda *args: True)
+    monkeypatch.setattr(hosting, "detect_lan_ip", lambda *args: (LAN_IP, [LAN_IP]))
+    monkeypatch.setattr(hosting.Frontend, "installed", property(lambda self: True))
+    monkeypatch.setattr(hosting.Frontend, "built", property(lambda self: pytest.fail("dev checked production build")))
+    monkeypatch.setattr(cli.signal, "signal", lambda *args: None)
+    result = CliRunner().invoke(hosting_cli(), ["host", "--dev"])
+    assert result.exit_code == 1, result.output
+    assert set(started) == {"api", "web"}
+    assert started["web"][0] == ["node", "server.mjs"]  # never recurse into npm run dev
+    assert started["web"][1]["env"]["NODE_ENV"] == "development"
+    assert LAN_IP in started["web"][1]["env"]["ADAPT_DEV_ORIGIN"]
+    assert stopped == [True]
+
+
+def test_readiness_does_not_treat_http_500_as_ready(monkeypatch):
+    import urllib.error
+
+    class BrokenServer:
+        def open(self, *args, **kwargs):
+            raise urllib.error.HTTPError("http://local/", 500, "failed", {}, None)
+
+    times = iter([0, 0, 10])
+    monkeypatch.setattr(hosting.urllib.request, "build_opener", lambda *args: BrokenServer())
+    monkeypatch.setattr(hosting.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(hosting.time, "sleep", lambda *args: None)
+    assert not hosting.HostSession().wait_http("http://local/", timeout=1)

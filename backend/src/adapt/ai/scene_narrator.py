@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from ..learning import scenespec, sims
 from ..security.redact import redact_payload
-from .prompts import SCENE_NARRATOR_SYSTEM
+from . import static_context as SC
 
 log = logging.getLogger("adapt.ai3")
 
@@ -126,8 +126,9 @@ class SceneNarrator:
         safe, dropped, _kinds = redact_payload({"q": prompt}, max_chars=7000)  # _audit records the count, not the kinds
         try:
             res = await self.llm.complete(
-                system=SCENE_NARRATOR_SYSTEM,
+                system="",
                 user=safe["q"],
+                cache_prefix=SC.block("narrator"),
                 purpose="ai3_narrate",  # audit label: see ``status`` for why this keeps the old name
                 role="ai3",
                 student_id=student_id or "anon",
@@ -201,12 +202,6 @@ class SceneNarrator:
             "frames": [{"i": f["i"], "kind": f["kind"], "says": f["narration"], "state": _compact(f.get("state"))} for f in window],
             "question": question[:600],
             "citations_available": [c.get("ref") for c in (spec.get("citations") or []) if isinstance(c, dict)][:4],
-            "task": (
-                "Answer the question in at most 3 short sentences, about this simulation only. "
-                "Use the numbers in the frames you were given. If the question asks why a step is allowed, "
-                "name the property of the data that allows it. If you cannot answer from the frames, say what you "
-                "would check instead of guessing. Reply JSON with keys: answer, why_not_more, frame."
-            ),
         }
         return json.dumps(payload, separators=(",", ":"), default=str)[:7000]
 
@@ -230,6 +225,8 @@ class SceneNarrator:
                         latency_ms=int(getattr(res, "latency_ms", 0) or 0),
                         redacted_fields=int(dropped or 0),
                         prompt_chars=int(prompt_chars or 0),
+                        tier=getattr(res, "tier", None),
+                        cached_tokens=int(getattr(res, "cached_tokens", 0) or 0),
                         day=utcnow().date().isoformat(),
                     )
                 )

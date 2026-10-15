@@ -33,8 +33,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
+from ..ai import static_context as SC
 from .taxonomy import FAMILIES, FAMILY_IDS, family_title
-from .topics import TOPIC_SPECS, aliases as authored_aliases, spec_for_alias, topic_spec
+from .topics import TOPIC_SPECS, spec_for_alias, topic_spec
+from .topics import aliases as authored_aliases
 
 log = logging.getLogger("adapt.subjects.resolve")
 
@@ -401,17 +403,43 @@ async def _ask_model(llm: Any, *, raw: str, norm: str, level_hint: str | None) -
             temperature=0.0,
             max_output_tokens=160,
             response_spec=RESOLVE_RESPONSE_SPEC,
+            # The static half of this prompt -- the families, the level list, the rule that the
+            # learner's text is data -- is `static_context.block("placement")`, shared with the
+            # fused call in `subjects/placement.py` and registered once by the provider. What
+            # stays in `system` above is only the part that is specific to asking for placement
+            # alone, which is why the two paths can use one cache entry.
+            cache_prefix=SC.block("placement"),
         )
     except Exception as exc:  # pragma: no cover - a provider that raises is still a fallback
         log.warning("resolve: model call failed (%s)", type(exc).__name__)
         return None
     if not getattr(result, "ok", False) or not getattr(result, "data", None):
         return None
-    data = dict(result.data or {})
+    return accept_placement(dict(result.data or {}), level_hint=level_hint)
+
+
+def accept_placement(data: Mapping[str, Any], *, level_hint: str | None) -> dict[str, Any] | None:
+    """Validate a model's placement answer. ``None`` means "use what code decided".
+
+    Pulled out of :func:`_ask_model` when the fused placement call landed
+    (:mod:`adapt.subjects.placement`): the merged prompt must not be able to accept
+    *more* than the sequential one did, and the way to guarantee that is for both paths to
+    call this function rather than to write the checks twice. Four rules, in order:
+
+    * the family must be one of the five in the taxonomy (an invented family is a rewrite of
+      the closed list the round is built on, not a wrong guess);
+    * the title must be non-empty -- a placement with no topic is not a placement;
+    * a level hint outside the closed list is dropped rather than passed on, because the
+      ladder reads these values and an invented one silently means "no level";
+    * below 0.5 confidence the deterministic answer stands. A model that says it is unsure
+      is telling us something, and the honest use of that is to keep code's answer.
+    """
     family = str(data.get("family") or "").strip().lower()
     if family not in FAMILY_IDS:
         return None
     title = str(data.get("topic_title") or "").strip()[:80]
+    if not title:
+        return None
     level = str(data.get("level_hint") or "").strip().lower()
     if level and level not in _LEVEL_VALUES:
         level = ""
@@ -419,7 +447,7 @@ async def _ask_model(llm: Any, *, raw: str, norm: str, level_hint: str | None) -
         confidence = float(data.get("confidence") or 0.0)
     except (TypeError, ValueError):
         confidence = 0.0
-    if confidence < 0.5 or not title:
+    if confidence < 0.5:
         return None
     return {"family": family, "title": title, "level_hint": level or level_hint, "confidence": confidence}
 
