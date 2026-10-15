@@ -22,35 +22,38 @@ reading, and it is the reading under which a learner who types 0.3 is right. It 
 checker will *disagree* with a naive float comparison -- which is a feature when the alternative is
 marking 0.3 wrong.
 
-**Two methods, and they must agree.** :func:`equivalent` first canonicalises both sides to a rational
-function and compares exactly; when that says "not equal" it also probes the *difference* at rational
-sample points, because a canonicaliser bug and a genuinely wrong key look identical from one method.
+**Two methods, and they must agree.** :func:`equivalent` first canonicalises both sides to a
+rational function and compares exactly; when that says "not equal" it also probes the *difference*
+at rational sample points, because a canonicaliser bug and a genuinely wrong key look identical from
+one method.
 A candidate is accepted only if both methods agree — the same "second independent pass" rule §7.3
 applies to non-computational content.
 
 **What it refuses.** Anything outside the grammar raises :class:`SymbolicError` with a reason, and
 callers are expected to fall back to ``unverified`` (never to accept). ``sin``, ``log``, matrices,
-inequalities and non-integer powers are all refused by name, because silently treating an unsupported
-function as zero is how a checker becomes a liar.
+inequalities and non-integer powers are all refused by name, because silently treating an
+unsupported function as zero is how a checker becomes a liar.
 """
 
 from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Mapping, Sequence
 from fractions import Fraction
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 __all__ = [
+    "SUPPORTED_NOTE",
     "SymbolicError",
+    "canonical_form",
+    "degree_of",
+    "difference_at",
+    "differentiate",
     "equivalent",
     "evaluate",
-    "differentiate",
     "solve",
-    "degree_of",
-    "canonical_form",
-    "difference_at",
-    "SUPPORTED_NOTE",
+    "verify_computational_key",
 ]
 
 SUPPORTED_NOTE = (
@@ -61,8 +64,24 @@ SUPPORTED_NOTE = (
 #: Names that look like functions and are deliberately *not* handled. Named explicitly so the
 #: refusal message can say what to do instead, rather than reporting "unexpected call".
 _KNOWN_UNSUPPORTED = {
-    "sin", "cos", "tan", "asin", "acos", "atan", "log", "ln", "exp", "sqrt",
-    "pow", "abs", "floor", "ceil", "round", "factorial", "min", "max",
+    "sin",
+    "cos",
+    "tan",
+    "asin",
+    "acos",
+    "atan",
+    "log",
+    "ln",
+    "exp",
+    "sqrt",
+    "pow",
+    "abs",
+    "floor",
+    "ceil",
+    "round",
+    "factorial",
+    "min",
+    "max",
 }
 
 _MAX_DEGREE = 24
@@ -201,7 +220,7 @@ def _poly_mul(a: Poly, b: Poly) -> Poly:
     out: Poly = {}
     for ka, va in a.items():
         for kb, vb in b.items():
-            key = tuple(x + y for x, y in zip(ka, kb))
+            key = tuple(x + y for x, y in zip(ka, kb, strict=True))
             if sum(key) > _MAX_DEGREE:
                 raise SymbolicError(f"the product exceeds degree {_MAX_DEGREE}; refusing to guess")
             total = out.get(key, Fraction(0)) + va * vb
@@ -267,7 +286,10 @@ def _parse(text: str, symbols: Sequence[str]) -> Rat:
         if isinstance(node, ast.Constant):
             if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
                 raise SymbolicError(f"{node.value!r} is not a number or a symbol")
-            return (_constant(_fraction(node.value), len(symbols)), _constant(Fraction(1), len(symbols)))
+            return (
+                _constant(_fraction(node.value), len(symbols)),
+                _constant(Fraction(1), len(symbols)),
+            )
         if isinstance(node, ast.Name):
             if node.id in _KNOWN_UNSUPPORTED:
                 raise SymbolicError(
@@ -340,10 +362,13 @@ def symbols_in(*expressions: str) -> list[str]:
         except SyntaxError:
             continue
         for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and node.id not in _KNOWN_UNSUPPORTED:
-                if len(node.id) == 1 or node.id in _LONG_SYMBOL_OK:
-                    if node.id not in found:
-                        found.append(node.id)
+            if (
+                isinstance(node, ast.Name)
+                and node.id not in _KNOWN_UNSUPPORTED
+                and (len(node.id) == 1 or node.id in _LONG_SYMBOL_OK)
+                and node.id not in found
+            ):
+                found.append(node.id)
     return found
 
 
@@ -376,7 +401,7 @@ def _poly_text(poly: Poly, symbols: Sequence[str]) -> str:
     for key in sorted(poly, key=lambda k: (-sum(k), k)):
         coeff = poly[key]
         factors = []
-        for name, power in zip(symbols, key):
+        for name, power in zip(symbols, key, strict=True):
             if power == 1:
                 factors.append(name)
             elif power > 1:
@@ -393,8 +418,12 @@ def _poly_text(poly: Poly, symbols: Sequence[str]) -> str:
     return " + ".join(parts).replace("+ -", "- ")
 
 
-def difference_at(left: str, right: str, values: Mapping[str, Any], *, symbols: Sequence[str] | None = None) -> Fraction:
-    """``left - right`` at one exact point — the probe :func:`equivalent` uses as a second method."""
+def difference_at(
+    left: str, right: str, values: Mapping[str, Any], *, symbols: Sequence[str] | None = None
+) -> Fraction:
+    """``left - right`` at one exact point — the probe :func:`equivalent` uses as a second
+    method.
+    """
     names = list(symbols) if symbols is not None else symbols_in(left, right)
     point = {name: _fraction(values.get(name, 0)) for name in names}
     return _value(left, names, point) - _value(right, names, point)
@@ -407,7 +436,7 @@ def _value(text: str, names: Sequence[str], point: Mapping[str, Fraction]) -> Fr
         total = Fraction(0)
         for key, coeff in poly.items():
             term = coeff
-            for name, power in zip(names, key):
+            for name, power in zip(names, key, strict=True):
                 term *= point[name] ** power
             total += term
         return total
@@ -473,7 +502,13 @@ def equivalent(left: str, right: str, *, symbols: Sequence[str] | None = None) -
         names = ["x"]
     left_num, left_den = _parse(left, names)
     right_num, right_den = _parse(right, names)
-    same = _poly_add(_poly_mul(left_num, right_den), _poly_scale(_poly_mul(right_num, left_den), Fraction(-1))) == {}
+    same = (
+        _poly_add(
+            _poly_mul(left_num, right_den),
+            _poly_scale(_poly_mul(right_num, left_den), Fraction(-1)),
+        )
+        == {}
+    )
     degree = max(_degree(left_num) + _degree(right_den), _degree(right_num) + _degree(left_den))
     if not same:
         for point in probe_points(degree):
@@ -490,7 +525,11 @@ def equivalent(left: str, right: str, *, symbols: Sequence[str] | None = None) -
         except SymbolicError:
             continue
         if difference != 0:
-            return (False, f"the canonical forms agreed but {names[0]} = {point} does not (difference {difference})")
+            return (
+                False,
+                f"the canonical forms agreed but {names[0]} = {point} does not "
+                f"(difference {difference})",
+            )
     domain = (
         " (the two sides agree where both are defined, but one of them divides by something and "
         "the other does not, so they are not defined in the same places)"
@@ -507,10 +546,11 @@ def equivalent(left: str, right: str, *, symbols: Sequence[str] | None = None) -
 def _one_side_divides(a_den: Poly, b_den: Poly) -> bool:
     """True when exactly one side divides by a non-constant polynomial.
 
-    This is the only domain difference the checker states as fact, because it is the only one it can
-    prove from the parsed forms: a side whose denominator is a constant is defined everywhere, a side
-    whose denominator is not has somewhere it is undefined. Two sides that *both* divide by something
-    may still have different domains (``1/x`` and ``1/x^2``) and this deliberately says nothing about
+    This is the only domain difference the checker states as fact, because it is the only one it
+    can prove from the parsed forms: a side whose denominator is a constant is defined everywhere,
+    a side whose denominator is not has somewhere it is undefined. Two sides that *both* divide by
+    something may still have different domains (``1/x`` and ``1/x^2``) and this deliberately says
+    nothing about
     them rather than guessing: comparing zero sets needs a squarefree factorisation, and a wrong
     claim about a domain is worse than a silent one.
     """
@@ -645,7 +685,8 @@ def check_answer(
     """
     try:
         if "=" in str(expression) and equals is None:
-            # An equation is a different question from an expression: the key is a root, not a value.
+            # An equation is a different question from an expression: the key is a root, not a
+            # value.
             # Sending it down the expression path made every equation come back "could not be
             # checked", which is true of a parser and useless as a verdict on a key.
             roots, status = solve(str(expression))
@@ -655,7 +696,8 @@ def check_answer(
                 return ("symbolic", status)
             return (
                 "symbolic_mismatch",
-                f"the key says {sorted(str(w) for w in wanted)}, solving gives {sorted(str(r) for r in roots)}",
+                f"the key says {sorted(str(w) for w in wanted)}, "
+                f"solving gives {sorted(str(r) for r in roots)}",
             )
         if equals is not None:
             verdict, how = equivalent(str(expression), str(equals))
@@ -690,6 +732,58 @@ def check_answer(
             return ("symbolic", status)
         if wanted & set(roots):
             return ("symbolic", status)
-        return ("symbolic_mismatch", f"the key says {sorted(str(w) for w in wanted)}, solving gives {sorted(str(r) for r in roots)}")
+        return (
+            "symbolic_mismatch",
+            f"the key says {sorted(str(w) for w in wanted)}, "
+            f"solving gives {sorted(str(r) for r in roots)}",
+        )
     except SymbolicError as exc:
         return ("symbolic_error", str(exc))
+
+
+def verify_computational_key(
+    expression: str,
+    answer: Any,
+    *,
+    operation: str = "evaluate",
+    variable: str = "x",
+    variables: Mapping[str, Any] | None = None,
+) -> tuple[str, str]:
+    """Recompute a generated computational key with the exact symbolic engine.
+
+    ``operation`` is one of ``evaluate``, ``solve``, ``differentiate`` or ``equivalent``. The
+    return status is ``computed`` only when the exact calculation agrees, ``mismatch`` when it
+    disagrees, and ``unsupported`` when this deliberately bounded parser cannot prove an answer.
+    Unsupported work must be rejected or kept out of scoring; callers must never turn it into an
+    unchecked green light.
+    """
+    operation = str(operation or "evaluate").strip().lower()
+    expression = str(expression or "").strip()
+    if operation not in {"evaluate", "solve", "differentiate", "equivalent"}:
+        return ("unsupported", "the requested symbolic operation is not supported")
+    if not expression or len(expression) > 400:
+        return ("unsupported", "the symbolic expression is empty or oversized")
+    try:
+        if operation == "differentiate":
+            computed = differentiate(expression, var=variable)
+            agrees, detail = equivalent(computed, str(answer))
+            return ("computed", detail) if agrees else ("mismatch", detail)
+        if operation == "equivalent":
+            agrees, detail = equivalent(expression, str(answer))
+            return ("computed", detail) if agrees else ("mismatch", detail)
+        if operation == "solve":
+            roots, detail = solve(expression, var=variable)
+            expected = answer if isinstance(answer, (list, tuple, set)) else [answer]
+            wanted = {_fraction(value) for value in expected if str(value).strip()}
+            if wanted and wanted == set(roots):
+                return ("computed", detail)
+            return ("mismatch", "the independently solved roots do not match the proposed key")
+        if variables is None and symbols_in(expression):
+            return ("unsupported", "an expression with unknown symbols needs concrete values")
+        actual = evaluate(expression, variables or {})
+        expected_value = _fraction(answer)
+        if actual == expected_value:
+            return ("computed", f"the exact value is {actual}")
+        return ("mismatch", "the exact computed value does not match the proposed key")
+    except (SymbolicError, TypeError, ValueError, ZeroDivisionError) as exc:
+        return ("unsupported", str(exc))
