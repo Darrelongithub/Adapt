@@ -398,7 +398,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
                 }
               }}
               disabled={busy || revealed !== null}
-              title="This one shows the answer. The endpoint needs the CSRF token even though it is a GET, because revealing an answer is not a read you would want forged by another site."
+              title="Revealing the answer changes what you can see, so it is linked to your current session."
             >
               {revealed ? "Revealed" : "Reveal it"}
             </Btn>
@@ -487,7 +487,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
               <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
                 {reply.served_by ?? "from your course material"}
                 {reply.meta?.grounded ? " · grounded" : " · not grounded in your material"} ·{" "}
-                {reply.privacy?.sent_to_model ? "your question was sent to the model" : "nothing left this machine"}
+                {reply.privacy?.sent_to_model ? "your question was shared to prepare this reply" : "your question stayed on this device"}
               </p>
               {reply.sources?.length ? (
                 <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted)]">

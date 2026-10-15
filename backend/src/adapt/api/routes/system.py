@@ -126,27 +126,24 @@ def data_protection() -> dict[str, Any]:
         # prevent. What is dropped is the deployment detail around it (paths, key source, config).
         "underlying_engine": f"{(driver.name if driver else 'sqlite')} + field-level encryption",
         "file_level": (
-            "the whole database file is encrypted"
+            "The whole database file is encrypted."
             if file_encrypted
-            else "the file itself is not encrypted; the answers and notes listed below are"
+            else "Only the information marked as protected below is encrypted; the database file itself is not."
         ),
         "protected": [
-            "learner answers + feedback",
-            "event payloads",
-            "hypotheses/evidence facts",
-            "chat + voice transcripts",
-            "profile snapshots",
-            "display name + email",
+            "your answers and feedback",
+            "details about your practice activity",
+            "learning suggestions and the evidence behind them",
+            "tutor conversations and recorded voice transcripts",
+            "saved progress summaries",
+            "your name and email",
         ],
         "not_protected": [
-            "study preferences (goal, minutes per week, word limits)",
-            "table names and numeric foreign keys (needed to query at all)",
-            "topic ids and timestamps (used for scheduling)",
+            "study preferences, such as your goal, weekly time, and answer length",
+            "the record structure used to organize saved information",
+            "study topics and dates used to plan reviews",
         ],
-        "note": (
-            "The database format has no encryption of its own, so this says exactly which fields "
-            "are protected and which are not instead of implying all of it is."
-        ),
+        "note": "Protection applies only to the information listed as protected; other saved details are not encrypted.",
     }
 
 
@@ -220,28 +217,33 @@ def quotas(s: Session = Depends(db_session), student: Student = Depends(student_
 
 
 @router.get("/privacy")
-def privacy(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
-    st = get_settings()
+def privacy() -> dict[str, Any]:
+    """The public, read-only privacy notice.
+
+    This is the same non-personal list for every learner, including someone who has
+    not created an account yet. It deliberately does not look up a learner or open a
+    request-scoped database session.
+    """
     return {
         "telemetry": TEL.privacy_summary(),
         "sent_to_model": {
-            "when": "only when a model is configured and the learner consented to sharing a summary",
-            "identity": "a keyed pseudonym, never the name or email",
-            "redaction": "emails, phone numbers, URLs, addresses and anything shaped like an ID are stripped before sending",
+            "when": "only when the learner chose to share a short learning summary",
+            "identity": "an anonymous code, never the learner's name or email",
+            "redaction": "emails, phone numbers, links, addresses and anything shaped like an ID are stripped before sharing",
             "on_refusal": "if any of that cannot be honoured, the answer is written locally instead and the reply says so",
         },
         "voice": {
-            "stt": "local faster-whisper running in the server process; audio is decoded in memory and discarded",
-            "tts": "local Kokoro; audio is streamed to the browser and not stored",
-            "stored": "transcript text for the turns the learner chose to record, plus latency and interruption flags",
+            "stt": "spoken words are transcribed on this machine; audio is decoded temporarily and discarded",
+            "tts": "spoken replies are streamed to the browser and are not stored",
+            "stored": "transcript text from turns the learner chose to record, plus basic timing and interruption information",
             "off_means": "voice off = no microphone access at all; the keyboard path is identical",
         },
         "storage": data_protection(),
         "learner_controls": [
             "answer or refuse every adaptation proposal",
             "revoke an applied adaptation at any time",
-            "delete your history (DELETE /api/v1/me)",
-            "see every event recorded about you (GET /api/v1/journey)",
+            "delete your history from Settings",
+            "review the activity recorded about you from Settings",
         ],
     }
 

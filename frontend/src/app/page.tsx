@@ -149,14 +149,13 @@ export default function Home() {
         <Tag tone="good">no learning styles question</Tag>
         <Tag tone="think">hypotheses, not labels</Tag>
         <Tag tone="accent">keystrokes never recorded</Tag>
-        <Tag>{health?.lessons?.says ?? (health?.ok ? "the API is answering" : "the API is not answering")}</Tag>
+        <Tag>{health?.lessons?.says ?? (health?.ok ? "Connected" : "Connection unavailable")}</Tag>
         {mock ? <Tag tone="bad">showing demo data</Tag> : null}
       </div>
       {mock ? (
         <div className="mt-3 max-w-[640px]">
           <Notice>
-            You are looking at fixtures. <Link className="link-inline" href="/" onClick={() => window.sessionStorage.removeItem("adapt-mock")}>clear it</Link>{" "}
-            and the same screens read the real API.
+            You are viewing example information. <Link className="link-inline" href="/" onClick={() => window.sessionStorage.removeItem("adapt-mock")}>Exit the preview</Link>.
           </Notice>
         </div>
       ) : null}
@@ -199,7 +198,7 @@ export default function Home() {
                 <a className="link-inline" href="#what-is-recorded">
                   Read what is recorded
                 </a>{" "}
-                — the list comes from the same endpoint the server enforces it with.
+                — this list describes the activity ADAPT may record.
               </p>
 
               <div className="mt-4 flex flex-col gap-3">
@@ -340,7 +339,7 @@ export default function Home() {
                   </>
                 )}
                 {needsPassphrase ? (
-                  <Field label="Demo passphrase" hint="This instance is behind a public tunnel, so creating a learner needs the phrase the operator set.">
+                  <Field label="Site passphrase" hint="Enter the passphrase provided to join this learning space.">
                     <Input value={passphrase} onChange={(e) => setPassphrase(e.target.value)} type="password" />
                   </Field>
                 ) : null}
@@ -355,10 +354,10 @@ export default function Home() {
                 {error ? <Err error={error} status={null} /> : null}
               </form>
               <p className="mt-3 text-xs text-[var(--muted)]">
-                A guest keeps the same data and the same rights as an account, including the delete button. Nothing is sent to a
-                model that you have not agreed to, and{" "}
+                A guest keeps the same data and the same rights as an account, including the delete button. You can review what
+                is recorded or shared in{" "}
                 <Link href="/settings" className="link-inline">
-                  the settings screen lists every field that is stored
+                  Settings
                 </Link>
                 . Consent was recorded as: analytics {consent ? "yes" : "no"} · research (not stored yet){" "}
                 {research ? "yes" : "no"}.
@@ -513,14 +512,13 @@ function Stat({ label, value, note }: { label: string; value: string; note: stri
   );
 }
 
-/** What the server says it records, in the server's words, with the anchor the consent step
- *  links to. It is the same endpoint `/settings` reads, so the two cannot disagree. */
+/** A concise privacy summary linked from the consent step. */
 function RecordedPanel({ privacy, loading }: { privacy: Privacy | null; loading: boolean }) {
   const recorded = privacy?.telemetry?.recorded ?? [];
   const never = privacy?.telemetry?.never_recorded ?? [];
   return (
     <div id="what-is-recorded" className="mt-8 max-w-[720px]">
-      <Card title="What is recorded about you" tone="muted" right={<span>GET /privacy</span>}>
+      <Card title="What is recorded about you" tone="muted" right={<span>Privacy notice</span>}>
         {loading ? <p className="text-sm text-[var(--muted)]">…</p> : null}
         {recorded.length ? (
           <ul className="list-disc space-y-1 pl-5 text-sm">
@@ -529,7 +527,7 @@ function RecordedPanel({ privacy, loading }: { privacy: Privacy | null; loading:
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-[var(--muted)]">The server owns this list, and could not be read just now.</p>
+          <p className="text-sm text-[var(--muted)]">This list could not be loaded just now.</p>
         )}
         {never.length ? (
           <p className="mt-2 text-xs text-[var(--muted)]">

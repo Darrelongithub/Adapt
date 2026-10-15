@@ -10,16 +10,26 @@
  */
 import { useEffect, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Select, Tag, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, Input, Notice, Select, Tag, useSession } from "@/components/ui";
 import { del, get, post, useApi } from "@/lib/api";
 
 type PrefReply = { accepted?: Record<string, unknown>; rejected_keys?: string[]; rejected_reasons?: Record<string, string>; note?: string };
-type Allowlist = { allowed: Record<string, string[]>; forbidden_keys: string[]; rule: string };
 type Privacy = {
-  telemetry?: { allowed_event_types?: string[]; forbidden_keys?: string[]; note?: string } & Record<string, unknown>;
+  telemetry?: {
+    recorded?: string[];
+    never_recorded?: string[];
+    why?: string;
+    note?: string;
+  } & Record<string, unknown>;
   sent_to_model?: Record<string, string>;
   voice?: Record<string, string>;
-  storage?: Record<string, unknown>;
+  storage?: {
+    file_level?: string;
+    underlying_engine?: string;
+    protected?: string[];
+    not_protected?: string[];
+    note?: string;
+  };
   /** §3: the file-level claim plus what is and is not protected -- no paths, keys or drivers. */
   data_protection?: {
     file_level?: string;
@@ -37,6 +47,18 @@ const BOOL = new Set(["push_me", "want_voice", "want_review_reminders"]);
  *  checkbox here used to post `true`, which the server wrapped into the phrase "True" and put
  *  into the learner's profile. */
 const PHRASES = new Set(["avoid", "encourage"]);
+const SHARING_LABELS: Record<string, string> = {
+  when: "When you choose to share",
+  identity: "How your identity is protected",
+  redaction: "Before sharing",
+  on_refusal: "If a reply cannot be prepared",
+};
+const VOICE_LABELS: Record<string, string> = {
+  stt: "Speech recognition",
+  tts: "Spoken replies",
+  stored: "Voice data that may be saved",
+  off_means: "When voice is off",
+};
 
 /** One text box in, a list out -- commas, semicolons and new lines all separate phrases. */
 function toPhrases(value: string): string[] {
@@ -47,8 +69,6 @@ export default function Settings() {
   const { refresh } = useSession();
   const prefs = useApi<{ preferences: Record<string, unknown>; allowed_keys: string[] }>("me/preferences");
   const privacy = useApi<Privacy>("privacy");
-  const allow = useApi<Allowlist>("events/allowlist");
-  const status = useApi<Record<string, unknown>>("status");
   const audit = useApi<{ entries: { action: string; object?: string; outcome?: string; created_at?: string | null }[] }>("audit", { limit: 50 });
   const [form, setForm] = useState<Record<string, string | boolean>>({});
   const [reply, setReply] = useState<PrefReply | null>(null);
@@ -129,6 +149,11 @@ export default function Settings() {
 
   const entries = audit.data?.entries ?? [];
   const rejected = reply?.rejected_keys ?? [];
+  const recorded = privacy.data?.telemetry?.recorded ?? [];
+  const neverRecorded = privacy.data?.telemetry?.never_recorded ?? [];
+  const protection = privacy.data?.data_protection ?? privacy.data?.storage;
+  const protectedFields = protection?.protected ?? [];
+  const notProtectedFields = protection?.not_protected ?? [];
 
   return (
     <div className="space-y-4">
@@ -136,7 +161,7 @@ export default function Settings() {
       <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>Settings, and what is kept</h1>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Your preferences" right={<span>{allowed.length} keys the server accepts</span>}>
+        <Card title="Your preferences" right={<span>{allowed.length} preferences</span>}>
           {prefs.error ? <Err error={prefs.error} status={prefs.status} /> : null}
           <div className="space-y-2">
             {allowed.map((k) => (
@@ -173,18 +198,9 @@ export default function Settings() {
           </div>
           {reply ? (
             <Notice tone={rejected.length ? "warn" : "good"}>
-              {Object.keys(reply.accepted ?? {}).length} stored
-              {rejected.length ? (
-                <>
-                  {" "}
-                  · refused:{" "}
-                  {rejected.map((k) => (
-                    <Tag key={k} tone="bad">
-                      {k} — {reply.rejected_reasons?.[k] ?? "unknown key"}
-                    </Tag>
-                  ))}
-                </>
-              ) : null}
+              {rejected.length
+                ? "Some preferences could not be saved. Please review them and try again."
+                : "Your preferences were saved."}
             </Notice>
           ) : null}
           {error ? <Err error={error} status={null} /> : null}
@@ -197,13 +213,13 @@ export default function Settings() {
                 label="Keep the interaction log"
                 checked={consent.analytics}
                 onChange={(v) => setConsent((c) => ({ ...c, analytics: v }))}
-                hint="Off means the server rejects the events, so no proposals can be built and no schedule can be derived. Practice keeps working."
+                hint="When off, practice still works, but the app will not use your activity to suggest changes or build a study schedule."
               />
               <Check
-                label="Allow a model summary when it would help"
+                label="Share a short learning summary when it would help"
                 checked={consent.llm}
                 onChange={(v) => setConsent((c) => ({ ...c, llm: v }))}
-                hint={`Currently: ${humanize(status.data?.llm ?? {}) || "no model configured"}`}
+                hint="If you choose to share, the summary includes your topic mastery and learning suggestions, never your name or contact details."
               />
               <Check
                 label="Voice"
@@ -223,9 +239,7 @@ export default function Settings() {
                 </Field>
               ) : null}
               <p className="text-xs text-[var(--muted)]">
-                Two consents live on your learner record and are what these boxes change. The optional research
-                question asked before you signed up has no field on this instance yet, so it is not shown here as
-                though it were a setting.
+                You can change these choices at any time. Your preferences and voice settings are saved when you select Save consent.
               </p>
               <Btn onClick={saveConsent} disabled={busy} kind="primary">
                 Save consent
@@ -233,75 +247,70 @@ export default function Settings() {
             </div>
           </Card>
 
-          <Card title="This instance" tone="muted" right={<Tag>{String(status.data?.mode ?? "?")}</Tag>}>
-            {status.error ? <Err error={status.error} status={status.status} /> : null}
-            <ul className="space-y-1 text-xs text-[var(--muted)]">
-              {Object.entries(status.data ?? {}).map(([k, v]) => (
-                <li key={k}>
-                  <span className="text-ink-2">{k.replace(/_/g, " ")}:</span> {typeof v === "object" ? humanize(v) : String(v)}
-                </li>
-              ))}
-            </ul>
-          </Card>
         </div>
       </div>
 
-      <Card title="What may be recorded about you" tone="muted" right={<span>GET /privacy · /events/allowlist</span>}>
-        <p className="text-sm">{privacy.data?.telemetry?.note ?? "The server owns this list; the client cannot add a field to it."}</p>
+      <Card title="What may be recorded about you" tone="muted" right={<span>Privacy notice</span>}>
+        <p className="text-sm">
+          {privacy.data?.telemetry?.why ?? "Learning activity helps us suggest what to practise next; it is not proof of what you know."}
+        </p>
         <div className="mt-2 grid gap-3 md:grid-cols-2">
           <div>
-            <p className="text-xs uppercase text-[var(--muted)]">event types the server accepts ({(privacy.data?.telemetry?.allowed_event_types ?? []).length})</p>
-            <div className="mt-1 flex flex-wrap gap-1">
-              {(privacy.data?.telemetry?.allowed_event_types ?? Object.keys(allow.data?.allowed ?? {})).map((t) => (
-                <Tag key={t}>{t}</Tag>
-              ))}
-            </div>
+            <p className="text-xs uppercase text-[var(--muted)]">Activity that may be recorded</p>
+            <ul className="mt-1 list-disc space-y-1 pl-4 text-sm">
+              {recorded.map((item) => <li key={item}>{item}</li>)}
+              {!recorded.length ? <li>Activity details could not be loaded just now.</li> : null}
+            </ul>
           </div>
           <div>
-            <p className="text-xs uppercase text-[var(--muted)]">fields that are rejected outright</p>
-            <div className="mt-1 flex flex-wrap gap-1">
-              {(privacy.data?.telemetry?.forbidden_keys ?? allow.data?.forbidden_keys ?? []).map((t) => (
-                <Tag key={t} tone="bad">
-                  {t}
-                </Tag>
-              ))}
-            </div>
-            <p className="mt-1 text-xs text-[var(--muted)]">{allow.data?.rule}</p>
+            <p className="text-xs uppercase text-[var(--muted)]">Never collected</p>
+            <ul className="mt-1 list-disc space-y-1 pl-4 text-sm">
+              {neverRecorded.map((item) => <li key={item}>{item}</li>)}
+              {!neverRecorded.length ? <li>Details could not be loaded just now.</li> : null}
+            </ul>
           </div>
         </div>
         <div className="mt-3 grid gap-2 text-xs text-[var(--muted)] md:grid-cols-2">
-          {Object.entries(privacy.data?.sent_to_model ?? {}).map(([k, v]) => (
-            <p key={k}>
-              <span className="text-ink-2">to the model · {k.replace(/_/g, " ")}:</span> {v}
+          {Object.entries(privacy.data?.sent_to_model ?? {}).map(([key, value]) => (
+            <p key={key}>
+              <span className="text-ink-2">{SHARING_LABELS[key] ?? "When sharing"}:</span> {value}
             </p>
           ))}
-          {Object.entries(privacy.data?.voice ?? {}).map(([k, v]) => (
-            <p key={k}>
-              <span className="text-ink-2">voice · {k.replace(/_/g, " ")}:</span> {v}
+          {Object.entries(privacy.data?.voice ?? {}).map(([key, value]) => (
+            <p key={key}>
+              <span className="text-ink-2">{VOICE_LABELS[key] ?? "Voice"}:</span> {value}
             </p>
           ))}
         </div>
         <div className="mt-3 text-xs">
-          <p className="uppercase text-[var(--muted)]">storage</p>
+          <p className="uppercase text-[var(--muted)]">How saved information is protected</p>
           <p className="mt-1 text-[var(--muted)]">
-            {privacy.data?.data_protection?.file_level ?? humanize(privacy.data?.storage ?? {})}
+            {protection?.file_level ?? "Protection details could not be loaded just now."}
           </p>
-          {(privacy.data?.data_protection?.protected ?? []).length ? (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {(privacy.data?.data_protection?.protected ?? []).map((f) => (
-                <Tag key={f} tone="good">
-                  {f}
-                </Tag>
-              ))}
-              {(privacy.data?.data_protection?.not_protected ?? []).map((f) => (
-                <Tag key={f}>{f}</Tag>
-              ))}
+          {protectedFields.length || notProtectedFields.length ? (
+            <div className="mt-2 grid gap-2 md:grid-cols-2">
+              {protectedFields.length ? (
+                <div>
+                  <p className="text-[var(--muted)]">Protected information</p>
+                  <ul className="mt-1 list-disc pl-4 text-[var(--muted)]">
+                    {protectedFields.map((field) => <li key={field}>{field}</li>)}
+                  </ul>
+                </div>
+              ) : null}
+              {notProtectedFields.length ? (
+                <div>
+                  <p className="text-[var(--muted)]">Not encrypted</p>
+                  <ul className="mt-1 list-disc pl-4 text-[var(--muted)]">
+                    {notProtectedFields.map((field) => <li key={field}>{field}</li>)}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
-          <p className="mt-2 uppercase text-[var(--muted)]">what you can always do</p>
+          <p className="mt-2 uppercase text-[var(--muted)]">What you can always do</p>
           <ul className="mt-1 list-disc pl-4 text-[var(--muted)]">
-            {(privacy.data?.learner_controls ?? []).map((c) => (
-              <li key={c}>{c}</li>
+            {(privacy.data?.learner_controls ?? []).map((control) => (
+              <li key={control}>{control}</li>
             ))}
           </ul>
         </div>

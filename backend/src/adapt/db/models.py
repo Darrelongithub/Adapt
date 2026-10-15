@@ -1087,6 +1087,10 @@ class TeachingMemoryEntry(Base):
     kind: Mapped[str] = mapped_column(String(24), index=True)
     ref: Mapped[str] = mapped_column(String(96))
     text: Mapped[str | None] = mapped_column(EncryptedText(context="memory.text"))
+    #: Part C: the method and analogy shown, and which lesson moment produced this memory.
+    method: Mapped[str | None] = mapped_column(String(48))
+    analogy_id: Mapped[str | None] = mapped_column(String(96))
+    moment: Mapped[str | None] = mapped_column(String(24))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
     __table_args__ = (

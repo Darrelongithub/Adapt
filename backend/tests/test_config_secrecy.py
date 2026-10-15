@@ -356,6 +356,7 @@ def test_log_boundary_scrubs_messages_and_drops_raw_tracebacks(tmp_path, caplog)
             )
             logger.error("raw quota metadata=%s", {"headroom": {"calls_left": 4}, "budget": 913})
             logger.error('{"error":"model_budget_exhausted","headroom":{"calls_left":1}}')
+            logger.error('{"model":"%s","api_key":"%s"}', CANARY_MODEL, CANARY_KEY)
             logger.error(
                 "structured metadata",
                 extra={
@@ -386,6 +387,36 @@ def test_log_boundary_scrubs_messages_and_drops_raw_tracebacks(tmp_path, caplog)
                 assert record.headroom == "[withheld]"
     finally:
         install_log_redaction(get_settings())
+
+
+def test_uvicorn_access_log_args_remain_format_compatible_after_redaction(tmp_path):
+    """The access formatter consumes a five-value tuple after the secrecy filter runs."""
+    import logging
+
+    from uvicorn.logging import AccessFormatter
+
+    from adapt.security.secrecy import _redact_log_record
+
+    settings = _settings(tmp_path)
+    secret_url = "/items?api_key=access-log-canary"
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:4321", "GET", secret_url, "1.1", 200),
+        None,
+    )
+
+    _redact_log_record(record, settings)
+
+    assert isinstance(record.args, tuple) and len(record.args) == 5
+    rendered = AccessFormatter().format(record)
+    assert "/items?" in rendered and "[withheld]" in rendered
+    assert "200" in rendered
+    assert "access-log-canary" not in rendered
+    assert "Logging error" not in rendered
 
 
 def test_llm_guard_quota_error_is_safe_at_the_live_http_boundary(client, learner, monkeypatch):

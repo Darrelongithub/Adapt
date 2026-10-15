@@ -866,6 +866,32 @@ class LessonAdapter:
                  "kind": "text", "content": {"text": " ".join(pack.explanation) or pack.title, "note": "a picture was to lead, but there is no material to draw from yet, so the words lead instead", "fallback_for": "visual"}, "why": why},
                 "a picture was to lead, but there is no material to draw from yet, so the words lead instead")
 
+    # -- frozen Part C lesson contract ------------------------------------ #
+
+    def write_frozen_lesson(self, pack: Any, concept_id: str, snapshot: Any, *, model: Callable[..., Any] | None = None) -> Any:
+        """Route a frozen Pack through the checked AI 3 writer.
+
+        The older :meth:`plan` remains the deterministic template adapter for the
+        Phase 5 contract. Part C has a separate, frozen ``Pack``/``LessonPlan`` shape;
+        importing it lazily keeps the two wire contracts distinct while making the
+        model-backed path and its simple fallback reachable through this adapter.
+        """
+        from .lesson_writer import write_lesson
+
+        return write_lesson(pack, concept_id, snapshot, model=model)
+
+    def explain_frozen_after_wrong(self, pack: Any, item_id: str, learner_answer: Any, snapshot: Any, memory: Any, *, model: Callable[..., Any] | None = None) -> Any:
+        """Checked misconception-specific AI 3 response for the frozen Pack contract."""
+        from .lesson_writer import explain_after_wrong
+
+        return explain_after_wrong(pack, item_id, learner_answer, snapshot, memory, model=model)
+
+    def reteach_frozen(self, pack: Any, concept_id: str, snapshot: Any, memory: Any, *, model: Callable[..., Any] | None = None) -> Any:
+        """Code-select a fresh re-teaching method before asking AI 3 for wording."""
+        from .lesson_writer import reteach
+
+        return reteach(pack, concept_id, snapshot, memory, model=model)
+
     # -- model proposals ---------------------------------------------------- #
 
     def plan_from_model(
@@ -1218,7 +1244,6 @@ def validate_model_plan(
                 reasons.append(f"{where}: {why_read}")
         seen_formats.append(kind)
         previous_kind = kind
-        text_key = str(content.get("text") or content.get("question") or kind)
         blocks.append({
             "block": i + 1,
             "chunk_id": str(raw.get("chunk_id") or _chunk_id(pack.concept or pack.title, kind, json.dumps(content, sort_keys=True, default=str))),

@@ -379,15 +379,53 @@ def ensure_example(
 # --------------------------------------------------------------------------- #
 
 
+def _mcq_misconception_hints(item: Mapping[str, Any]) -> list[str]:
+    """Build one MCQ hint from each available distractor misconception."""
+    reasons = distractor_reasons(item)
+    if reasons:
+        templates = (
+            "Watch for this tempting error: {why}.",
+            "Test the idea behind a distractor: {why}.",
+            "Before you choose, rule out this misconception: {why}.",
+        )
+        return [
+            template.format(why=_halt(reasons[i % len(reasons)][1]).rstrip(" .;!?"))
+            for i, template in enumerate(templates)
+        ]
+
+    # Imported choice items may not carry authored misconception text. In that case,
+    # point at distinct wrong options rather than pretending a generic wrapper is a hint.
+    correct = correct_choice(item)
+    correct_text = str(correct.get("text") or "") if correct else ""
+    distractors = [
+        str(choice.get("text") or "").strip()
+        for choice in (item.get("choices") or [])
+        if isinstance(choice, Mapping) and str(choice.get("text") or "").strip() != correct_text
+    ]
+    stem = _halt(str(item.get("stem") or "the question"))
+    if not distractors:
+        return [
+            f"Put the question in your own words before choosing: {stem}.",
+            f"Name what a correct choice must satisfy for this question: {stem}.",
+            f"Explain how your choice answers the full question: {stem}.",
+        ]
+    templates = (
+        "Ask what makes “{option}” tempting, then compare it with the question.",
+        "Check whether “{option}” answers the exact thing the question asks.",
+        "Before you choose, explain why “{option}” does or does not fit.",
+    )
+    return [
+        template.format(option=_halt(distractors[i % len(distractors)]))
+        for i, template in enumerate(templates)
+    ]
+
+
 def _nudge(item: Mapping[str, Any]) -> str:
     """Restate the task, so the first thing the learner sees is what is actually being asked."""
     stem = _halt(str(item.get("stem") or ""))
     terms = _words(stem)[:3]
     if item.get("choices"):
-        return (
-            f"This is one of those “which one is right” questions: {stem}. Read all the options before choosing — "
-            "three of them were written to catch a specific mistake."
-        )
+        return _mcq_misconception_hints(item)[0]
     if terms:
         return f"What is being asked, in your own words: {stem}. The ideas doing the work are {' and '.join(terms)}."
     return f"What is being asked, in your own words: {stem}."
@@ -395,6 +433,8 @@ def _nudge(item: Mapping[str, Any]) -> str:
 
 def _method(item: Mapping[str, Any]) -> str:
     """The first move, quoted from the item's own worked example."""
+    if item.get("choices"):
+        return _mcq_misconception_hints(item)[1]
     steps = ensure_example(item)
     if steps:
         first = str(steps[0].get("text") or "")
@@ -409,17 +449,7 @@ def _method(item: Mapping[str, Any]) -> str:
 def _near_answer(item: Mapping[str, Any]) -> str:
     """How to check yourself, without handing over the answer."""
     if item.get("choices"):
-        reasons = distractor_reasons(item)
-        if reasons:
-            text, why = reasons[0]
-            return (
-                f"Before you commit, run your choice against the trap: one option you can already take out is "
-                f"“{_halt(text)}”, because {_halt(why)}. If your answer was that one, it tells you which step to redo."
-            )
-        return (
-            "Before you commit, check that the option you picked answers the question that was asked, "
-            "not a near-miss of it."
-        )
+        return _mcq_misconception_hints(item)[2]
     value, how, variables = computable_value(item)
     if value is not None:
         return (
@@ -548,6 +578,29 @@ def verify_example(item: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]) 
         if len(steps) > 2 and needle and needle in str(steps[0].get("text") or "").lower():
             flags.append("answer_leaked_early")
     return Verdict(not flags, flags)
+
+
+def hint_template_body(item: Mapping[str, Any], hint: str) -> str:
+    """Normalize a hint after removing its item stem and quoted choice text.
+
+    The teaching-quality evaluator uses this to detect reusable boilerplate across items:
+    two hints that differ only because they repeat a stem or name a distractor should still
+    have the same template body.
+    """
+    text = str(hint or "").casefold()
+    targets = [str(item.get("stem") or "")]
+    for choice in item.get("choices") or item.get("options") or []:
+        if isinstance(choice, Mapping):
+            targets.append(str(choice.get("text") or ""))
+        else:
+            targets.append(str(choice or ""))
+    # Remove longer terms first so an option embedded in the stem does not leave fragments.
+    for target in sorted((t.strip().casefold() for t in targets if t.strip()), key=len, reverse=True):
+        escaped = re.escape(target)
+        pattern = rf"(?<!\w){escaped}(?!\w)" if re.fullmatch(r"\w+", target) else escaped
+        text = re.sub(pattern, " ", text)
+    # Case, punctuation, and whitespace do not make two otherwise identical templates distinct.
+    return " ".join(re.findall(r"[a-z0-9]+", text))
 
 
 def verify_hints(item: Mapping[str, Any], hints: Sequence[str]) -> Verdict:

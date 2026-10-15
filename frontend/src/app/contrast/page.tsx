@@ -19,6 +19,7 @@
 import { useEffect, useState } from "react";
 
 import { VisualFigure } from "@/components/visual";
+import { LessonRenderer, type LessonValue } from "@/components/lesson/LessonRenderer";
 import { Btn, Card, Err, Tag } from "@/components/ui";
 import { post } from "@/lib/api";
 
@@ -53,10 +54,21 @@ type Contrast = {
   concept: string;
   title: string;
   lessons: { profile: string; plan: Plan }[];
+  ai3_checked_output?: {
+    source: "written_for_you" | "simple";
+    lessons: { profile: string; label: string; plan: LessonValue }[];
+  };
   differences: { aspect: string; a: unknown; b: unknown }[];
   visibly_different: boolean;
   note: string;
 };
+
+function evidenceLabel(source: string, n: number): string {
+  const label = source.replaceAll("_", " ");
+  if (label === "stated") return "stated";
+  if (n === 0) return label === "default" ? "default" : `${label}; not measured`;
+  return `${label}, n=${n}`;
+}
 
 /* ------------------------------------------------------- demo profiles ---- */
 
@@ -266,11 +278,11 @@ export default function Contrast() {
       </Card>
 
       {error ? (
-        <Err error={`the two lessons could not be built (${error}). If you are not signed in, sign in and reload — the profiles above are the demo inputs either way.`} />
+        <Err error="We could not prepare the comparison just now. Please try again." />
       ) : null}
       {loading && !data ? (
         <Card title="building both lessons">
-          <p className="text-[13px] text-[var(--muted)]">Asking the backend to adapt the same content to both profiles.</p>
+          <p className="text-[13px] text-[var(--muted)]">Preparing two versions of the same lesson for these example profiles.</p>
         </Card>
       ) : null}
 
@@ -302,11 +314,21 @@ export default function Contrast() {
             <p className="mt-2 text-[12px] text-[var(--muted)]">{data.note}</p>
           </Card>
 
-          <div className="grid items-start gap-4 lg:grid-cols-2">
-            {data.lessons.map((lesson) => (
-              <LessonColumn key={lesson.profile} profile={lesson.profile} plan={lesson.plan} />
-            ))}
-          </div>
+          {data.ai3_checked_output?.lessons?.length ? (
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              {data.ai3_checked_output.lessons.map((lesson) => (
+                <Card key={lesson.profile} title={lesson.profile}>
+                  <LessonRenderer value={lesson.plan} contrastLabel />
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              {data.lessons.map((lesson) => (
+                <LessonColumn key={lesson.profile} profile={lesson.profile} plan={lesson.plan} />
+              ))}
+            </div>
+          )}
         </>
       ) : null}
     </div>
@@ -343,7 +365,7 @@ function BlockView({ block }: { block: Block }) {
       <div className="mb-1.5 flex items-center gap-2">
         <Tag tone="line">{block.kind.replaceAll("_", " ")}</Tag>
         <span className="text-[11px] text-[var(--muted)]">
-          why: {block.why.text} <span className="font-mono">(n={block.why.n})</span>
+          why: {block.why.text} <span className="font-mono">({evidenceLabel(block.why.source, block.why.n)})</span>
         </span>
       </div>
       {block.kind === "visual" ? (
@@ -388,7 +410,7 @@ function WhyPanel({ plan }: { plan: Plan }) {
           <li key={i}>
             <span className="font-medium">{row.decision}.</span> {row.text}{" "}
             <span className="font-mono text-[var(--muted)]">
-              ({row.source}, n={row.n}
+              ({evidenceLabel(row.source, row.n)}
               {row.evidence_ids.length ? `, from ${row.evidence_ids.join(", ")}` : ""})
             </span>
           </li>
@@ -408,8 +430,7 @@ function WhyPanel({ plan }: { plan: Plan }) {
         </ul>
       ) : null}
       <p className="mt-2 text-[11px] text-[var(--muted)]">
-        {panel.mode_note} · planned from profile version {plan.provenance.model_version ?? 0},{" "}
-        {plan.provenance.evidence_n} piece{plan.provenance.evidence_n === 1 ? "" : "s"} of evidence behind it.
+        These are made-up example profiles; no real learner history is included.
       </p>
     </section>
   );

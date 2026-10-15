@@ -143,6 +143,72 @@ def test_every_shipped_item_has_three_graded_hints_and_none_is_generic(services)
         assert "write down the single fact the question is asking for" not in " ".join(hints).lower()
 
 
+def test_closing_prompts_follow_item_kind_instead_of_learner_level():
+    assert LT.closing_prompt({"kind": "numeric"}, has_example=True) == (
+        "Try one: copy the first line of the example and change only the numbers."
+    )
+    assert "change the numbers" in LT.closing_prompt({"kind": "numeric"}, has_example=False)
+    assert "Cover the options" in LT.closing_prompt({"kind": "mcq"}, has_example=True)
+    assert "recall the key fact without looking" in LT.closing_prompt({"kind": "factual"}, has_example=True)
+    assert "recall the key fact without looking" in LT.closing_prompt({"kind": "text"}, has_example=True)
+    assert LT.closing_prompt({"kind": "unclassified"}, has_example=False) is None
+    assert LT.closing_prompt(None, has_example=True) is None
+
+
+def test_every_bank_concept_has_a_key_idea_and_reason_before_its_worked_steps():
+    from adapt.assessment import bank as BANK
+
+    assert set(BANK.TOPIC_TEACHING) == {topic["code"] for topic in BANK.TOPICS}
+    for topic in BANK.TOPICS:
+        authored = BANK.TOPIC_TEACHING[topic["code"]]
+        for field in ("key_idea", "why_it_works"):
+            sentence = authored[field]
+            assert sentence.endswith(".")
+            assert sum(sentence.count(mark) for mark in ".!?") == 1, (topic["code"], field, sentence)
+
+    topic_code = "fraction_add"
+    item = {
+        "id": "simple-explanation-test",
+        "kind": "numeric",
+        "topic_id": topic_code,
+        "stem": "Add one quarter and one third.",
+        "solution_steps": [{"text": "Rewrite both fractions with denominator twelve, then add the numerators."}],
+    }
+    out = LT.explain(
+        item["stem"],
+        index=LT.BM25([]),
+        topic_title="Adding and subtracting fractions",
+        topic_id=topic_code,
+        item=item,
+        segment=False,
+    )
+    labels = [section["label"] for section in out.sections]
+    assert labels.index("key idea") < labels.index("worked example")
+    assert labels.index("why it works") < labels.index("worked example")
+    assert BANK.TOPIC_TEACHING[topic_code]["key_idea"] in out.text
+    assert BANK.TOPIC_TEACHING[topic_code]["why_it_works"] in out.text
+
+
+def test_generic_mcq_hints_are_derived_from_distractor_misconceptions():
+    item = {
+        "id": "mcq-hint-test",
+        "kind": "mcq",
+        "stem": "Which fraction is greater, one half or two thirds?",
+        "choices": [
+            {"text": "two thirds", "correct": True},
+            {"text": "one half", "correct": False, "why_wrong": "The smaller denominator does not make the fraction greater."},
+            {"text": "three fifths", "correct": False, "why_wrong": "Comparing only the numerators ignores the size of each part."},
+        ],
+        "answer_spec": {"correct_index": 0},
+    }
+    hints = W.generate_hints(item)
+    assert len(hints) == 3
+    assert "which one is right questions" not in " ".join(hints).lower()
+    assert any("smaller denominator" in hint for hint in hints)
+    assert any("comparing only the numerators" in hint.lower() for hint in hints)
+    assert W.verify_hints(item, hints).ok
+
+
 def test_a_hint_with_no_ladder_is_generated_for_the_item_not_for_every_item(services):
     """The generic sentence is gone from the fallback path as well."""
     bare = {

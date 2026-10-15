@@ -21,6 +21,8 @@ that passed every code check), and that is all the client is told.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -81,6 +83,138 @@ def _pack_for(s: Session, *, body_pack: dict[str, Any] | None, topic_id: str | N
         if versions is not None:
             return versions
     return None
+
+
+def _legacy_frozen_pack(content_pack: dict[str, Any] | None, *, concept_id: str, title: str) -> dict[str, Any]:
+    """Convert the old display-pack envelope at the contrast boundary only.
+
+    The AI 3 writer still consumes the frozen Pack contract. Legacy questions are
+    deliberately not promoted to verified assessment items here; only their checked
+    explanatory material becomes facts.
+    """
+    import re
+
+    raw = content_pack or {}
+    versions = raw.get("versions") or raw.get("variants") or {}
+    explanation: Any = raw.get("explanation") or raw.get("source_text") or raw.get("text")
+    if not explanation and isinstance(versions, dict):
+        candidate = versions.get("written") or versions.get("text") or {}
+        explanation = candidate.get("text") if isinstance(candidate, dict) else candidate
+    if isinstance(explanation, list):
+        explanation = " ".join(str(value) for value in explanation)
+    if isinstance(explanation, dict):
+        explanation = explanation.get("text") or " ".join(
+            str(step.get("text") or "") for step in explanation.get("steps") or [] if isinstance(step, dict)
+        )
+    explanation_text = " ".join(str(explanation or "").split())
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", explanation_text) if part.strip()]
+    facts: list[dict[str, str]] = []
+    for row in raw.get("facts") or raw.get("key_facts") or []:
+        if isinstance(row, dict):
+            statement = str(row.get("statement") or "").strip()
+            fact_id = str(row.get("id") or "")
+        else:
+            statement = str(row).strip()
+            fact_id = ""
+        if statement and not any(f["statement"] == statement for f in facts):
+            facts.append({"id": fact_id or f"{concept_id}:fact:{len(facts) + 1}", "statement": statement})
+    for statement in sentences:
+        if not any(f["statement"] == statement for f in facts):
+            facts.append({"id": f"{concept_id}:fact:{len(facts) + 1}", "statement": statement})
+    idea = str(raw.get("key_idea") or (facts[0]["statement"] if facts else ""))
+    reason = str(raw.get("why_it_works") or (facts[1]["statement"] if len(facts) > 1 else ""))
+    if not facts:
+        for label, statement in (("key-idea", idea), ("why", reason)):
+            if statement.strip():
+                facts.append({"id": f"{concept_id}:{label}", "statement": statement.strip()})
+    return {
+        "topic_key": str(raw.get("topic_id") or raw.get("concept") or concept_id),
+        "topic_title": str(raw.get("title") or title or concept_id),
+        "subject_family": "",
+        "source": "authored",
+        "concepts": [{
+            "id": concept_id,
+            "name": str(raw.get("title") or title or raw.get("concept") or concept_id),
+            "key_idea": idea,
+            "why_it_works": reason,
+            "prerequisites": [],
+            "rung": 2,
+            "key_facts": facts,
+            "misconceptions": [
+                dict(row) for row in raw.get("misconceptions") or [] if isinstance(row, dict)
+            ],
+        }],
+        "prereq_edges": [],
+        "items": [],
+    }
+
+
+def _contrast_ai3(
+    *,
+    pack: dict[str, Any],
+    concept_id: str,
+    profiles: list[dict[str, Any]],
+    student_id: str,
+) -> dict[str, Any]:
+    """Real checked AI 3 proposals when configured; deterministic templates otherwise.
+
+    Both profile calls share one bounded deadline. The contrast request therefore cannot
+    take two sequential model timeouts; any late or failed profile is filled by the same
+    deterministic writer used when no key is configured.
+    """
+    from .lesson import _configured_model, _model_callable
+    from ...ai.lesson_writer.core import MODEL_TIMEOUT_SECONDS
+
+    model = _model_callable(student_id) if _configured_model() else None
+    snapshots = [
+        {
+            "levers": profile.get("levers") or {},
+            "preferences": profile.get("preferences") or {},
+            "learner_rung": (profile.get("ladder") or {}).get("rung", 2),
+            "recent_evidence": profile.get("recent_evidence") or {"rows": [], "evidence_ids": [], "n": 0},
+            "lesson_explanations": profile.get("teaching_memory") or [],
+        }
+        for profile in profiles
+    ]
+    values: list[Any | None] = [None] * len(profiles)
+
+    def write_one(index: int) -> None:
+        try:
+            values[index] = adapter.write_frozen_lesson(pack, concept_id, snapshots[index], model=model)
+        except Exception as exc:
+            log.warning("contrast AI3 profile fell back (%s)", type(exc).__name__)
+            values[index] = adapter.write_frozen_lesson(pack, concept_id, snapshots[index], model=None)
+
+    if model is None:
+        for index in range(len(profiles)):
+            write_one(index)
+    else:
+        workers = [
+            threading.Thread(target=write_one, args=(index,), name=f"adapt-contrast-ai3-{index}", daemon=True)
+            for index in range(len(profiles))
+        ]
+        for worker in workers:
+            worker.start()
+        deadline = time.monotonic() + MODEL_TIMEOUT_SECONDS + 0.25
+        for worker in workers:
+            worker.join(max(0.0, deadline - time.monotonic()))
+        for index, value in enumerate(values):
+            if value is None:
+                log.warning("contrast AI3 profile exceeded the shared deadline; using template")
+                values[index] = adapter.write_frozen_lesson(pack, concept_id, snapshots[index], model=None)
+
+    lessons = []
+    for profile, value in zip(profiles, values):
+        assert value is not None
+        lessons.append({
+            "profile": str(profile.get("name") or "Profile"),
+            "label": "written for this profile, checked" if value.source == "written_for_you" else "template lesson",
+            "plan": value.as_dict(),
+        })
+    return {
+        "lessons": lessons,
+        "source": "written_for_you" if any(row["plan"]["source"] == "written_for_you" for row in lessons) else "simple",
+    }
 
 
 def _inputs(s: Session, student_id: str, body: PlanBody) -> dict[str, Any]:
@@ -185,7 +319,15 @@ def contrast(
         )
     pack = _pack_for(s, body_pack=body.content_pack, topic_id=body.topic_id, learner_id=student.id)
     try:
-        return adapter.contrast(content_pack=pack, concept=body.concept, title=body.title, profiles=body.profiles)
+        contrast_result = adapter.contrast(content_pack=pack, concept=body.concept, title=body.title, profiles=body.profiles)
+        frozen_pack = _legacy_frozen_pack(pack, concept_id=body.concept or str((pack or {}).get("concept") or "concept"), title=body.title)
+        contrast_result["ai3_checked_output"] = _contrast_ai3(
+            pack=frozen_pack,
+            concept_id=str(frozen_pack["concepts"][0]["id"]),
+            profiles=body.profiles,
+            student_id=student.id,
+        )
+        return contrast_result
     except AdaptationError as exc:
         raise HTTPException(status_code=422, detail={"error": "adaptation_refused", "message": str(exc)}) from exc
 

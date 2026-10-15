@@ -26,8 +26,9 @@ import math
 import random
 import re
 from collections import Counter, defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 log = logging.getLogger("adapt.tutor")
 
@@ -375,6 +376,36 @@ def _opener(level: str, context: str, *, topic_title: str | None, seed: str) -> 
     return rng.choice(pool).replace("{topic}", topic_title or "this")
 
 
+def closing_prompt(item: Mapping[str, Any] | None, *, has_example: bool) -> str | None:
+    """Choose a useful next move from the answer format, or omit it when none fits."""
+    if not item:
+        return None
+    kind = str(item.get("kind") or "").strip().casefold().replace("-", "_")
+    if kind in {"numeric", "number"}:
+        return (
+            "Try one: copy the first line of the example and change only the numbers."
+            if has_example
+            else "Try one: change the numbers and work it out again."
+        )
+    if kind in {"mcq", "choice", "multiple_choice"}:
+        return "Cover the options, say which one you would pick, and explain why before you uncover them."
+    if kind in {"factual", "fact", "recall", "text", "short_text", "short_answer"}:
+        return "Look away and recall the key fact without looking, then check it against your notes."
+    return None
+
+
+def _topic_teaching(topic_id: str | None) -> dict[str, str]:
+    """Read the authored key idea and reason without importing the bank during module load."""
+    if not topic_id:
+        return {}
+    try:
+        from ..assessment.bank import TOPIC_TEACHING
+
+        return dict(TOPIC_TEACHING.get(str(topic_id), {}))
+    except (ImportError, AttributeError):  # pragma: no cover - the bank is shipped with the tutor
+        return {}
+
+
 def explain(
     query: str,
     *,
@@ -505,6 +536,13 @@ def explain(
         add(prereq_note, "first, the prerequisite")
 
     opener = _opener(level, context, topic_title=topic_title, seed=seed or str((item or {}).get("id") or query))
+    topic_ideas = _topic_teaching(str(wanted_topic) if wanted_topic else None)
+
+    def add_topic_ideas() -> None:
+        if topic_ideas.get("key_idea"):
+            add(topic_ideas["key_idea"], "key idea")
+        if topic_ideas.get("why_it_works"):
+            add(topic_ideas["why_it_works"], "why it works")
 
     # Content: pick the most relevant material sentences, de-duplicated.
     seen: set[str] = set()
@@ -549,6 +587,7 @@ def explain(
         cap = 2 if not topic_match else 3  # a cross-topic answer stays short and to the point
         body = " ".join(_shorten(d.text, budget // max(1, len(chosen[:cap])) + 8) for d in chosen[:cap])
         add(body, "explanation", chosen[0])
+        add_topic_ideas()
     elif item and (item.get("solution_steps") or []):
         # The material has nothing relevant, but the question in front of the learner does —
         # its own worked example, written for it. Answering from that is grounded in the
@@ -559,6 +598,7 @@ def explain(
             "question's own working, checked against its answer key:",
             "where this came from",
         )
+        add_topic_ideas()
         lines = []
         for i, st in enumerate((item.get("solution_steps") or [])[:5]):
             txt = st.get("text") if isinstance(st, dict) else str(st)
@@ -629,21 +669,9 @@ def explain(
         )
 
     has_example = bool(item and (item.get("solution_steps") or []))
-    next_step = {
-        "new": (
-            "Try one: copy the first line of the example and change only the numbers."
-            if has_example
-            else "Try one with the smallest numbers you can think of, and say each step out loud."
-        ),
-        "developing": (
-            "Now do the next one without looking at the example, then compare."
-            if has_example
-            else "Now do the next one without looking back, then compare it with what you just did."
-        ),
-        "proficient": "Do the next two; tell me which step you skipped and why that was safe.",
-        "mastered": "Explain it back in two sentences as if to someone who has not seen it.",
-    }[level]
-    add(next_step, "your turn")
+    next_step = closing_prompt(item, has_example=has_example)
+    if next_step:
+        add(next_step, "your turn")
 
     applied = [k for k in dmap if k]
     text = "\n\n".join(p for p in parts if p)

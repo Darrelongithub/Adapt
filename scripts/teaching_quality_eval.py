@@ -20,7 +20,7 @@ The run fails when any of these five appear on the deterministic path:
 
 * ``off_topic`` — text shown as grounded while it came from a different topic (§4.1.2);
 * ``missing_example`` — the app would refer to a worked example it cannot show (§4.1.3);
-* ``generic_hint`` — a hint that could be pasted onto any question (§4.1.4);
+* ``generic_hint`` — a boilerplate hint, including an MCQ template whose stem and options can be removed to reveal the same body on at least three distinct items (§4.1.4);
 * ``placeholder`` — an unrendered ``{a}`` reached text a learner reads;
 * ``key_disagrees`` — the worked example contradicts the item's own answer key.
 
@@ -38,17 +38,19 @@ import json
 import os
 import re
 import sys
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND / "src"))
 
-from adapt.assessment import bank as BANK  # noqa: E402
-from adapt.assessment import worked as WORKED  # noqa: E402
-from adapt.ai import local_tutor as TUTOR  # noqa: E402
+from adapt.ai import local_tutor as TUTOR
+from adapt.assessment import bank as BANK
+from adapt.assessment import worked as WORKED
 
 #: An unrendered `{name}` placeholder. The name must start with a letter, matching
 #: ``assessment.numbas._UNRENDERED`` and ``assessment.worked.PLACEHOLDER``: `{3}` is a set
@@ -83,6 +85,30 @@ class Note:
     kind: str
     where: str
     detail: str
+
+
+def generic_hint_reuse_flags(
+    samples: Iterable[tuple[str, Mapping[str, Any], str]], *, scope: str
+) -> list[Flag]:
+    """Flag an item-free hint template reused on at least three distinct questions."""
+    by_body: dict[str, dict[str, str]] = defaultdict(dict)
+    for where, item, hint in samples:
+        body = WORKED.hint_template_body(item, hint)
+        if body:
+            by_body[body][where] = str(hint)
+    flags: list[Flag] = []
+    for body, items in sorted(by_body.items()):
+        if len(items) < 3:
+            continue
+        examples = ", ".join(list(items)[:3])
+        flags.append(
+            Flag(
+                "generic_hint",
+                f"hints:shared:{scope}",
+                f"the same item-free hint body appears on {len(items)} distinct items ({examples}): {body[:100]}",
+            )
+        )
+    return flags
 
 
 @dataclass
@@ -246,8 +272,10 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
     index = TUTOR.build_index(materials=materials, items=[dict(i) for _, _, i in items])
 
     maths = coverage.setdefault("maths", Coverage("maths"))
-    for topic_code, label, item in items:
+    hint_samples: list[tuple[str, Mapping[str, Any], str]] = []
+    for item_index, (topic_code, label, item) in enumerate(items):
         where = f"{topic_code}/{label}"
+        item_identity = f"{topic_code}#{item_index}"
         maths.items += 1
         maths.questions += 1
         maths.topics.add(topic_code)
@@ -256,6 +284,8 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
         # -- three graded hints ------------------------------------------------- #
         hints = WORKED.ensure_hints(item)
         maths.hints += len(hints)
+        if item.get("choices"):
+            hint_samples.extend((item_identity, item, hint) for hint in hints)
         verdict = WORKED.verify_hints(item, hints)
         if verdict.flags:
             for flag in verdict.flags:
@@ -313,6 +343,8 @@ def walk_bank(coverage: dict[str, Coverage], flags: list[Flag], notes: list[Note
             if sentence and not sentence.rstrip().endswith((".", "!", "?", "…", ":")):
                 notes.append(Note("cut_sentence", f"explain:{where}", sentence[-60:]))
                 break
+
+    flags.extend(generic_hint_reuse_flags(hint_samples, scope="bank"))
 
 
 def _skill_pool(skill_id: str) -> tuple[dict[str, Any], ...]:
@@ -440,6 +472,7 @@ def walk_content_engine(coverage: dict[str, Coverage], flags: list[Flag], notes:
         "topics": 0, "concepts": 0, "worked_example": 0, "matched_pair": 0,
         "three_hints": 0, "teach_back_checklist": 0, "visual_spec": 0, "rejections": 0,
     }
+    engine_hint_samples: list[tuple[str, Mapping[str, Any], str]] = []
     for key in (
         "calculus", "algebra", "statistics", "government", "biology", "chemistry",
         "world_history", "grammar", "essay_writing", "discrete_maths", "kiswahili",
@@ -485,8 +518,10 @@ def walk_content_engine(coverage: dict[str, Coverage], flags: list[Flag], notes:
             if len(pack.hints) >= 3:
                 totals["three_hints"] += 1
                 cov.hints += 3
+                hint_anchor = dict(pack.pair.get("A") or pack.pair.get("B") or {})
                 for hint in pack.hints[:3]:
                     text = str(hint.get("text") or "")
+                    engine_hint_samples.append((where, hint_anchor, text))
                     if any(marker in text.lower() for marker in GENERIC_MARKERS):
                         flags.append(Flag("generic_hint", where, f"a generated hint reads as generic: {text[:90]}"))
                     if PLACEHOLDER.search(text):
@@ -505,6 +540,7 @@ def walk_content_engine(coverage: dict[str, Coverage], flags: list[Flag], notes:
     for pack in (breakdown_for("astrophysics"),):
         if pack.available:
             flags.append(Flag("missing_content", "engine:astrophysics", "a topic with no chain reported content"))
+    flags.extend(generic_hint_reuse_flags(engine_hint_samples, scope="generated content"))
     notes.append(
         Note(
             "engine_coverage",
@@ -660,7 +696,9 @@ def report(
     lines.append("")
     lines.append("* `off_topic` — text was shown as grounded while it came from another topic (brief 4.1.2).")
     lines.append("* `missing_example` — the app would refer to a worked example it cannot show (4.1.3).")
-    lines.append("* `generic_hint` — a hint that could be pasted onto any question in the bank (4.1.4).")
+    lines.append(
+        "* `generic_hint` — boilerplate text, including an MCQ hint body repeated on three distinct items (4.1.4)."
+    )
     lines.append("* `placeholder` — an unrendered `{a}` reached text a learner reads.")
     lines.append("* `key_disagrees` — the worked example contradicts the item's own answer key.")
     lines.append("* A `no_item_reason` note is not a defect: the reasoning for a bank item is its topic's")
