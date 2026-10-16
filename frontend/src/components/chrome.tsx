@@ -10,14 +10,22 @@ import { get, isMock, logout, type Me } from "@/lib/api";
 import type { Health, Status } from "@/lib/types";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 
-export const NAV = [
+/** Always-shown entries for a new learner (round 3, Track R).
+ *  Anything else is hidden behind the "More" disclosure so the sidebar
+ *  has four items, not twelve, the first time a learner opens it. */
+export const NAV_PRIMARY: { href: string; label: string }[] = [
   { href: "/", label: "Home" },
-  { href: "/learn", label: "Practise" },
-  { href: "/lesson", label: "Lessons" },
-  { href: "/proposals", label: "Changes" },
+  { href: "/learn", label: "Learn" },
   { href: "/review", label: "Review" },
   { href: "/progress", label: "Progress" },
-  // First entry opens the baseline; returning learners can resume it from Home.
+];
+
+/** The rest of the destinations, hidden behind a "More" disclosure by default
+ *  (round 3, Track R).  They remain in the same order as before so existing
+ *  muscle memory still finds them. */
+export const NAV_MORE: { href: string; label: string }[] = [
+  { href: "/lesson", label: "Lessons" },
+  { href: "/proposals", label: "Changes" },
   { href: "/baseline", label: "Mind check" },
   { href: "/subject", label: "Subject round" },
   { href: "/contrast", label: "Compare lessons" },
@@ -26,6 +34,9 @@ export const NAV = [
   { href: "/settings", label: "Settings" },
   { href: "/journey", label: "Your path" },
 ];
+
+/** The combined list, used by `activeHref` so any route still resolves. */
+export const NAV = [...NAV_PRIMARY, ...NAV_MORE];
 
 /** Red bar, every screen, whenever the data on it is not real. */
 export function MockBanner() {
@@ -149,8 +160,8 @@ export function Chrome({ children }: { children: ReactNode }) {
         <Link href="/" className="sidebar-brand" onClick={() => setOpen(false)}>
           ad<b>apt</b>
         </Link>
-        <nav>
-          {NAV.map((n, i) => {
+        <nav data-testid="sidebar-nav">
+          {NAV_PRIMARY.map((n, i) => {
             const here = n.href === current;
             return (
               <Link
@@ -160,12 +171,17 @@ export function Chrome({ children }: { children: ReactNode }) {
                 aria-current={here ? "page" : undefined}
                 onNavigate={() => setOpen(false)}
               >
-                <span className="sidebar-num">{i === 0 ? "⌂" : String(i).padStart(2, "0")}</span>
+                <span className="sidebar-num">{i === 0 ? "⌂" : String(i + 1).padStart(2, "0")}</span>
                 <span className="sidebar-label">{n.label}</span>
                 <NavigationPending label={n.label} />
               </Link>
             );
           })}
+          {/* Round 3 (Track R): the rest of the destinations sit under a
+              "More" disclosure.  It opens by default when the current route
+              lives there, so a learner who followed a deep link to /lesson
+              still sees the row they are on. */}
+          <SidebarMore current={current} onClose={() => setOpen(false)} />
         </nav>
         <div className="sidebar-status">
           {/* What the app is running on, in the one place that is on every screen. */}
@@ -213,6 +229,49 @@ function NavigationPending({ label }: { label: string }) {
 export function activeHref(pathname: string): string | null {
   const hit = NAV.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
   return hit ? hit.href : null;
+}
+
+/** The "More" disclosure in the sidebar (round 3, Track R).
+ *  Shows the secondary nav under a toggle; opens by default when the current
+ *  route is in there, so a deep-linked learner sees the row they are on. */
+function SidebarMore({ current, onClose }: { current: string | null; onClose: () => void }) {
+  const isOnMore = current ? NAV_MORE.some((n) => n.href === current) : false;
+  const [open, setOpen] = useState<boolean>(isOnMore);
+  useEffect(() => { setOpen(isOnMore); }, [isOnMore]);
+  return (
+    <>
+      <button
+        type="button"
+        className="sidebar-item sidebar-more"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        data-testid="sidebar-more"
+      >
+        <span className="sidebar-label">{open ? "Less" : "More"}</span>
+        <span aria-hidden="true">{open ? "▴" : "▾"}</span>
+      </button>
+      {open ? (
+        <div data-testid="sidebar-more-items">
+          {NAV_MORE.map((n, i) => {
+            const here = n.href === current;
+            return (
+              <Link
+                key={n.href}
+                href={n.href}
+                className={`sidebar-item${here ? " active" : ""}`}
+                aria-current={here ? "page" : undefined}
+                onNavigate={onClose}
+              >
+                <span className="sidebar-num">{String(NAV_PRIMARY.length + i + 1).padStart(2, "0")}</span>
+                <span className="sidebar-label">{n.label}</span>
+                <NavigationPending label={n.label} />
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function Who() {

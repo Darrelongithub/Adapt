@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from types import SimpleNamespace
 
@@ -341,6 +342,11 @@ def test_wrong_answer_explanation_uses_actual_answer_and_matched_misconception(
         "n": 1,
     }
     answer = "Add the denominators too"
+    # Round 3 (Track S): the validator now rejects plans with duplicate check
+    # stems — a model that asks the same MCQ three times is no longer
+    # promoted.  The proposal still has to demonstrate that the explanation
+    # carries the actual answer and the matched misconception, but each
+    # check block now has to be a different question.
     proposal = {
         "blocks": [
             _block(
@@ -372,7 +378,10 @@ def test_wrong_answer_explanation_uses_actual_answer_and_matched_misconception(
             ),
             _block(
                 "check",
-                {"question": "What does a shared denominator name?", "item_id": "item-fraction-a"},
+                {
+                    "question": "When sizes match, what do you add?",
+                    "item_id": "item-fraction-b",
+                },
                 ["f-denominator"],
                 evidence_ids=["ev-wrong-1"],
                 n=1,
@@ -395,7 +404,7 @@ def test_wrong_answer_explanation_uses_actual_answer_and_matched_misconception(
             ),
             _block(
                 "check",
-                {"question": "What does a shared denominator name?", "item_id": "item-fraction-a"},
+                {"question": "What is the main idea here?", "item_id": None},
                 ["f-denominator"],
                 evidence_ids=["ev-wrong-1"],
                 n=1,
@@ -618,7 +627,92 @@ def test_simple_fallback_honors_kiswahili_preference_when_pack_is_english(fixtur
     snapshot["preferences"]["language"] = "sw"
     plan = write_lesson(fixture_pack, "fraction-addition", snapshot)
     strings = " ".join(str(block.body) for block in plan.blocks)
-    assert "maelezo yaliyokaguliwa" in strings
+    # Round 3 (Track S): the notice now begins with a capital "Maelezo" rather
+    # than the lowercase form the old notice used.  The intent of the check
+    # is "the language-specific refusal appeared"; case-insensitivity keeps
+    # the contract honest without coupling the test to a capital letter.
+    assert "maelezo yaliyokaguliwa" in strings.lower()
     assert "Fractions name equal-sized" not in strings
     check = next(block for block in plan.blocks if block.type == "check")
     assert check.body["question"] == "Ni wazo gani muhimu hapa?"
+
+
+def test_simple_initial_teaches_when_key_idea_overlaps_a_check_answer(fixture_pack, snapshot):
+    """Round 3 (Track S): the original _simple_initial withheld the key_idea
+    whenever it contained the answer to *any* eligible item, and the empty
+    fallback showed a "no checked material" notice.  For a concept like
+    photosynthesis whose key_idea names the very thing the MCQ asks about,
+    that was a refusal to teach.  The fix: pick a different check item whose
+    answer is NOT in the teaching sentences, and only fall through to the
+    language notice when the language is actually the problem.
+    """
+    # Rewrite the pack so the key_idea/why_it_works overlap one of the items'
+    # answer keys.  We do this in place to keep the rest of the fixture intact.
+    pack = json.loads(json.dumps(fixture_pack))
+    concept = pack["concepts"][0]
+    concept["key_idea"] = "Fractions name equal-sized parts of one whole."
+    concept["why_it_works"] = "A shared denominator names parts of the same size."
+    # Add a new item whose answer is exactly the key_idea, so the *original*
+    # code would have skipped the key_idea and refused to teach.
+    concept["items"] = list(concept.get("items", [])) + [
+        {
+            "id": "item-key-overlap",
+            "concept_id": concept["id"],
+            "kind": "mcq",
+            "stem": "What does a fraction name?",
+            "options": [
+                {"id": "yes", "text": "Equal-sized parts of one whole"},
+                {"id": "no", "text": "The numerator and denominator"},
+            ],
+            "key": "yes",
+            "pair_id": "pair-overlap",
+            "hints": [],
+            "teachback": [],
+            "fact_ids": ["f-fractions"],
+            "verification": "cross_checked",
+            "why": "The answer is in the key_idea.",
+        }
+    ]
+    plan = write_lesson(pack, concept["id"], snapshot)
+    text_blocks = [block for block in plan.blocks if block.type in ("text", "explain")]
+    assert text_blocks, (
+        "The lesson should have taught at least one sentence even when the key_idea "
+        "names the same words as a check answer."
+    )
+    joined = " ".join(_walk_strings(block.body) for block in text_blocks)
+    assert "Fractions name equal-sized parts of one whole" in joined
+    # The language notice must not appear in English, because English is the
+    # actual language of the teaching sentences and the bug was that the
+    # language notice was being shown for a non-language reason.
+    assert "no checked explanation" not in joined.lower()
+    # There must be a check on the page, and the chosen item must not be the
+    # one whose key leaked the key_idea — that would be a teach-then-test on
+    # the same sentence the learner just read.
+    check_blocks = [block for block in plan.blocks if block.type in ("check", "predict")]
+    assert check_blocks
+    chosen = check_blocks[0]
+    body = chosen.body if isinstance(chosen.body, dict) else {}
+    if "item_id" in body:
+        assert body["item_id"] != "item-key-overlap"
+
+
+def test_simple_initial_never_emits_internal_pack_term(fixture_pack, snapshot):
+    """Round 3 (Track S): the word "Pack" was leaking into learner text on
+    every refusal path.  The fix removed it from the language notice and
+    added a validator check that rejects any future "the/this/that/these/
+    those Pack" echo from the model.
+    """
+    pack = json.loads(json.dumps(fixture_pack))
+    plan = write_lesson(pack, "fraction-addition", snapshot)
+    rendered = " ".join(_walk_strings(block.body) for block in plan.blocks)
+    assert not re.search(r"\b(?:the|this|that|these|those)\s+Pack\b", rendered), rendered
+
+
+def _walk_strings(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_walk_strings(v) for v in value.values())
+    if isinstance(value, list):
+        return " ".join(_walk_strings(v) for v in value)
+    return ""

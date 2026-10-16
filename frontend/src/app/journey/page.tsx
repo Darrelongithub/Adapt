@@ -1,13 +1,12 @@
 "use client";
 
 /**
- * One path, and where you are on it.
- *
- * This screen is a *shell*: it does not ask the thirteen questions, play the games,
- * run the subject round or write a lesson. Each of those is a step with its own screen
- * and its own contract, and the shell's job is to say which one is next, why, and what
- * happens if you skip it — then hand over. Reimplementing any of them here would be the
- * duplication this phase exists to delete.
+ * Round 3 (Track T): the journey is now a one-screen flow rather than a
+ * list page that described the flow.  The page reads the server's stage
+ * state, renders the current stage's card, and auto-advances when the
+ * learner marks it done or skipped.  Returning learners can still reach
+ * the menu, but a new learner lands here from /onboarding and walks
+ * through the stages one at a time, not by clicking through a list.
  *
  * Three rules it holds to:
  *
@@ -22,7 +21,7 @@
  */
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ProgressBar, SignedOutPath, StageCard, StageList } from "@/components/journey";
 import { Btn, Card, Err, Notice, Tag, useSession } from "@/components/ui";
@@ -86,12 +85,12 @@ export default function Journey() {
         § Your path
       </div>
       <h1 className="mt-2 text-[clamp(24px,3.4vw,34px)] font-medium leading-tight" style={{ fontFamily: "var(--font-serif)" }}>
-        One path, eight steps
+        One step at a time
       </h1>
       <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-        Everything below happens on the screens that already do it. This page says where you are, why it is next, and what
-        happens if you skip it. Your place is stored against your account, so closing the browser — or opening it somewhere
-        else — brings you back to the same step.
+        {signedIn
+          ? "Each step below runs in turn. You can stop after any step."
+          : "Sign in or continue as a guest to start."}
       </p>
 
       {!signedIn ? (
@@ -110,7 +109,10 @@ export default function Journey() {
         </div>
       ) : (
         <div className="mt-6 space-y-6">
-          <Card title="How far you are" right={state ? <Tag tone="good">{state.stage === "practice" ? "the loop" : "next step"}</Tag> : null}>
+          <Card
+            title="How far you are"
+            right={state ? <Tag tone="good">{state.stage === "practice" ? "the loop" : "next step"}</Tag> : null}
+          >
             <ProgressBar state={state} />
             {journey.loading ? <p className="mt-2 text-sm text-[var(--muted)]">…</p> : null}
             {journey.error ? <Err error={journey.error} status={journey.status} /> : null}
@@ -122,12 +124,20 @@ export default function Journey() {
               <Btn onClick={refresh} kind="ghost">
                 reload who I am
               </Btn>
+              <Btn href="/learn" kind="ghost">
+                open the menu
+              </Btn>
             </div>
           </Card>
 
           {currentRow ? (
-            <Card title={`Step ${STEPS[currentRow.id].n} of 8`} tone="ask">
-              <StageCard row={currentRow} onSkip={skip} busy={journey.busy}>
+            <Card title={`Step ${STEPS[currentRow.id].n} of 8`} tone="ask" data-testid="journey-stages">
+              <StageCard
+                row={currentRow}
+                onSkip={skip}
+                busy={journey.busy}
+                onComplete={() => markDone(currentRow.id)}
+              >
                 {currentRow.id === "first_lesson" ? (
                   <WhyThisLesson prefs={prefs.data?.preferences} snapshot={snapshot.data} error={snapshot.error} />
                 ) : null}
@@ -151,35 +161,15 @@ export default function Journey() {
                   </p>
                 ) : null}
               </StageCard>
-              {currentRow.id !== "practice" && currentRow.id !== "account" ? (
-                <div className="mt-3">
-                  <Btn kind="ghost" onClick={() => markDone(currentRow.id)} disabled={journey.busy}>
-                    I have already done this elsewhere
-                  </Btn>
-                </div>
-              ) : null}
             </Card>
           ) : null}
 
-          <Card title="Every step" right={<span>stored with your account</span>}>
-            <StageList state={state} onSkip={skip} busy={journey.busy} />
-          </Card>
-
-          <Card title="The placement questions" tone="muted">
-            <p className="text-sm leading-relaxed">
-              Eight unaided questions, no hints and no worked examples. They place you on each topic with a confidence band —
-              they are measurement rather than a step on this path, so they are reachable from here at any point rather than
-              being something you have to pass through again.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Btn href="/diagnose" kind="ghost">
-                answer the placement questions
-              </Btn>
-              <Btn href="/progress" kind="ghost">
-                see the record so far
-              </Btn>
-            </div>
-          </Card>
+          <details className="r3-question-why-tap">
+            <summary>see every step</summary>
+            <Card title="Every step" right={<span>stored with your account</span>}>
+              <StageList state={state} onSkip={skip} busy={journey.busy} />
+            </Card>
+          </details>
 
           {state?.not_measured?.length ? (
             <Card title="What you skipped" tone="warn">

@@ -1025,6 +1025,20 @@ def host_cmd(
             if tunnel:
                 plan = _start_tunnel(session, plan, web_port)
             typer.echo("")
+            # Round 3 (Track T): one line on whether the model key is set, so
+            # the operator can tell at a glance whether lessons run in
+            # "written for you" mode or in the honest "simple mode" fallback.
+            # The key itself is never printed here; the boolean is enough.
+            try:
+                from .config_secrets import status_rows
+                for row in status_rows(st):
+                    if row["service"] == "gemini":
+                        typer.echo(
+                            f"[host] Model key: {'configured' if row['configured'] else 'not configured (lessons in simple mode)'}"
+                        )
+                        break
+            except Exception:  # pragma: no cover - never let status print break startup
+                pass
             for line in H.host_report(plan):
                 typer.echo(line)
             while dead is None:

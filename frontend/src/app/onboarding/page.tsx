@@ -118,18 +118,16 @@ export default function Onboarding() {
               Set up how this should run
             </h1>
             <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-              Everything here is a request you are making, so it applies straight away and needs no approval — the approval gate
-              is for changes proposed from measurement. Change any of it later on the{" "}
-              <Link href="/settings" className="link-inline">
-                settings screen
-              </Link>
-              .
+              These are requests — they apply right away. <a href="#how-this-works" className="link-inline">how it works</a>
             </p>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
-              The questions about <em>how you work</em> are asked once, on the mind check: thirteen of them, in one go, each
-              with the sentence that says what it changes. This screen is only about the account itself, so nothing is asked
-              twice.
-            </p>
+            <details id="how-this-works" className="r3-question-why-tap">
+              <summary>how it works</summary>
+              <p className="r3-question-why">
+                Changes you make here are requests, applied immediately. Changes the app proposes from measurement
+                go to a separate approval queue. You can change any of it later in{" "}
+                <Link href="/settings" className="link-inline">settings</Link>.
+              </p>
+            </details>
           </div>
 
           <Card title="Time">
@@ -178,13 +176,13 @@ export default function Onboarding() {
                 label="Keep the interaction log"
                 checked={consentAnalytics}
                 onChange={setConsentAnalytics}
-                hint="The order of events and timings — not keystrokes, not screenshots, not other tabs. Without it there is no evidence and no proposals, only questions."
+                hint="Order of events and timings only. Not keystrokes, not screenshots, not other tabs."
               />
               <Check
                 label="Allow a written-for-you summary when it would help"
                 checked={consentLlm}
                 onChange={setConsentLlm}
-                hint="The summary is topic mastery, hypotheses and approved changes — never your name or contact details. Off means every reply is written from your own material. A summary is shared only when this is on and a written-for-you reply is available."
+                hint="Topic mastery, hypotheses and approved changes. Never your name or contact details."
               />
             </div>
           </Card>

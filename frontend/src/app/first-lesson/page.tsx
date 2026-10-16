@@ -3,6 +3,14 @@
 /**
  * Your first lesson — the lesson writer's three moments, on one screen.
  *
+ * Round 3 (Track S): clicking a check option now registers the answer
+ * with the server, which grades it and returns the misconception matched
+ * to the chosen distractor.  The answer key never reaches the browser; the
+ * server's verdict drives the next step (a brief confirmation, or the
+ * misconception-specific follow-up).  The old "I had it right" / "I picked
+ * this and it was wrong" buttons are gone — the learner is no longer
+ * asked to grade their own work.
+ *
  * Phase G seam note: Round 2 froze the lesson routes (`/api/v1/lesson/plan`,
  * `/lesson/explain-wrong`, `/lesson/reteach`) and Part C built the block renderer, but no
  * learner screen called them — the journey's lesson step linked at the older scene screen.
@@ -10,11 +18,6 @@
  * working on, shows the checked plan, and offers the two moments that follow a struggle —
  * an explanation that starts from the answer actually chosen, and a re-teach that tries a
  * different way every time it is asked.
- *
- * One honest limit, stated plainly: nothing here grades the check question. The lesson's
- * answer key never comes to the browser (that is the leak rule), so the learner says which
- * happened — "I picked this and it was wrong" or "I had it" — and the app responds to what
- * they said. No invented verdict, no key on the wire.
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
@@ -27,6 +30,7 @@ type PlanReply = { plan: LessonValue; job_id?: string | null };
 type ExplanationReply = { explanation: LessonValue; job_id?: string | null };
 type Moment = { key: number; value: LessonValue; jobId?: string | null; heading: string };
 type CheckBody = { question?: string; item_id?: string; options?: { id: string; text: string }[] };
+type Verdict = "correct" | "wrong" | "pending";
 
 const METHOD_WORDS: Record<string, string> = {
   simpler_words: "plainer words",
@@ -60,9 +64,16 @@ function FirstLesson() {
   const [topic, setTopic] = useState<string | null>(null);
   const [concepts, setConcepts] = useState<Concept[] | null>(null);
   const [conceptId, setConceptId] = useState<string | null>(null);
+  const [topicMatch, setTopicMatch] = useState<boolean | null>(null);
+  const [source, setSource] = useState<string | null>(null);
   const [moments, setMoments] = useState<Moment[]>([]);
-  const [picked, setPicked] = useState<Record<string, string>>({});
-  const [answeredRight, setAnsweredRight] = useState<Record<string, boolean>>({});
+  // The option id the learner is sitting on while the server grades it.
+  const [pending, setPending] = useState<string | null>(null);
+  // Server verdict: `correct`, `wrong`, or `pending` (still grading).
+  const [verdictByItem, setVerdictByItem] = useState<Record<string, Verdict>>({});
+  // After a wrong answer, the server-sent misconception id — used to label
+  // the follow-up so the page can say "starting from the answer you chose".
+  const [misconceptionByItem, setMisconceptionByItem] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -82,6 +93,8 @@ function FirstLesson() {
     setNotice(null);
     setConcepts(null);
     setConceptId(null);
+    setTopicMatch(null);
+    setSource(null);
     setMoments([]);
     setStage("Checking what can be taught for this topic…");
     // Ask for the checked pack first: a typed topic has nothing to teach from until the
@@ -103,9 +116,9 @@ function FirstLesson() {
     setStage("Choosing an idea…");
     // this route is rate-limited, and the rate guard demands the CSRF token on every
     // method, so it is called through api() with the token rather than through get()
-    let listed: { topic: string; concepts: Concept[] } | null = null;
+    let listed: { topic: string; concepts: Concept[]; source?: string; topic_match?: boolean } | null = null;
     try {
-      listed = await api<{ topic: string; concepts: Concept[] }>("lesson/concepts", {
+      listed = await api<{ topic: string; concepts: Concept[]; source?: string; topic_match?: boolean }>("lesson/concepts", {
         query: { topic: wanted },
         csrf: true,
       });
@@ -122,6 +135,8 @@ function FirstLesson() {
     setBusy(false);
     setStage(null);
     setConcepts(listed.concepts);
+    setTopicMatch(Boolean(listed.topic_match));
+    setSource(listed.source ?? null);
   }, []);
 
   useEffect(() => {
@@ -143,12 +158,13 @@ function FirstLesson() {
     setBusy(false);
     setConceptId(wantedConcept);
     setMoments([{ key: 0, value: out.plan, jobId: out.job_id ?? null, heading: "Your lesson" }]);
-    setPicked({});
-    setAnsweredRight({});
+    setVerdictByItem({});
+    setMisconceptionByItem({});
+    setPending(null);
     setSeq(1);
   }
 
-  async function explainWrong(itemId: string, answer: string) {
+  async function explainWrong(itemId: string, answer: string, misconceptionId?: string) {
     if (!topic) return;
     setBusy(true);
     setNotice(null);
@@ -163,9 +179,12 @@ function FirstLesson() {
     setBusy(false);
     const key = seq;
     setSeq(seq + 1);
+    const heading = misconceptionId
+      ? "Why that answer feels right — and where it breaks"
+      : "The answer the lesson marked";
     setMoments((rows) => [
       ...rows,
-      { key, value: out.explanation, jobId: out.job_id ?? null, heading: "Why that answer feels right — and where it breaks" },
+      { key, value: out.explanation, jobId: out.job_id ?? null, heading },
     ]);
   }
 
@@ -195,19 +214,51 @@ function FirstLesson() {
     ]);
   }
 
+  /**
+   * Round 3 (Track S): clicking a check option registers the answer with
+   * the server, the server grades it, and the page reacts to the verdict.
+   * The learner never has to label their own work.
+   */
+  async function pickOption(itemId: string, optionId: string, optionText: string) {
+    if (!topic) return;
+    if (pending === itemId) return;
+    setPending(itemId);
+    setNotice(null);
+    let verdict: { correct: boolean; misconception_id?: string | null } | null = null;
+    try {
+      verdict = await post<{ correct: boolean; misconception_id?: string | null }>(
+        "lesson/grade",
+        { topic, item_id: itemId, selected: optionId, concept_id: conceptId ?? undefined },
+      );
+    } catch (err) {
+      setPending(null);
+      setNotice((err as Error).message || "The server could not grade that just now.");
+      return;
+    }
+    setPending(null);
+    if (verdict.correct) {
+      setVerdictByItem((rows) => ({ ...rows, [itemId]: "correct" }));
+      return;
+    }
+    setVerdictByItem((rows) => ({ ...rows, [itemId]: "wrong" }));
+    if (verdict.misconception_id) {
+      setMisconceptionByItem((rows) => ({ ...rows, [itemId]: verdict.misconception_id! }));
+    }
+    await explainWrong(itemId, optionText, verdict.misconception_id ?? undefined);
+  }
+
   const latest = moments.length ? moments[moments.length - 1] : null;
   const check = useMemo(() => (latest ? firstCheck(latest.value) : null), [latest]);
   const checkKey = check?.block.item_id ?? "";
-  const chosen = checkKey ? picked[checkKey] : undefined;
-  const done = checkKey ? answeredRight[checkKey] : false;
+  const verdict = checkKey ? verdictByItem[checkKey] : undefined;
+  const done = verdict === "correct";
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">Your first lesson</h1>
         <p className="text-sm text-[var(--muted)]">
-          One idea, written for the way you work — and if it does not land, a different explanation
-          every time you ask.
+          One idea, written for you.
         </p>
       </header>
 
@@ -233,7 +284,7 @@ function FirstLesson() {
             data-testid="fl-topic"
             value={topicDraft}
             onChange={(event) => setTopicDraft(event.target.value)}
-            placeholder="for example: fractions, photosynthesis, the French Revolution"
+            placeholder="for example: photosynthesis"
             className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
           />
           <button
@@ -250,7 +301,12 @@ function FirstLesson() {
 
       {concepts && concepts.length > 1 && !conceptId ? (
         <section className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4" aria-label="Choose an idea">
-          <h2 className="text-sm font-medium">Which idea first?</h2>
+          {source === "simple" ? (
+            <p className="text-sm text-[var(--muted)]" data-testid="fl-fallback-notice">
+              No detailed lesson for this topic offline — here is how to study it.
+            </p>
+          ) : null}
+          <h2 className="mt-2 text-sm font-medium">Which idea first?</h2>
           <div className="mt-2 flex flex-wrap gap-2">
             {concepts.map((concept) => (
               <button
@@ -268,74 +324,75 @@ function FirstLesson() {
       ) : null}
 
       {concepts && concepts.length === 1 && !conceptId && !busy ? (
-        <p className="text-sm text-[var(--muted)]">
-          Starting with <strong>{concepts[0].name || "the first idea"}</strong>.{" "}
-          <button type="button" className="link-inline" data-testid="fl-concept" onClick={() => void writeLesson(concepts[0].id)}>
-            Write the lesson
-          </button>
-        </p>
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4">
+          {source === "simple" ? (
+            <p className="text-sm text-[var(--muted)]" data-testid="fl-fallback-notice">
+              No detailed lesson for this topic offline — here is how to study it.
+            </p>
+          ) : null}
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Starting with <strong>{concepts[0].name || "the first idea"}</strong>.{" "}
+            <button type="button" className="link-inline" data-testid="fl-concept" onClick={() => void writeLesson(concepts[0].id)}>
+              Write the lesson
+            </button>
+          </p>
+        </div>
       ) : null}
 
-      {moments.map((moment) => (
-        <section key={moment.key} className="space-y-2" data-testid="fl-moment" aria-label={moment.heading}>
+      {moments.map((moment, momentIndex) => (
+        <section
+          key={moment.key}
+          className="space-y-2"
+          data-testid="fl-moment"
+          aria-label={moment.heading}
+        >
           <h2 className="text-sm font-medium">{moment.heading}</h2>
-          <LessonRenderer value={moment.value} upgradeJobId={moment.jobId} />
+          <LessonRenderer
+            value={moment.value}
+            upgradeJobId={moment.jobId}
+            collapseBlockWhy={momentIndex === 0}
+          />
         </section>
       ))}
 
       {check && !done ? (
-        <section className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4 space-y-2" aria-label="Your answer">
+        <section
+          className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4 space-y-2"
+          aria-label="Your answer"
+        >
           <h2 className="text-sm font-medium">{check.block.question}</h2>
-          <div className="grid gap-2" role="group" aria-label="Choose an option">
-            {(check.block.options ?? []).map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                data-testid="fl-option"
-                aria-pressed={chosen === option.id}
-                onClick={() => setPicked((rows) => ({ ...rows, [checkKey]: option.id }))}
-                className={`rounded-lg border px-3 py-2 text-left text-sm ${
-                  chosen === option.id ? "border-[var(--accent)] bg-[var(--panel)]" : "border-[var(--line)]"
-                }`}
-              >
-                {option.text}
-              </button>
-            ))}
+          <div className="r3-choices pill-grid" role="group" aria-label="Choose an option">
+            {(check.block.options ?? []).map((option) => {
+              const isPending = pending === checkKey;
+              const chosenWrong = verdict === "wrong" && pending === null;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  data-testid="fl-option"
+                  data-option-id={option.id}
+                  disabled={isPending || pending !== null}
+                  onClick={() => void pickOption(checkKey, option.id, option.text)}
+                  className={`choice-card${chosenWrong ? " is-selected" : ""}`}
+                >
+                  <span className="choice-body">
+                    <span className="choice-title">{option.text}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-          {chosen ? (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                data-testid="fl-wrong"
-                disabled={busy}
-                onClick={() => {
-                  const option = (check.block.options ?? []).find((row) => row.id === chosen);
-                  if (option) void explainWrong(checkKey, option.text);
-                }}
-                className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm disabled:opacity-50"
-              >
-                I picked this and it was wrong — explain why
-              </button>
-              <button
-                type="button"
-                data-testid="fl-got-it"
-                onClick={() => setAnsweredRight((rows) => ({ ...rows, [checkKey]: true }))}
-                className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-              >
-                I had it right
-              </button>
-            </div>
+          {verdict === "wrong" ? (
+            <p className="text-sm" role="status" data-testid="fl-wrong-receipt">
+              The lesson marked that one as wrong — see the explanation above.
+            </p>
           ) : null}
-          <p className="text-xs text-[var(--muted)]">
-            Nothing here marks your answer for you — the answer key stays on the server. You say what
-            happened, and the lesson responds to that.
-          </p>
         </section>
       ) : null}
 
       {done ? (
-        <p className="text-sm text-[var(--muted)]" role="status">
-          Good. The practice loop keeps this idea in rotation.
+        <p className="text-sm text-[var(--muted)]" role="status" data-testid="fl-confirm-correct">
+          Right. Practice keeps it in rotation.
         </p>
       ) : null}
 

@@ -27,15 +27,20 @@ export function HomeDashboard({ me }: { me: Me }) {
     <div className="page-home space-y-6" data-dashboard>
       <header className="dashboard-welcome">
         <p className="home-greet">Welcome back, <strong>{me.display_name || "learner"}</strong>.</p>
-        <h1 className="home-title">Your learning, <b>from where you left off.</b></h1>
-        <p className="mt-3 max-w-xl text-sm text-[var(--muted)]">Saved lessons, unfinished checks, and what your practice is showing so far. No invented scores or streaks.</p>
+        <h1 className="home-title">Pick up where you left off.</h1>
+        <p className="mt-3 max-w-xl text-sm text-[var(--muted)]">Saved lessons and what your practice is showing. <a href="#what-this-is" className="link-inline">how the app sees you</a></p>
         <div className="home-cta-row mt-5">
           <Btn kind="primary" href={primary}>{label}</Btn>
-          <Btn href="/lesson">Explore lessons</Btn>
-          <Btn href="/subject">Choose a subject</Btn>
           <Btn href="/journey">Your path</Btn>
           {!me.onboarding_complete ? <Btn kind="ghost" href="/onboarding">Personalise your setup</Btn> : null}
         </div>
+        <details id="what-this-is" className="r3-question-why-tap">
+          <summary>how the app sees you</summary>
+          <p className="r3-question-why">
+            Estimates, not labels: nothing here is a fixed trait about you, and no lasting change is applied
+            without you answering a question about it first.
+          </p>
+        </details>
       </header>
 
       {dash.error ? <Card title="Your progress could not load"><Err error={dash.error} status={dash.status} /><Btn onClick={dash.reload}>Retry dashboard</Btn></Card> : null}
