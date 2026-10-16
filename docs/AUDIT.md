@@ -554,3 +554,124 @@ but "no decision" and "yes" are the same value in the column. Closing it needs a
 field or a migration that backfills un-asked learners as unknown — and deliberately *not* a
 flip of the default to `False`, which would silently stop the event log for every existing
 learner and take the proposals with it.
+
+---
+
+## Fifth pass — cleanup round and bug scan (2026-10-16)
+
+Branch `arena/ce396360-adapt`, from `6ff799c`. The brief was to cut the documentation down,
+keep an audit of the changes and a register of the bugs, and scan for the defects behind "the
+app is slow and buggy and a bit of UI mismatch".
+
+**The defect register is [`BUGS.md`](BUGS.md)** — nine entries, each with the command or
+request that proved it, the fix, and where it is tested. This section is the change inventory,
+including everything deleted.
+
+### Commands run, with results
+
+| Command | Before | After |
+| --- | --- | --- |
+| `.venv/bin/python -m pytest backend/tests -q` | 1337 passed, 2 skipped (130 s) | **1341 passed, 2 skipped** (128 s) |
+| `cd frontend && npm run lint` | exit 0 — 117 routes / 103 calls | exit 0 — 117 routes / 103 calls |
+| `cd frontend && npm run test:lib` / `test:engine` | 42 / 15 pass | 42 / 15 pass |
+| `cd frontend && npm run build` | exit 0, 19 static pages | exit 0, 19 static pages |
+| `npx tsc --noEmit` | exit 0 | exit 0 |
+| `ruff check backend/src scripts --select F401,F841,F811,F821` | 10 findings | **0** |
+| repo-wide dangling-doc-path scan | 20 unresolved | **0** |
+| `python -m compileall backend/src scripts` | exit 0 | exit 0 |
+
+Four tests were added and one was rewritten, which is the whole of the +4. The suite was green
+before this pass and is green after it; **none of the eight defects was visible to it.** That is
+the finding worth carrying forward: the checks this repo has are good at proving what they were
+written to prove, and the P1 in `BUGS.md` survived 1337 of them because the fixture every test
+uses carries the one header the browser does not send.
+
+### Documentation removed
+
+68 tracked `.md` files became 14, and `docs/` went from **36 MB to 180 KB** — 97% of the
+documentation bytes were 129 PNG screenshots.
+
+| Removed | Files | Why |
+| --- | --- | --- |
+| `docs/screens/` | 129 PNG + 2 README (**35 MB**) | Round-2 browser captures. Referenced only by the round-2 reports removed below, so removing those orphaned these. Largest single win in the repo. |
+| `docs/round2/` | 22 | Per-agent reports, handoffs and unverified notes for a round that is merged and closed. Their durable content already lives in `AUDIT.md` and `UNVERIFIED.md`. |
+| `docs/handoff/` | 7 | Handoff briefs between agents 1–6. Process scaffolding, not documentation of the product. |
+| `agent-notes/` | 8 | Same, one level up: per-agent working notes. |
+| `docs/round3/` | 4 | Tracks R/S/T/U of a closed round. |
+| `docs/superseded/` | 1 README + **2 `.tsx`** | `main-baseline-ui/runId-page.tsx` and `snapshot-page.tsx` — superseded *source files* filed under `docs/`, where no build, lint or type check reaches them. Dead code in a documentation directory. |
+| `docs/AGENT_BRIEFS.md`, `FUNCTIONALITY_ROUND.md`, `SCAN_REPORT.md`, `REVIEW.md`, `REDESIGN_REPORT.md`, `SWEEP.md`, `UI_MAP.md`, `ROUND2.md`, `ROUND3.md` | 9 (~250 KB) | Overlapping narratives of past rounds. Five separate files (`SCAN_REPORT`, `SWEEP`, `REVIEW`, `REDESIGN_REPORT`, `FUNCTIONALITY_ROUND`) each claimed to be *the* account of what was found and fixed; `AUDIT.md` is that account. |
+| `ADAPT_R2_ALL_PHASES.md`, `ADAPT_functionality_round_prompt.md`, `UI file.txt` | 3 (~130 KB) | Prompt briefs committed at the repo root — instructions *to* agents, not documentation *of* the app. `UI file.txt` was already recorded as "repo cruft" by the integration pass that chose not to delete another agent's files; this pass is not another agent's. |
+
+**Kept, and the reason each survived:**
+
+| Kept | Why it is not removable |
+| --- | --- |
+| `README.md` | `test_migrations.py:370` asserts "alembic" appears in README+docs; `test_hosting.py:371` asserts README exists. |
+| `docs/EFFICIENCY.md` | **Hard-asserted by content**: `test_ai_efficiency.py:502-509` fails if the file is missing *or* if any name in `SC.names()`, any task in `RT.TASKS`, or the static-head count is absent from it. It is a table the code is checked against, not prose. |
+| `QUALITY_REPORT.md`, `MODEL_QUALITY_REPORT.md` | **Generated outputs**, not documents: `scripts/teaching_quality_eval.py:810` and `scripts/live_model_check.py:75` write them. Deleting them would just make the next run recreate them. |
+| `docs/UNVERIFIED.md` | The live register of what has not been verified; cited by `tests-e2e/placement.mjs`, `tests-e2e/journey.mjs`, `test_hosting.py`. Now also the target the round-2 `unverified-*` pointers were repointed to. |
+| `docs/AUDIT.md`, `docs/BUGS.md` | The two files this brief asked to keep: the change trail and the defect register. |
+| `docs/VOICE.md`, `EVIDENCE.md`, `ENGINE.md`, `DEMO.md`, `ACCESSIBILITY.md`, `PILOT.md` | Each is referenced from source or config (`pyproject.toml`, `services/evidence.py`) or from README, and each documents something still true about the running system rather than about a past round. `PILOT.md` in particular is operational: install, deployment mode, key backup, and the warning that encrypted columns are unrecoverable without `keys/`. |
+| `adapt-web-application-prompts.zip` | The provenance of the six master prompts; `ai/prompts.py` and `test_teachback_master_prompt.py` both cite it as the source of the verbatim prompt text. A user-committed source artifact, not a report. |
+| `frontend/README.md`, `e2e/games/README.md` | Local to the trees they document. |
+
+### References repaired
+
+Removing files is only half the job; 13 references pointed at what was removed and 7 more
+pointed at files that **never existed** — including one shown to learners. All 20 are listed in
+`BUGS.md` §P3 with their old and new targets, and the repo-wide scan now reports zero
+unresolved paths.
+
+Two deserve repeating here because they were wrong before this round touched anything:
+
+* `ui.tsx:279` told anyone running ADAPT themselves that `docs/OPERATIONS.md` has the start-up
+  command. It does not exist and never did. That message renders in the `status === 0` branch of
+  `Err` — i.e. precisely when the backend is down and someone needs the start-up command.
+* `numbas.py:21` told the reader that `python scripts/verify_numbas.py` is the check. There is
+  no such script. Rather than repoint it at something that is not equivalent, the docstring now
+  says the check needs a real Numbas install, that no such script is in the repository, and that
+  the part-type table is therefore unverified — which is what `docs/UNVERIFIED.md` already
+  recorded.
+
+### Code changed
+
+34 files changed. Everything is in `BUGS.md` with its evidence; the summary is one line each:
+
+| Change | Files |
+| --- | --- |
+| CSRF limited to mutating methods (P1) | `api/deps.py` |
+| `/lesson/concepts` now reports authored concepts, agreeing with `/content/breakdown` (P2) | `api/routes/lesson.py` |
+| Two regression tests for that agreement, plus its control | `tests/test_content_engine.py` |
+| Anonymity test rewritten to actually clear the cookie jar (P1) | `tests/test_content_engine.py` |
+| Two regression tests added for the CSRF contract | `tests/test_api_learner_loop.py` |
+| Status chip waterfall collapsed to `Promise.all` (P2) | `components/chrome.tsx` |
+| Corner radius normalised to the 2px contract, circles preserved (P2) | 14 files under `frontend/src` |
+| Learner-facing dead doc pointer repointed (P3) | `components/ui.tsx` |
+| Dead code and unused imports removed (P3) | `baseline/factors.py`, `baseline/service.py`, `cli.py`, `content/pack.py`, `content/pipeline.py` |
+| Identical-branch ternary collapsed (P3) | `components/scenes/stages.tsx` |
+| Doc references repaired (P3) | 14 source/test/doc files |
+
+`components/ui.tsx` and `lib/api.ts` also had comments corrected that described the CSRF bug as
+if it were the intended contract. Those comments were accurate — which is exactly why the bug
+lasted: `first-lesson/page.tsx` had been written to work around it, with a note explaining the
+workaround, so it read as a quirk of the framework rather than a defect.
+
+### Not changed, and why
+
+**The opening splash still blocks `/` for ~4.7 s** (`components/opening.tsx`, 4200 ms plus a
+500 ms exit). It is the largest perceived-latency item in the app and the first thing anyone
+investigating "slow" will meet. It is deliberate product behaviour, correctly built — once per
+session, skippable three ways, `prefers-reduced-motion` drops it to 900 ms, blocked storage
+cannot trap anyone, and the shell's requests mount underneath it so the wait is not wasted — and
+the file carries an explicit "do not reorder or reword without explicit approval" constraint.
+Shortening it is the owner's decision. `BUGS.md` §F1 names the exact line and the two options.
+
+**The `consent_analytics` default** flagged by the fourth pass is still open and is not
+re-litigated here: `"no decision"` and `"yes"` remain the same value in the column.
+
+**Ruff's remaining ~3400 findings** are style (3258 of them `E501`), plus `B008` and `ARG001`
+which are FastAPI idioms the rules do not model. The 12 `B905` `zip()` sites and the 13 `BLE001`
+blind-except sites were traced individually and are recorded in `BUGS.md` §"Reviewed and judged
+not bugs" with the reason each was closed — including the teach-back `zip`, which would have
+silently altered a learner's score denominator had its length invariant not been enforced
+upstream at `_validated_points:493`.

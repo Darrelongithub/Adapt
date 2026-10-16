@@ -21,7 +21,7 @@ declares these tables registers them on it, and that has to have happened before
 compares the database to the models. Without it ``alembic check`` sees four tables the models never
 declared and proposes dropping them -- which is the mirror image of the defect ``check`` exists to
 catch. ``env.py`` importing the module directly would be the cleaner home for this line (noted in
-``agent-notes/2-subject-round.md``); putting it here makes the chain correct on its own.
+``docs/AUDIT.md``); putting it here makes the chain correct on its own.
 
 Existence-aware, like 0003-0008: a database built by ``create_all`` from this build already has the
 tables, and ``stamp 0008`` then ``upgrade head`` replays this onto it.

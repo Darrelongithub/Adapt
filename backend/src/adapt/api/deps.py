@@ -27,7 +27,7 @@ from ..config import Settings, get_settings
 from ..db.engine import get_db
 from ..db.models import Student
 from ..security import auth
-from ..security.middleware import client_ip
+from ..security.middleware import MUTATING, client_ip
 from ..services import AppServices, current
 
 log = logging.getLogger("adapt.api.deps")
@@ -86,8 +86,29 @@ def student_from_request(request: Request, s: Session = Depends(db_session)) -> 
 
 
 def require_csrf(request: Request, student: Student = Depends(student_from_request)) -> Student:
+    """Double-submit CSRF check, on the methods that can change something.
+
+    Only *mutating* methods are checked, which is what the module docstring above has
+    always claimed ("Mutations need the double-submit CSRF header"). Checking safe
+    methods too was not extra safety, it was a breakage:
+
+    * ``rate(scope)`` depends on this, so every rate-limited **read** inherited the
+      requirement. ``GET /content/pack``, ``GET /content/breakdown`` and
+      ``GET /lesson/concepts`` answered 403 to any caller that did not know to attach
+      a token to a GET — which is what the browser's own ``get()`` helper does, so the
+      subject screen's pack/breakdown fetch failed in the running app while the test
+      suite passed (``learner["headers"]`` always carries the token, so no test could
+      see it).
+    * Cross-site reads are already covered: the session cookie is ``SameSite=Lax``, so a
+      cross-site subresource request never carries it, and a response an attacker cannot
+      read is not a CSRF risk. Quota burn — the one thing a forged GET could do — is what
+      the token bucket in ``rate()`` is for.
+
+    ``GET /items/{id}/reveal`` is the read that spoils a question, and it stays
+    rate-limited; its own docstring records that reading it persists nothing.
+    """
     row = getattr(request.state, "auth_session", None)
-    if row is not None:
+    if row is not None and request.method in MUTATING:
         provided = request.headers.get("x-csrf-token") or request.query_params.get("csrf")
         if not auth.check_csrf(row, provided):
             raise HTTPException(status_code=403, detail="csrf token missing or wrong")

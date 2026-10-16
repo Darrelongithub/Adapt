@@ -351,7 +351,7 @@ export default function LessonPlayer() {
       {loadError ? <Err error={loadError} /> : null}
       {error ? <Err error={error} /> : null}
       {notice ? (
-        <p className="flex items-start justify-between gap-3 rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-[13px]">
+        <p className="flex items-start justify-between gap-3 rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-[13px]">
           <span>{notice}</span>
           <button type="button" className="text-[var(--muted)] hover:text-[var(--ink)]" onClick={() => setNotice(null)} aria-label="dismiss">
             ✕
@@ -416,7 +416,7 @@ export default function LessonPlayer() {
                 <label className="ml-auto flex items-center gap-2 text-[12px] text-[var(--muted)]">
                   speed
                   <select
-                    className="rounded border border-[var(--line)] bg-transparent px-1 py-0.5 text-[12px]"
+                    className="rounded-[2px] border border-[var(--line)] bg-transparent px-1 py-0.5 text-[12px]"
                     value={player.speed}
                     onChange={(e) => dispatch({ type: "speed", speed: Number(e.target.value) })}
                   >
@@ -428,7 +428,7 @@ export default function LessonPlayer() {
                 </label>
               </div>
 
-              <div className="h-1 w-full overflow-hidden rounded bg-[var(--panel)]" aria-hidden="true">
+              <div className="h-1 w-full overflow-hidden rounded-[2px] bg-[var(--panel)]" aria-hidden="true">
                 <div className="h-full bg-[var(--accent)]" style={{ width: `${percent}%` }} />
               </div>
               <input
@@ -808,7 +808,7 @@ function VariablesPanel({
         {editable.map(([name, p]) => (
           <Field key={name} label={p.label ?? name} hint={p.help}>
             <input
-              className="w-full rounded border border-[var(--line)] bg-transparent px-2 py-1 font-mono text-[12px]"
+              className="w-full rounded-[2px] border border-[var(--line)] bg-transparent px-2 py-1 font-mono text-[12px]"
               name={name}
               value={field(name)}
               onChange={(e) => setField(name, e.target.value)}
@@ -817,7 +817,7 @@ function VariablesPanel({
         ))}
         <Field label="why did you change it?" hint="kept with your copy; it is how a scene of yours can be recognised as yours">
           <input
-            className="w-full rounded border border-[var(--line)] bg-transparent px-2 py-1 text-[12px]"
+            className="w-full rounded-[2px] border border-[var(--line)] bg-transparent px-2 py-1 text-[12px]"
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />

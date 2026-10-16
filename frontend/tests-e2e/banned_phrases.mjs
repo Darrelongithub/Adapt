@@ -25,7 +25,7 @@
  *
  * `ADAPT_BASE_URL` overrides the app origin (default http://127.0.0.1:3000).
  * Exit 2 means the browser could not start here at all: record that in
- * docs/round2/unverified-a.md rather than claiming the crawl passed.
+ * docs/UNVERIFIED.md rather than claiming the crawl passed.
  */
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -93,7 +93,7 @@ async function main() {
   } catch {
     console.error(
       "Playwright is not installed here, so the banned-phrase crawl cannot run.\n" +
-        "Record it as unverified (docs/round2/unverified-a.md); do not claim the crawl passed.",
+        "Record it as unverified (docs/UNVERIFIED.md); do not claim the crawl passed.",
     );
     process.exit(2);
   }
@@ -105,7 +105,7 @@ async function main() {
     console.error(
       `\nCannot start Chromium: ${err.message}\n\n` +
         "If no browser is available in this environment, record the crawl as unverified\n" +
-        "in docs/round2/unverified-a.md rather than claiming it passed.\n",
+        "in docs/UNVERIFIED.md rather than claiming it passed.\n",
     );
     process.exit(2);
   }

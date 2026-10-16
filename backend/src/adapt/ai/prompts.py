@@ -12,8 +12,7 @@ prompts because they are the properties a judge is most likely to check:
 
 ``TEACHBACK_GRADER_SYSTEM`` is the teach-back judge's own role prompt, pinned here
 verbatim from prompt 3 of the six master prompts shipped with the web-application
-prompt set (``adapt-web-application-prompts.zip`` -> ``docs/MASTER_PROMPTS.md``
-§3). The grading itself stays rule-first: see
+prompt set (``adapt-web-application-prompts.zip`` at the repository root, prompt 3). The grading itself stays rule-first: see
 :mod:`adapt.assessment.teachback` for why the model's answer is only a second
 reader, and what it has to quote before any of it is used.
 """

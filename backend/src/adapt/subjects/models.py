@@ -7,7 +7,7 @@ top of revision ``0008``.
 
 **One consequence the integrator has to know:** ``Base.metadata.create_all`` only creates tables from
 modules that have been imported. ``db/init_db.py`` must import ``adapt.subjects.models`` (see
-``agent-notes/2-subject-round.md``), or a database built by ``adapt init`` will not have them and the
+``docs/AUDIT.md``), or a database built by ``adapt init`` will not have them and the
 first subject round will fail on a missing table. The API route module imports this module too, so
 once the router is registered the import happens on app start as well — but the CLI path goes through
 ``init_db`` alone.

@@ -206,7 +206,8 @@ class InFlight:
 
 
 # (rate per minute, burst capacity). Provider numbers are the documented free-tier
-# ceilings divided by ~2 for headroom; see docs/API-QUOTAS.md for the verification.
+# ceilings divided by ~2 for headroom; see docs/EFFICIENCY.md for the measured
+# cost/latency figures and the guard tables these numbers bound.
 DEFAULT_LIMITS: dict[str, tuple[float, float]] = {
     "ip": (120.0, 240.0),
     "auth_fail": (5.0, 5.0),

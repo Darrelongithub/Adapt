@@ -601,10 +601,114 @@ class TestContentRoute:
         assert len(set(texts)) == 3
 
     def test_the_route_refuses_an_unsigned_request(self, client):
-        # The CSRF middleware runs before the auth dependency, so an anonymous request is refused
-        # with 403 rather than 401. Either code is a refusal; asserting the exact one here would be
-        # asserting the middleware's order rather than the route's behaviour.
-        assert client.get("/api/v1/content/breakdown?topic=calculus").status_code in (401, 403)
+        """An anonymous caller is refused — proved with an actually-empty cookie jar.
+
+        This test used to read ``client.get(...)`` with no headers and assert ``in (401, 403)``,
+        on the reasoning that "the CSRF middleware runs before the auth dependency, so an
+        anonymous request is refused with 403". That reasoning was wrong twice over, and it
+        made the test a false assurance:
+
+        * ``client`` is **session-scoped** and ``TestClient`` keeps a cookie jar for the whole
+          session, so by the time this ran, an earlier ``learner`` fixture had left a valid
+          ``adapt_session`` cookie in it. The request was never anonymous.
+        * What was actually refusing it was the CSRF-on-GET check, not authentication. Once
+          CSRF was correctly limited to mutating methods, the request succeeded — 200 — and
+          the test failed while still describing itself as an auth check.
+
+        So: clear the jar the way ``test_private_routes_refuse_anonymous_callers`` and
+        ``test_advance_needs_a_session`` already do, put it back afterwards, and require 401
+        specifically. Authentication is ``student_from_request``'s job and it still does it.
+        """
+        jar = client.cookies.jar
+        saved = list(jar)
+        for cookie in saved:
+            jar.clear(cookie.domain, cookie.path, cookie.name)
+        try:
+            response = client.get("/api/v1/content/breakdown?topic=calculus")
+            assert response.status_code == 401, response.text
+            assert response.json()["detail"] == "not signed in"
+            # A forged token must not change the answer: CSRF is not the authn check.
+            forged = client.get(
+                "/api/v1/content/breakdown?topic=calculus", headers={"x-csrf-token": "forged"}
+            )
+            assert forged.status_code == 401, forged.text
+        finally:
+            for cookie in saved:
+                jar.set_cookie(cookie)
+
+    def test_concept_discovery_agrees_with_the_breakdown_about_authored_material(
+        self, client, learner
+    ):
+        """`/lesson/concepts` must not call a topic generic when the chain has it authored.
+
+        The two routes resolve a topic through different subsystems: `/content/breakdown`
+        through this checkout's authored chain, `/lesson/concepts` through the frozen
+        skeleton. When the skeleton had nothing prepared it answered with the generic study
+        plan and reported ``source="simple"``, ``topic_match=false`` — for topics the authored
+        chain covers fully. Measured on a running backend before the fix:
+
+            GET /content/breakdown?topic=calculus -> available=true, "4 concepts from the
+                                                     authored chain"
+            GET /lesson/concepts?topic=calculus   -> source=simple, topic_match=false,
+                                                     concepts = task/information/method/check
+
+        which contradicted the route's own documented contract ("``source`` is ``authored``
+        when the typed topic has its own checked material") and meant a learner who typed
+        "calculus" on /first-lesson was offered "Read the task" and got back "Say what the
+        task asks you to find or explain."
+
+        The point of asserting both routes together is that they cannot drift again: whatever
+        `/content/breakdown` says is available is what `/lesson/concepts` must list.
+        """
+        for topic in ("calculus", "biology", "algebra"):
+            breakdown = client.get(
+                "/api/v1/content/breakdown", params={"topic": topic}, headers=learner["headers"]
+            )
+            assert breakdown.status_code == 200, breakdown.text
+            assert breakdown.json()["available"] is True, f"{topic} should be authored"
+            authored_ids = [c["id"] for c in breakdown.json()["concepts"]]
+
+            listed = client.get(
+                "/api/v1/lesson/concepts", params={"topic": topic}, headers=learner["headers"]
+            )
+            assert listed.status_code == 200, listed.text
+            body = listed.json()
+            assert body["source"] == "authored", (topic, body)
+            assert body["topic_match"] is True, (topic, body)
+            assert [c["id"] for c in body["concepts"]] == authored_ids, (topic, body)
+
+            # And the ids it offers must actually teach: this is what makes listing them safe
+            # rather than a new dead end for the screen that consumes them.
+            planned = client.post(
+                "/api/v1/lesson/plan",
+                json={"topic": topic, "concept_id": authored_ids[0]},
+                headers=learner["headers"],
+            )
+            assert planned.status_code == 200, (topic, planned.text)
+
+    def test_a_topic_with_no_authored_chain_still_reports_itself_as_generic(
+        self, client, learner
+    ):
+        """The other half: the fallback must not start claiming topics it does not have.
+
+        Without this, "always say authored" would also pass the test above.
+        """
+        for topic in ("fractions", "physics"):
+            breakdown = client.get(
+                "/api/v1/content/breakdown", params={"topic": topic}, headers=learner["headers"]
+            )
+            assert breakdown.status_code == 200, breakdown.text
+            assert breakdown.json()["available"] is False, f"{topic} has no authored chain"
+
+            listed = client.get(
+                "/api/v1/lesson/concepts", params={"topic": topic}, headers=learner["headers"]
+            )
+            assert listed.status_code == 200, listed.text
+            body = listed.json()
+            assert body["source"] == "simple", (topic, body)
+            assert body["topic_match"] is False, (topic, body)
+            assert body["concepts"], "the generic plan is still a usable plan"
+
 
 
 class TestGradeRoute:

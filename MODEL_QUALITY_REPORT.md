@@ -5,8 +5,8 @@
 > **No live run has been made.** This is the template. Nothing below is a measurement of a
 > model's output: no key is configured in the copy of the repository this was written in, so the
 > harness was tested against a scripted fake instead (`--selftest`), and the report those runs
-> wrote says in its first lines that a fake answered every call. See
-> `docs/round2/live-check.md`.
+> wrote says in its first lines that a fake answered every call. The harness is
+> `scripts/live_model_check.py`; run it with `--selftest` to reproduce that path.
 
 The command that replaces this file is one command, from the repository root:
 
@@ -43,7 +43,7 @@ case.
 Twelve topics (ten outside the authored bank, two inside it), each through skeleton → items →
 verification → a lesson for each of two profiles → the three explanation moments → one judge call.
 A threshold that is not met is named in the verdict, and the process exits non-zero. The full
-table of thresholds is in `docs/round2/live-check.md`.
+table of thresholds is in `scripts/live_model_check.py` (`THRESHOLDS`), which is what enforces them.
 
 ## Status of this file
 

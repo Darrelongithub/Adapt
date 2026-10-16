@@ -5,7 +5,7 @@ settings into the already-cached Settings instance before service construction, 
 install the safe LogRecordFactory so runtime failures cannot persist a configured
 provider/key in logs. Public HTTP/WebSocket redaction is installed by the existing
 security-headers middleware. Remaining integration notes are in
-``agent-notes/6-security.md``.
+``docs/AUDIT.md``, which carries the security findings.
 """
 
 from __future__ import annotations

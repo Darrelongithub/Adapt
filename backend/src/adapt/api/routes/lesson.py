@@ -738,6 +738,31 @@ def _run_upgrade(
                 job.state = "fallback"
 
 
+def _authored_concepts(topic: str) -> list[dict[str, str]]:
+    """The authored chain's concepts for a topic, or ``[]`` when it has none.
+
+    Resolves through ``content.breakdown.breakdown_for`` — the same resolver
+    ``GET /api/v1/content/breakdown`` uses — so the two routes cannot disagree about whether
+    a topic has authored material. Any failure to resolve is treated as "no authored
+    concepts", which leaves the caller on the generic plan it already had: this widens what
+    ``/lesson/concepts`` can report and cannot narrow it or raise on the caller's behalf.
+    """
+    from ...content.breakdown import breakdown_for
+
+    try:
+        breakdown = breakdown_for(topic)
+    except Exception as exc:  # an unresolvable topic is a "not authored" answer, not a 500
+        log.debug("authored concept lookup failed for %r (%s)", topic, type(exc).__name__)
+        return []
+    if not getattr(breakdown, "available", False):
+        return []
+    return [
+        {"id": str(row.id), "name": str(getattr(row, "title", "") or row.id)}
+        for row in (getattr(breakdown, "concepts", ()) or ())
+        if getattr(row, "id", "")
+    ]
+
+
 @router.get("/concepts")
 def list_frozen_concepts(
     topic: str,
@@ -780,16 +805,38 @@ def list_frozen_concepts(
         ) from exc
     raw = _as_mapping(pack)
     raw_source = str(raw.get("source") or "").strip().lower()
-    if raw_source == "model":
-        source = "model"
-    elif raw_source == "simple":
-        source = "simple"
-        topic_match = False
     concepts = [
         {"id": str(row.get("id") or ""), "name": str(row.get("name") or "")}
         for row in raw.get("concepts") or []
         if isinstance(row, Mapping) and str(row.get("id") or "")
     ]
+    if raw_source == "model":
+        source = "model"
+    elif raw_source == "simple":
+        # The frozen skeleton had nothing better than the generic study plan for this topic.
+        # That is not the same as the topic having no authored material: this checkout's own
+        # chain may well cover it, in which case listing the generic concepts here contradicted
+        # both this route's documented contract ("``source`` is ``authored`` when the typed
+        # topic has its own checked material") and GET /content/breakdown on the same topic.
+        #
+        # Measured before the fix, for topic=calculus:
+        #   GET /content/breakdown?topic=calculus -> available=true, "4 concepts from the
+        #                                            authored chain" (calc_rate, calc_limit,
+        #                                            calc_derivative, calc_rules)
+        #   GET /lesson/concepts?topic=calculus   -> source=simple, topic_match=false,
+        #                                            concepts = task/information/method/check
+        # So a learner who typed "calculus" on /first-lesson was offered "Read the task", and
+        # the lesson that came back was "Say what the task asks you to find or explain."
+        #
+        # The authored ids are safe to offer: POST /lesson/plan resolves them
+        # (concept_id=calc_rate returns the authored lesson on rate of change, 200), so this
+        # widens what the screen can reach rather than handing it an id that dead-ends.
+        authored = _authored_concepts(topic)
+        if authored:
+            concepts = authored
+        else:
+            source = "simple"
+            topic_match = False
     if not concepts:
         raise HTTPException(
             status_code=404,

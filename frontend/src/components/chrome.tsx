@@ -62,13 +62,15 @@ export function StatusChip() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
+    // Both reads are independent, so they go out together. Chaining them made the second
+    // wait for the first on every screen the chip is rendered on — which is all of them —
+    // so the status line paid two round trips where one would do.
     (async () => {
-      const h = await get<Health>("health");
+      const [h, s] = await Promise.all([get<Health>("health"), get<Status>("status")]);
       if (!alive) return;
       setHealth(h.data);
       setError(h.error);
-      const s = await get<Status>("status");
-      if (alive) setStatus(s.data);
+      setStatus(s.data);
     })();
     return () => {
       alive = false;

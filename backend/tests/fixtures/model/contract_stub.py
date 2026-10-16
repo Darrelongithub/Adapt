@@ -4,7 +4,7 @@ Part E owns the live-model quality check (`scripts/live_model_check.py`). The pi
 drive is Phase B's (skeleton -> items -> verification) followed by Phase C's (one lesson per
 profile, then the explanation moments). Neither `adapt.content.skeleton` nor
 `adapt.ai.lesson_writer` exists in this checkout yet, so the harness codes against the **frozen
-contract** in `ADAPT_R2_ALL_PHASES.md` and loads this file instead. When B and C merge,
+contract** in `docs/AUDIT.md` and loads this file instead. When B and C merge,
 `--pipeline real` (or the automatic choice) picks the real modules up and nothing else changes.
 
 Shape of the four functions -- copied from the frozen interface, not invented here::
@@ -444,7 +444,7 @@ def write_lesson(
 def _profile(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     """The profile a lesson is written for, as the harness states it.
 
-    Shape assumed until Phase C lands (see ``docs/round2/handoff-e.md``): a mapping with
+    Shape assumed until Phase C lands: a mapping with
     ``name``, ``language``, ``tone``, ``lead_format``, ``max_words_per_block``, ``step_size``
     and ``levers``/``prefs``/``memory`` for the real implementation to read.
     """

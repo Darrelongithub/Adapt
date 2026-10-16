@@ -268,7 +268,7 @@ export default function Contrast() {
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {[PROFILE_A, sameTwice ? { ...PROFILE_A, name: "Demo profile 1 — again" } : PROFILE_B].map((p, i) => (
-            <div key={`${p.name}-${i}`} className="rounded-md border border-[var(--line)] px-3 py-2">
+            <div key={`${p.name}-${i}`} className="rounded-[2px] border border-[var(--line)] px-3 py-2">
               <p className="text-[13px] font-medium">{p.name}</p>
               <p className="mt-1 text-[12px] text-[var(--muted)]">{p.description}</p>
             </div>
@@ -368,7 +368,7 @@ function LessonColumn({ profile, plan }: { profile: string; plan: Plan }) {
 function BlockView({ block }: { block: Block }) {
   const c = block.content;
   return (
-    <section aria-label={`block ${block.block}: ${block.kind}`} className="rounded-md border border-[var(--line)] px-3 py-2">
+    <section aria-label={`block ${block.block}: ${block.kind}`} className="rounded-[2px] border border-[var(--line)] px-3 py-2">
       <div className="mb-1.5 flex items-center gap-2">
         <Tag tone="line">{block.kind.replaceAll("_", " ")}</Tag>
         <span className="text-[11px] text-[var(--muted)]">
@@ -411,7 +411,7 @@ function BlockView({ block }: { block: Block }) {
 function WhyPanel({ plan }: { plan: Plan }) {
   const panel = plan.why_panel;
   return (
-    <section aria-label="why this lesson looks like this" className="rounded-md border border-[var(--accent)]/40 bg-[var(--panel)] px-3 py-2">
+    <section aria-label="why this lesson looks like this" className="rounded-[2px] border border-[var(--accent)]/40 bg-[var(--panel)] px-3 py-2">
       <h3 className="text-[13px] font-semibold">{panel.title}</h3>
       <ul className="mt-2 flex flex-col gap-1.5 text-[12px]">
         {panel.rows.map((row, i) => (

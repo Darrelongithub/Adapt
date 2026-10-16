@@ -36,7 +36,7 @@ export function SceneStage({
   return (
     <figure className="m-0 flex flex-col gap-3">
       <figcaption className="flex flex-wrap items-baseline gap-2 text-[12px]">
-        <span className="rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--muted)]">
+        <span className="rounded-[2px] border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--muted)]">
           frame {frame.i + 1}
         </span>
         <span className="font-semibold text-[13px]">{frame.title}</span>
@@ -62,7 +62,7 @@ export function SceneStage({
           {unrendered.map((h, k) => (
             <span key={h}>
               {k ? ", " : ""}
-              <code className="rounded bg-[var(--panel)] px-1 font-mono">{h}</code>
+              <code className="rounded-[2px] bg-[var(--panel)] px-1 font-mono">{h}</code>
             </span>
           ))}{" "}
           — this stage does not draw that id.

@@ -16,7 +16,7 @@ The four endpoints the brief names, plus the ones a screen needs to walk a round
 
 **One router, one prefix.** ``/topics/resolve`` is not under ``/subjects``, and ``api/app.py`` is
 frozen for this round, so both live on a single router mounted at ``/api/v1`` — one line for the
-integrator to add instead of two (see ``agent-notes/2-subject-round.md``).
+integrator to add instead of two (see ``docs/AUDIT.md``).
 
 **Errors are the house shape.** ``{"detail": {"error": "<slug>", "message": …}}``, 422 for refused
 input, 404 for a run that is not yours *and* for one that does not exist (one message for both, so
@@ -101,7 +101,7 @@ def _subjects() -> Subjects:
     """The round's service, from the shared wiring if it has one and built on the spot if it does not.
 
     ``services.AppServices`` is frozen for this round, so it has no ``subjects`` field yet; the
-    integrator adds one (see ``agent-notes/2-subject-round.md``). Until then the router builds the
+    integrator adds one (see ``docs/AUDIT.md``). Until then the router builds the
     service from the same session factory, state store and model client the rest of the app uses and
     caches it on the services object, so the endpoints are live rather than a 500 waiting for a merge.
     """

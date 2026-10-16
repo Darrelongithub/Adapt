@@ -243,7 +243,7 @@ def subject_client(client):
     """The *real* app — middleware, handlers, services, lifespan — plus this round's router.
 
     ``api/app.py`` is frozen for this round and does not include ``routes.subjects.router`` yet (one
-    line, written into ``agent-notes/2-subject-round.md``). Mounting it on the running app rather
+    line, recorded in ``docs/AUDIT.md``). Mounting it on the running app rather
     than building a second ``FastAPI()`` keeps the CORS/host/limit/security middlewares, the
     ``RequestValidationError`` handler and the service wiring the real request path has: a router
     tested on a bare app proves the router, not the endpoint. The guard makes this a no-op the moment

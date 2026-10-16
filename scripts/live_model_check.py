@@ -45,8 +45,8 @@ Honesty rules this file keeps
   only when the operator supplies real prices with ``--price-in``/``--price-out``.
 * It never claims a live run happened when it did not. ``--selftest`` drives the whole thing with
   a scripted fake, stamps the report accordingly, and is what the test suite uses.
-* The live run itself has **not** been made here (no key in this sandbox); ``docs/round2/
-  live-check.md`` says so and gives the one command.
+* The live run itself has **not** been made here (no key in this sandbox); the checked-in
+  ``MODEL_QUALITY_REPORT.md`` says so, and it is the template this script replaces.
 
 Exit codes: 0 passed, 1 failed a flag or a threshold, 2 refused to run (no key, bad usage),
 3 incomplete (the per-run call limit or the daily quota stopped the run).

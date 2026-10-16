@@ -253,7 +253,7 @@ export function VisualFigure({ spec, fallbackNote }: { spec: unknown; fallbackNo
   if (!validated) {
     const fallback = visualFallbackText(spec);
     return (
-      <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2">
+      <div className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2">
         <p className="text-[13px]">{fallback.text}</p>
         <p className="mt-1 text-[11px] text-[var(--warn)]">{fallbackNote ?? fallback.note}</p>
       </div>

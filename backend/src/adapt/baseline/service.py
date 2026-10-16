@@ -24,7 +24,6 @@ from . import flow
 from .games import (
     Trial,
     choice_score,
-    codewords_pairs,
     locked_box_coins_left,
     locked_box_score,
     machine_respond,

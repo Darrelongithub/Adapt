@@ -164,7 +164,7 @@ export function Band({
       <Tag tone={tone as "good"}>{band}</Tag>
       {fallbackHasPoint && (
         <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-          <span className="h-1.5 w-16 overflow-hidden rounded bg-[var(--panel-2)] border border-[var(--line)]">
+          <span className="h-1.5 w-16 overflow-hidden rounded-[2px] bg-[var(--panel-2)] border border-[var(--line)]">
             <span className="block h-full bg-[var(--accent)]" style={{ width: `${width}%` }} />
           </span>
           {(resolvedValue as number).toFixed(2)}
@@ -276,8 +276,8 @@ export function Err({ error, status }: { error: string | null; status?: number |
       ) : status === 0 ? (
         <>
           {error}. Nothing you did caused this and nothing has been lost — your answers are saved on the server, and
-          this screen will load again as soon as it is back. (If you are running ADAPT yourself, `docs/OPERATIONS.md`
-          has the start-up command.)
+          this screen will load again as soon as it is back. (If you are running ADAPT yourself, the “Run it” section
+          of `README.md` has the start-up command.)
         </>
       ) : (
         <>
