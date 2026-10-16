@@ -1,6 +1,6 @@
 """AuthN: password hashing, opaque session tokens, CSRF, guest/demo access.
 
-Threat model for the demo (docs/SECURITY.md has the full version):
+Threat model for the demo (docs/AUDIT.md carries the findings it produced):
 the app is reachable by judges over a public tunnel, so *learner records* must not
 be world-readable just because someone guessed the URL. Therefore:
 

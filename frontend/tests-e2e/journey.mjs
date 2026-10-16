@@ -11,7 +11,7 @@
  * checks. Every stage fact is read back from the *server* (`GET /api/v1/journey/state`) as well
  * as from the DOM, so a page that painted the right thing without recording it fails here.
  *
- * Run it (needs browsers — this repo's build sandbox has none, see docs/round2/unverified-d.md):
+ * Run it (needs browsers — this repo's build sandbox has none, see docs/UNVERIFIED.md):
  *
  *     cd frontend
  *     npm i -D @playwright/test && npx playwright install chromium     # never run in the sandbox
@@ -209,7 +209,7 @@ async function main() {
       `\nCannot start Chromium: ${err.message}\n\n` +
         `Looked for the browser at ${CHROMIUM}. If it is elsewhere, set ADAPT_CHROMIUM.\n` +
         "If no browser can be installed here, this check cannot run in this environment — record it in\n" +
-        "docs/round2/unverified-d.md rather than claiming the layout was seen.\n",
+        "docs/UNVERIFIED.md rather than claiming the layout was seen.\n",
     );
     process.exit(2);
   }

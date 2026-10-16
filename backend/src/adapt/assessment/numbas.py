@@ -17,9 +17,10 @@ What this guarantees, and what it does not (stated plainly because a judge will 
   (interactive/graphing parts), which the export keeps intact.
 
 The part-type code table below is the one place to fix anything a future Numbas
-version renames; ``python scripts/verify_numbas.py`` (against a real Numbas
-install) is the check, and docs/VERIFICATION.md records that it could not be run
-from the build sandbox because the Numbas host was unreachable.
+version renames. Checking it needs a real Numbas install, and no such check script
+is in this repository: docs/UNVERIFIED.md records that it could not be run from the
+build sandbox because the Numbas host was unreachable, so the table is unverified
+rather than verified-by-a-script-that-is-not-here.
 """
 
 from __future__ import annotations

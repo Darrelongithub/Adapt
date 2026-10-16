@@ -1191,7 +1191,9 @@ def config_test() -> None:
     st = _settings()
     try:
         st = settings_with_managed_values(st)
-    except ConfigSecretError as exc:
+    except ConfigSecretError:
+        # The message stays generic on purpose: this is the credential path, and the
+        # exception text can carry a value from the settings file.
         typer.echo("Connection test failed. Check the console settings file.")
         raise typer.Exit(code=1) from None
     if not st.gemini_api_key:
@@ -1347,7 +1349,6 @@ def demo_seed(svcs: Any, *, count: int = 3, reset: bool = False) -> dict[str, An
     from sqlalchemy import select as sa_select
 
     from .crypto.fields import blind_index_for
-    from .db.engine import get_db
     from .db.models import Attempt, Item, LearningSession, Student, Topic
     from .security.auth import hash_password
 
@@ -1405,7 +1406,6 @@ def demo_seed(svcs: Any, *, count: int = 3, reset: bool = False) -> dict[str, An
         topics = s.execute(sa_select(Topic)).scalars().all()
         topic_ids = {t.id for t in topics}
         items = s.execute(sa_select(Item)).scalars().all()
-        item_ids = {it.id for it in items}
 
         for profile in chosen:
             # Skip if already exists

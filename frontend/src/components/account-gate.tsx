@@ -128,7 +128,7 @@ export function AccountGate() {
                 <Input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === "create" ? "new-password" : "current-password"} required disabled={busy} minLength={mode === "create" ? 10 : undefined} />
               </Field>
               {mode === "create" ? <Field label="Age band">
-                <select className="w-full rounded border border-[var(--line)] bg-[var(--panel)] p-2" value={ageBand} onChange={e => setAgeBand(e.target.value)}>
+                <select className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-2" value={ageBand} onChange={e => setAgeBand(e.target.value)}>
                   <option value="under-16">Under 16</option><option value="16-18">16 to 18</option><option value="19-24">19 to 24</option><option value="25+">25 and over</option>
                 </select>
               </Field> : null}

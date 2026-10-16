@@ -180,7 +180,7 @@ export default function Review() {
                     {r.lapses ? `, ${r.lapses} lapse${r.lapses === 1 ? "" : "s"}` : ""}
                   </p>
                   {checks[r.topic_id] ? (
-                    <div className="mt-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm">
+                    <div className="mt-2 rounded-[2px] border border-[var(--line)] px-3 py-2 text-sm">
                       <p>{checks[r.topic_id].question}</p>
                       <p className="mt-1 text-xs text-[var(--muted)]">{checks[r.topic_id].rationale}</p>
                       {checkNotes[r.topic_id] ? (

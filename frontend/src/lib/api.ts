@@ -76,7 +76,9 @@ type Options = {
   form?: FormData;
   query?: Record<string, string | number | boolean | null | undefined>;
   headers?: Record<string, string>;
-  /** attach the CSRF token even on a safe method (see /items/{id}/reveal) */
+  /** attach the CSRF token even on a safe method. No longer required — the backend only
+   *  checks CSRF on mutating methods — but harmless, and it keeps a read that spoils a
+   *  question (/items/{id}/reveal) visibly marked as a deliberate act at the call site. */
   csrf?: boolean;
 };
 
@@ -100,9 +102,12 @@ export async function api<T = Record<string, unknown>>(path: string, opts: Optio
     return found.body as T;
   }
   const headers: Record<string, string> = { accept: "application/json", ...(opts.headers ?? {}) };
-  // `csrf` is opt-in on safe methods: some GETs demand the token anyway — the
-  // answer-reveal route (the one read that spoils a question) and any rate-limited
-  // read, because the rate guard checks the token on every method.
+  // `csrf` is opt-in on safe methods. The backend checks the token only on mutating
+  // methods (POST/PUT/PATCH/DELETE), so a GET never needs one — this used to say
+  // otherwise because `rate()` depended on `require_csrf` and every rate-limited read
+  // inherited the mutation rule, which 403'd the pack/breakdown fetches below. Sending
+  // the token on a safe method is still allowed, so `csrf: true` stays as documentation
+  // of "this read has a side effect on what the learner sees", not as a requirement.
   if (method !== "GET" || opts.csrf) {
     const token = csrfToken();
     if (token) headers["x-csrf-token"] = token;

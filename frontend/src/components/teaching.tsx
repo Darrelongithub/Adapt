@@ -143,7 +143,7 @@ function SegmentWalkthrough({ teaching, headline }: { teaching: NonNullable<Teac
       <p className="text-[15px] leading-relaxed">{step.text}</p>
       <div className="mt-3 flex gap-1" aria-hidden="true">
         {steps.map((s, i) => (
-          <span key={s.index} className={`h-1 flex-1 rounded ${i <= at ? "bg-[var(--accent)]" : "bg-[var(--line)]"}`} />
+          <span key={s.index} className={`h-1 flex-1 rounded-[2px] ${i <= at ? "bg-[var(--accent)]" : "bg-[var(--line)]"}`} />
         ))}
       </div>
 

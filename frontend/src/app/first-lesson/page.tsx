@@ -114,8 +114,9 @@ function FirstLesson() {
       // still have an authored lesson, and the concepts call below decides honestly.
     }
     setStage("Choosing an idea…");
-    // this route is rate-limited, and the rate guard demands the CSRF token on every
-    // method, so it is called through api() with the token rather than through get()
+    // This route is rate-limited. `csrf: true` is no longer load-bearing — the backend
+    // checks CSRF only on mutating methods now — but it is kept so the call reads as
+    // "a deliberate fetch", matching the reveal route. See lib/api.ts.
     let listed: { topic: string; concepts: Concept[]; source?: string; topic_match?: boolean } | null = null;
     try {
       listed = await api<{ topic: string; concepts: Concept[]; source?: string; topic_match?: boolean }>("lesson/concepts", {
@@ -263,7 +264,7 @@ function FirstLesson() {
       </header>
 
       {notice ? (
-        <p data-testid="fl-notice" role="status" className="rounded-lg border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">
+        <p data-testid="fl-notice" role="status" className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">
           {notice}
         </p>
       ) : null}
@@ -274,7 +275,7 @@ function FirstLesson() {
         </p>
       ) : null}
 
-      <section className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4" aria-label="Choose a topic">
+      <section className="rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4" aria-label="Choose a topic">
         <label htmlFor="fl-topic" className="text-sm font-medium">
           What are you working on?
         </label>
@@ -285,14 +286,14 @@ function FirstLesson() {
             value={topicDraft}
             onChange={(event) => setTopicDraft(event.target.value)}
             placeholder="for example: photosynthesis"
-            className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
+            className="min-w-0 flex-1 rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
           />
           <button
             type="button"
             data-testid="fl-go"
             disabled={busy || topicDraft.trim().length < 2}
             onClick={() => setTopic(topicDraft.trim())}
-            className="rounded-lg border border-[var(--line)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-[2px] border border-[var(--line)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             Write my lesson
           </button>
@@ -300,7 +301,7 @@ function FirstLesson() {
       </section>
 
       {concepts && concepts.length > 1 && !conceptId ? (
-        <section className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4" aria-label="Choose an idea">
+        <section className="rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4" aria-label="Choose an idea">
           {source === "simple" ? (
             <p className="text-sm text-[var(--muted)]" data-testid="fl-fallback-notice">
               No detailed lesson for this topic offline — here is how to study it.
@@ -314,7 +315,7 @@ function FirstLesson() {
                 type="button"
                 data-testid="fl-concept"
                 onClick={() => void writeLesson(concept.id)}
-                className="rounded-full border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-[var(--panel)]"
+                className="rounded-[2px] border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-[var(--panel)]"
               >
                 {concept.name || concept.id}
               </button>
@@ -324,7 +325,7 @@ function FirstLesson() {
       ) : null}
 
       {concepts && concepts.length === 1 && !conceptId && !busy ? (
-        <div className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4">
+        <div className="rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4">
           {source === "simple" ? (
             <p className="text-sm text-[var(--muted)]" data-testid="fl-fallback-notice">
               No detailed lesson for this topic offline — here is how to study it.
@@ -357,7 +358,7 @@ function FirstLesson() {
 
       {check && !done ? (
         <section
-          className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4 space-y-2"
+          className="rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4 space-y-2"
           aria-label="Your answer"
         >
           <h2 className="text-sm font-medium">{check.block.question}</h2>
@@ -403,7 +404,7 @@ function FirstLesson() {
             data-testid="fl-reteach"
             disabled={busy}
             onClick={() => void reteach()}
-            className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm disabled:opacity-50"
+            className="rounded-[2px] border border-[var(--line)] px-3 py-2 text-sm disabled:opacity-50"
           >
             I still don&apos;t get it — try another way
           </button>

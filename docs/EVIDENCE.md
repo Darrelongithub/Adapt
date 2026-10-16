@@ -29,7 +29,8 @@ are wired. `/methods/report` now excludes deferred failures from method estimate
 content is an explicit unavailable state; existing generators are not assumed to supply validated
 matched pairs for every bank item. Unrestricted backend regression: **834 passing tests**, including
 all **38 baseline tests**. Browser interactions remain unverified. See the final production report
-in `agent-notes/5-evidence.md`; older handoff/verification sections are chronological history.
+in `docs/AUDIT.md`; the per-round handoff notes that used to sit beside this file were removed
+in the documentation cleanup (see `docs/AUDIT.md`) as duplicate history.
 
 ## Failure cycle
 

@@ -15,7 +15,7 @@
 import type { Frame } from "@/lib/engine/types";
 
 const CELL =
-  "min-w-11 rounded border px-1.5 py-1 text-center font-mono text-[13px] leading-tight transition-colors";
+  "min-w-11 rounded-[2px] border px-1.5 py-1 text-center font-mono text-[13px] leading-tight transition-colors";
 const LINE = "border-[var(--line)]";
 const MUTED = "text-[var(--muted)]";
 
@@ -69,7 +69,7 @@ function Cells({
 function Reg({ name, value, lit }: { name: string; value: unknown; lit?: boolean }) {
   return (
     <div
-      className={`rounded border px-2 py-1 font-mono text-[12px] ${lit ? "border-[var(--accent)] bg-[var(--accent)]/10" : LINE}`}
+      className={`rounded-[2px] border px-2 py-1 font-mono text-[12px] ${lit ? "border-[var(--accent)] bg-[var(--accent)]/10" : LINE}`}
     >
       <span className={MUTED}>{name}</span> <span className="font-semibold">{value === null || value === undefined ? "—" : String(value)}</span>
     </div>
@@ -180,7 +180,7 @@ export function LogicGatesStage({ frame }: { frame: Frame }) {
       <div className="flex flex-wrap items-center gap-2">
         <Reg name="A" value={bit(st.a)} lit={inputsLit} />
         <Reg name="B" value={bit(st.b)} lit={inputsLit} />
-        <span className={`${MUTED} rounded border border-dashed px-2 py-1 font-mono text-[12px] ${LINE}`}>
+        <span className={`${MUTED} rounded-[2px] border border-dashed px-2 py-1 font-mono text-[12px] ${LINE}`}>
           {st.gate === undefined ? "gate" : String(st.gate)}
         </span>
         <Reg name="out" value={bit(st.out)} lit={outLit} />
@@ -231,7 +231,7 @@ export function CpuStage({ frame }: { frame: Frame }) {
           {cells.map((c, k) => (
             <span
               key={k}
-              className={`font-mono text-[12px] ${k < dataAt ? "rounded px-1" : "rounded px-1"} ${
+              className={`font-mono text-[12px] rounded-[2px] px-1 ${
                 k < dataAt ? "bg-[var(--panel)]" : "bg-[var(--bg)]"
               } ${has(hi, "cells") && k === num(st.mar, -1) ? "outline outline-2 outline-[var(--accent)]" : ""} border ${LINE}`}
               title={k < dataAt ? "instruction" : "data"}

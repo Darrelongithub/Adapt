@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from statistics import median
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from .games import Trial, calibration, measured, predicted_vs_actual
 
@@ -317,7 +317,8 @@ def _reasoning(trials: Sequence[Trial]) -> Factor:
     if n < MIN_N["reasoning"]:
         return _not_measured("reasoning", need=MIN_N["reasoning"], n=n, what="finishing a machine round")
     falsifying = sum(1 for t in probes if _verdict(t).get("falsifying"))
-    first_guess_wrong = [g for g in guesses[:3] if not g.correct]
+    # (`first_guess_wrong` used to be computed here and never read: the detail dict below
+    # reports the same fact as `first_guess_correct`, so the list was dead weight.)
     solved = [g for g in guesses if g.correct]
     tries_to_first_guess = None
     if guesses:

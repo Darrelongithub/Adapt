@@ -1939,7 +1939,7 @@ async function main() {
 
   /* ---------------------------------------------------------------- subject ----
    * §6's screen, driven against its `?mock=1` fixtures: the subjects router is wired into
-   * the app by the integrator (see agent-notes/2-subject-round.md), so until that merge the
+   * the app by the integrator (see docs/AUDIT.md), so until that merge the
    * live API cannot answer these calls and asserting against it would test the wiring, not
    * the screen. What is under test here is the screen itself: that the reason travels with
    * the skill set, that "calculus" and "government" produce visibly different rounds, that

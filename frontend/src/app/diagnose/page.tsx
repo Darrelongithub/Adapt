@@ -194,7 +194,7 @@ export default function Diagnose() {
           </Btn>
         </div>
       </div>
-      <div className="h-1 w-full overflow-hidden rounded bg-[var(--line)]">
+      <div className="h-1 w-full overflow-hidden rounded-[2px] bg-[var(--line)]">
         <div className="h-full bg-[var(--accent)] transition-all" style={{ width: `${(i / Math.max(items.length, 1)) * 100}%` }} />
       </div>
       {flow.error ? <Notice tone="warn">session: {flow.error}</Notice> : null}

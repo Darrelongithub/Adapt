@@ -73,11 +73,11 @@ practice. A typed topic is turned into a checked knowledge pack in the backgroun
 written for the learner, a wrong answer gets an explanation that starts from the answer they
 actually gave, and "I don't get it" re-teaches the same idea a different way every time. With
 no model key configured, every one of those steps still answers — deterministically, and
-labelled "Simple lesson" rather than pretending otherwise. `docs/ROUND2.md` is the round's
-summary; `docs/round2/demo.md` is the three-minute demo for it (live path, contrast screen,
-mock fallback); `docs/round2/report-g.md` is the integration report, including what is still
-unverified. The live model check has **not** been run — no key has ever been configured on
-this build; the owner's commands are in `docs/round2/live-check.md`.
+labelled "Simple lesson" rather than pretending otherwise. `docs/DEMO.md` is the
+three-minute demo script (live path, contrast screen, mock fallback); `docs/AUDIT.md` is the
+code audit, and `docs/UNVERIFIED.md` lists what is still unverified. The live model check has
+**not** been run — no key has ever been configured on this build; `scripts/live_model_check.py`
+is the harness and `MODEL_QUALITY_REPORT.md` is the template it would replace.
 
 ## Run it
 
@@ -327,9 +327,12 @@ frontend/src/
   app/            onboarding · diagnose · learn · lesson (the interactive engine) · proposals ·
                   review · progress · settings · voice
 scripts/demo.mjs  the loop driven over HTTP, with the contract checks the UI relies on
-docs/             ENGINE.md (the interaction engine, end to end) · EFFICIENCY.md (what a model
-                  call costs: merged prompts, cached heads, model tiers, request guards)
-                  UNVERIFIED.md · VOICE.md · PILOT.md
+docs/             AUDIT.md (what each pass ran, found and fixed — the change trail) ·
+                  BUGS.md (the defect register: each bug, its proof, its test) ·
+                  ENGINE.md (the interaction engine, end to end) · EFFICIENCY.md (what a model
+                  call costs: merged prompts, cached heads, model tiers, request guards) ·
+                  UNVERIFIED.md (what no one has checked, and how to check it) ·
+                  EVIDENCE.md · ACCESSIBILITY.md · DEMO.md · VOICE.md · PILOT.md
 frontend/README.md  the web app: ports, dev origins, probes, and what the player guarantees
 ```
 
@@ -429,5 +432,9 @@ reset, a teacher dashboard, a spaced-review notification), and what a small-samp
 does and does not mean. The pilot protocol is in [docs/PILOT.md](docs/PILOT.md).
 
 A full code audit (what was run, what it found, what was fixed and how each fix is pinned by a
-test that fails without it) is in [docs/AUDIT.md](docs/AUDIT.md). It is dated, so treat its
-"not changed" list as a proposal rather than a decision.
+test that fails without it) is in [docs/AUDIT.md](docs/AUDIT.md). It is dated and organised as
+chronological passes, so treat any "not changed" list in it as a proposal rather than a
+decision. The defects themselves — each with the request or command that proved it, the fix, and
+the test that fails without the fix — are listed separately in
+[docs/BUGS.md](docs/BUGS.md), including the findings that were investigated and closed as *not*
+bugs, so a later pass does not re-open them.

@@ -486,7 +486,7 @@ function WagerPicker({ wager, setWager }: { wager: number; setWager: (n: number)
           type="button"
           aria-pressed={wager === n}
           onClick={() => setWager(n)}
-          className={`rounded border px-2 py-0.5 ${wager === n ? "border-[var(--accent)] font-semibold" : ""}`}
+          className={`rounded-[2px] border px-2 py-0.5 ${wager === n ? "border-[var(--accent)] font-semibold" : ""}`}
         >
           {n}
         </button>
@@ -573,7 +573,7 @@ function TaskCard({
               type="button"
               aria-pressed={choice === i}
               onClick={() => setChoice(i)}
-              className={`block w-full rounded border px-3 py-2 text-left text-sm ${choice === i ? "border-[var(--accent)] font-medium" : ""}`}
+              className={`block w-full rounded-[2px] border px-3 py-2 text-left text-sm ${choice === i ? "border-[var(--accent)] font-medium" : ""}`}
             >
               {opt}
             </button>
@@ -590,7 +590,7 @@ function TaskCard({
                 type="button"
                 disabled={order.includes(i)}
                 onClick={() => setOrder([...order, i])}
-                className="rounded border px-2 py-1 text-sm disabled:opacity-40"
+                className="rounded-[2px] border px-2 py-1 text-sm disabled:opacity-40"
               >
                 {order.includes(i) ? `${order.indexOf(i) + 1}. ` : ""}
                 {item}
@@ -612,7 +612,7 @@ function TaskCard({
                 aria-label={`Match for ${left}`}
                 value={pairs[li] ?? ""}
                 onChange={(e) => setPairs({ ...pairs, [li]: Number(e.target.value) })}
-                className="rounded border px-2 py-1"
+                className="rounded-[2px] border px-2 py-1"
               >
                 <option value="" disabled>
                   choose…
@@ -643,7 +643,7 @@ function TaskCard({
             onChange={(e) => setTextValue(e.target.value)}
             aria-label="Your answer"
             rows={4}
-            className="w-full rounded border px-3 py-2 text-sm"
+            className="w-full rounded-[2px] border px-3 py-2 text-sm"
             placeholder="Write it in your own words"
           />
         )
@@ -685,7 +685,7 @@ function LadderTask({
           <span
             key={label}
             title={label}
-            className={`h-2 flex-1 rounded ${i + 1 <= step.rung ? "bg-[var(--accent)]" : "bg-[var(--line)]"}`}
+            className={`h-2 flex-1 rounded-[2px] ${i + 1 <= step.rung ? "bg-[var(--accent)]" : "bg-[var(--line)]"}`}
           />
         ))}
       </div>
@@ -705,7 +705,7 @@ function LessonTask({ task, busy, onDone }: { task: ServedTask; busy: boolean; o
       </div>
       {task.body ? <p className="max-w-2xl text-sm leading-6">{task.body}</p> : null}
       {visual ? (
-        <figure className="rounded border p-3">
+        <figure className="rounded-[2px] border p-3">
           <figcaption className="text-sm font-medium">{visual.title}</figcaption>
           <p className="sr-only">{visual.alt}</p>
           {visual.nodes?.length ? (
@@ -942,7 +942,7 @@ function RecheckCard({ due, onDone }: { due: RecheckDue; onDone: () => Promise<v
                     type="button"
                     aria-pressed={answers[key] === i}
                     onClick={() => setAnswers({ ...answers, [key]: i })}
-                    className={`rounded border px-2 py-1 text-sm ${answers[key] === i ? "border-[var(--accent)] font-medium" : ""}`}
+                    className={`rounded-[2px] border px-2 py-1 text-sm ${answers[key] === i ? "border-[var(--accent)] font-medium" : ""}`}
                   >
                     {opt}
                   </button>
@@ -978,7 +978,7 @@ function RecheckCard({ due, onDone }: { due: RecheckDue; onDone: () => Promise<v
 function PackPanel({ pack }: { pack: ConceptPack }) {
   if (!pack.available) {
     return (
-      <p className="mt-3 rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">
+      <p className="mt-3 rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">
         {pack.reason}
       </p>
     );
@@ -1006,7 +1006,7 @@ function PackRejections({ rejections }: { rejections: ConceptPack["rejections"] 
   return (
     <ul className="space-y-1">
       {rejections.map((r, i) => (
-        <li key={i} className="rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-[13px]">
+        <li key={i} className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-[13px]">
           <span className="text-[var(--warn)]">{r.code}</span> {r.detail}
         </li>
       ))}
@@ -1025,7 +1025,7 @@ function VariantCard({
 }) {
   if (!item) {
     return (
-      <div className={`rounded-md border border-[var(--line)] bg-[var(--panel)] p-3 text-sm text-[var(--muted)]${wide ? " md:col-span-2" : ""}`}>
+      <div className={`rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3 text-sm text-[var(--muted)]${wide ? " md:col-span-2" : ""}`}>
         <div className="text-xs uppercase tracking-[0.12em]" style={{ fontFamily: "var(--font-mono)" }}>
           {part}
         </div>
@@ -1035,7 +1035,7 @@ function VariantCard({
   }
   const spec = (item as { spec?: unknown }).spec;
   return (
-    <div className={`rounded-md border border-[var(--line)] bg-[var(--panel)] p-3${wide ? " md:col-span-2" : ""}`}>
+    <div className={`rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3${wide ? " md:col-span-2" : ""}`}>
       <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         {part}
         {item.rung ? <span className="ml-2 normal-case tracking-normal">rung {item.rung}</span> : null}
@@ -1068,7 +1068,7 @@ function VariantCard({
 function MatchedPair({ pack }: { pack: ConceptPack }) {
   const { A, B } = pack.pair;
   return (
-    <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-3">
+    <div className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3">
       <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         Matched pair
       </div>
@@ -1136,7 +1136,7 @@ function PairLeg({
             type="button"
             onClick={() => onPick(o)}
             disabled={busy || picked !== null}
-            className={`block w-full rounded-md border px-3 py-2 text-left text-sm disabled:opacity-60 ${
+            className={`block w-full rounded-[2px] border px-3 py-2 text-left text-sm disabled:opacity-60 ${
               picked === o ? "border-[var(--accent)]" : "border-[var(--line)]"
             }`}
           >
@@ -1145,7 +1145,7 @@ function PairLeg({
         ))}
       </div>
       {verdict ? (
-        <div className="mt-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm">
+        <div className="mt-2 rounded-[2px] border border-[var(--line)] px-3 py-2 text-sm">
           <strong>{verdict.correct ? "Right." : "Not yet."}</strong> {verdict.why}
           {verdict.explanation ? (
             <p className="mt-1 text-[13px] text-[var(--muted)]">{verdict.explanation}</p>
@@ -1158,7 +1158,7 @@ function PairLeg({
 
 function HintLadder({ hints }: { hints: ConceptPack["hints"] }) {
   return (
-    <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-3">
+    <div className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3">
       <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         Hints, in order
       </div>
@@ -1179,7 +1179,7 @@ function HintLadder({ hints }: { hints: ConceptPack["hints"] }) {
 
 function Checklist({ checklist }: { checklist: ConceptPack["checklist"] }) {
   return (
-    <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-3">
+    <div className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3">
       <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         Self-check
       </div>

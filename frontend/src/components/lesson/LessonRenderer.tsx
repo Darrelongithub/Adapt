@@ -70,7 +70,7 @@ function BlockBody({ block, index }: { block: Block; index: number }) {
     const question = typeof body === "string" ? body : String(object.question ?? "");
     const options = Array.isArray(object.options) ? object.options : [];
     return (
-      <fieldset className="mt-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3">
+      <fieldset className="mt-2 rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3">
         <legend className="px-1 text-sm font-medium">{question}</legend>
         {options.length ? (
           <div className="mt-2 grid gap-2">
@@ -84,7 +84,7 @@ function BlockBody({ block, index }: { block: Block; index: number }) {
         ) : (
           <input
             aria-label="Your answer"
-            className="mt-2 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm"
+            className="mt-2 w-full rounded-[2px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm"
             type="text"
             autoComplete="off"
           />
@@ -97,13 +97,13 @@ function BlockBody({ block, index }: { block: Block; index: number }) {
     return (
       <ol className="grid gap-2">
         {steps.map((step, stepIndex) => (
-          <li key={stepIndex} className="rounded-md bg-[var(--panel)] px-3 py-2 text-sm">
+          <li key={stepIndex} className="rounded-[2px] bg-[var(--panel)] px-3 py-2 text-sm">
             <p>{step.text}</p>
             {step.why ? <p className="mt-1 text-xs text-[var(--muted)]">{step.why}</p> : null}
           </li>
         ))}
         {object.final_answer ? (
-          <li className="rounded-md border border-[var(--line)] px-3 py-2 text-sm">
+          <li className="rounded-[2px] border border-[var(--line)] px-3 py-2 text-sm">
             <span className="font-medium">Checked result: </span>{object.final_answer}
           </li>
         ) : null}
@@ -117,7 +117,7 @@ function BlockBody({ block, index }: { block: Block; index: number }) {
 function BlockCard({ block, index, showWhy }: { block: Block; index: number; showWhy: boolean }) {
   const bodyText = useMemo(() => textValues(block.body).join(" "), [block.body]);
   return (
-    <article className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4">
+    <article className="rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4">
       <BlockBody block={block} index={index} />
       {showWhy ? (
         <details className="mt-3 text-[11px] text-[var(--muted)]" data-testid="block-why">
@@ -173,7 +173,7 @@ export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, cla
   return (
     <section className={`grid gap-3 ${className}`} aria-label="Lesson">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--muted)]">{label}</span>
+        <span className="rounded-[2px] border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--muted)]">{label}</span>
         {lesson.method ? <span className="text-[11px] text-[var(--muted)]">Method: {lesson.method.replaceAll("_", " ")}</span> : null}
       </div>
       {lesson.blocks.map((block, index) => (

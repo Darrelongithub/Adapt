@@ -304,6 +304,47 @@ def test_mutations_require_the_csrf_header(client, learner):
     assert ok.json()["accepted"]["goal"] == "gcse maths"
 
 
+def test_a_rate_limited_read_needs_no_csrf_header(client, learner):
+    """A signed-in GET must work with the cookie alone — no token.
+
+    This is the shape the browser actually sends. ``rate(scope)`` depends on
+    ``require_csrf``, so every rate-limited *read* used to inherit the mutation rule and
+    answer 403 "csrf token missing or wrong". The suite never caught it because the
+    ``learner`` fixture hands every caller ``headers`` with the token already in it, and
+    every other test passes those headers to its GETs.
+
+    The routes here are the ones the subject screen fetches through ``get()`` in
+    ``frontend/src/lib/content.ts`` — a helper that deliberately does not attach a token
+    to a safe method — so the pack and the breakdown were unreachable in the running app.
+    """
+    # No CSRF header at all: the cookie from `learner`'s session is the only credential.
+    concepts = client.get("/api/v1/lesson/concepts", params={"topic": "fractions"})
+    assert concepts.status_code == 200, concepts.text
+    assert "concepts" in concepts.json()
+
+    breakdown = client.get("/api/v1/content/breakdown", params={"topic": "fractions"})
+    assert breakdown.status_code == 200, breakdown.text
+
+    pack = client.get("/api/v1/content/pack", params={"topic": "fractions", "concept": "task"})
+    assert pack.status_code != 403, "a read must never be refused for want of a CSRF token"
+
+    reveal = client.get("/api/v1/items/does-not-exist/reveal")
+    assert reveal.status_code == 404, "reveal stays rate-limited and authenticated, just not CSRF-gated"
+
+
+def test_csrf_is_enforced_on_every_mutating_method(client, learner):
+    """The read-side relaxation must not loosen the mutation side.
+
+    Named per method so a future route added under PUT/PATCH/DELETE is still covered by
+    the dependency, not by a caller remembering to send a header.
+    """
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
+        response = client.request(method, "/api/v1/me/preferences", json={"preferences": {"goal": "x"}})
+        assert response.status_code in (403, 405), f"{method} was not CSRF-checked: {response.status_code}"
+        if response.status_code == 403:
+            assert "csrf" in response.json()["detail"]
+
+
 def test_validation_errors_point_at_the_field_without_echoing_the_answer(client, learner, items):
     """A 422 has to say which field, and must not repeat what was sent."""
     response = client.post("/api/v1/attempts", json={"session_id": "lrs_x"}, headers=learner["headers"])

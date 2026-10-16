@@ -1,6 +1,7 @@
 """ADAPT backend: adaptive learning platform with two cooperating AI roles.
 
-Blueprint contract (docs/BLUEPRINT.md):
+Blueprint contract (the web-application prompt set shipped in
+``adapt-web-application-prompts.zip`` at the repository root):
 
 * AI 1 (Learning Intelligence) analyses evidence, traces knowledge, and proposes
   adaptations -- it can never persist an adaptation without a student decision.

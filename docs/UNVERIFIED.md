@@ -434,7 +434,7 @@ area. What changed, and what a phone still has to confirm:
 
 ## Round: functionality (Phase 2, section 5, the mind baseline) - 2026-10-13
 
-Verified here (see the phase 2 report in `docs/FUNCTIONALITY_ROUND.md` for the numbers): the engine
+Verified here (the measurements are in `docs/AUDIT.md`): the engine
 and its 40 tests, the flow order end to end, the HTTP surface, the screens driven in jsdom against
 the live API (25 checks) and against `?mock=1`, the contract linter and `next build`.
 
@@ -554,7 +554,8 @@ differentiation, linear and quadratic solving, and the refusals).
   contrast screen's model path — is verified against scripted fake models in tests and in a
   real browser, never against a real provider. The harness is ready and tested with a fake;
   the owner runs it with one command sequence (`adapt config set-key`, `adapt config test`,
-  `python scripts/live_model_check.py` from the repo root, see `docs/round2/live-check.md`).
+  `python scripts/live_model_check.py --help` from the repo root; the template it would
+  replace is `MODEL_QUALITY_REPORT.md`).
   Until then `MODEL_QUALITY_REPORT.md` remains the template Phase E committed, not a result.
 * **Real-model teaching quality is therefore unknown**: whether a real pack's facts are right,
   whether real lessons read well, and what the judge scores would be. The deterministic path

@@ -1,7 +1,7 @@
 """Master prompt 3 -- the teach-back grader -- pinned, wired, and gated.
 
 The six master prompts shipped with the web-application prompt set
-(``adapt-web-application-prompts.zip`` -> ``docs/MASTER_PROMPTS.md``) describe one
+(``adapt-web-application-prompts.zip`` at the repository root) describe one
 prompt per AI surface. Number 3 is the teach-back judge:
 
     grade a "teach-back" (explain it in your own words) for conceptual correctness
