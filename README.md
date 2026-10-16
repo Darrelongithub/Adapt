@@ -124,6 +124,41 @@ For a frontend-only session with a separately managed API, use `npm run dev:web`
 For fixture-only previews: `ADAPT_API=offline npm run dev:web`, then open `/?mock=1`.
 `npm run start` remains frontend-only production serving.
 
+### Add your Gemini key (round 3)
+
+The key is console-only. It is never read from a route, log line, error body, or bundle, and
+the secrecy canary in `backend/tests/test_config_secrecy.py` enforces that.
+
+The one canonical way to set it:
+
+```bash
+cd backend
+source .venv/bin/activate          # or use the venv the launcher already made
+adapt config set-key               # hidden prompt — type, do not paste on the command line
+                                   # the key is stored in an owner-only console file
+                                   # under the data dir, not in this repo
+adapt config status                # one line per service, e.g.
+                                   #   gemini: configured · …ab12
+                                   #   youtube: not configured
+adapt config test                  # one minimal request — prints "ok" or the reason
+```
+
+Restart `adapt host` so the new value is loaded.  The startup line that says
+"Model key: configured / not configured (lessons in simple mode)" is the only place the
+key's *presence* is reported — the key itself never leaves the console file.
+
+A plain `.env` at the repo root is the fallback for machines where the console flow is
+not desired.  Copy `.env.example` to `.env` and uncomment the line, then restart:
+
+```bash
+cd ~/Adapt
+cp .env.example .env
+$EDITOR .env                       # set ADAPT_GEMINI_API_KEY=…
+```
+
+The `ADAPT_GEMINI_API_KEY` value is read by the same code path whether it came from the
+console file or `.env`.  Both are checked at startup; the console file wins if both are set.
+
 ### Advanced / separate services and checks
 
 ```bash

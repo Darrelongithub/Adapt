@@ -52,7 +52,11 @@ export function AccountGate() {
         });
       }
       establish(profile);
-      router.replace(profile.baseline_started ? "/" : "/baseline");
+      // Round 3 (Track T): a new learner is routed to the journey stage
+      // flow rather than dropped into the mind check.  The journey page is
+      // now a one-screen flow that runs each stage in turn and auto-
+      // advances; the menu stays for returning learners.
+      router.replace("/journey");
     } catch (err) {
       const e = err as { status?: number; shown?: string; detail?: unknown };
       if (e.status === 403 && JSON.stringify(e.detail ?? "").includes("demo_passphrase_required")) {
@@ -72,18 +76,27 @@ export function AccountGate() {
         <h1 id="access-title" className="access-title">{step === "consent" ? "Welcome to ADAPT." : "Welcome to ADAPT."}</h1>
         {step === "consent" ? (
           <>
-            <p className="mt-3 text-sm text-[var(--muted)]">
-              Practice that measures how you study, proposes what to change, and asks first.
-              Review this before signing in or continuing as a guest.
-            </p>
-            <div className="my-5 rounded border border-[var(--line)] p-4 text-sm text-[var(--muted)]">
-              <p>{privacy.data?.telemetry?.note ?? "ADAPT records answers, time spent on questions, and the steps you take through lessons to estimate progress."}</p>
-              <p className="mt-2">Never recorded: keystrokes, screenshots, screen contents or activity in other tabs.</p>
-            </div>
-            <div className="space-y-4">
+            <p className="mt-3 text-sm text-[var(--muted)]">Practice that asks before it changes anything.</p>
+            <ul className="mt-4 space-y-2 text-sm">
+              <li className="flex items-start gap-2">
+                <span className="choice-icon" aria-hidden="true">✓</span>
+                <span><strong>Recorded:</strong> your answers, time on questions, steps through lessons.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="choice-icon" aria-hidden="true">✕</span>
+                <span><strong>Never recorded:</strong> keystrokes, screenshots, other tabs.</span>
+              </li>
+            </ul>
+            <details className="r3-question-why-tap mt-2">
+              <summary>more on privacy</summary>
+              <p className="r3-question-why">
+                {privacy.data?.telemetry?.note ?? "ADAPT records answers, time spent on questions, and the steps you take through lessons to estimate progress."}
+              </p>
+            </details>
+            <div className="space-y-4 mt-4">
               <label className="check-row">
                 <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
-                <span>I agree to the recording described above so ADAPT can support my learning. <strong>Required to continue.</strong></span>
+                <span>I agree to the recording above so ADAPT can support my learning. <strong>Required to continue.</strong></span>
               </label>
               <label className="check-row">
                 <input type="checkbox" checked={research} onChange={e => setResearch(e.target.checked)} />

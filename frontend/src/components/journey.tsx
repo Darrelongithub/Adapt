@@ -109,10 +109,16 @@ export function StageList({ state, onSkip, busy }: { state: JourneyState | null;
 /**
  * One stage, as a card: what it is for, the button that goes there, and what skipping
  * costs. Shown for the stage the learner is on, so the path is never a dead end.
+ *
+ * Round 3 (Track T): the card now also has a "I have done this" action that calls
+ * `onComplete` rather than relying on a follow-up server call.  That is the auto-
+ * advance button: the journey screen reads back from the server after every
+ * `markDone` and renders the next stage's card in the same place.
  */
 export function StageCard({
   row,
   onSkip,
+  onComplete,
   busy,
   primaryLabel,
   href,
@@ -120,6 +126,7 @@ export function StageCard({
 }: {
   row: StageRow;
   onSkip?: (stage: StageId) => void;
+  onComplete?: (stage: StageId) => void;
   busy?: boolean;
   /** Overrides the default action label — used where another phase's screen is the real target. */
   primaryLabel?: string;
@@ -128,6 +135,7 @@ export function StageCard({
 }) {
   const step = STEPS[row.id];
   if (!step) return null;
+  const isLast = row.id === "practice" || row.id === "account";
   return (
     <div data-testid="journey-card" data-stage={row.id} className="space-y-2">
       <div>
@@ -141,13 +149,23 @@ export function StageCard({
         <Btn kind="primary" href={href ?? step.href}>
           {primaryLabel ?? step.action}
         </Btn>
-        {onSkip && row.id !== "account" && row.id !== "practice" ? (
+        {onComplete && row.status === "todo" && !isLast ? (
+          <Btn
+            kind="ghost"
+            onClick={() => onComplete(row.id)}
+            disabled={busy}
+            data-testid="journey-mark-done"
+          >
+            I have already done this
+          </Btn>
+        ) : null}
+        {onSkip && row.status === "todo" && !isLast ? (
           <Btn kind="ghost" onClick={() => onSkip(row.id)} disabled={busy}>
             skip this step
           </Btn>
         ) : null}
       </div>
-      {row.id !== "account" && row.id !== "practice" ? (
+      {row.status === "todo" && !isLast ? (
         <p className="text-[0.7rem] text-[var(--muted)]">
           Skipping: {step.skipNote}
         </p>

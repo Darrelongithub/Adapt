@@ -88,11 +88,16 @@ test("the full journey with the three lesson moments", async ({ page, context },
   await shot(page, project, "04-first-lesson-written-for-you");
 
   // -- the wrong-answer moment starts from the answer actually chosen ------------------
+  // Round 3 (Track S): clicking an option now registers the answer with the
+  // server, the server grades it, and the wrong-answer moment appears
+  // automatically — there is no longer a "I picked this and it was wrong"
+  // button to press.  The lesson is wrong-answer-by-default when a wrong
+  // option is clicked; the test now expects the second moment to follow
+  // the click without any further action.
   const options = page.locator("[data-testid='fl-option']");
   await expect(options.first()).toBeVisible({ timeout: 30_000 });
   const chosenText = (await options.nth(1).innerText()).trim();
   await options.nth(1).click();
-  await page.locator("[data-testid='fl-wrong']").click();
   const explanation = page.locator("[data-testid='fl-moment']").nth(1);
   await expect(explanation).toBeVisible({ timeout: 60_000 });
   await expect(explanation).toContainText("Why that answer feels right", { timeout: 30_000 });

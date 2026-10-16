@@ -237,7 +237,11 @@ def authored_pack(topic: str, *, level: int, language: str) -> Pack | None:
                 else "unverified"
             )
             if verification == "unverified":
-                log.warning(
+                # Round 3 (Track S): this used to be a WARNING on every run,
+                # which made stdout noisy in CI and obscured real warnings.
+                # It is still important: the item is excluded from scoring, so
+                # the call site needs to know.  The code is debug-level now.
+                log.debug(
                     "authored_item_unverified topic_key=%s concept_id=%s leg=%s "
                     "code=key_not_independently_checked",
                     breakdown.topic_key,

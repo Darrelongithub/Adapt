@@ -274,6 +274,48 @@ export default function Baseline() {
 
 /* ------------------------------------------------------------------- format ---- */
 
+/* Tiny inline icons for the format pick — three small glyphs that read at a glance. */
+function FormatIcon({ value }: { value: string }) {
+  if (value === "diagram") {
+    return (
+      <svg viewBox="0 0 36 36" aria-hidden="true" width="32" height="32">
+        <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+          <path d="M4 28 L4 6" />
+          <path d="M4 28 L32 28" />
+          <rect x="9" y="20" width="3.5" height="8" />
+          <rect x="15" y="14" width="3.5" height="14" />
+          <rect x="21" y="10" width="3.5" height="18" />
+          <rect x="27" y="6" width="3.5" height="22" />
+        </g>
+      </svg>
+    );
+  }
+  if (value === "text") {
+    return (
+      <svg viewBox="0 0 36 36" aria-hidden="true" width="32" height="32">
+        <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+          <line x1="6" y1="10" x2="30" y2="10" />
+          <line x1="6" y1="16" x2="30" y2="16" />
+          <line x1="6" y1="22" x2="22" y2="22" />
+          <line x1="6" y1="28" x2="26" y2="28" />
+        </g>
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 36 36" aria-hidden="true" width="32" height="32">
+      <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+        <circle cx="6" cy="8" r="2" fill="currentColor" />
+        <line x1="11" y1="8" x2="30" y2="8" />
+        <circle cx="6" cy="18" r="2" fill="currentColor" />
+        <line x1="11" y1="18" x2="30" y2="18" />
+        <circle cx="6" cy="28" r="2" fill="currentColor" />
+        <line x1="11" y1="28" x2="24" y2="28" />
+      </g>
+    </svg>
+  );
+}
+
 function FormatScreen({ view, onPick, busy }: { view: BaselineView; onPick: (v: string) => void; busy: boolean }) {
   const [picked, setPicked] = useState<string | null>(view.format_pick);
   const opener = useRef<HTMLButtonElement | null>(null);
@@ -282,29 +324,40 @@ function FormatScreen({ view, onPick, busy }: { view: BaselineView; onPick: (v: 
   }, []);
   return (
     <Card title="How would you like to meet a new idea?">
-      <p>
-        This is a preference, not a diagnosis: it sets where the app starts, and later it is compared
-        with what actually worked. Changing your mind is allowed.
-      </p>
-      <div className="baseline-options" role="group" aria-label="format preference">
+      <p>One preference, not a label. <a href="#why-format" className="link-inline">why we ask</a></p>
+      <div className="r3-choices tall-grid" role="group" aria-label="format preference">
         {view.format_options.map((opt, i) => (
           <button
             key={opt.value}
             ref={i === 0 ? opener : undefined}
             type="button"
             aria-pressed={picked === opt.value}
-            className={`baseline-option${picked === opt.value ? " on" : ""}`}
+            data-testid="format-option"
+            data-format={opt.value}
+            className={`choice-card tall${picked === opt.value ? " is-selected" : ""}`}
             onClick={() => {
               setPicked(opt.value);
               onPick(opt.value);
             }}
             disabled={busy}
           >
-            <strong>{opt.label}</strong>
-            <span className="muted small">{opt.hint}</span>
+            <span className="choice-icon" aria-hidden="true">
+              <FormatIcon value={opt.value} />
+            </span>
+            <span className="choice-body">
+              <span className="choice-title">{opt.label}</span>
+              <span className="choice-hint">{opt.hint}</span>
+            </span>
           </button>
         ))}
       </div>
+      <details id="why-format" className="r3-question-why-tap">
+        <summary>why we ask</summary>
+        <p className="r3-question-why">
+          This is a preference, not a diagnosis. It is where the app starts; later the app compares it with
+          what actually worked, so a single early guess is never treated as a label about how you learn.
+        </p>
+      </details>
     </Card>
   );
 }
@@ -312,8 +365,16 @@ function FormatScreen({ view, onPick, busy }: { view: BaselineView; onPick: (v: 
 /* ---------------------------------------------------------------- questions ---- */
 
 function QuestionsScreen({ view, onDone, busy }: { view: BaselineView; onDone: (a: Record<string, unknown>) => void; busy: boolean }) {
+  // Round 3 (Track R): the wall of 13 questions became a card stack — one at a
+  // time, a thin progress bar, and a back button.  The answers are still sent
+  // as a single payload so the server's contract is unchanged, but the
+  // learner's experience is one question on a screen.
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => ({ ...(view.answers ?? {}) }));
-  const [free, setFree] = useState<string>("");
+  const [index, setIndex] = useState(0);
+  const questions = view.questions ?? [];
+  const current = questions[index];
+  const total = questions.length;
+  const last = index === total - 1;
 
   const set = (key: string, value: unknown) => setAnswers((a) => ({ ...a, [key]: value }));
   const toggle = (key: string, value: unknown) =>
@@ -325,70 +386,108 @@ function QuestionsScreen({ view, onDone, busy }: { view: BaselineView; onDone: (
       return { ...a, [key]: list };
     });
 
-  const timers = timers_visible(view);
+  if (!current) {
+    return (
+      <Card title="How you work">
+        <p className="muted small">No questions in this run. Continue to the games.</p>
+        <div className="row">
+          <Btn kind="primary" onClick={() => onDone(answers)} disabled={busy}>
+            Continue
+          </Btn>
+        </div>
+      </Card>
+    );
+  }
+
+  const value = answers[current.key];
+  const multi = Boolean(current.multi);
+  const options = current.options ?? [];
+  const hasAnswer = multi
+    ? Array.isArray(value) && value.length > 0
+    : current.free_text
+      ? typeof value === "string" && value.trim().length > 0
+      : value !== undefined && value !== null;
+  const progress = Math.round(((index + 1) / Math.max(1, total)) * 100);
 
   return (
-    <Card title="How you work">
-      <p>
-        {view.questions.length} short questions, in one go. They set the shape of the app around you
-        {timers ? "" : ", including keeping clocks off your screen"}. Your timing is still measured
-        quietly while you play the games — that is evidence about the games, not a score.
-      </p>
-      <div className="baseline-q">
-        {view.questions.map((q) => {
-          const value = answers[q.key];
-          const multi = Boolean(q.multi);
-          const options = q.options ?? [];
-          return (
-            <fieldset key={q.key} className="baseline-q-row">
-              <legend>
-                {q.question} {q.free_text ? <span className="muted small">(optional)</span> : null}
-              </legend>
-              {q.why ? <p className="muted small" style={{ marginTop: 0 }}>asked because it {q.why}</p> : null}
-              {q.free_text ? (
-                <input
-                  className="input"
-                  aria-label={q.question}
-                  value={typeof value === "string" ? value : ""}
+    <Card title="How you work" right={<span className="muted small">Question {index + 1} of {total}</span>}>
+      <div className="r3-question-stack">
+        <div
+          className="r3-question-progress"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="questions progress"
+        >
+          <span style={{ width: `${Math.max(2, progress)}%` }} />
+        </div>
+        <h2 className="r3-question-prompt" data-testid="r3-question-prompt">
+          {current.question}
+          {current.free_text ? <span className="muted small"> (optional)</span> : null}
+        </h2>
+        {current.free_text ? (
+          <input
+            className="input"
+            aria-label={current.question}
+            value={typeof value === "string" ? value : ""}
+            disabled={busy}
+            onChange={(e) => set(current.key, e.target.value)}
+          />
+        ) : (
+          <div className="r3-choices pill-grid" role="group" aria-label={current.question}>
+            {options.map((opt) => {
+              const on = multi ? Array.isArray(value) && value.includes(opt) : value === opt;
+              return (
+                <button
+                  key={String(opt)}
+                  type="button"
+                  data-testid="r3-question-option"
+                  aria-pressed={on}
+                  className={`choice-card${on ? " is-selected" : ""}`}
                   disabled={busy}
-                  onChange={(e) => set(q.key, e.target.value)}
-                />
-              ) : (
-                // Choices are buttons with a pressed state, not radios or checkboxes inside labels:
-                // one control kind across the baseline, and a keyboard path that is the same everywhere.
-                <div className="baseline-options">
-                  {options.map((opt) => {
-                    const on = multi ? Array.isArray(value) && value.includes(opt) : value === opt;
-                    return (
-                      <button
-                        key={String(opt)}
-                        type="button"
-                        className={`baseline-option${on ? " on" : ""}`}
-                        aria-pressed={on}
-                        disabled={busy}
-                        onClick={() => (multi ? toggle(q.key, opt) : set(q.key, opt))}
-                      >
-                        <strong>{String(opt)}</strong>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </fieldset>
-          );
-        })}
-      </div>
-      <div className="row">
-        <Btn kind="primary" onClick={() => onDone(answers)} disabled={busy}>
-          Continue
-        </Btn>
-        <Btn kind="ghost" onClick={() => onDone({})} disabled={busy} title="skip these and go straight to the games">
-          Skip the questions
-        </Btn>
+                  onClick={() => (multi ? toggle(current.key, opt) : set(current.key, opt))}
+                >
+                  <span className="choice-body">
+                    <span className="choice-title">{String(opt)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {current.why ? (
+          <details className="r3-question-why-tap">
+            <summary>why we ask</summary>
+            <p className="r3-question-why">Asked because it {current.why}.</p>
+          </details>
+        ) : null}
+        <div className="r3-question-foot">
+          <div className="flex flex-wrap gap-2">
+            <Btn kind="ghost" onClick={() => setIndex((i) => Math.max(0, i - 1))} disabled={busy || index === 0}>
+              Back
+            </Btn>
+            {!last ? (
+              <Btn
+                kind="primary"
+                onClick={() => setIndex((i) => Math.min(total - 1, i + 1))}
+                disabled={busy}
+              >
+                Next
+              </Btn>
+            ) : (
+              <Btn kind="primary" onClick={() => onDone(answers)} disabled={busy}>
+                Finish
+              </Btn>
+            )}
+          </div>
+          <Btn kind="ghost" onClick={() => onDone({})} disabled={busy} title="skip these and go straight to the games">
+            Skip the questions
+          </Btn>
+        </div>
       </div>
       <p className="muted small">
-        Skipped questions are stored as skipped, not as answers, and the snapshot says which ones were
-        not measured.
+        Skipped questions are recorded as skipped, not as zero.
       </p>
     </Card>
   );

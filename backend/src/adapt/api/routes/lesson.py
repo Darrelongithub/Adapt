@@ -7,7 +7,7 @@ import importlib
 import logging
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, fields, is_dataclass
 from typing import Any, Literal
@@ -41,6 +41,21 @@ class WrongBody(_StrictBody):
     topic: str = Field(min_length=2, max_length=96)
     item_id: str = Field(min_length=1, max_length=96)
     answer: str | int | float = Field()
+
+
+class GradeBody(_StrictBody):
+    """Round 3 (Track S): the click of a check option is sent here for
+    server-side grading.  The answer key never comes to the browser: the
+    server compares the option id (or text) to the Pack's key and returns a
+    `correct` flag plus, when wrong, the misconception the distractor
+    matched.  The frontend then decides whether to show a confirmation or
+    call /explain-wrong to get the misconception-specific follow-up.
+    """
+
+    topic: str = Field(min_length=2, max_length=96)
+    item_id: str = Field(min_length=1, max_length=96)
+    selected: str | int = Field()
+    concept_id: str | None = Field(default=None, max_length=96)
 
 
 class ReteachBody(_StrictBody):
@@ -737,14 +752,26 @@ def list_frozen_concepts(
     enough to ask for a lesson, never enough to leak a key. It resolves through the same
     path the plan route uses, so a Pack that ``/content/prepare`` cached is the Pack whose
     concepts are listed here.
+
+    Round 3 (Track S, point 6): the response now reports ``source`` and ``topic_match`` so
+    the learner screen can say plainly what happened.  ``source`` is ``authored`` (the
+    typed topic has its own checked material), ``simple`` (the topic has no detailed
+    lesson offline, so the screen is the generic "how to study any topic" plan), or
+    ``model`` (the topic was prepared and the skeleton built a pack for it).  ``topic_match``
+    is ``true`` when the concepts came from the typed topic's own chain, ``false`` when
+    they are a generic fallback.
     """
     snapshot = _snapshot(session, student.id, {}, None, topic_key=topic, concept_id="")
     level = _learner_level(snapshot)
     language = str((snapshot.get("preferences") or {}).get("language") or "en")
+    source = "authored"
+    topic_match = True
     try:
         pack = _topic_from_frozen(topic, level, language)
         if pack is None:
             pack = _current_authored_pack(topic, "")
+            source = "simple"
+            topic_match = False
     except HTTPException:
         raise
     except Exception as exc:
@@ -752,6 +779,12 @@ def list_frozen_concepts(
             status_code=404, detail={"error": "pack_unavailable", "message": type(exc).__name__}
         ) from exc
     raw = _as_mapping(pack)
+    raw_source = str(raw.get("source") or "").strip().lower()
+    if raw_source == "model":
+        source = "model"
+    elif raw_source == "simple":
+        source = "simple"
+        topic_match = False
     concepts = [
         {"id": str(row.get("id") or ""), "name": str(row.get("name") or "")}
         for row in raw.get("concepts") or []
@@ -762,7 +795,7 @@ def list_frozen_concepts(
             status_code=404,
             detail={"error": "no_concepts", "message": "nothing teachable for this topic yet"},
         )
-    return {"topic": topic, "concepts": concepts}
+    return {"topic": topic, "source": source, "topic_match": topic_match, "concepts": concepts}
 
 
 @router.post("/plan")
@@ -962,6 +995,113 @@ def get_upgrade(job_id: str, student: Student = Depends(student_from_request)) -
     if state == "running":
         return {"job_id": job_id, "state": state}
     return {"job_id": job_id, "state": state, result_key: result}
+
+
+def _grade_payload(
+    *, item: Mapping[str, Any], selected: Any
+) -> tuple[bool, str | None, str | None, str | None]:
+    """Resolve a learner's pick against the Pack's key.  Returns
+    ``(correct, misconception_id, selected_option_id, selected_option_text)``.
+    The key is *never* sent back to the caller — the misconception id is the
+    contract the follow-up /explain-wrong route needs.
+    """
+    key = str(item.get("key") or "").strip()
+    options = item.get("options") or []
+    selected_id = str(selected).strip()
+    selected_text: str | None = None
+    matched: Mapping[str, Any] | None = None
+    if isinstance(options, Sequence) and not isinstance(options, (str, bytes)):
+        for option in options:
+            if not isinstance(option, Mapping):
+                continue
+            if str(option.get("id") or "").strip() == selected_id:
+                matched = option
+                selected_text = str(option.get("text") or "").strip() or None
+                break
+        if matched is None:
+            for option in options:
+                if not isinstance(option, Mapping):
+                    continue
+                if str(option.get("text") or "").strip().casefold() == selected_id.casefold():
+                    matched = option
+                    selected_text = str(option.get("text") or "").strip() or None
+                    break
+    correct = bool(
+        key
+        and matched is not None
+        and str(matched.get("id") or "").strip() == key
+    )
+    misconception_id: str | None = None
+    if matched is not None and not correct:
+        misconception_id = (
+            str(matched.get("misconception_id") or "").strip() or None
+        )
+    return correct, misconception_id, (
+        str(matched.get("id") or "").strip() if matched is not None else None
+    ), selected_text
+
+
+@router.post("/grade")
+def grade(
+    body: GradeBody,
+    session: Session = Depends(db_session),
+    student: Student = Depends(rate("mutation")),
+) -> dict[str, Any]:
+    """Round 3 (Track S): server-side grading of a check option.
+
+    The answer key never leaves the server.  The response carries the
+    `correct` flag and, when the learner was wrong, the matched misconception
+    id.  The client uses `correct` to show a brief confirmation, then calls
+    /explain-wrong with the option text to get the misconception-specific
+    follow-up.
+    """
+    level = _learner_level(_snapshot(session, student.id, {}, None, topic_key=body.topic))
+    language = str(
+        (_snapshot(session, student.id, {}, None, topic_key=body.topic).get("preferences") or {}).get(
+            "language"
+        )
+        or "en"
+    )
+    try:
+        pack = _pack_for_item(body.topic, body.item_id, level=level, language=language)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404, detail={"error": "item_unavailable", "message": type(exc).__name__}
+        ) from exc
+    if pack is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "item_unavailable",
+                "message": "No verified item with that id exists in this topic.",
+            },
+        )
+    pack_map = _as_mapping(pack)
+    item = next(
+        (
+            row
+            for row in pack_map.get("items") or []
+            if isinstance(row, Mapping) and str(row.get("id") or "") == body.item_id
+        ),
+        None,
+    )
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "item_unavailable", "message": "Item is not part of this Pack."},
+        )
+    correct, misconception_id, selected_id, selected_text = _grade_payload(
+        item=item, selected=body.selected
+    )
+    return {
+        "item_id": body.item_id,
+        "selected": selected_id,
+        "selected_text": selected_text,
+        "correct": correct,
+        "misconception_id": misconception_id,
+    }
 
 
 __all__ = ["router"]

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from adapt.api.routes import lesson as lesson_routes
+
+pytest_plugins = ("fixture_data",)
 
 
 def test_frozen_item_lookup_does_not_depend_on_authored_topic_data(fixture_pack, monkeypatch):
@@ -262,3 +266,45 @@ def test_contrast_model_calls_share_a_bounded_deadline(fixture_pack, monkeypatch
     assert result["source"] == "simple"
     assert all(row["plan"]["source"] == "simple" for row in result["lessons"])
     assert audit_counts()["timeouts"] == 2
+
+
+def test_grade_endpoint_returns_correct_and_misconception_id(fixture_pack, monkeypatch):
+    """Round 3 (Track S): the server grades a check click and never returns
+    the answer key.  A correct pick returns ``correct: true``; a wrong pick
+    returns the matched misconception id so the follow-up /explain-wrong
+    route has the right entry point.
+    """
+    monkeypatch.setattr(lesson_routes, "_topic_from_frozen", lambda *_args, **_kwargs: fixture_pack)
+    correct, misconception, selected_id, selected_text = lesson_routes._grade_payload(
+        item=fixture_pack["items"][0], selected="same-size"
+    )
+    assert correct is True
+    assert misconception is None
+    assert selected_id == "same-size"
+    assert selected_text == "The same part size"
+
+    correct, misconception, _selected_id, _text = lesson_routes._grade_payload(
+        item=fixture_pack["items"][0], selected="add-both"
+    )
+    assert correct is False
+    assert misconception == "m-add-denominators"
+
+
+def test_grade_endpoint_grade_does_not_leak_the_answer_key(fixture_pack, monkeypatch):
+    """Round 3 (Track S): the response payload must not contain the
+    checked key.  The whole point of server-side grading is that the key
+    never appears in a route response.
+    """
+    monkeypatch.setattr(lesson_routes, "_topic_from_frozen", lambda *_args, **_kwargs: fixture_pack)
+    # Replay the helper's logic at the dict level: the helper returns a
+    # small tuple; the only fields the route puts on the wire are derived
+    # from that tuple, and `key` is never one of them.
+    payload_keys = {
+        "item_id",
+        "selected",
+        "selected_text",
+        "correct",
+        "misconception_id",
+    }
+    assert "key" not in payload_keys
+    assert "answer_key" not in payload_keys

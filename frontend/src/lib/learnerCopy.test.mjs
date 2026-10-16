@@ -73,11 +73,12 @@ test("the journey shell and the sidebar both lead to the one path", () => {
   assert.match(chrome, /label: "Mind check"/, "a returning learner keeps the mind check as its own destination");
   assert.match(journey, /useJourney/);
   assert.match(journey, /journey\/state|useJourney/);
-  // The requested entry flow takes priority: first baseline, then returning home.
-  // The guided path remains available from both the dashboard and sidebar.
+  // Round 3 (Track T): a new learner is routed into the journey stage
+  // flow rather than dropped into the mind check.  The journey page is
+  // now the one-screen flow that runs each stage in turn.
   const gate = readFileSync(new URL("../components/account-gate.tsx", import.meta.url), "utf8");
   const dashboard = readFileSync(new URL("../components/home-dashboard.tsx", import.meta.url), "utf8");
-  assert.match(gate, /profile\.baseline_started \? "\/" : "\/baseline"/);
+  assert.match(gate, /router\.replace\(["']\/journey["']\)/);
   assert.match(home, /HomeDashboard/);
   assert.match(dashboard, /href="\/journey"/);
   assert.doesNotMatch(home, /onboarding\?\$\{carry\}/);

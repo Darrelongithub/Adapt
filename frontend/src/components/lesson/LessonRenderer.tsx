@@ -46,6 +46,7 @@ type Props = {
   upgradeJobId?: string | null;
   contrastLabel?: boolean;
   className?: string;
+  collapseBlockWhy?: boolean;
 };
 
 function textValues(value: unknown): string[] {
@@ -113,23 +114,25 @@ function BlockBody({ block, index }: { block: Block; index: number }) {
   return <p className="whitespace-pre-wrap text-sm leading-6">{content}</p>;
 }
 
-function BlockCard({ block, index }: { block: Block; index: number }) {
+function BlockCard({ block, index, showWhy }: { block: Block; index: number; showWhy: boolean }) {
   const bodyText = useMemo(() => textValues(block.body).join(" "), [block.body]);
   return (
     <article className="rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4">
       <BlockBody block={block} index={index} />
-      <details className="mt-3 text-[11px] text-[var(--muted)]">
-        <summary className="cursor-pointer">Why this block</summary>
-        <p className="mt-1">{block.why.n ? `Evidence n=${block.why.n}` : "No recent evidence was used."}</p>
-        {block.why.evidence_ids.length ? <p>Evidence ids: {block.why.evidence_ids.join(", ")}</p> : null}
-        {block.fact_ids.length ? <p>Pack facts: {block.fact_ids.join(", ")}</p> : null}
-        <span className="sr-only">{bodyText}</span>
-      </details>
+      {showWhy ? (
+        <details className="mt-3 text-[11px] text-[var(--muted)]" data-testid="block-why">
+          <summary className="cursor-pointer">Why this block</summary>
+          <p className="mt-1">{block.why.n ? `Evidence n=${block.why.n}` : "No recent evidence was used."}</p>
+          {block.why.evidence_ids.length ? <p>Evidence ids: {block.why.evidence_ids.join(", ")}</p> : null}
+          {block.fact_ids.length ? <p>Pack facts: {block.fact_ids.join(", ")}</p> : null}
+          <span className="sr-only">{bodyText}</span>
+        </details>
+      ) : null}
     </article>
   );
 }
 
-export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, className = "" }: Props) {
+export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, className = "", collapseBlockWhy = false }: Props) {
   const [lesson, setLesson] = useState(value);
 
   useEffect(() => setLesson(value), [value]);
@@ -173,7 +176,14 @@ export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, cla
         <span className="rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--muted)]">{label}</span>
         {lesson.method ? <span className="text-[11px] text-[var(--muted)]">Method: {lesson.method.replaceAll("_", " ")}</span> : null}
       </div>
-      {lesson.blocks.map((block, index) => <BlockCard key={`${index}-${block.type}`} block={block} index={index} />)}
+      {lesson.blocks.map((block, index) => (
+        <BlockCard
+          key={`${index}-${block.type}`}
+          block={block}
+          index={index}
+          showWhy={!collapseBlockWhy && index === 0}
+        />
+      ))}
     </section>
   );
 }
