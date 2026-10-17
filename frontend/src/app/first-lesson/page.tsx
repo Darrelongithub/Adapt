@@ -20,7 +20,7 @@
  * different way every time it is asked.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 import LessonRenderer, { type LessonValue } from "@/components/lesson/LessonRenderer";
 import { api, get, post } from "@/lib/api";
@@ -46,19 +46,6 @@ function methodWords(method?: string): string {
   return METHOD_WORDS[method] ?? method.replaceAll("_", " ");
 }
 
-function firstCheck(value: LessonValue): { block: CheckBody; index: number } | null {
-  for (let index = 0; index < value.blocks.length; index += 1) {
-    const block = value.blocks[index];
-    if (block.type !== "check" && block.type !== "predict") continue;
-    const body = block.body;
-    if (typeof body === "string") continue;
-    const options = Array.isArray(body.options) ? body.options : [];
-    if (!body.item_id || options.length < 2) continue;
-    return { block: body as CheckBody, index };
-  }
-  return null;
-}
-
 function FirstLesson() {
   const [topicDraft, setTopicDraft] = useState("");
   const [topic, setTopic] = useState<string | null>(null);
@@ -68,6 +55,7 @@ function FirstLesson() {
   const [source, setSource] = useState<string | null>(null);
   const [moments, setMoments] = useState<Moment[]>([]);
   // The option id the learner is sitting on while the server grades it.
+  const [selectedByItem, setSelectedByItem] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<string | null>(null);
   // Server verdict: `correct`, `wrong`, or `pending` (still grading).
   const [verdictByItem, setVerdictByItem] = useState<Record<string, Verdict>>({});
@@ -160,6 +148,7 @@ function FirstLesson() {
     setConceptId(wantedConcept);
     setMoments([{ key: 0, value: out.plan, jobId: out.job_id ?? null, heading: "Your lesson" }]);
     setVerdictByItem({});
+    setSelectedByItem({});
     setMisconceptionByItem({});
     setPending(null);
     setSeq(1);
@@ -222,7 +211,8 @@ function FirstLesson() {
    */
   async function pickOption(itemId: string, optionId: string, optionText: string) {
     if (!topic) return;
-    if (pending === itemId) return;
+    if (pending || busy || verdictByItem[itemId]) return;
+    setSelectedByItem(rows => ({ ...rows, [itemId]: optionId }));
     setPending(itemId);
     setNotice(null);
     let verdict: { correct: boolean; misconception_id?: string | null } | null = null;
@@ -248,14 +238,8 @@ function FirstLesson() {
     await explainWrong(itemId, optionText, verdict.misconception_id ?? undefined);
   }
 
-  const latest = moments.length ? moments[moments.length - 1] : null;
-  const check = useMemo(() => (latest ? firstCheck(latest.value) : null), [latest]);
-  const checkKey = check?.block.item_id ?? "";
-  const verdict = checkKey ? verdictByItem[checkKey] : undefined;
-  const done = verdict === "correct";
-
   return (
-    <main className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
+    <section className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">Your first lesson</h1>
         <p className="text-sm text-[var(--muted)]">
@@ -351,66 +335,36 @@ function FirstLesson() {
           <LessonRenderer
             value={moment.value}
             upgradeJobId={moment.jobId}
-            collapseBlockWhy={momentIndex === 0}
+            onUpgrade={value => setMoments(rows => rows.map(row => row.key === moment.key ? { ...row, value, jobId: null } : row))}
+            collapseBlockWhy={momentIndex !== 0}
+            onPick={pickOption}
+            verdicts={verdictByItem}
+            selected={selectedByItem}
+            disabled={busy || pending !== null}
+            excludeQuestions={moments.slice(0, momentIndex).flatMap(row => row.value.blocks.flatMap(block =>
+              (block.type === "check" || block.type === "predict") && typeof block.body === "object" && block.body.question ? [block.body.question] : []
+            ))}
+            excludeItemIds={moments.slice(0, momentIndex).flatMap(row => row.value.blocks.flatMap(block =>
+              (block.type === "check" || block.type === "predict") && typeof block.body === "object" && block.body.item_id ? [block.body.item_id] : []
+            ))}
           />
         </section>
       ))}
-
-      {check && !done ? (
-        <section
-          className="rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4 space-y-2"
-          aria-label="Your answer"
-        >
-          <h2 className="text-sm font-medium">{check.block.question}</h2>
-          <div className="r3-choices pill-grid" role="group" aria-label="Choose an option">
-            {(check.block.options ?? []).map((option) => {
-              const isPending = pending === checkKey;
-              const chosenWrong = verdict === "wrong" && pending === null;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  data-testid="fl-option"
-                  data-option-id={option.id}
-                  disabled={isPending || pending !== null}
-                  onClick={() => void pickOption(checkKey, option.id, option.text)}
-                  className={`choice-card${chosenWrong ? " is-selected" : ""}`}
-                >
-                  <span className="choice-body">
-                    <span className="choice-title">{option.text}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {verdict === "wrong" ? (
-            <p className="text-sm" role="status" data-testid="fl-wrong-receipt">
-              The lesson marked that one as wrong — see the explanation above.
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-
-      {done ? (
-        <p className="text-sm text-[var(--muted)]" role="status" data-testid="fl-confirm-correct">
-          Right. Practice keeps it in rotation.
-        </p>
-      ) : null}
 
       {conceptId && moments.length > 0 ? (
         <div>
           <button
             type="button"
             data-testid="fl-reteach"
-            disabled={busy}
+            disabled={busy || pending !== null}
             onClick={() => void reteach()}
-            className="rounded-[2px] border border-[var(--line)] px-3 py-2 text-sm disabled:opacity-50"
+            className="btn-ctl btn-secondary"
           >
             I still don&apos;t get it — try another way
           </button>
         </div>
       ) : null}
-    </main>
+    </section>
   );
 }
 

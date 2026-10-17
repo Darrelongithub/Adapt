@@ -4,6 +4,9 @@ const extra = (process.env.ADAPT_DEV_ORIGIN ?? "").split(",").map((s) => s.trim(
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async headers() {
+    return [{ source: "/art/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }] }];
+  },
   // A second output directory is the only clean way to run `next build` while `next dev` is
   // serving: they share `.next`, and a build under a live dev server makes every page answer 500
   // ("Could not find the module ... in the React Client Manifest") until the directory is deleted.

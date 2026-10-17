@@ -13,6 +13,7 @@ from ...assessment.bank import topic_catalog
 from ...subjects.resolve import resolve_topic
 from .. import breakdown as B
 from .. import pack as authored_pack_builder
+from ..distractors import authored_distractors
 from ..validation import validate_item
 from .types import Concept, Item, KeyFact, Misconception, Option, Pack
 from .validation import normalize_language, plain_text
@@ -97,39 +98,16 @@ def authored_pack(topic: str, *, level: int, language: str) -> Pack | None:
             (kit.get(2) or {}).get("why") or (kit.get(5) or {}).get("why") or description
         )
         why_it_works = _concept_text(rationale, field="authored concept explanation", maximum=500)
-        misconceptions: list[Misconception] = []
-        for index, raw_misconception in enumerate(source_concept.misconceptions or ()):
-            if not isinstance(raw_misconception, Mapping):
-                continue
-            wrong = str(raw_misconception.get("claim") or "").strip()
-            correction = str(raw_misconception.get("contrast") or "").strip()
-            if not wrong or not correction:
-                continue
-            try:
-                wrong_text = _concept_text(wrong, field="authored near-miss", maximum=220)
-                correction_text = _concept_text(correction, field="authored contrast", maximum=400)
-            except Exception:
-                continue
-            fact_id = _fact_id(concept_id, f"near_miss_{index + 1}")
-            fact = KeyFact(id=fact_id, statement=correction_text)
-            if len(key_facts) >= 8 or fact_id in facts_by_id:
-                continue
-            key_facts.append(fact)
-            facts_by_id[fact_id] = fact
-            fact_ids_by_concept[concept_id].add(fact_id)
-            misconceptions.append(
-                Misconception(
-                    id=_misconception_id(concept_id, index),
-                    wrong_belief=wrong_text,
-                    # The authored source records this as a near-miss but does not claim why a
-                    # learner chose it. Preserve that uncertainty instead of inventing a motive.
-                    why_tempting=(
-                        "The authored check includes this as a near-miss; "
-                        "no further reason was recorded."
-                    ),
-                    correction=correction_text,
-                )
+        misconceptions = [
+            Misconception(
+                id=row["id"],
+                wrong_belief=row["wrong_belief"],
+                why_tempting=row["why_tempting"],
+                correction=row["correction"],
             )
+            for row in authored_distractors(source_concept)
+            if row["rung"] in (3, 4)
+        ]
         prerequisites = tuple(
             _slug(value, prefix="concept") for value in source_concept.prerequisites
         )
@@ -184,6 +162,8 @@ def authored_pack(topic: str, *, level: int, language: str) -> Pack | None:
                 converted = []
                 break
             stem = str(row.get("stem") or "").strip()
+            if source_concept.id == "chem_equation":
+                stem = stem.replace("__ ", "")
             rationale_fact_id = _fact_id(concept.id, f"r{3 if leg == 'A' else 4}")
             if rationale_fact_id not in fact_ids_by_concept.get(concept.id, set()):
                 converted = []

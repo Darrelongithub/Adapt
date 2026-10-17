@@ -132,7 +132,7 @@ export default function Onboarding() {
 
           <Card title="Time">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Minutes a week" hint="A number, not a promise. It only decides how much to put in the plan.">
+              <Field label="Minutes a week" hint="Your weekly plan.">
                 <Input
                   type="number"
                   min={10}
@@ -142,23 +142,21 @@ export default function Onboarding() {
                 />
               </Field>
               <p className="self-end text-xs text-[var(--muted)]">
-                How long a single sitting should be, and which days you study, are two of the thirteen questions — they are
-                asked there, once.
+                Session length is asked later.
               </p>
             </div>
           </Card>
 
           <Card title="Teaching you can ask for">
             <div className="space-y-3">
-              <Field label="More of this" hint="Free text. It becomes a stated preference, and the tutor reads it.">
+              <Field label="More of this" hint="A stated preference.">
                 <Input value={String(form.encourage)} onChange={(e) => set("encourage")(e.target.value)} placeholder="diagrams before symbols" />
               </Field>
               <Field label="Less of this">
                 <Input value={String(form.avoid)} onChange={(e) => set("avoid")(e.target.value)} placeholder="anything that feels like a sticker chart" />
               </Field>
               <p className="text-xs text-[var(--muted)]">
-                How long an explanation may be, and whether to be pushed to try before being shown, live on the settings screen
-                — they are settings rather than questions, so they can be changed in a second whenever you like.
+                Change explanation length in Settings.
               </p>
             </div>
           </Card>
@@ -222,7 +220,7 @@ export default function Onboarding() {
             </Card>
           ) : (
             <>
-              <Card title="What happens next" tone="muted">
+              <details><summary>What happens next</summary><Card title="What happens next" tone="muted">
                 <ol className="space-y-2 text-sm">
                   <li>
                     <strong>1. How you work</strong> — thirteen questions, in one sitting, on the mind check.
@@ -238,7 +236,7 @@ export default function Onboarding() {
                 <p className="mt-2 text-xs text-[var(--muted)]">
                   Every step can be skipped, and a skipped step is recorded as not measured rather than as a zero.
                 </p>
-              </Card>
+              </Card></details>
               <Card title="Voice and speech">
                 <div className="space-y-3">
                   <Check

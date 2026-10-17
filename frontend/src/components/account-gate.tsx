@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, post, useApi, type Me } from "@/lib/api";
+import { PageShell } from "./shell/PageShell";
+import { LEARNER_LANDING } from "@/lib/landing";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 import { Btn, Err, Field, Input, Notice, useSession } from "./ui";
 
@@ -56,7 +58,7 @@ export function AccountGate() {
       // flow rather than dropped into the mind check.  The journey page is
       // now a one-screen flow that runs each stage in turn and auto-
       // advances; the menu stays for returning learners.
-      router.replace("/journey");
+      router.replace(LEARNER_LANDING);
     } catch (err) {
       const e = err as { status?: number; shown?: string; detail?: unknown };
       if (e.status === 403 && JSON.stringify(e.detail ?? "").includes("demo_passphrase_required")) {
@@ -69,7 +71,7 @@ export function AccountGate() {
   }
 
   return (
-    <div className="access-screen">
+    <PageShell access><div className="access-screen" data-auth-step={step}>
       <div className="access-wordmark" aria-hidden="true">ad<b>apt</b></div>
       <div ref={focus} id="main-content" className="access-card" role="dialog" aria-modal="true" aria-labelledby="access-title" data-account-gate onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); } }}>
         <p className="access-step">{step === "consent" ? "01 · Before you begin" : "02 · Your place to learn"}</p>
@@ -80,7 +82,7 @@ export function AccountGate() {
             <ul className="mt-4 space-y-2 text-sm">
               <li className="flex items-start gap-2">
                 <span className="choice-icon" aria-hidden="true">✓</span>
-                <span><strong>Recorded:</strong> your answers, time on questions, steps through lessons.</span>
+                <span><strong>Recorded:</strong> answers, question times, lesson steps.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="choice-icon" aria-hidden="true">✕</span>
@@ -96,11 +98,11 @@ export function AccountGate() {
             <div className="space-y-4 mt-4">
               <label className="check-row">
                 <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
-                <span>I agree to the recording above so ADAPT can support my learning. <strong>Required to continue.</strong></span>
+                <span>I agree to this recording. <strong>Required.</strong></span>
               </label>
               <label className="check-row">
                 <input type="checkbox" checked={research} onChange={e => setResearch(e.target.checked)} />
-                <span>I would also like to help with research. <span className="text-[var(--muted)]">Optional; this preference is not stored or acted on yet.</span></span>
+                <span>Research interest <span className="text-[var(--muted)]">(optional; not saved yet).</span></span>
               </label>
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
@@ -111,7 +113,7 @@ export function AccountGate() {
           </>
         ) : (
           <>
-            <p className="mt-2 text-sm text-[var(--muted)]">Sign in to pick up your progress, create an account, or try it as a guest.</p>
+            <p className="mt-2 text-sm text-[var(--muted)]">Sign in, create an account, or continue as guest.</p>
             <div className="auth-tabs mt-5" role="tablist" aria-label="Sign in or create an account">
               {(["signin", "create"] as const).map(value => (
                 <button key={value} type="button" role="tab" aria-selected={mode === value} disabled={busy}
@@ -121,7 +123,7 @@ export function AccountGate() {
               ))}
             </div>
             <form className="space-y-4" onSubmit={e => { e.preventDefault(); void enter(); }}>
-              <Field label="Username" hint={mode === "create" ? "3–40 letters, numbers, dots or underscores." : "You can also use the email from an older account."}>
+              <Field label="Username" hint={mode === "create" ? "3–40 letters, numbers, dots or underscores." : "An older account may use email."}>
                 <Input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required disabled={busy} />
               </Field>
               <Field label="Password" hint={mode === "create" ? "At least ten characters." : undefined}>
@@ -139,12 +141,12 @@ export function AccountGate() {
               </div>
               {error ? <Err error={error} /> : null}
             </form>
-            <p className="mt-4 text-xs text-[var(--muted)]">Guest progress is saved to this browser’s session. Create an account if you need to sign in again on another device.</p>
+            <p className="mt-4 text-xs text-[var(--muted)]">Guest progress stays in this session.</p>
             <div className="mt-4"><Btn kind="ghost" disabled={busy} onClick={() => setStep("consent")}>Review consent</Btn></div>
           </>
         )}
-        <p className="mt-6 border-t border-[var(--line)] pt-4 text-xs text-[var(--muted)]">The app unlocks after consent and sign-in. Your privacy controls remain available in Settings.</p>
+
       </div>
-    </div>
+    </div></PageShell>
   );
 }

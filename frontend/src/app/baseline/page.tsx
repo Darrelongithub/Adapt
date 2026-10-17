@@ -21,6 +21,8 @@
  * Enter/Space taps); every text input is a labelled input. The probe asserts the keyboard path.
  */
 
+import { GameCards } from "@/components/icons/GameCards";
+import { Icon, gameIcon } from "@/components/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "./baseline.css";
@@ -236,7 +238,7 @@ export default function Baseline() {
 
       {resumed && !show_snapshot ? <Notice tone="info">{resumed}</Notice> : null}
       {error ? <Notice tone="bad">{error}</Notice> : null}
-      {view.note && !show_snapshot ? <p className="muted small">{view.note}</p> : null}
+      {view.note && !show_snapshot && !["format", "questions"].includes(view.kind) ? <p className="muted small">{view.note}</p> : null}
 
       {pending && pending.tasks.length > 0 && pending.run_id && pending.run_id !== view.run_id && !pending_hidden && !show_snapshot ? (
         <ReturnCheck
@@ -265,8 +267,7 @@ export default function Baseline() {
       )}
 
       <p className="muted small">
-        You can stop at any point: a partial baseline keeps what was measured and marks the rest
-        &ldquo;not measured&rdquo;. Nothing here is a grade.
+        Stop anytime. Unplayed games stay unmeasured.
       </p>
     </section>
   );
@@ -358,6 +359,7 @@ function FormatScreen({ view, onPick, busy }: { view: BaselineView; onPick: (v: 
           what actually worked, so a single early guess is never treated as a label about how you learn.
         </p>
       </details>
+      <GameCards />
     </Card>
   );
 }
@@ -560,7 +562,7 @@ function TaskScreen({
         <Tag tone="accent">{task.phase === "show" ? "looking time — not scored" : task.practice ? "practice — not scored" : "measured"}</Tag>
         {timers && left !== null ? <span className="muted small" aria-live="off">about {left}s left</span> : null}
       </div>
-      {task.prompt ? <h2 className="baseline-prompt">{String(task.prompt)}</h2> : null}
+      {task.prompt ? <h2 className="baseline-prompt flex items-start gap-3"><Icon name={gameIcon(task.game)} />{String(task.prompt)}</h2> : null}
       {task.game === "codewords_study" ? <Study task={task} busy={busy} onSend={onSend} /> : null}
       {task.game === "codewords_cued" || task.game === "codewords_next_day" ? (
         <FreeText task={task} busy={busy} onSend={onSend} label="which one went with it?" />

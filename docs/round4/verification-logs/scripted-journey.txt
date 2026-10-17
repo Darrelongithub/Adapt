@@ -1,0 +1,11 @@
+
+> adapt-e2e-journey@0.1.0 test
+> playwright test
+
+
+Running 2 tests using 1 worker
+
+  ✓  1 [desktop] › journey-full.spec.ts:45:5 › the full journey with the three lesson moments (9.4s)
+  ✓  2 [mobile] › journey-full.spec.ts:45:5 › the full journey with the three lesson moments (8.0s)
+
+  2 passed (19.2s)

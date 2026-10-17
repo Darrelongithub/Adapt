@@ -6,7 +6,7 @@
  * client-side visual validator and SVG templates. A simple plan stays visible while
  * an optional, fully validated background result is polled and swapped in-place.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { VisualFigure } from "@/components/visual";
 import { api } from "@/lib/api";
@@ -47,6 +47,13 @@ type Props = {
   contrastLabel?: boolean;
   className?: string;
   collapseBlockWhy?: boolean;
+  onPick?: (itemId: string, optionId: string, optionText: string) => void;
+  verdicts?: Record<string, string>;
+  selected?: Record<string, string>;
+  disabled?: boolean;
+  excludeItemIds?: string[];
+  excludeQuestions?: string[];
+  onUpgrade?: (value: LessonValue) => void;
 };
 
 function textValues(value: unknown): string[] {
@@ -60,7 +67,7 @@ function textValues(value: unknown): string[] {
   return [];
 }
 
-function BlockBody({ block, index }: { block: Block; index: number }) {
+function BlockBody({ block, onPick, verdicts, selected, disabled }: { block: Block } & Pick<Props, "onPick" | "verdicts" | "selected" | "disabled">) {
   const body = block.body;
   const object = typeof body === "string" ? { text: body } : body;
   if (block.type === "visual") {
@@ -69,26 +76,32 @@ function BlockBody({ block, index }: { block: Block; index: number }) {
   if (block.type === "check" || block.type === "predict") {
     const question = typeof body === "string" ? body : String(object.question ?? "");
     const options = Array.isArray(object.options) ? object.options : [];
+    const itemId = String(object.item_id ?? "");
+    const verdict = verdicts?.[itemId];
     return (
-      <fieldset className="mt-2 rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-3">
-        <legend className="px-1 text-sm font-medium">{question}</legend>
-        {options.length ? (
-          <div className="mt-2 grid gap-2">
-            {options.map((option, choiceIndex) => (
-              <label key={option.id || choiceIndex} className="flex items-start gap-2 text-sm">
-                <input type="radio" name={`lesson-${index}`} value={option.id} className="mt-1 accent-[var(--accent)]" />
-                <span>{option.text}</span>
-              </label>
-            ))}
+      <fieldset className="lesson-check" data-item-id={itemId || undefined}>
+        <legend className="text-sm font-medium">{question}</legend>
+        {options.length && onPick ? (
+          <div className="r3-choices pill-grid" role="group" aria-label="Choose an option">
+            {options.map(option => {
+              const chosen = selected?.[itemId] === option.id;
+              return <button key={option.id} type="button" data-testid="fl-option" data-option-id={option.id}
+                aria-pressed={chosen} disabled={disabled || Boolean(verdict)}
+                onClick={() => onPick(itemId, option.id, option.text)}
+                className={`choice-card${chosen ? " is-selected" : ""}${chosen && verdict ? verdict === "correct" ? " is-correct" : " is-incorrect" : ""}`}>
+                <span className="choice-title">{option.text}</span>
+                {chosen && verdict ? <span>{verdict === "correct" ? "Correct" : "Not quite"}</span> : null}
+              </button>;
+            })}
           </div>
+        ) : options.length ? (
+          <ul className="mt-4 grid gap-2" aria-label="Answer options (preview)">
+            {options.map(option => <li key={option.id} className="rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-sm">{option.text}</li>)}
+          </ul>
         ) : (
-          <input
-            aria-label="Your answer"
-            className="mt-2 w-full rounded-[2px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm"
-            type="text"
-            autoComplete="off"
-          />
+          <input aria-label="Your reflection (not marked)" className="mt-2 w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm" type="text" autoComplete="off" />
         )}
+        {verdict ? <p role="status" className="mt-3 text-sm">{verdict === "correct" ? "Right. Practice keeps it in rotation." : "Not quite — the explanation below starts with your choice."}</p> : null}
       </fieldset>
     );
   }
@@ -114,26 +127,14 @@ function BlockBody({ block, index }: { block: Block; index: number }) {
   return <p className="whitespace-pre-wrap text-sm leading-6">{content}</p>;
 }
 
-function BlockCard({ block, index, showWhy }: { block: Block; index: number; showWhy: boolean }) {
-  const bodyText = useMemo(() => textValues(block.body).join(" "), [block.body]);
-  return (
-    <article className="rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4">
-      <BlockBody block={block} index={index} />
-      {showWhy ? (
-        <details className="mt-3 text-[11px] text-[var(--muted)]" data-testid="block-why">
-          <summary className="cursor-pointer">Why this block</summary>
-          <p className="mt-1">{block.why.n ? `Evidence n=${block.why.n}` : "No recent evidence was used."}</p>
-          {block.why.evidence_ids.length ? <p>Evidence ids: {block.why.evidence_ids.join(", ")}</p> : null}
-          {block.fact_ids.length ? <p>Pack facts: {block.fact_ids.join(", ")}</p> : null}
-          <span className="sr-only">{bodyText}</span>
-        </details>
-      ) : null}
-    </article>
-  );
+function BlockCard({ block, ...controls }: { block: Block } & Pick<Props, "onPick" | "verdicts" | "selected" | "disabled">) {
+  return <article className="lesson-block rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4"><BlockBody block={block} {...controls} /></article>;
 }
 
-export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, className = "", collapseBlockWhy = false }: Props) {
+export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, className = "", collapseBlockWhy = false, onPick, verdicts, selected, disabled, excludeItemIds = [], excludeQuestions = [], onUpgrade }: Props) {
   const [lesson, setLesson] = useState(value);
+  const controls = useRef({ selected, onUpgrade });
+  controls.current = { selected, onUpgrade };
 
   useEffect(() => setLesson(value), [value]);
 
@@ -150,7 +151,12 @@ export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, cla
         if (!alive) return;
         if (result.state === "ready") {
           const upgraded = result.plan ?? result.explanation;
-          if (upgraded?.source === "written_for_you") setLesson(upgraded);
+          if (upgraded?.source === "written_for_you" && !Object.keys(controls.current.selected ?? {}).length) {
+            // Freeze an attempted lesson. A late upgrade must not replace the options
+            // beneath focus or reintroduce an item already answered in a later moment.
+            setLesson(upgraded);
+            controls.current.onUpgrade?.(upgraded);
+          }
           return;
         }
         if (result.state === "fallback") return;
@@ -174,16 +180,27 @@ export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, cla
     <section className={`grid gap-3 ${className}`} aria-label="Lesson">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-[2px] border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--muted)]">{label}</span>
-        {lesson.method ? <span className="text-[11px] text-[var(--muted)]">Method: {lesson.method.replaceAll("_", " ")}</span> : null}
+        {lesson.method && !onPick && lesson.method !== "misconception_response" ? <span className="text-[11px] text-[var(--muted)]">Another way: {lesson.method.replaceAll("_", " ")}</span> : null}
       </div>
-      {lesson.blocks.map((block, index) => (
-        <BlockCard
-          key={`${index}-${block.type}`}
-          block={block}
-          index={index}
-          showWhy={!collapseBlockWhy && index === 0}
-        />
-      ))}
+      {(() => {
+        const seen = new Set(excludeItemIds);
+        const stems = new Set(excludeQuestions);
+        return lesson.blocks.filter(block => {
+          if (block.type !== "check" && block.type !== "predict") return true;
+          const question = typeof block.body === "object" ? block.body.question : block.body;
+          if (question && stems.has(question)) return false;
+          if (question) stems.add(question);
+          const id = typeof block.body === "object" ? block.body.item_id : null;
+          if (!id) return true;
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        }).map((block, index) => <BlockCard key={`${index}-${block.type}`} block={block} onPick={onPick} verdicts={verdicts} selected={selected} disabled={disabled} />);
+      })()}
+      {!collapseBlockWhy ? <details className="lesson-info text-xs text-[var(--muted)]" data-testid="block-why">
+        <summary>ⓘ About this lesson</summary>
+        <p className="mt-2">{Math.max(...lesson.blocks.map(block => block.why.n), 0)} observations informed these steps. Explanations use checked topic facts.</p>
+      </details> : null}
     </section>
   );
 }

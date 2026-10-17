@@ -8,6 +8,9 @@ import { AccountGate } from "./account-gate";
 import { SessionProvider, useSession } from "./ui";
 import { get, isMock, logout, type Me } from "@/lib/api";
 import type { Health, Status } from "@/lib/types";
+import { Icon, routeIcon } from "./icons";
+import { PageShell } from "./shell/PageShell";
+import { LEARNER_LANDING } from "@/lib/landing";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 
 /** Always-shown entries for a new learner (round 3, Track R).
@@ -163,7 +166,7 @@ export function Chrome({ children }: { children: ReactNode }) {
           ad<b>apt</b>
         </Link>
         <nav data-testid="sidebar-nav">
-          {NAV_PRIMARY.map((n, i) => {
+          {NAV_PRIMARY.map((n) => {
             const here = n.href === current;
             return (
               <Link
@@ -173,7 +176,7 @@ export function Chrome({ children }: { children: ReactNode }) {
                 aria-current={here ? "page" : undefined}
                 onNavigate={() => setOpen(false)}
               >
-                <span className="sidebar-num">{i === 0 ? "⌂" : String(i + 1).padStart(2, "0")}</span>
+                <Icon name={routeIcon[n.href] ?? "book"} />
                 <span className="sidebar-label">{n.label}</span>
                 <NavigationPending label={n.label} />
               </Link>
@@ -200,8 +203,8 @@ export function Chrome({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <main id="main-content" className="mx-auto max-w-5xl px-4 py-6 pt-2">
-          {children}
+        <main id="main-content" className="w-full">
+          <PageShell>{children}</PageShell>
         </main>
         <footer className="mx-auto max-w-5xl px-4 pb-10 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
           Estimates, not labels: nothing here is a fixed trait, and no lasting change is applied without you answering a
@@ -249,12 +252,12 @@ function SidebarMore({ current, onClose }: { current: string | null; onClose: ()
         onClick={() => setOpen((v) => !v)}
         data-testid="sidebar-more"
       >
-        <span className="sidebar-label">{open ? "Less" : "More"}</span>
-        <span aria-hidden="true">{open ? "▴" : "▾"}</span>
+        <span className="sidebar-label">{open ? "Fewer destinations" : "More destinations"}</span>
+        <span style={{ transform:open ? "rotate(180deg)" : undefined }}><Icon name="chevron" /></span>
       </button>
       {open ? (
         <div data-testid="sidebar-more-items">
-          {NAV_MORE.map((n, i) => {
+          {NAV_MORE.map((n) => {
             const here = n.href === current;
             return (
               <Link
@@ -264,7 +267,7 @@ function SidebarMore({ current, onClose }: { current: string | null; onClose: ()
                 aria-current={here ? "page" : undefined}
                 onNavigate={onClose}
               >
-                <span className="sidebar-num">{String(NAV_PRIMARY.length + i + 1).padStart(2, "0")}</span>
+                <Icon name={routeIcon[n.href] ?? "book"} />
                 <span className="sidebar-label">{n.label}</span>
                 <NavigationPending label={n.label} />
               </Link>
@@ -371,7 +374,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
     generation.current += 1;
     if (retry.current) clearTimeout(retry.current);
     attempt.current = 0;
-    setLanding(profile.baseline_started ? "/" : "/baseline");
+    setLanding(LEARNER_LANDING);
     setMe(profile as Me);
     setUnknown(null);
     setLoading(false);
@@ -395,7 +398,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
     {me && (!landing || pathname === landing) ? children : !me && !loading && !unknown ? <AccountGate /> : (
       <div className="access-screen"><section id="main-content" className="access-card" aria-busy={loading}>
         <h1 className="access-title">Welcome to <b>ADAPT</b>.</h1>
-        <p className="mt-3" role="status">{unknown ? "Your session could not be checked. Please retry; you do not need another account." : landing === "/baseline" ? "Opening your first mind check…" : "Checking your session…"}</p>
+        <p className="mt-3" role="status">{unknown ? "Your session could not be checked. Please retry; you do not need another account." : landing ? "Opening your path…" : "Checking your session…"}</p>
         {unknown ? <button className="btn-ctl btn-primary mt-4" onClick={refresh}>Retry session check</button> : null}
       </section></div>
     )}

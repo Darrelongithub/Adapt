@@ -8,7 +8,7 @@
  */
 import { defineConfig } from "@playwright/test";
 
-const chromium = process.env.ADAPT_CHROMIUM ?? "/home/user/.cache/chromium-bin/chromium";
+const chromium = process.env.ADAPT_CHROMIUM ?? "/opt/pw-browsers/chromium";
 const base = process.env.ADAPT_E2E_BASE ?? "http://127.0.0.1:3000";
 const extraArgs = (process.env.ADAPT_CHROMIUM_ARGS ?? "--no-sandbox --no-zygote --disable-gpu").split(" ").filter(Boolean);
 const launchOptions = { executablePath: chromium, args: extraArgs };

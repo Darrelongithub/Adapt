@@ -92,13 +92,16 @@ export async function playBaseline(page: Page, opts: RunOptions): Promise<Ledger
 
     if (seen === "questions") {
       await snap("questions");
-      const rows = page.locator("fieldset.baseline-q-row");
-      const count = await rows.count();
-      for (let i = 0; i < count; i++) {
-        const options = rows.nth(i).locator(".baseline-options");
-        if ((await options.count()) > 0) await pickInGroup(page, options, 0, mode);
+      for (let question = 1; question <= 13; question++) {
+        await expect(page.getByTestId("r3-question-prompt")).toHaveCount(1);
+        await expect(page.locator(".baseline-page")).toContainText(`Question ${question} of 13`);
+        const options = page.getByTestId("r3-question-option");
+        if (await options.count()) await press(page, options.first(), mode);
+        else await typeIn(page, page.locator(".r3-question-stack input"), "Short daily practice", mode);
+        const next = page.getByRole("button", { name: question === 13 ? "Finish" : "Next", exact: true });
+        if (question === 13) await act(page, () => press(page, next, mode));
+        else await press(page, next, mode);
       }
-      await act(page, () => press(page, page.getByRole("button", { name: "Continue", exact: true }), mode));
       continue;
     }
 

@@ -13,6 +13,7 @@
  * * The ladder position is per sub-area. A sub-area the staircase never reached says so;
  *   it is not drawn at rung 0, which would be a placement nobody measured.
  */
+import { Icon, type IconName } from "@/components/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Btn, Card, Err, Field, Input, Notice, Tag, Textarea } from "@/components/ui";
@@ -240,6 +241,11 @@ export default function Subject() {
 
       {!view && !snapshot ? (
         <Card title="Your subject">
+          <div className="r3-choices tall-grid" role="group" aria-label="Subject shortcuts">
+            {([['Maths','maths'],['Language','language'],['Science','science'],['History','history']] as [string,IconName][]).map(([label,icon]) =>
+              <button key={label} type="button" className="choice-card" aria-pressed={text === label} disabled={busy} onClick={() => { setText(label); setPlan(null); setResolved(null); }}><Icon name={icon} /><span>{label}</span></button>
+            )}
+          </div>
           <form onSubmit={onResolve} className="flex flex-wrap items-end gap-3">
             <div className="min-w-64 flex-1">
               <Field label="Subject" hint="For example Mathematics, History, or Kiswahili.">
@@ -314,7 +320,7 @@ export default function Subject() {
                   value={packTopic}
                   onChange={(e) => setPackTopic(e.target.value)}
                   placeholder="e.g. calculus"
-                  aria-label="Pack topic"
+                  aria-label="Lesson topic"
                 />
               </Field>
             </div>

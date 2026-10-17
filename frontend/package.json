@@ -18,7 +18,8 @@
     "test:e2e:banned": "node tests-e2e/banned-phrases.mjs",
     "host": "npm run build && node host.mjs",
     "dev:web": "node server.mjs",
-    "test:dev": "node --test dev.test.mjs"
+    "test:dev": "node --test dev.test.mjs",
+    "test:e2e:round4": "node tests-e2e/round4.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",

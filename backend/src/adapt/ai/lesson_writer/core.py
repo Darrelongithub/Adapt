@@ -28,7 +28,7 @@ BLOCK_TYPES = frozenset(
     {"text", "visual", "worked_example", "check", "predict", "explain", "reflect"}
 )
 EXPLANATION_TYPES = frozenset({"text", "visual", "explain", "worked_example"})
-STEP_WORD_LIMITS = {"small": 30, "medium": 50, "large": 75}
+STEP_WORD_LIMITS = {"small": 30, "medium": 50, "large": 60}
 MAX_BLOCKS = 24
 MAX_EVIDENCE_REFS = 5
 MAX_TOTAL_WORDS = 1400
@@ -937,7 +937,9 @@ def _eligible_items(context: _Context) -> tuple[Mapping[str, Any], ...]:
     )
 
 
-def _rotate_items(context: _Context, item: Mapping[str, Any] | None) -> tuple[Mapping[str, Any], ...]:
+def _rotate_items(
+    context: _Context, item: Mapping[str, Any] | None
+) -> tuple[Mapping[str, Any], ...]:
     """Round 3 (Track S): a check rotation that puts the chosen item first
     and then the other eligible items in their pack order.  When _append_
     explanation has to attach a check to every chunk of a split sentence,
@@ -946,11 +948,7 @@ def _rotate_items(context: _Context, item: Mapping[str, Any] | None) -> tuple[Ma
     if item is None:
         return ()
     rotation: list[Mapping[str, Any]] = [item]
-    rotation.extend(
-        candidate
-        for candidate in _eligible_items(context)
-        if candidate is not item
-    )
+    rotation.extend(candidate for candidate in _eligible_items(context) if candidate is not item)
     return tuple(rotation)
 
 
@@ -974,12 +972,11 @@ def _language_notice(language: str) -> str:
         return "Maelezo yaliyokaguliwa hayapo kwa Kiswahili kwa sasa, kwa hivyo sitabashiri."
     if language == "mixed":
         return (
-            "There is no checked explanation in your chosen language right now, so I will not guess."
+            "There is no checked explanation in your chosen language right now, "
+            "so I will not guess."
             " / Maelezo yaliyokaguliwa hayapo kwa Kiswahili kwa sasa, kwa hivyo sitabashiri."
         )
-    return (
-        "There is no checked explanation in your chosen language right now, so I will not guess."
-    )
+    return "There is no checked explanation in your chosen language right now, so I will not guess."
 
 
 def _memory_texts(profile: _Profile) -> tuple[str, ...]:
@@ -1133,30 +1130,28 @@ def _append_explanation(
     concept_name: str = "the idea",
     context: _Context | None = None,
 ) -> None:
-    parts = _split_under_limit(text, profile.word_limit)
-    # Round 3 (Track S): when an explanation is split into multiple chunks
-    # (because the sentence is long), each chunk would otherwise have a check
-    # block with the *same* stem.  When a context is supplied we rotate
-    # through the eligible items, so the four blocks in a long paragraph do
-    # not all ask the same MCQ.  When no context is supplied, the original
-    # contract is kept: every check is for the same item.
-    rotation_seq: tuple[Mapping[str, Any], ...] = ()
-    if context is not None and item is not None:
-        rotation_seq = _rotate_items(context, item)
-    elif item is not None:
-        rotation_seq = (item,)
-    rotation_index = 0
-    for _part_index, part in enumerate(parts):
+    # The cursor belongs to the whole plan, not this individual paragraph.
+    # Once every item is used, ask an unscored recall check rather than recycling an MCQ.
+    used = {
+        str(block.body.get("item_id"))
+        for block in blocks
+        if block.type in {"check", "predict"}
+        and isinstance(block.body, Mapping)
+        and block.body.get("item_id")
+    }
+    rotation = _rotate_items(context, item) if context is not None else ((item,) if item else ())
+    fresh = iter(candidate for candidate in rotation if str(candidate.get("id")) not in used)
+    for part in _split_under_limit(text, profile.word_limit):
         blocks.append(_block(kind, part, fact_ids, profile))
-        # A check is adjacent to every explanation chunk. The key is never copied here.
-        if rotation_seq:
-            check_item = rotation_seq[rotation_index % len(rotation_seq)]
-            rotation_index += 1
-            check = _check_body(check_item, concept_name, language=profile.language)
-        else:
-            check = _check_body(None, concept_name, language=profile.language)
+        candidate = next(fresh, None)
+        check = _check_body(candidate, concept_name, language=profile.language)
         if _word_count(check) > profile.word_limit:
             check = _check_body(None, concept_name, language=profile.language)
+        # Open recall prompts have no item id and are not sent for grading.
+        if not check.get("item_id") and any(
+            block.type == "check" and block.body == check for block in blocks
+        ):
+            continue
         blocks.append(_block("check", check, fact_ids, profile))
 
 
@@ -1188,9 +1183,7 @@ def _simple_initial(context: _Context, profile: _Profile, *, moment: str = "init
         item
         for item in language_fits
         if teaching_texts
-        and not any(
-            _contains_answer(text, _normalize_key(item)) for text in teaching_texts
-        )
+        and not any(_contains_answer(text, _normalize_key(item)) for text in teaching_texts)
     )
     chosen_item = next(iter(safe_items), None) or next(iter(language_fits), None)
     blocks: list[LessonBlock] = []
@@ -1399,6 +1392,13 @@ def _wrong_fallback(
             moment="wrong_answer",
         )
     usable_item = item if _item_fits_language(item, profile.language) else None
+    followup = _next_item(context, item)
+    feedback_context = replace(
+        context,
+        items=tuple(
+            candidate for candidate in context.items if candidate.get("id") != item.get("id")
+        ),
+    )
     why_tempting = str((misconception or {}).get("why_tempting") or "").strip()
     correction = str((misconception or {}).get("correction") or "").strip()
     idea = str(concept.get("key_idea") or "").strip()
@@ -1412,9 +1412,7 @@ def _wrong_fallback(
                 f"Umejibu {answer_text!r}. Naona jibu hilo, lakini sina maelezo yaliyokaguliwa "
                 "kuhusu kwa nini linaweza kuonekana sahihi, kwa hivyo sitabashiri."
             )
-        if correction and idea:
-            explain_text = f"Haifanyi kazi hapa kwa sababu {correction} Wazo kuu ni: {idea}"
-        elif correction:
+        if correction:
             explain_text = f"Haifanyi kazi hapa kwa sababu {correction}"
         elif idea:
             explain_text = f"Wazo kuu ni: {idea}"
@@ -1422,16 +1420,17 @@ def _wrong_fallback(
             explain_text = _language_notice(profile.language)
     else:
         if misconception and why_tempting:
-            text = f"You answered {answer_text!r}. That can seem tempting because {why_tempting}"
+            text = (
+                f"You answered {answer_text!r}. "
+                f"It feels tempting because of this belief: {why_tempting}"
+            )
         else:
             text = (
                 f"You answered {answer_text!r}. I can see the choice, but there is no checked "
                 "explanation of why that idea feels tempting, so I will not guess."
             )
-        if correction and idea:
-            explain_text = f"It does not work here because {correction} The key idea is: {idea}"
-        elif correction:
-            explain_text = f"It does not work here because {correction}"
+        if correction:
+            explain_text = f"It breaks here. {correction}"
         elif idea:
             explain_text = f"The key idea is: {idea}"
         else:
@@ -1441,20 +1440,20 @@ def _wrong_fallback(
         text,
         fact_ids,
         profile,
-        usable_item,
+        followup,
         kind="text",
         concept_name=str(concept.get("name") or "this idea"),
-        context=context,
+        context=feedback_context,
     )
     _append_explanation(
         blocks,
         explain_text,
         fact_ids,
         profile,
-        usable_item,
+        followup,
         kind="explain",
         concept_name=str(concept.get("name") or "this idea"),
-        context=context,
+        context=feedback_context,
     )
 
     # A worked example after an attempt is allowed to show the checked key. Keeping
@@ -1463,35 +1462,15 @@ def _wrong_fallback(
     checked_answer_label = (
         "Jibu lililokaguliwa" if profile.language in {"sw", "kiswahili"} else "Checked answer"
     )
-    checked_answer_why = str(
-        item.get("why")
-        or (
-            "Hili ndilo jibu lililokaguliwa."
-            if profile.language in {"sw", "kiswahili"}
-            else "This is the checked answer."
-        )
-    )
+    checked_answer_why = str(item.get("why") or correction or "")
     work_body = {
         "steps": [
             {"text": f"{checked_answer_label}: {key}", "why": checked_answer_why},
         ],
-        "final_answer": key,
         "item_id": str(item.get("id") or ""),
     }
     if usable_item is not None and key and _word_count(work_body) <= profile.word_limit:
         blocks.append(_block("worked_example", work_body, fact_ids, profile))
-        next_candidate = _next_item(context, item)
-        next_item = (
-            next_candidate if _item_fits_language(next_candidate, profile.language) else None
-        )
-        next_check = _check_body(
-            next_item, str(concept.get("name") or "this idea"), language=profile.language
-        )
-        if _word_count(next_check) > profile.word_limit:
-            next_check = _check_body(
-                None, str(concept.get("name") or "this idea"), language=profile.language
-            )
-        blocks.append(_block("check", next_check, fact_ids, profile))
     return Explanation(
         tuple(blocks[:MAX_BLOCKS]),
         method="misconception_response" if misconception else "answer_specific_feedback",
@@ -1657,20 +1636,22 @@ def _reteach_fallback(
     blocks: list[LessonBlock] = []
     # Round 3 (Track S): avoid repeating the same MCQ across consecutive
     # reteach calls.  Items recorded in teaching memory as recently used are
-    # skipped, so a learner who has just been asked item-fraction-a sees
-    # something else next time.
+    # skipped; exhausted checks become open recall rather than recycled MCQs.
     recently_used: set[str] = {
         str(row.get("item_id") or "")
         for row in profile.memory_records
         if str(row.get("item_id") or "")
     }
     eligible = [
-        item
-        for item in _eligible_items(context)
-        if _item_fits_language(item, profile.language)
+        item for item in _eligible_items(context) if _item_fits_language(item, profile.language)
     ]
+    recently_used.update(
+        str(item.get("id"))
+        for item in eligible
+        if any(str(item.get("id")) in str(row.get("text") or "") for row in profile.memory_records)
+    )
     fresh_first = [item for item in eligible if str(item.get("id") or "") not in recently_used]
-    lesson_item = next(iter(fresh_first), None) or next(iter(eligible), None)
+    lesson_item = next(iter(fresh_first), None)
     if method == "visual":
         spec = _visual_from_facts(context, profile.word_limit, profile.language)
         if spec is not None:
@@ -1694,7 +1675,13 @@ def _reteach_fallback(
                 else "I could not make a safe picture from the checked facts, so I will not guess."
             )
             _append_explanation(
-                blocks, body, cited, profile, lesson_item, kind="text", concept_name=name,
+                blocks,
+                body,
+                cited,
+                profile,
+                lesson_item,
+                kind="text",
+                concept_name=name,
                 context=context,
             )
     elif method == "example":
@@ -1720,12 +1707,24 @@ def _reteach_fallback(
         blocks.append(_block("check", check, cited, profile))
         if idea:
             _append_explanation(
-                blocks, idea, cited, profile, lesson_item, kind="explain", concept_name=name,
+                blocks,
+                idea,
+                cited,
+                profile,
+                lesson_item,
+                kind="explain",
+                concept_name=name,
                 context=context,
             )
         if reason and reason != idea:
             _append_explanation(
-                blocks, reason, cited, profile, lesson_item, kind="explain", concept_name=name,
+                blocks,
+                reason,
+                cited,
+                profile,
+                lesson_item,
+                kind="explain",
+                concept_name=name,
                 context=context,
             )
     elif method == "smaller_step":
@@ -1745,12 +1744,24 @@ def _reteach_fallback(
         else:
             body = _language_notice(profile.language)
         _append_explanation(
-            blocks, body, cited, profile, lesson_item, kind="text", concept_name=name,
+            blocks,
+            body,
+            cited,
+            profile,
+            lesson_item,
+            kind="text",
+            concept_name=name,
             context=context,
         )
         if reason:
             _append_explanation(
-                blocks, reason, cited, profile, lesson_item, kind="explain", concept_name=name,
+                blocks,
+                reason,
+                cited,
+                profile,
+                lesson_item,
+                kind="explain",
+                concept_name=name,
                 context=context,
             )
     else:  # simpler_words
@@ -1765,12 +1776,24 @@ def _reteach_fallback(
         else:
             body = _language_notice(profile.language)
         _append_explanation(
-            blocks, body, cited, profile, lesson_item, kind="text", concept_name=name,
+            blocks,
+            body,
+            cited,
+            profile,
+            lesson_item,
+            kind="text",
+            concept_name=name,
             context=context,
         )
         if reason and reason != source:
             _append_explanation(
-                blocks, reason, cited, profile, lesson_item, kind="explain", concept_name=name,
+                blocks,
+                reason,
+                cited,
+                profile,
+                lesson_item,
+                kind="explain",
+                concept_name=name,
                 context=context,
             )
     return Explanation(
@@ -2285,7 +2308,8 @@ def _validate_proposal(
     # Two checks with the same stem (or the same item_id and an empty stem) are
     # the same question twice; once that is true the page is no longer teaching
     # because every block after the first copy is the same question.
-    seen_check_markers: set[tuple[str, str]] = set()
+    seen_check_ids: set[str] = set()
+    seen_check_stems: set[str] = set()
 
     for index, raw in enumerate(raw_blocks):
         where = f"block_{index + 1}"
@@ -2303,11 +2327,12 @@ def _validate_proposal(
         if kind in {"check", "predict"} and isinstance(body, dict):
             stem = str(body.get("question") or "").strip().casefold()
             item_ref = str(body.get("item_id") or "").strip()
-            marker = (item_ref, stem)
-            if marker in seen_check_markers:
+            if (item_ref and item_ref in seen_check_ids) or stem in seen_check_stems:
                 reasons.append(f"sequence:{where}_duplicate_check_stem")
                 continue
-            seen_check_markers.add(marker)
+            if item_ref:
+                seen_check_ids.add(item_ref)
+            seen_check_stems.add(stem)
         if kind in {"text", "explain", "predict", "reflect"} and not isinstance(body, str):
             reasons.append(f"schema:{where}_body_must_be_text")
             continue
