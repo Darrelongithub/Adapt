@@ -744,6 +744,125 @@ def _config_test_with(tmp_path, monkeypatch, *, error: str, status: str = "error
         reset_settings_cache()
 
 
+def test_config_test_names_the_model_that_answered(tmp_path, monkeypatch):
+    """`Connection test passed.` alone hides a deployment that only passed on a
+    discovered replacement -- which is a configuration someone has to fix."""
+    from typer.testing import CliRunner
+
+    from adapt.ai.llm import GeminiLLM, LLMResult
+    from adapt.cli import app
+    from adapt.config import reset_settings_cache
+    from adapt.config_secrets import set_key
+
+    monkeypatch.setenv("ADAPT_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ADAPT_DB_ENCRYPTION", "field-only")
+    monkeypatch.delenv("ADAPT_GEMINI_API_KEY", raising=False)
+    reset_settings_cache()
+    set_key(tmp_path, "gemini", CANARY_KEY)
+
+    async def fake_complete(self, **kwargs):
+        return LLMResult(ok=True, text="OK", model="gemini-flash-latest", status="ok")
+
+    async def fake_aclose(self):
+        return None
+
+    monkeypatch.setattr(GeminiLLM, "complete", fake_complete)
+    monkeypatch.setattr(GeminiLLM, "aclose", fake_aclose)
+    try:
+        result = CliRunner().invoke(app, ["config", "test"])
+    finally:
+        reset_settings_cache()
+
+    assert result.exit_code == 0, result.output
+    assert "Connection test passed (gemini-flash-latest)." in result.output
+    assert CANARY_KEY not in result.output
+
+
+def test_config_test_offers_the_ids_this_key_can_call_after_a_404(tmp_path, monkeypatch):
+    """The provider's whole sentence, then the aliases that actually answer."""
+    from typer.testing import CliRunner
+
+    from adapt.ai.llm import GeminiLLM, LLMResult
+    from adapt.cli import app
+    from adapt.config import reset_settings_cache
+    from adapt.config_secrets import set_key
+
+    long_message = (
+        "404: This model models/gemini-2.5-flash is no longer available to new users. "
+        "Please update your code to use models/gemini-3.8-flash for the latest "
+        "features and improvements. We recommend you to use a rolling alias instead."
+    )
+    monkeypatch.setenv("ADAPT_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ADAPT_DB_ENCRYPTION", "field-only")
+    monkeypatch.delenv("ADAPT_GEMINI_API_KEY", raising=False)
+    reset_settings_cache()
+    set_key(tmp_path, "gemini", CANARY_KEY)
+
+    async def fake_complete(self, **kwargs):
+        return LLMResult(ok=False, status="error", error=long_message)
+
+    async def fake_candidates(self, tier="standard"):
+        return ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"]
+
+    async def fake_aclose(self):
+        return None
+
+    monkeypatch.setattr(GeminiLLM, "complete", fake_complete)
+    monkeypatch.setattr(GeminiLLM, "known_candidates", fake_candidates)
+    monkeypatch.setattr(GeminiLLM, "aclose", fake_aclose)
+    try:
+        result = CliRunner().invoke(app, ["config", "test"])
+    finally:
+        reset_settings_cache()
+
+    assert result.exit_code == 1, result.output
+    assert "model ID does not exist for this key" in result.output
+    # The whole recommendation, not a sentence cut off at 200 characters.
+    assert "models/gemini-3.8-flash" in result.output
+    assert "a rolling alias instead." in result.output
+    assert "this key can call: gemini-flash-latest" in result.output
+    assert CANARY_KEY not in result.output
+
+
+def test_config_models_says_the_list_is_not_a_promise(tmp_path, monkeypatch):
+    """Retired IDs stay on `/models` while returning 404; the console must say so."""
+    from typer.testing import CliRunner
+
+    from adapt.ai.llm import GeminiLLM
+    from adapt.cli import app
+    from adapt.config import reset_settings_cache
+    from adapt.config_secrets import set_key
+
+    monkeypatch.setenv("ADAPT_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ADAPT_DB_ENCRYPTION", "field-only")
+    monkeypatch.delenv("ADAPT_GEMINI_API_KEY", raising=False)
+    reset_settings_cache()
+    set_key(tmp_path, "gemini", CANARY_KEY)
+
+    async def fake_list(self):
+        return [
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
+            "gemini-3.8-flash",
+            "gemini-2.5-flash-preview-tts",
+            "lyria-3.5",
+        ]
+
+    monkeypatch.setattr(GeminiLLM, "list_models", fake_list)
+    try:
+        result = CliRunner().invoke(app, ["config", "models"])
+    finally:
+        reset_settings_cache()
+
+    assert result.exit_code == 0, result.output
+    assert "not a promise that it answers" in result.output
+    # Rolling aliases first, then the text models; the speech/music ones last.
+    assert result.output.index("gemini-flash-latest") < result.output.index("gemini-3.8-flash")
+    assert result.output.index("gemini-3.8-flash") < result.output.index("lyria-3.5")
+    assert "not usable for text" in result.output
+    assert CANARY_KEY not in result.output
+
+
 def test_config_test_says_which_model_id_was_not_found(tmp_path, monkeypatch):
     result = _config_test_with(
         tmp_path,

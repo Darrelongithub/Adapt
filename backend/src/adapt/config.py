@@ -26,6 +26,52 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 Mode = Literal["local", "tunnel", "test"]
 
 
+# --------------------------------------------------------------------------- #
+# The provider's model-naming vocabulary.
+#
+# Model names belong to this module and nowhere else, so the words the client needs
+# in order to *read* a provider model list live here too, next to the names it
+# configures. They are facts about how the provider names models, not settings:
+# nothing below is read from the environment.
+#
+# Two kinds of ID, and the difference is the whole reason this table exists. A
+# **rolling alias** (`gemini-flash-latest`) tracks whatever the provider serves for
+# that family today; a **versioned ID** (`gemini-3.8-flash`) names one model until
+# the provider retires it. Measured on a real key in October 2026: the ID
+# `gemini-2.5-flash` answered `404 ... is no longer available to new users` while
+# still appearing in that same key's `/models` list. So the list is not a statement
+# of what a key can call, and a deployment whose only IDs are versioned ones has
+# nowhere to go when they are retired -- which is why the client can discover a
+# replacement at runtime (see `ai/llm.py`) using the ordering below.
+# --------------------------------------------------------------------------- #
+
+#: The suffix the provider puts on a rolling alias.
+MODEL_ALIAS_SUFFIX = "-latest"
+#: The suffix the provider puts on a model it may change or withdraw at any time.
+MODEL_PREVIEW_SUFFIX = "-preview"
+#: Substrings marking a model this client must never ask for text. Each one is either
+#: a different modality (speech, music, images), a different shape of answer
+#: (vectors), or a different product that shares the model-list endpoint.
+NON_TEXT_MODEL_MARKERS: tuple[str, ...] = (
+    "tts",
+    "lyria",
+    "image",
+    "nano-banana",
+    "embedding",
+    "aqa",
+    "deep-research",
+    "antigravity",
+)
+#: Which family each class of work wants, best first. ``""`` means "some other text
+#: model" and is last on purpose: an unknown family beats no answer, but it does not
+#: beat a known one.
+TIER_MODEL_FAMILIES: dict[str, tuple[str, ...]] = {
+    "light": ("flash-lite", "flash", "pro", ""),
+    "standard": ("flash", "pro", "flash-lite", ""),
+    "deep": ("pro", "flash", "flash-lite", ""),
+}
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -104,9 +150,20 @@ class Settings(BaseSettings):
     # for the light class is not a downgrade of the product: every light task is checked
     # against a rule, a list or a validator, so its failure mode is a fallback nobody sees,
     # while the deep class is where a weak answer costs a learner a rewrite.
-    gemini_model_light: str = "gemini-2.5-flash-lite"
-    gemini_model_standard: str = "gemini-2.5-flash"
-    gemini_model_deep: str = "gemini-2.5-pro"
+    #
+    # These defaults are the provider's *rolling aliases*, not versioned IDs, because the
+    # provider retires versioned IDs on its own schedule: a key created in October 2026
+    # got `404 ... no longer available to new users` for `gemini-2.5-flash` while that ID
+    # was still listed by the same key. The trade-off is stated rather than hidden --
+    # an alias moves under you, so two runs a month apart can be answered by different
+    # models, and a measured claim ("the pilot improved by X on gemini-3.8-flash") is not
+    # reproducible against one. **Pin a version when a result has to be reproducible**;
+    # expect to move that pin yourself when the provider retires it. A pin that stops
+    # existing is still not fatal: on a 404 the client discovers a replacement from the
+    # key's own model list (see `ai/llm.py`) and remembers it for the process.
+    gemini_model_light: str = "gemini-flash-lite-latest"
+    gemini_model_standard: str = "gemini-flash-latest"
+    gemini_model_deep: str = "gemini-pro-latest"
     # Blank means "follow the tiers". Set one of these to pin every task a role performs
     # to a single model (a deployment with one allowed model, or a comparison run).
     gemini_model_ai1: str | None = None
@@ -118,8 +175,10 @@ class Settings(BaseSettings):
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_timeout_s: float = 45.0
     # A model ID is deployment configuration: providers retire and rename models. When a
-    # configured ID stops existing (404), the client retries *once* on this model if it is
-    # set; blank means "there is nothing to fall back to, use the local reasoner".
+    # configured ID stops existing (404), the client tries this model first (if it is set),
+    # then another configured class, then -- once per process -- an ID discovered from this
+    # key's own `/models` list. Blank means "start from the other classes, then discover";
+    # if nothing anywhere answers, the call uses the local reasoner like any other failure.
     gemini_model_fallback: str | None = None
     # Free-tier guard: stop calling before the daily quota is exhausted and let
     # the local reasoner carry the demo instead.

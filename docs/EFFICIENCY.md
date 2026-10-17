@@ -157,14 +157,41 @@ Which model each class is comes from configuration, never from the table:
 has fewer models than classes: `ADAPT_GEMINI_MODEL_AI1` / `_AI2` pin every task a role
 performs, and `ADAPT_GEMINI_TASK_MODELS='{"ai2_explain": "<model>"}'` pins one task.
 Precedence is **explicit argument → task pin → role pin → class**, and a pin never changes the
-reported *class* — pinning a model does not change what the work is. A model ID is deployment
-configuration, so a `404` from a retired or gated ID is retried **once** on the next viable
-model: `ADAPT_GEMINI_MODEL_FALLBACK` when that is set, otherwise another configured class
-(standard before light before deep). Only when every configured ID is the same dead one does
-the call fail closed to the local path like any other provider failure -- and the dead ID is
-remembered for the rest of the process, so the next call goes straight to the replacement.
-`adapt config models` lists the IDs the configured key can actually call, so a pin or fallback
-can be chosen from the deployment's own answer instead of guessed.
+reported *class* — pinning a model does not change what the work is.
+
+### When a configured ID is retired
+
+It happens: the provider retires and renames versioned IDs on its own schedule. Measured on a
+real key in October 2026, `gemini-2.5-flash` answered `404 ... no longer available to new
+users` **while still being listed by that same key's `/models`**. So the first thing to know
+is that **the model list is not a statement of what a key can call** — it is what the key can
+*see*, and a retired ID stays on it. Two consequences:
+
+* the class defaults are the provider's rolling aliases (`gemini-flash-lite-latest`,
+  `gemini-flash-latest`, `gemini-pro-latest`), which track whatever is served now — the
+  trade-off being that an alias moves, so a reproducible evaluation pins a version;
+* a `404` is retried on up to **two** other models, in this order:
+  1. `ADAPT_GEMINI_MODEL_FALLBACK` when it is set, then a model this process was already
+     answered by, then another configured class (standard before light before deep);
+  2. otherwise an ID **discovered from the key's own `/models`**, fetched once per process
+     behind a lock through the same `httpx` client (no SDK), filtered to
+     `generateContent` text models — never TTS, image/nano-banana, lyria, embedding,
+     `deep-research` or `antigravity` — and ranked for the tier that failed (light →
+     flash-lite/flash, standard → flash, deep → pro; a rolling alias before a versioned ID,
+     a stable release before a `-preview`).
+
+Bounded: one discovery request and at most two replacement attempts, never a loop. Both the
+replacement and every dead ID are remembered for the process, so the next call goes straight
+to what works and pays nothing. A discovery that fails is remembered too and is not an error:
+the call takes the local path, and the `404` (not the discovery failure) is the reported
+cause. A key that can call nothing fails closed to the local path like any other provider
+failure, with the provider's own sentence on the console.
+
+`adapt config models` lists what the key can *see*, grouped so the aliases and current text
+models come first, and says that a listed ID is not a promise. `adapt config test` is the one
+that proves which ID answers: it prints the model that replied
+(`Connection test passed (gemini-flash-latest).`) and, after a `404`, the whole provider
+recommendation plus the IDs this key can actually call.
 
 Two failure semantics matter for the same reason. A `200` is not an answer: an empty candidate
 list, a safety `blockReason`/`finishReason`, or a reply that is not the requested JSON returns

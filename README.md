@@ -171,7 +171,7 @@ console file or `.env`. Both are checked at startup; the console file wins if bo
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e "./backend[dev]"          # fastapi, sqlalchemy, numpy, cryptography, argon2…
-cd backend && pytest -q                  # 1401 passed, 2 skipped (measured 2026-10-17, Gemini-path round); no network, no model call needed
+cd backend && pytest -q                  # 1416 passed, 2 skipped (measured 2026-10-17, retired-model round); no network, no model call needed
 adapt demo --turns 3                     # the whole loop, in a terminal, on a temp database
 adapt pilot --student-id <id> --seed     # the pre-demo pilot, written and labelled
 
@@ -361,13 +361,32 @@ Four kinds of setting decide what a model call costs, and every one of them has 
 inert on a free tier because the provider's floor is higher than the prompt):
 
 * **which model, by class** — `ADAPT_GEMINI_MODEL_LIGHT` / `_STANDARD` / `_DEEP`
-  (defaults: flash-lite / flash / pro). `ai/routing.py` says which task is in which class and
-  why; `adapt doctor` prints the table. To pin one task, `ADAPT_GEMINI_TASK_MODELS` takes
-  `'{"ai2_explain": "<model>"}'` or `ai2_explain=<model>`; `ADAPT_GEMINI_MODEL_AI1` / `_AI2`
-  pin every task a role performs. Precedence is explicit argument → task pin → role pin →
-  class. `ADAPT_GEMINI_MODEL_FALLBACK` is an optional one-retry model for a deployment whose
-  primary ID has been retired (a 404), and `ADAPT_GEMINI_SAFETY_THRESHOLD` states the safety
-  threshold sent with every request.
+  (defaults: `gemini-flash-lite-latest` / `gemini-flash-latest` / `gemini-pro-latest`).
+  `ai/routing.py` says which task is in which class and why; `adapt doctor` prints the table.
+  To pin one task, `ADAPT_GEMINI_TASK_MODELS` takes `'{"ai2_explain": "<model>"}'` or
+  `ai2_explain=<model>`; `ADAPT_GEMINI_MODEL_AI1` / `_AI2` pin every task a role performs.
+  Precedence is explicit argument → task pin → role pin → class.
+  `ADAPT_GEMINI_MODEL_FALLBACK` is a first-choice replacement when a configured ID has been
+  retired (a 404), and `ADAPT_GEMINI_SAFETY_THRESHOLD` states the safety threshold sent with
+  every request.
+
+  **The defaults are rolling aliases, not versioned IDs.** Providers retire versioned IDs on
+  their own schedule: a key created in October 2026 got `404 … is no longer available to new
+  users` for `gemini-2.5-flash` while that ID was still listed by the same key's `/models`
+  endpoint. An alias tracks whatever the provider serves now, so a fresh install passes
+  `adapt config test` on its first try. The trade-off is real: an alias moves under you, so
+  **pin a version when a measured result has to be reproducible**, and expect to move that
+  pin yourself.
+
+  A retired ID is not fatal either way. On a 404 the client tries up to two replacements —
+  the operator's fallback and another configured class first, then, once per process, an ID
+  discovered from the key's own `/models` list and ranked for the tier that failed
+  (`light` → flash-lite/flash, `standard` → flash, `deep` → pro). Discovery reuses the same
+  httpx client, headers and settings, never offers a speech/image/music/embedding model, and
+  remembers both the replacement and every dead ID, so later calls go straight to what works.
+  A key that can call nothing degrades to the local tutor with the provider's own sentence on
+  the console. `adapt config test` names the model that answered; `adapt config models` lists
+  what the key can *see* — which is not the same as what it can *call*.
 * **how many calls** — `ADAPT_AI_SINGLE_CALL` (default `true`). `false` restores the
   two-call placement path, so the merge can be measured against what it replaced rather than
   believed.

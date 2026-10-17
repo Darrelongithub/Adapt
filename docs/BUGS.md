@@ -711,3 +711,170 @@ Tests: `test_a_retired_light_model_retries_once_on_another_configured_class`,
 `test_config_test_says_when_the_provider_could_not_be_reached`,
 `test_config_test_names_an_invalid_key`,
 `test_a_key_pasted_with_surrounding_whitespace_is_stored_trimmed`.
+
+---
+
+# "Gemini model retired for new users" — 2026-10-17
+
+The previous round (PR #31, merge commit `aeae0f2`) hardened the Gemini path and taught
+`config test` to print a cause. The operator then configured a real key and ran the three
+console commands. `config test` reported a cause correctly — and the cause was a product
+defect, not an operator mistake:
+
+```
+$ ./.venv/bin/adapt config test
+Connection test failed: the configured model ID does not exist for this key;
+  `adapt config models` lists the IDs it can call.
+  the provider said: 404: This model models/gemini-2.5-flash is no longer available
+  to new users. Please update your code to use models/gemini-3.8-flash for the latest
+  features and improvements. We recommend you to use th
+```
+
+Two things about that output are worth stating before the fix, because both were wrong:
+
+* the advice said "`adapt config models` lists the IDs it can call" — it does not, and this
+  key proves it (below);
+* the sentence was cut off mid-word by a `[:200]` truncation, and the cut landed on the one
+  clause the operator could act on.
+
+## P1 — the default model IDs were versioned, and the provider had retired them
+
+`backend/src/adapt/config.py` shipped
+
+```python
+gemini_model_light: str = "gemini-2.5-flash-lite"
+gemini_model_standard: str = "gemini-2.5-flash"
+gemini_model_deep: str = "gemini-2.5-pro"
+```
+
+Every one of them answered `404 ... no longer available to new users` for a key created in
+October 2026. **A fresh installation with nothing but a current key configured could not make
+one successful call** — not one task, including the console probe. The same key's `/models`
+listed those IDs *and* the current ones:
+
+```
+gemini-2.5-flash   gemini-2.5-pro   gemini-2.5-flash-lite          <- retired, still listed
+gemini-flash-latest   gemini-flash-lite-latest   gemini-pro-latest <- rolling aliases
+gemini-3.8-flash   gemini-3.7-flash   gemini-3.6-flash   gemini-3.5-flash
+gemini-3-flash-preview   gemini-3.1-pro-preview   gemini-3.1-flash-lite
+gemini-2.5-flash-preview-tts   gemini-2.5-flash-image   nano-banana-pro-preview
+lyria-3.5   gemma-4-26b-a4b-it   deep-research-*   antigravity-*
+```
+
+**Finding (the one worth recording on its own): the model list is not a statement of what a
+key can call.** `/models` is what the key can *see*; a retired versioned ID stays on it while
+answering 404. Any design that treats the list as authoritative — including the sentence
+`config test` used to print — is wrong in a way that only shows up on a new key.
+
+**Fix.** The three defaults are now the provider's rolling aliases
+(`gemini-flash-lite-latest` / `gemini-flash-latest` / `gemini-pro-latest`), with the
+trade-off written into the setting's comment: an alias tracks what the provider serves now,
+so it must be pinned when a measured result has to be reproducible. Model names stay in
+`config.py` — the provider's naming vocabulary needed by the new discovery code (family
+order per tier, and the markers for speech/image/music/embedding models) was added there too
+rather than scattered into `llm.py`.
+
+## P1 — a pinned or all-dead configuration had nothing left to try
+
+`GeminiLLM._model_chain` tried the operator's `ADAPT_GEMINI_MODEL_FALLBACK` and then the other
+two configured classes. That is enough when one tier's ID is gated and the rest are fine. It
+is nothing at all when the operator has pinned a model (`ADAPT_GEMINI_MODEL_AI2`, or
+`ADAPT_GEMINI_TASK_MODELS`), or when the provider retires a whole generation at once — which
+is exactly what happened here: all three 2.5 IDs were dead for this key.
+
+**Fix — runtime discovery.** On a 404 the client now, in this order:
+
+1. retries on `ADAPT_GEMINI_MODEL_FALLBACK`, then on a model this process was already
+   answered by, then on another configured class;
+2. if configuration has nothing left, queries its **own** `/models` endpoint — lazily, once
+   per process, behind a lock, through the same `httpx` client, headers and settings (no SDK,
+   so there is still exactly one way to reach the provider and a test can fake it);
+3. filters to `generateContent` models that can answer with text (TTS, image/nano-banana,
+   lyria, embedding, `deep-research` and `antigravity` are never offered), ranks them for the
+   tier that failed (`light` → flash-lite/flash, `standard` → flash, `deep` → pro; a rolling
+   alias before a versioned ID, a stable release before a `-preview`), and retries the same
+   prompt on the best candidate.
+
+Bounded: **one discovery and at most two replacement attempts, never a loop.** The discovered
+replacement and every dead ID are remembered for the process, so the next call goes straight
+to what works. A discovery that fails — network error, non-200, unreadable body — is recorded
+and remembered, and the call degrades to the local tutor exactly as it did before; the 404,
+not the discovery failure, stays as the reported cause.
+
+## P2 — `config test` told the operator to read a list that was lying
+
+**Before:** `the configured model ID does not exist for this key; adapt config models lists
+the IDs it can call` — and then the provider's own recommendation, truncated at 200
+characters mid-sentence.
+
+**After:**
+
+```
+Connection test failed: the configured model ID does not exist for this key. The provider
+retires IDs on its own schedule and leaves them on the model list, so that list is not a
+promise: the IDs below are the ones this key can actually call.
+  the provider said: 404: This model models/gemini-2.5-flash is no longer available to new
+  users. Please update your code to use models/gemini-3.8-flash for the latest features
+  and improvements. We recommend you to use th
+  this key can call: gemini-flash-lite-latest, gemini-flash-latest, gemini-pro-latest
+```
+
+and on success, which model answered (`Connection test passed (gemini-flash-latest).`) —
+because a deployment that only passes on a discovered replacement has a configuration someone
+still has to fix. The stored limit is now 600 characters (`_err_text`, the 404 branch and
+`_without_secret`); the console collapses whitespace and still strips the key literal. When
+discovery finds nothing, the hint says so instead of promising a list.
+
+## P2 — `adapt config models` implied the list was callable
+
+It now says what the list is, and groups it:
+
+```
+18 ID(s) this key can see. A listed ID is not a promise that it answers: retired IDs stay
+on this list while returning 404, so confirm with `adapt config test`.
+
+rolling aliases -- these track whatever the provider serves now, which is why they are the defaults:
+  gemini-flash-latest   gemini-flash-lite-latest   gemini-pro-latest
+
+text models -- in this build's preference order (newest first inside each family):
+  gemini-3.8-flash   gemini-3.5-flash   gemini-2.5-flash   …
+
+listed but not usable for text here (speech, image, other products):
+  gemini-2.5-flash-preview-tts   lyria-3.5   …
+```
+
+## What was verified, and how
+
+| Claim | How it was checked |
+|---|---|
+| a 404 on the configured ID → discovery → retry on the alias; the dead ID is not retried | `httpx.MockTransport`, no key, no network |
+| exactly the expected request sequence (`POST`, `POST`, `GET /models`, `POST`) | same |
+| discovery failing (connect error / non-200 / non-JSON body) → `ok=False`, local fallback, no exception | same |
+| candidate filtering never selects a TTS/image/lyria/embedding/deep-research/antigravity model | same, plus a direct `rank_models` test |
+| a role pin and a task pin both recover | same |
+| discovery is asked once per process, not once per call | same |
+| `config test` success output names the answering model; a 404 prints the whole provider sentence and the IDs that answer | Typer `CliRunner` against a stubbed client |
+| **a real key actually works** | **not verified here.** No key was used and no call was made from this build. The operator runs `cd ~/Adapt && ./.venv/bin/adapt config test` and this file records the result |
+
+The last row is the honest boundary: everything above the line is measured with a mock
+transport, everything below it is a claim about the provider. If the operator's run prints
+anything other than `Connection test passed (…)`, that is a new entry here.
+
+| Check | Before | After |
+|---|---|---|
+| `cd backend && .venv/bin/python -m pytest tests -q` | 1401 passed, 2 skipped (108 s) | **1416 passed, 2 skipped** (102 s) |
+| `ruff check` on the five files touched | 70 findings (64 E501 + 6 others) | **70 findings** — the pre-existing debt, unchanged |
+
+Tests: `test_a_retired_model_is_replaced_by_one_discovered_from_the_provider`,
+`test_discovery_runs_once_per_process_not_once_per_call`,
+`test_a_discovery_that_fails_degrades_to_the_local_tutor` (3 cases),
+`test_discovery_never_offers_a_model_that_cannot_answer_with_text`,
+`test_a_key_that_can_call_nothing_still_degrades_honestly`,
+`test_a_pinned_role_model_also_discovers_a_replacement`,
+`test_a_pinned_role_model_prefers_a_configured_class_over_discovery`,
+`test_a_task_pin_also_discovers_a_replacement`,
+`test_the_console_does_not_pay_for_a_discovery_of_its_own`,
+`test_the_failure_keeps_the_whole_provider_recommendation`,
+`test_config_test_names_the_model_that_answered`,
+`test_config_test_offers_the_ids_this_key_can_call_after_a_404`,
+`test_config_models_says_the_list_is_not_a_promise`.

@@ -385,13 +385,17 @@ async def test_a_retired_light_model_retries_once_on_another_configured_class():
     await llm.aclose()
 
     assert result.ok is True
-    assert result.model == "gemini-2.5-flash"
+    assert result.model == "gemini-flash-latest"
     assert len(seen) == 2, "one failed attempt on the retired ID, one on the next class"
-    assert "gemini-2.5-flash-lite" in seen[0] and "gemini-2.5-flash:" in seen[1]
+    assert "gemini-flash-lite-latest:" in seen[0] and "gemini-flash-latest:" in seen[1]
 
 
 async def test_no_retry_is_attempted_when_every_class_is_the_same_model():
-    """One model configured everywhere means there is nothing else to try."""
+    """One model configured everywhere: the provider's own list is all that is left.
+
+    It is asked **once**, and when it has nothing to offer the call fails closed to the
+    local tutor like any other provider failure -- no exception, no loop.
+    """
     seen: list[str] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -407,11 +411,16 @@ async def test_no_retry_is_attempted_when_every_class_is_the_same_model():
         transport=httpx.MockTransport(handler),
     )
     result = await _call(llm)
+    second = await _call(llm)
     await llm.aclose()
 
+    generates = [row for row in seen if ":generateContent" in row]
+    discoveries = [row for row in seen if "/models?" in row]
     assert result.ok is False and result.status == "error"
-    assert len(seen) == 1
-    assert "404" in (result.error or "")
+    assert "404" in (result.error or ""), "the honest cause, not a generic failure"
+    assert len(generates) == 2, "one configured attempt per call, and nothing to switch to"
+    assert len(discoveries) == 1, "discovery is asked once per process, not once per call"
+    assert second.ok is False and llm._discovery_failed is True
 
 
 async def test_a_refused_cache_is_released_and_the_full_prompt_reserves_once():
@@ -473,6 +482,302 @@ def test_the_cache_can_measure_the_prefix_it_registers():
 
     cache = ContextCache(min_tokens=1)
     assert cache.estimate("a static head that is used for every learner") > 0
+
+
+# --------------------------------------------------------------------------- #
+# runtime model discovery
+#
+# The provider retires versioned IDs on its own schedule and leaves them on `/models`
+# afterwards -- a key created in October 2026 got `404 ... is no longer available to new
+# users` for `gemini-2.5-flash` while that ID was still listed by the same key. So the
+# list is a source of *candidates to try*, never an answer about what works.
+# --------------------------------------------------------------------------- #
+
+#: The provider's own words for a retired ID. Kept as a constant because the point of
+#: one test below is that the whole sentence survives to the console.
+_RETIRED_MESSAGE = (
+    "This model models/gemini-2.5-flash is no longer available to new users. "
+    "Please update your code to use models/gemini-3.8-flash for the latest "
+    "features and improvements. We recommend you to use a rolling alias so that "
+    "this does not happen again."
+)
+
+#: A `/models` body shaped like the real one: the retired IDs, the rolling aliases, the
+#: current 3.x text models, and every kind of model this build must never ask for text.
+_MODEL_LIST = {
+    "models": [
+        {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/gemini-2.5-flash-lite", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/gemini-flash-latest", "supportedGenerationMethods": ["generateContent"]},
+        {
+            "name": "models/gemini-flash-lite-latest",
+            "supportedGenerationMethods": ["generateContent"],
+        },
+        {"name": "models/gemini-pro-latest", "supportedGenerationMethods": ["generateContent"]},
+        {
+            "name": "models/gemini-3.8-flash",
+            "supportedGenerationMethods": ["generateContent", "countTokens"],
+        },
+        {
+            "name": "models/gemini-2.5-flash-preview-tts",
+            "supportedGenerationMethods": ["generateContent"],
+        },
+        {
+            "name": "models/gemini-2.5-flash-image",
+            "supportedGenerationMethods": ["generateContent"],
+        },
+        {
+            "name": "models/gemini-3-pro-image-preview",
+            "supportedGenerationMethods": ["generateContent"],
+        },
+        {
+            "name": "models/nano-banana-pro-preview",
+            "supportedGenerationMethods": ["generateContent"],
+        },
+        {"name": "models/lyria-3.5", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"]},
+        {
+            "name": "models/deep-research-pro-preview-12-2025",
+            "supportedGenerationMethods": ["generateContent"],
+        },
+        {"name": "models/antigravity-1", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/gemma-4-26b-a4b-it", "supportedGenerationMethods": ["generateContent"]},
+    ]
+}
+
+#: The three classes pinned to retired IDs -- what a deployment that copied the
+#: pre-2026-10 defaults into its environment looks like on a key created after them.
+_RETIRED = {
+    "gemini_model_light": "gemini-2.5-flash-lite",
+    "gemini_model_standard": "gemini-2.5-flash",
+    "gemini_model_deep": "gemini-2.5-pro",
+}
+
+
+def _retired_transport(seen: list[str], *, models: dict | None = None):
+    """404 on every retired ID, answer everything else, and serve `/models`.
+
+    ``models=None`` (or a falsy value) makes discovery fail with a connect error.
+    """
+    body = models if models is not None else _MODEL_LIST
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(f"{request.method} {request.url}")
+        if request.method == "GET":
+            if not body:
+                raise httpx.ConnectError("no route to host")
+            return httpx.Response(200, json=body)
+        if "gemini-2.5" in str(request.url):
+            return httpx.Response(404, json={"error": {"message": _RETIRED_MESSAGE}})
+        return httpx.Response(200, json=_ok("from a model that still exists"))
+
+    return httpx.MockTransport(handler)
+
+
+def _generates(seen: list[str]) -> list[str]:
+    return [row for row in seen if ":generateContent" in row]
+
+
+async def test_a_retired_model_is_replaced_by_one_discovered_from_the_provider():
+    """The operator's failure: 404 on the configured ID, no configuration left to try.
+
+    Discovery supplies a candidate, the retry succeeds, and the answer is remembered --
+    so the next call goes straight to what works instead of paying the 404 again.
+    """
+    seen: list[str] = []
+    llm = GeminiLLM(_settings(**_RETIRED), transport=_retired_transport(seen))
+    result = await _call(llm)
+
+    assert result.ok is True, result
+    assert result.model == "gemini-flash-latest", "a rolling alias, not another retired ID"
+    assert result.tier == "standard"
+    # The configured ID, the one other configured class left, then one discovery and
+    # one retry on what the provider says it will serve. Nothing after that.
+    assert [row.split(" ")[0] for row in seen] == ["POST", "POST", "GET", "POST"], seen
+    assert "gemini-2.5-flash:" in seen[0], "the configured ID was tried first"
+    assert seen[2].endswith("/models?pageSize=200"), "one discovery, on the same base URL"
+    assert "gemini-flash-latest:" in seen[3]
+
+    # The dead IDs are never retried: the next call starts from what answered.
+    second = await _call(llm)
+    await llm.aclose()
+
+    assert second.ok is True and second.model == "gemini-flash-latest"
+    assert len(seen) == 5 and "gemini-2.5" not in seen[4], seen
+
+
+async def test_discovery_runs_once_per_process_not_once_per_call():
+    """A second tier retired by the same provider reuses the first discovery."""
+    seen: list[str] = []
+    llm = GeminiLLM(_settings(**_RETIRED), transport=_retired_transport(seen))
+    await _call(llm)
+    deep = await llm.complete(system="s", user="u", purpose="content_items", role="ai1")
+    await llm.aclose()
+
+    assert deep.ok is True and deep.model == "gemini-pro-latest", deep
+    assert len([row for row in seen if row.startswith("GET")]) == 1, seen
+    assert len(_generates(seen)) == 5, seen
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        pytest.param("connect", id="network-error"),
+        pytest.param("status", id="non-200"),
+        pytest.param("body", id="not-json"),
+    ],
+)
+async def test_a_discovery_that_fails_degrades_to_the_local_tutor(failure):
+    """Discovery is an optimisation on top of a failure; its own failure must not raise."""
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(f"{request.method} {request.url}")
+        if request.method == "GET":
+            if failure == "connect":
+                raise httpx.ConnectError("no route to host")
+            if failure == "body":
+                return httpx.Response(200, content=b"<html>gateway</html>")
+            return httpx.Response(500, json={"error": {"message": "upstream"}})
+        return httpx.Response(404, json={"error": {"message": _RETIRED_MESSAGE}})
+
+    llm = GeminiLLM(_settings(**_RETIRED), transport=httpx.MockTransport(handler))
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is False
+    assert result.status == "error", "a typed failure the call site falls back on"
+    assert result.error and result.error.startswith("404"), "the 404 is the cause"
+    assert llm.discovery_error, "the discovery failure is recorded for the console"
+    # Bounded: the configured ID plus at most two replacements. Never a loop.
+    assert len(_generates(seen)) <= 3, seen
+    assert len([row for row in seen if row.startswith("GET")]) == 1, "asked once"
+    assert llm._discovery_failed is True
+
+
+async def test_the_console_does_not_pay_for_a_discovery_of_its_own():
+    """A command that is printing a failure must not add a request to print it.
+
+    `known_candidates` is the console's view: it answers only from what the failed
+    call already learned, so `adapt config test` cannot turn one failure into two
+    requests -- and it is free exactly when a 404 has run discovery and cached it.
+    """
+    seen: list[str] = []
+    llm = GeminiLLM(_settings(**_RETIRED), transport=_retired_transport(seen))
+    assert await llm.known_candidates("standard") == []
+    assert seen == [], "nothing had been discovered yet, so nothing was asked"
+
+    await _call(llm)
+    assert llm._discovered, "the call itself discovered the list"
+    before = len(seen)
+    ranked = await llm.known_candidates("standard")
+    await llm.aclose()
+
+    assert ranked and ranked[0] == "gemini-flash-latest"
+    assert len(seen) == before, "the console reads the cached answer"
+
+
+def test_discovery_never_offers_a_model_that_cannot_answer_with_text():
+    """TTS, image, music, embedding, deep-research and antigravity are not tutors."""
+    from adapt.ai.llm import rank_models
+
+    names = [
+        str(row["name"]).removeprefix("models/")
+        for row in _MODEL_LIST["models"]
+        if "generateContent" in (row.get("supportedGenerationMethods") or [])
+    ]
+    ranked = rank_models(names, "standard")
+    blocked = ("tts", "image", "nano-banana", "lyria", "embedding", "deep-research", "antigravity")
+    for name in ranked:
+        assert not any(marker in name for marker in blocked), name
+    # Not a filter that threw everything away either: a rolling alias first, because an
+    # alias tracks what the provider serves now, and the current versioned ID with it.
+    assert ranked[0] == "gemini-flash-latest"
+    assert "gemini-3.8-flash" in ranked
+    assert "gemini-flash-lite-latest" in ranked
+
+
+async def test_a_key_that_can_call_nothing_still_degrades_honestly():
+    """A list with no text model in it: fail closed, and say why."""
+    seen: list[str] = []
+    llm = GeminiLLM(
+        _settings(**_RETIRED),
+        transport=_retired_transport(
+            seen,
+            models={
+                "models": [
+                    {"name": "models/lyria-3.5"},
+                    {"name": "models/text-embedding-004"},
+                ]
+            },
+        ),
+    )
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is False and result.status == "error"
+    assert result.error and result.error.startswith("404")
+    assert len(_generates(seen)) <= 3, "bounded, then the call site uses the local tutor"
+    assert await llm.candidate_models("standard") == []
+
+
+async def test_a_pinned_role_model_also_discovers_a_replacement():
+    """A pin is not a dead end: `ADAPT_GEMINI_MODEL_AI2` on a retired ID recovers too.
+
+    Before this the chain only knew the operator's fallback and the tier defaults, and
+    a role pin bypasses the tiers -- so a pin on a retired ID had nothing to try.
+    """
+    seen: list[str] = []
+    llm = GeminiLLM(
+        _settings(gemini_model_ai2="gemini-2.5-flash", **_RETIRED),
+        transport=_retired_transport(seen),
+    )
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is True, result
+    assert result.model == "gemini-flash-latest"
+    assert "gemini-2.5-flash:" in seen[0]
+    assert any(row.endswith("/models?pageSize=200") for row in seen), seen
+
+
+async def test_a_pinned_role_model_prefers_a_configured_class_over_discovery():
+    """With the shipped defaults a stale pin never costs a discovery request."""
+    seen: list[str] = []
+    llm = GeminiLLM(
+        _settings(gemini_model_ai2="gemini-2.5-flash"),
+        transport=_retired_transport(seen),
+    )
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is True and result.model == "gemini-flash-latest"
+    assert [row.split(" ")[0] for row in seen] == ["POST", "POST"], seen
+
+
+async def test_a_task_pin_also_discovers_a_replacement():
+    """`ADAPT_GEMINI_TASK_MODELS` is the most specific pin, and the most easily stale."""
+    seen: list[str] = []
+    llm = GeminiLLM(
+        _settings(gemini_task_models={"ai2_explain": "gemini-2.5-flash"}, **_RETIRED),
+        transport=_retired_transport(seen),
+    )
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is True and result.model == "gemini-flash-latest"
+
+
+async def test_the_failure_keeps_the_whole_provider_recommendation():
+    """200 characters cut the provider's own advice off mid-sentence."""
+    seen: list[str] = []
+    llm = GeminiLLM(_settings(**_RETIRED), transport=_retired_transport(seen, models={}))
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.error and "gemini-3.8-flash" in result.error, "the advice survives intact"
+    assert result.error and result.error.endswith("does not happen again."), result.error
 
 
 async def test_the_operator_can_list_the_models_the_key_can_call():
