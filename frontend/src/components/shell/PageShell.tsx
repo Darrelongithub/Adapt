@@ -16,14 +16,17 @@ export function PageShell({
 }) {
   const path = usePathname();
   const brain = !access && path === "/baseline";
+  // Art has a product meaning, not a page-theme meaning. Keep it on the exact screens where
+  // the owner asked for it: study on Home, classroom while choosing a subject, brain on the
+  // mind check, gears on Settings, and the flower only in the signed-out welcome.
   const hero: ArtName | null = access
     ? "flower"
-    : path === "/journey" || path === "/"
+    : path === "/"
       ? "study"
-      : path === "/settings"
-        ? "gears"
-        : path === "/first-lesson" || path === "/learn"
-          ? "classroom"
+      : path === "/journey"
+        ? "classroom"
+        : path === "/settings"
+          ? "gears"
           : null;
   return (
     <div

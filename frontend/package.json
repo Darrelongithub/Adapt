@@ -15,6 +15,7 @@
     "test:engine": "node --test src/lib/engine/*.test.mjs",
     "test:lib": "node --test src/lib/*.test.mjs",
     "test:server": "node --test server.test.mjs",
+    "test:env": "node --test env.test.mjs",
     "test:e2e:banned": "node tests-e2e/banned-phrases.mjs",
     "host": "npm run build && node host.mjs",
     "dev:web": "node server.mjs",

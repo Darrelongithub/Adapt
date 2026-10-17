@@ -1,0 +1,14 @@
+.scene-stage { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 16px; max-width: 620px; margin: 0; }
+.scene-stage svg { display:block; width:100%; min-height:180px; max-height:320px; overflow:visible; }
+.scene-caption { fill:var(--ink); font: 500 7px var(--font-sans); }
+.scene-label { fill:var(--ink); font: 600 7px var(--font-mono); }
+.scene-caption-under { min-height: 1.5rem; margin-top: 8px; color:var(--ink); font-size: .95rem; }
+.scene-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
+.scene-controls button, .scene-controls select { border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:4px; min-height:36px; padding:6px 10px; }
+.scene-controls input[type=range] { flex:1 1 120px; min-width:110px; accent-color:var(--accent); }
+.scene-controls label { display:flex; align-items:center; gap:5px; color:var(--muted); font: .7rem var(--font-mono); }
+.dev-animator-page { max-width: 900px; margin: 0 auto; padding: 32px 20px; display:grid; gap:20px; }
+.dev-animator-page h1 { font: 500 2rem var(--font-serif); margin:0; }
+.dev-animator-page .eyebrow { font: .7rem var(--font-mono); text-transform:uppercase; color:var(--muted); letter-spacing:.12em; }
+.dev-animator-page select { margin-left:8px; min-height:40px; border:1px solid var(--line); background:var(--panel); padding:6px 9px; }
+@media (max-width: 480px) { .scene-stage { padding:10px; } .scene-stage svg { min-height:160px; } .dev-animator-page { padding:20px 12px; } }

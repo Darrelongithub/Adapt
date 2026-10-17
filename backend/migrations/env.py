@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from adapt.config import get_settings  # noqa: E402
 from adapt.db.engine import create_db_engine  # noqa: E402
 from adapt.db.models import Base  # noqa: E402
+import adapt.subjects.models  # noqa: E402,F401 register subject-round and learner-subject tables
 
 config = context.config
 if config.config_file_name is not None:

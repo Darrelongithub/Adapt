@@ -1,170 +1,133 @@
 "use client";
 
-/**
- * Round 3 (Track T): the journey is now a one-screen flow rather than a
- * list page that described the flow.  The page reads the server's stage
- * state, renders the current stage's card, and auto-advances when the
- * learner marks it done or skipped.  Returning learners can still reach
- * the menu, but a new learner lands here from /onboarding and walks
- * through the stages one at a time, not by clicking through a list.
- *
- * Three rules it holds to:
- *
- * * **The server says where you are.** `useJourney` reads `GET /api/v1/journey/state`,
- *   so the same answer appears on a phone, a laptop and in another tab, and a closed
- *   browser resumes instead of restarting.
- * * **Skipping is an answer, not a failure.** A skipped stage is stored and shown as
- *   "skipped — not measured"; nothing downstream gets a zero for it.
- * * **Nothing is claimed that was not recorded.** The "why this lesson looks like
- *   this" panel prints the learner's own stated answers and the measured levers, each
- *   with the words the server wrote for it, and says which of the two it is.
- */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Btn, Card, Err, Notice, useSession } from "@/components/ui";
+import { get, post } from "@/lib/api";
+import { useJourney } from "@/lib/journey";
+import type { LearningOverview } from "@/components/home-dashboard";
 
-import Link from "next/link";
-import { useState } from "react";
+type Chosen = { id: string; title: string; family: string; source: "model" | "simple"; plan: { tests: Test[]; source: "model" | "simple" }; progress: { done: number; total: number } };
+type Test = { id: string; title: string; why: string; level: number };
+type SubjectReply = { subject_id: string; plan: Chosen["plan"]; subject: Chosen };
 
-import { ProgressBar, StageList } from "@/components/journey";
-import { Btn, Card, Err, Notice, Tag, useSession } from "@/components/ui";
-import { useApi } from "@/lib/api";
-import { STEPS, useJourney, type StageId } from "@/lib/journey";
-
-type Prefs = { preferences: Record<string, unknown> };
-type Snapshot = {
-  state?: string;
-  levers?: Record<string, { value?: unknown; why?: string; source?: string }>;
-};
-
-/** The levers worth showing first: the ones that change what a lesson looks like. */
-const WHY_LEVERS = ["step_size", "lead_format_prior", "tone", "language", "hint_policy", "timers_visible"] as const;
-
-function valueInWords(value: unknown): string {
-  if (value === true) return "on";
-  if (value === false) return "off";
-  if (value === null || value === undefined || value === "") return "not set";
-  return String(value).replace(/_/g, " ");
-}
+const suggestions = ["Mathematics", "Languages", "Sciences", "History", "Computer science", "Law", "Something else"];
 
 export default function Journey() {
   const { me, loading } = useSession();
-  const signedIn = Boolean(me);
-  const journey = useJourney(signedIn);
-  const prefs = useApi<Prefs>(signedIn ? "me/preferences" : null);
-  const snapshot = useApi<Snapshot>(signedIn ? "baseline/snapshot" : null);
-  const [note, setNote] = useState<string | null>(null);
+  const router = useRouter();
+  const path = useJourney(Boolean(me));
+  const overview = useOverview(Boolean(me));
+  const [subjectRequested, setSubjectRequested] = useState(false);
+  const [text, setText] = useState("");
+  const [chosen, setChosen] = useState<Chosen | null>(null);
+  const [index, setIndex] = useState(0);
+  const [completed, setCompleted] = useState<string[]>([]);
+  const [testsStarted, setTestsStarted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const state = journey.state;
-  const current = state?.stage ?? null;
-  const currentRow = state?.stages?.find((r) => r.id === current) ?? null;
+  const state = path.state;
+  const stage = state?.stage ?? "preferences";
+  const subjectStage = stage === "subject" || stage === "subject_round";
+  const active = overview.data?.subjects.find((item) => item.id === overview.data?.active_subject_id) ?? null;
+  const subjectFlow = subjectStage || (subjectRequested && Boolean(active));
 
-  async function skip(stage: StageId) {
-    setNote(null);
-    const out = await journey.advance(stage, "skipped");
-    if (!out.ok) setNote(out.error ?? "that did not save");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setSubjectRequested(params.get("step") === "subject");
+  }, []);
+
+  useEffect(() => {
+    if (subjectRequested) {
+      setChosen(null);
+      setCompleted([]);
+      setIndex(0);
+      setTestsStarted(false);
+      return;
+    }
+    if (active && subjectStage) {
+      void get<Chosen>(`subjects/${active.id}`).then((result) => {
+        if (!result.data) return;
+        const completedCount = Math.max(0, Math.min(result.data.progress.done, result.data.plan.tests.length));
+        setChosen(result.data);
+        setCompleted(result.data.plan.tests.slice(0, completedCount).map((item) => item.id));
+        setIndex(completedCount);
+        setTestsStarted(completedCount > 0);
+      });
+    }
+  }, [active?.id, subjectRequested, subjectStage]);
+
+  const currentTest = chosen?.plan.tests[index] ?? null;
+  const markSkip = useCallback(async () => {
+    if (!state || busy) return;
+    setBusy(true); setNotice(null);
+    const out = await path.advance(state.stage, "skipped");
+    if (!out.ok) setNotice(out.error ?? "That did not save.");
+    setBusy(false);
+  }, [busy, path, state]);
+
+  async function choose() {
+    if (!text.trim() || busy) return;
+    setBusy(true); setNotice(null);
+    try {
+      const out = await post<SubjectReply>("subjects/choose", { text: text.trim() });
+      setChosen(out.subject); setIndex(0); setCompleted([]); setTestsStarted(false);
+      await path.reload();
+    } catch (error) { setNotice((error as { shown?: string }).shown ?? "That subject could not be checked just now."); }
+    finally { setBusy(false); }
   }
 
-  async function markDone(stage: StageId) {
-    setNote(null);
-    const out = await journey.advance(stage, "done");
-    if (!out.ok) setNote(out.error ?? "That did not save.");
+  async function startTests() {
+    if (!chosen || busy) return;
+    setBusy(true); setNotice(null);
+    try {
+      await post(`subjects/${chosen.id}/activate`, {});
+      setTestsStarted(true);
+      await path.advance("subject", "done");
+    } catch (error) { setNotice((error as { shown?: string }).shown ?? "That did not save."); }
+    finally { setBusy(false); }
   }
 
-  return (
-    <section className="mx-auto max-w-3xl space-y-5 px-4 py-6" data-journey>
-      <h1 className="text-3xl font-medium" style={{ fontFamily: "var(--font-serif)" }}>Your path</h1>
-      <p className="text-sm text-[var(--muted)]">One step at a time. Stop whenever you like.</p>
-      <ProgressBar state={state} />
-      {journey.error ? <Err error={journey.error} status={journey.status} /> : null}
-      {note ? <Notice tone="warn">{note}</Notice> : null}
-      {currentRow ? <section data-testid="journey-current-stage" className="rounded border border-[var(--line)] bg-[var(--panel)] p-5">
-        <h2 className="text-xl font-medium">{STEPS[currentRow.id].title}</h2>
-        <div data-testid="journey-card" data-stage={currentRow.id} className="mt-4 flex flex-wrap gap-3">
-          <Btn kind="primary" href={STEPS[currentRow.id].href}>{STEPS[currentRow.id].action}</Btn>
-          {!["account", "practice"].includes(currentRow.id) ? <Btn kind="ghost" disabled={journey.busy} onClick={() => skip(currentRow.id)}>Skip this step</Btn> : null}
-        </div>
-      </section> : <p role="status">{loading || journey.loading ? "Opening your path…" : "Your path is ready."}</p>}
-      <details className="r3-question-why-tap">
-        <summary>see every step</summary>
-        <div className="mt-4 space-y-4">
-          <StageList state={state} onSkip={skip} busy={journey.busy} />
-          {currentRow ? <p>{STEPS[currentRow.id].what} Skipping: {STEPS[currentRow.id].skipNote}.</p> : null}
-          <WhyThisLesson prefs={prefs.data?.preferences} snapshot={snapshot.data} error={snapshot.error} />
-          {currentRow && !["account", "practice"].includes(currentRow.id) ? <button type="button" className="btn-ctl btn-secondary" data-testid="journey-mark-done" disabled={journey.busy} onClick={() => markDone(currentRow.id)}>I have already done this</button> : null}
-          <Btn onClick={journey.reload}>Check again</Btn>
-          <Link href="/settings" className="link-inline">What is recorded</Link>
-        </div>
-      </details>
-    </section>
-  );
+  async function finishTest() {
+    if (!chosen || !currentTest || busy) return;
+    const next = Array.from(new Set([...completed, currentTest.id]));
+    setCompleted(next);
+    if (index + 1 < chosen.plan.tests.length) { setIndex(index + 1); return; }
+    setBusy(true); setNotice(null);
+    try {
+      const out = await post<Chosen>(`subjects/${chosen.id}/tests/complete`, { completed_ids: next });
+      setChosen(out);
+      await path.advance("subject_round", "done");
+      if (subjectRequested) router.push(`/first-lesson?subject=${encodeURIComponent(chosen.id)}`);
+    }
+    catch (error) { setNotice((error as { shown?: string }).shown ?? "The test result could not be saved."); }
+    finally { setBusy(false); }
+  }
+
+  if (loading || path.loading || overview.loading) return <section className="journey-page"><p role="status">Opening your path…</p></section>;
+  if (path.error && !state) return <section className="journey-page"><Err error={path.error} status={path.status} /></section>;
+
+  return <section className="journey-page" data-journey>
+    <header className="journey-header"><p className="eyebrow">Your path</p><h1>One step at a time.</h1><p>Choose a subject after the mind check. You can pause or skip any step.</p><div className="journey-dots" aria-label="Path progress">{state?.stages.map((item) => <span key={item.id} className={item.status === "todo" ? "" : "done"} title={item.id} />)}</div></header>
+    {notice ? <Notice tone="warn">{notice}</Notice> : null}
+    {stage === "preferences" || stage === "games" ? <BaselineStep stage={stage} onSkip={markSkip} busy={busy} /> : null}
+    {subjectFlow && !chosen ? <SubjectChooser text={text} setText={setText} choose={choose} busy={busy} /> : null}
+    {subjectFlow && chosen && !testsStarted ? <PlanCard chosen={chosen} onStart={startTests} busy={busy} /> : null}
+    {subjectFlow && chosen && testsStarted && currentTest ? <TestCard key={currentTest.id} chosen={chosen} test={currentTest} position={index + 1} onAnswer={finishTest} busy={busy} /> : null}
+    {!subjectStage && stage === "first_lesson" ? <Card title="Your first lesson"><p>Open the first lesson for your active subject.</p><Btn icon="play" kind="primary" href={active?.next?.href ?? "/first-lesson"}>Open lesson</Btn></Card> : null}
+    {!subjectStage && stage === "practice" ? <Card title="Keep learning"><p>Your path is ready. Continue with a subject lesson or add another subject.</p><div className="flex flex-wrap gap-2"><Btn icon="play" kind="primary" href="/learn">Learn</Btn><Btn icon="plus" href="/journey?step=subject">Add a subject</Btn></div></Card> : null}
+    {stage === "snapshot" ? <Card title="Your mind check is ready"><p>See what was measured, then choose a subject.</p><Btn kind="primary" href="/baseline">See the snapshot</Btn><Btn kind="ghost" onClick={markSkip} disabled={busy}>Continue</Btn></Card> : null}
+    {stage === "subject" && !chosen ? <p className="journey-skip"><Btn kind="ghost" onClick={markSkip} disabled={busy}>Skip subject choice</Btn></p> : null}
+  </section>;
 }
 
-/**
- * "Why this lesson looks like this" — printed from the learner's own answers and the
- * levers the mind check measured, never from a claim about them.
- *
- * The two kinds are labelled separately (`you told us` vs `measured`) because they are
- * not the same kind of evidence, and this app's whole premise is that stating a
- * preference and being measured on it are different facts. When neither exists, the
- * panel says so and offers the step that produces them.
- */
-function WhyThisLesson({
-  prefs,
-  snapshot,
-  error,
-}: {
-  prefs?: Record<string, unknown>;
-  snapshot?: Snapshot | null;
-  error?: string | null;
-}) {
-  const levers = snapshot?.levers ?? {};
-  const measured = WHY_LEVERS.map((k) => [k, levers[k]] as const).filter(
-    ([, lever]) => lever && (lever.source === "measured" || (lever.source === "stated" && lever.why)),
-  );
-  const stated = prefs ?? {};
-  const statedRows = [
-    ["preferred_format", "how you like to meet a new idea"],
-    ["session_minutes", "how long a sitting you asked for"],
-    ["feedback_style", "how you want to hear that something was wrong"],
-    ["language", "the language you asked for"],
-    ["anything_else", "the line you wrote yourself"],
-  ].filter(([k]) => stated[k] !== undefined && stated[k] !== null && stated[k] !== "");
+function useOverview(enabled: boolean) { const [data, setData] = useState<LearningOverview | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(enabled); useEffect(() => { if (!enabled) return; let alive = true; setLoading(true); void get<LearningOverview>("learning/overview").then((result) => { if (!alive) return; setData(result.data); setError(result.error); setLoading(false); }); return () => { alive = false; }; }, [enabled]); return { data, error, loading }; }
 
-  if (!measured.length && !statedRows.length) {
-    return (
-      <p className="text-xs text-[var(--muted)]">
-        There is nothing recorded to plan a lesson from yet
-        {error ? ` (${error})` : ""}. The screen will say it is working from a simple plan and why, rather than pretending it
-        knows something about you.
-      </p>
-    );
-  }
+function BaselineStep({ stage, onSkip, busy }: { stage: string; onSkip: () => void; busy: boolean }) { return <Card title={stage === "preferences" ? "A few questions" : "Short mind games"}><p>{stage === "preferences" ? "Answer one question at a time. Your choices shape the starting plan." : "Play the short games, or skip them. Skipped means not measured."}</p><div className="flex flex-wrap gap-2"><Btn icon="play" kind="primary" href="/baseline">Open mind check</Btn><Btn kind="ghost" onClick={onSkip} disabled={busy}>Skip this step</Btn></div></Card>; }
 
-  return (
-    <div className="rounded-[2px] border border-[var(--line)] p-3" data-testid="why-this-lesson">
-      <div className="text-[0.7rem] uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-        why this lesson looks like this
-      </div>
-      <ul className="mt-2 space-y-1 text-sm">
-        {statedRows.map(([k, label]) => (
-          <li key={String(k)} className="flex flex-wrap items-baseline gap-2">
-            <Tag tone="line">you told us</Tag>
-            <span>
-              {String(label)}: <strong>{valueInWords(stated[k as string])}</strong>
-            </span>
-          </li>
-        ))}
-        {measured.map(([k, lever]) => (
-          <li key={k} className="flex flex-wrap items-baseline gap-2">
-            <Tag tone={lever?.source === "measured" ? "good" : "line"}>{lever?.source === "measured" ? "measured" : "you told us"}</Tag>
-            <span>
-              {valueInWords(lever?.value)} — <span className="text-[var(--muted)]">{lever?.why}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2 text-[0.7rem] text-[var(--muted)]">
-        This is everything the lesson is planned from. Nothing here is a label about how you learn, and no preference decides
-        anything on its own — it sets a starting point that gets compared with what you actually do.
-      </p>
-    </div>
-  );
-}
+function SubjectChooser({ text, setText, choose, busy }: { text: string; setText: (value: string) => void; choose: () => void; busy: boolean }) { return <Card title="What do you want to learn?"><p className="subject-question-copy">Type a subject or topic. We will choose a short starting check.</p><form onSubmit={(event) => { event.preventDefault(); void choose(); }} className="subject-chooser"><input autoFocus value={text} onChange={(event) => setText(event.target.value)} placeholder="For example, discrete structures" aria-label="Subject or topic" maxLength={240} /><div className="suggestion-list" aria-label="Suggestions">{suggestions.map((item) => <button type="button" key={item} onClick={() => setText(item)}>{item}</button>)}</div><Btn icon="search" kind="primary" type="submit" disabled={!text.trim() || busy}>{busy ? "Checking…" : "See what we will check"}</Btn></form></Card>; }
+
+function PlanCard({ chosen, onStart, busy }: { chosen: Chosen; onStart: () => void; busy: boolean }) { return <Card title={`Here's what we'll check for ${chosen.title}`} tone="muted"><p className="plan-source">{chosen.source === "simple" ? "Simple starting plan" : "Checked starting plan"}</p><ul className="plan-list">{chosen.plan.tests.map((test) => <li key={test.id}><span><strong>{test.title}</strong><small>{test.why}</small></span><span className="test-level">Level {test.level}</span></li>)}</ul><div className="flex flex-wrap gap-2"><Btn icon="play" kind="primary" onClick={onStart} disabled={busy}>Start</Btn><Btn kind="ghost" href="/journey?step=subject">Customise</Btn></div></Card>; }
+
+function TestCard({ chosen, test, position, onAnswer, busy }: { chosen: Chosen; test: Test; position: number; onAnswer: () => void; busy: boolean }) { const [answer, setAnswer] = useState<string | null>(null); const options = useMemo(() => ["I can explain it", "I have seen it", "Not yet"], []); return <Card title={`Subject check ${position} of ${chosen.plan.tests.length}`}><h2 className="text-2xl" style={{ fontFamily: "var(--font-serif)" }}>{test.title}</h2><p className="mt-2 text-sm text-[var(--muted)]">{test.why}</p><div className="r3-choices pill-grid mt-5">{options.map((option) => <button type="button" key={option} className={`choice-card${answer === option ? " is-selected" : ""}`} aria-pressed={answer === option} onClick={() => setAnswer(option)}><span className="choice-title">{option}</span></button>)}</div><Btn icon="play" kind="primary" onClick={onAnswer} disabled={!answer || busy}>{position === chosen.plan.tests.length ? "Finish checks" : "Next check"}</Btn></Card>; }

@@ -33,7 +33,11 @@ def _repo_root() -> Path:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="ADAPT_",
-        env_file=(".env", "../.env"),
+        # Resolve the repository template independently of the caller's working directory.
+        # `npm run dev` starts Python from backend/, while `uvicorn` is often run from the
+        # repository root; the old relative tuple made the same copied `.env` work in one
+        # command and disappear in the other.
+        env_file=(str(_repo_root() / ".env"), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -74,6 +78,10 @@ class Settings(BaseSettings):
     db_encryption: Literal["auto", "sqlcipher", "field-only", "off"] = "auto"
     db_key: str | None = None  # base64 32 bytes; prefer ADAPT_KEYFILE
     keyfile: Path | None = None
+    # Loaded from `.env` as ADAPT_DB_PASSPHRASE. Keep it out of repr/model dumps; the
+    # database engine uses the field before falling back to the process environment name
+    # for deployments that inject secrets outside an env file.
+    db_passphrase: str | None = Field(default=None, repr=False, exclude=True)
     db_key_passphrase_env: str = "ADAPT_DB_PASSPHRASE"
     sqlcipher_kdf_iter: int = 256000
     sqlcipher_memory: int = 128 * 1024 * 1024  # bytes, PRAGMA cipher_memory_capacity
@@ -204,6 +212,7 @@ class Settings(BaseSettings):
         "keyfile",
         "db_path",
         "db_key",
+        "db_passphrase",
         "tls_certfile",
         "tls_keyfile",
         "numbas_export_dir",
