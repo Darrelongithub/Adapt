@@ -1,7 +1,7 @@
 # Round 6 crash log
 
 Crawl of 15 routes × 2 viewports × 3 sessions (signed-out, guest, signed-in), plus the rapid tab-switch test.
-Generated 153.0.8010.0 · 2026-10-17T17:33:30.436Z
+Generated 153.0.8010.0 · 2026-10-17T20:11:08.616Z
 
 **No crashes found.** Zero console errors, zero uncaught exceptions, zero non-auth 4xx/5xx from the app's own API, zero blank bodies, zero hydration warnings, zero error screens.
 

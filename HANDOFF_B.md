@@ -65,3 +65,11 @@ verdict). `TestCard` (the fake self-rating) is deleted; `/subject` deleted.
   goal exam|skills|curiosity.
 - `.option-tile` in `tests.css` collides with `pattern_pick`'s inert sequence
   tiles — always scope clicks to `.option-grid .option-tile`.
+- **`learnerCopy.test.mjs` contract change**: the old test pinned the removed
+  landing gate (`setLanding(LEARNER_LANDING)` / "Opening your path"); those
+  assertions are inverted to `doesNotMatch` (the gate caused the SessionGate
+  redirect loop — see `docs/R6_CRASH_LOG.md`). The journey-shell assertion now
+  matches `href="/journey` as a prefix, not exactly.
+- **`components/journey.tsx` is dead** (no importers since the wizard moved to
+  `app/journey/page.tsx`). Left in place on purpose for its owner to delete —
+  do not wire anything to it.
