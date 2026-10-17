@@ -41,9 +41,13 @@ def _array(
 
 
 def _object(properties: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    # Keep to Gemini's OpenAPI-subset responseSchema fields. Strictness is enforced by
-    # ``_require_keys`` after the provider returns; unsupported JSON-Schema extensions here can make
-    # an otherwise valid constrained call fail before generation.
+    # Keep to Gemini's OpenAPI-subset responseSchema fields. Every key is required here on
+    # purpose: the skeleton call that uses these schemas either receives a complete pack or
+    # nothing at all, and ``_require_keys`` re-checks the same contract after the provider
+    # returns. Marking a field optional in the schema while rejecting its absence later would
+    # only move the failure from generation to validation. (The compact response-spec format
+    # used by the tutor calls does support ``?``-optional fields; this builder is for the
+    # all-or-nothing skeleton.)
     return {
         "type": "OBJECT",
         "properties": properties,

@@ -157,7 +157,21 @@ Which model each class is comes from configuration, never from the table:
 has fewer models than classes: `ADAPT_GEMINI_MODEL_AI1` / `_AI2` pin every task a role
 performs, and `ADAPT_GEMINI_TASK_MODELS='{"ai2_explain": "<model>"}'` pins one task.
 Precedence is **explicit argument → task pin → role pin → class**, and a pin never changes the
-reported *class* — pinning a model does not change what the work is.
+reported *class* — pinning a model does not change what the work is. A model ID is deployment
+configuration, so a `404` from a retired or gated ID is retried **once** on the next viable
+model: `ADAPT_GEMINI_MODEL_FALLBACK` when that is set, otherwise another configured class
+(standard before light before deep). Only when every configured ID is the same dead one does
+the call fail closed to the local path like any other provider failure -- and the dead ID is
+remembered for the rest of the process, so the next call goes straight to the replacement.
+`adapt config models` lists the IDs the configured key can actually call, so a pin or fallback
+can be chosen from the deployment's own answer instead of guessed.
+
+Two failure semantics matter for the same reason. A `200` is not an answer: an empty candidate
+list, a safety `blockReason`/`finishReason`, or a reply that is not the requested JSON returns
+`ok=False` with `status="empty"`, `"blocked"` or `"parse_error"`, and the call site takes its
+local fallback. The safety threshold is sent explicitly as `safetySettings`
+(`ADAPT_GEMINI_SAFETY_THRESHOLD`) for all four harm categories, so a filter is a configured
+outcome rather than an invisible default.
 
 The table is also a refusal: a `purpose=` literal that is not in it still works (the middle
 class, so an unknown call site is not silently cheap) but is *recorded* and reported, and

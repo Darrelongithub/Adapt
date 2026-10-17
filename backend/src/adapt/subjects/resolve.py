@@ -372,7 +372,9 @@ def resolve_topic(
 RESOLVE_RESPONSE_SPEC: dict[str, Any] = {
     "family": "str",
     "topic_title": "str",
-    "level_hint": "str",
+    # "no level" is a valid placement; ``accept_placement`` treats an empty hint as
+    # "leave the ladder where code put it".
+    "?level_hint": "str",
     "confidence": "num",
 }
 

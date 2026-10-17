@@ -117,12 +117,24 @@ class Settings(BaseSettings):
     gemini_task_models: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_timeout_s: float = 45.0
+    # A model ID is deployment configuration: providers retire and rename models. When a
+    # configured ID stops existing (404), the client retries *once* on this model if it is
+    # set; blank means "there is nothing to fall back to, use the local reasoner".
+    gemini_model_fallback: str | None = None
     # Free-tier guard: stop calling before the daily quota is exhausted and let
     # the local reasoner carry the demo instead.
     gemini_daily_call_budget: int = 120
     gemini_daily_token_budget: int = 2_000_000
     gemini_min_interval_ms: int = 700  # smooths RPM limits
     gemini_max_retries: int = 2
+    # Sent as ``safetySettings`` with every request. The value is the provider's own
+    # threshold name. Stating it here (rather than relying on a default that differs by
+    # category) means a safety block is a configured outcome, not a silent one -- and a
+    # blocked/empty reply is now a typed failure that falls back to the local tutor
+    # instead of being counted as a successful model answer.
+    gemini_safety_threshold: Literal[
+        "BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"
+    ] = "BLOCK_MEDIUM_AND_ABOVE"
 
     # -- context caching (item 2 of the cost round) ----------------------
     # The static head of a prompt -- system instructions, rubric, subject catalogue -- is

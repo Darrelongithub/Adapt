@@ -1174,17 +1174,93 @@ def config_status() -> None:
     try:
         for row in status_rows(_settings()):
             if row["configured"]:
-                typer.echo(f"{row['service']}: configured · {row['masked']}")
+                # Where the value came from matters: an exported variable or a .env entry
+                # overrides the console file, so "I just stored a new key" can otherwise be
+                # false while the command says "configured".
+                source = f" · from {row['source']}" if row.get("source") else ""
+                typer.echo(f"{row['service']}: configured · {row['masked']}{source}")
             else:
-                typer.echo(f"{row['service']}: not configured")
+                typer.echo(
+                    f"{row['service']}: not configured (set it with `adapt config set-key`)"
+                )
     except ConfigSecretError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from None
 
 
+#: Coarse causes for a failed one-call probe, keyed by the client's own status.
+_CONNECTION_FAILURES = {
+    "quota": "the provider refused the call for rate or quota reasons",
+    "throttled": "a local pacing limit refused the probe before it was sent",
+    "disabled": "no credential reached the client",
+    "consent_required": "a learner-consent check refused the probe",
+    "blocked": "the provider's safety filter refused the probe",
+    "empty": "the provider answered, but with no usable text",
+    "parse_error": "the provider's reply could not be read",
+}
+
+
+def _without_secret(text: str, settings: Any) -> str:
+    """One line, bounded, with the configured key removed if it somehow appears."""
+    secret = str(getattr(settings, "gemini_api_key", "") or "")
+    if secret:
+        text = text.replace(secret, "[key]")
+    return " ".join(str(text or "").split())[:200]
+
+
+def _connection_failure_reason(result: Any, settings: Any) -> tuple[str, str]:
+    """``(plain-language cause, provider's own words)`` for a failed probe.
+
+    The old command printed one generic sentence for a 404, a timeout, a rejected key and
+    an empty answer alike, which left the operator with nothing to act on. The provider's
+    message is printed because this is the console, not a learner surface: model names are
+    operator configuration here (``adapt config models`` prints them too), while the key
+    itself is still stripped from the text.
+    """
+    error = _without_secret(str(getattr(result, "error", "") or ""), settings)
+    status = str(getattr(result, "status", "") or "")
+    lowered = error.lower()
+    if error.startswith("404"):
+        hint = (
+            "the configured model ID does not exist for this key; "
+            "`adapt config models` lists the IDs it can call"
+        )
+    elif error.startswith(("auth 401", "auth 403")):
+        hint = (
+            "the key was rejected. Check `adapt config status`: an exported "
+            "ADAPT_GEMINI_API_KEY or a .env entry overrides the console file, so storing "
+            "the key again only helps when the source is the console file"
+        )
+    elif "api key not valid" in lowered or "api key expired" in lowered:
+        hint = (
+            "the provider rejected the key itself (a copy/paste error or an expired key); "
+            "store it again with `adapt config set-key`"
+        )
+    elif error.startswith("429"):
+        hint = "the key is rate-limited or its quota is spent"
+    elif "timeout" in lowered:
+        hint = "the provider did not answer before the request timed out"
+    elif any(
+        marker in error
+        for marker in ("ConnectError", "ConnectTimeout", "NameResolution", "SSL", "ProxyError")
+    ):
+        hint = (
+            "the provider could not be reached from this machine "
+            "(connectivity, DNS, proxy or firewall)"
+        )
+    else:
+        hint = _CONNECTION_FAILURES.get(status, "the provider returned an error")
+    return hint, error
+
+
 @config_app.command("test")
 def config_test() -> None:
-    """Make one minimal connection check and print only pass or fail."""
+    """One minimal connection check, with the reason printed when it fails.
+
+    If the configured model ID is unknown to the provider, the client retries once on
+    another configured class before this reports a failure (see ``GeminiLLM._model_chain``),
+    so a retired ID is distinguishable from a bad key or a blocked network.
+    """
     from .config_secrets import ConfigSecretError, settings_with_managed_values
     from .security.secrecy import install_log_redaction
 
@@ -1224,14 +1300,54 @@ def config_test() -> None:
 
     try:
         result = _run(one_minimal_request())
-    except Exception:
-        typer.echo("Connection test failed. Check connectivity and the console settings.")
+    except Exception as exc:
+        detail = _without_secret(f"{type(exc).__name__}: {exc}", st)
+        typer.echo(f"Connection test failed: the client raised an error. {detail}".strip())
         raise typer.Exit(code=1) from None
     if result.ok:
         typer.echo("Connection test passed.")
     else:
-        typer.echo("Connection test failed. Check connectivity and the console settings.")
+        hint, detail = _connection_failure_reason(result, st)
+        typer.echo(f"Connection test failed: {hint}.")
+        if detail:
+            typer.echo(f"  the provider said: {detail}")
         raise typer.Exit(code=1)
+
+
+@config_app.command("models")
+def config_models() -> None:
+    """List the model IDs the configured key can call (operator diagnostic)."""
+    from .ai.llm import GeminiLLM
+    from .config_secrets import ConfigSecretError, settings_with_managed_values
+
+    st = _settings()
+    try:
+        st = settings_with_managed_values(st)
+    except ConfigSecretError:
+        typer.echo("Could not read the console settings file.")
+        raise typer.Exit(code=1) from None
+    if not st.gemini_api_key:
+        typer.echo("No credential is configured.")
+        raise typer.Exit(code=1)
+
+    llm = GeminiLLM(st)
+
+    async def collect() -> list[str]:
+        try:
+            return await llm.list_models()
+        finally:
+            await llm.aclose()
+
+    try:
+        models = _run(collect())
+    except Exception:
+        typer.echo("The model list could not be read. Check connectivity and the console settings.")
+        raise typer.Exit(code=1) from None
+    if not models:
+        typer.echo("The model list could not be read. Check connectivity and the console settings.")
+        raise typer.Exit(code=1)
+    for name in models:
+        typer.echo(name)
 
 
 @config_app.command("rotate")

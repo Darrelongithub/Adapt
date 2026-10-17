@@ -270,6 +270,8 @@ def profile_summary(s: Session, student_id: str) -> dict[str, Any]:
         "voice_gender": student.voice_gender,
         "language": student.preferred_language,
         "consent_analytics": student.consent_analytics,
+        # The learner-facing name for ``Student.consent_share_with_llm``. Request bodies
+        # keep the storage name; reads use this one so no screen says "LLM".
         "consent_share_with_ai": student.consent_share_with_llm,
         "sessions": n_sessions,
         "preferences": get_preferences(s, student_id),

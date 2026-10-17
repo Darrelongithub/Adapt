@@ -135,7 +135,9 @@ class SceneNarrator:
                 student_id=student_id or "anon",
                 temperature=0.2,
                 max_output_tokens=320,
-                response_spec={"answer": "str", "why_not_more": "str", "frame": "int"},
+                # ``why_not_more`` was never read, and ``frame`` defaults to the asked
+                # frame when omitted. Only the answer is part of the usable contract.
+                response_spec={"answer": "str", "?why_not_more": "str", "?frame": "int"},
             )
         except Exception as exc:  # a model that throws must not take the lesson down with it
             log.info("ai3 call failed: %s", exc)

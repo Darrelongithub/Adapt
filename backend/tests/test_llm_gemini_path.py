@@ -1,0 +1,510 @@
+"""The Gemini wire format and failure semantics, exercised without a key or network.
+
+The application tests deliberately run with ``ADAPT_GEMINI_API_KEY`` unset, which means
+the common path -- build a request, read a candidate, decide whether the reply is usable
+-- never ran in CI. These tests drive it through ``httpx.MockTransport`` instead. The
+properties asserted are the ones a learner feels when a model is configured:
+
+* the system prompt travels in the documented ``systemInstruction`` field;
+* a 200 with no candidate text is a *failure* (``blocked``/``empty``), not a successful
+  empty answer, and so is a structured reply that is not JSON;
+* the daily budget is reserved before the request, so concurrent callers cannot all take
+  the last slot, and a failed request gives its reservation back;
+* an optional field in the compact response spec is not forced into ``required``;
+* a retired model ID gets one retry on the configured fallback model.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+
+import httpx
+import pytest
+
+from adapt.ai.llm import GeminiLLM, QuotaGuard, _schema_for
+from adapt.config import Settings
+
+
+def _settings(**overrides):
+    values = {
+        "_env_file": None,
+        "gemini_api_key": "wire-test-key",
+        "gemini_base_url": "https://example.invalid/v1beta",
+        "gemini_min_interval_ms": 0,
+        "gemini_max_retries": 0,
+        "gemini_daily_call_budget": 50,
+        "gemini_daily_token_budget": 1_000_000,
+        "ai_context_cache": False,
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+def _ok(text: str = "OK") -> dict:
+    return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
+
+
+async def _call(llm: GeminiLLM, **overrides):
+    return await llm.complete(
+        system="SYSTEM RULES", user="hello", purpose="ai2_explain", **overrides
+    )
+
+
+# --------------------------------------------------------------------------- #
+# request shape
+# --------------------------------------------------------------------------- #
+
+
+async def test_the_system_prompt_uses_the_documented_camel_case_field():
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_ok())
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    result = await _call(llm)
+    await llm.aclose()
+
+    body = json.loads(seen[0].content)
+    assert result.ok is True
+    assert body["systemInstruction"]["parts"][0]["text"] == "SYSTEM RULES"
+    assert "system_instruction" not in body, "the snake_case proto name is not the JSON field"
+
+
+async def test_the_safety_policy_is_stated_in_every_request():
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_ok())
+
+    llm = GeminiLLM(
+        _settings(gemini_safety_threshold="BLOCK_ONLY_HIGH"),
+        transport=httpx.MockTransport(handler),
+    )
+    await _call(llm)
+    await llm.aclose()
+
+    body = json.loads(seen[0].content)
+    settings = body["safetySettings"]
+    assert {row["threshold"] for row in settings} == {"BLOCK_ONLY_HIGH"}
+    assert {row["category"] for row in settings} == {
+        "HARM_CATEGORY_HARASSMENT",
+        "HARM_CATEGORY_HATE_SPEECH",
+        "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "HARM_CATEGORY_DANGEROUS_CONTENT",
+    }
+
+
+def test_a_cached_call_references_the_handle_and_omits_the_system_instruction():
+    from types import SimpleNamespace
+
+    llm = GeminiLLM(_settings())
+    try:
+        plan = llm.plan("ai2_explain")
+        body = llm._body(
+            plan=plan,
+            prefix="STATIC HEAD",
+            system="DYNAMIC RULES",
+            user="the learner's question",
+            history=[],
+            temperature=0.2,
+            max_output_tokens=100,
+            response_spec=None,
+            cache_entry=SimpleNamespace(name="cachedContents/abc123"),
+        )
+    finally:
+        asyncio.run(llm.aclose())
+
+    assert body["cachedContent"] == "cachedContents/abc123"
+    assert "systemInstruction" not in body
+    assert body["contents"][0]["parts"][0]["text"].startswith("DYNAMIC RULES")
+    assert body["safetySettings"], "cached and uncached calls share the same safety policy"
+
+
+# --------------------------------------------------------------------------- #
+# a 200 is not automatically an answer
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("payload", "status"),
+    [
+        ({"candidates": []}, "empty"),
+        ({"candidates": [{"content": {"parts": []}}]}, "empty"),
+        ({"candidates": [{"finishReason": "MAX_TOKENS"}]}, "empty"),
+        ({"promptFeedback": {"blockReason": "SAFETY"}}, "blocked"),
+        ({"candidates": [{"finishReason": "SAFETY"}]}, "blocked"),
+        ({"candidates": [{"finishReason": "RECITATION"}]}, "blocked"),
+        (
+            {
+                "candidates": [
+                    {
+                        "finishReason": "SAFETY",
+                        "content": {"parts": [{"text": "a partial answer"}]},
+                    }
+                ]
+            },
+            "blocked",
+        ),
+    ],
+)
+async def test_a_200_without_usable_text_is_a_failure(payload, status):
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is False, payload
+    assert result.status == status, payload
+    assert result.text == ""
+    assert result.error
+    # The provider still saw the call, so the audit row keeps its usage.
+    assert result.tokens_in > 0
+
+
+async def test_a_structured_call_that_is_not_json_is_a_failure():
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_ok("this is not json"))
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    result = await _call(llm, response_spec={"answer": "str"})
+    await llm.aclose()
+
+    assert result.ok is False
+    assert result.status == "parse_error"
+    assert result.data is None
+
+
+async def test_thought_parts_are_not_mistaken_for_the_answer():
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {"text": "deliberating privately", "thought": True},
+                                {"text": "the actual answer"},
+                            ]
+                        }
+                    }
+                ]
+            },
+        )
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is True
+    assert result.text == "the actual answer"
+
+
+async def test_a_non_json_http_body_is_a_typed_failure_not_an_exception():
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<html>gateway</html>")
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is False
+    assert result.status == "error"
+    assert "JSON" in (result.error or "")
+
+
+# --------------------------------------------------------------------------- #
+# budget reservations
+# --------------------------------------------------------------------------- #
+
+
+async def test_budget_is_reserved_before_the_request_not_recorded_after_it():
+    guard = QuotaGuard(daily_calls=3, daily_tokens=1_000, min_interval_ms=0)
+    results = await asyncio.gather(*(guard.acquire(10) for _ in range(6)))
+
+    allowed = [ok for ok, _ in results if ok]
+    assert len(allowed) == 3, "a check that does not reserve lets every concurrent caller through"
+    assert guard.calls == 3 and guard.tokens == 30
+    assert guard.headroom()["calls_left"] == 0
+
+
+async def test_a_failed_request_gives_its_reservation_back():
+    guard = QuotaGuard(daily_calls=2, daily_tokens=100, min_interval_ms=0)
+    assert (await guard.acquire(40))[0]
+    guard.release(tokens=40)
+    assert guard.calls == 0 and guard.tokens == 0
+
+    assert (await guard.acquire(40))[0]
+    guard.settle(40, 12)
+    assert guard.calls == 1 and guard.tokens == 12
+
+
+async def test_spacing_reserves_a_slot_instead_of_sleeping_in_parallel():
+    guard = QuotaGuard(daily_calls=10, daily_tokens=1_000, min_interval_ms=40)
+    started = time.monotonic()
+    results = await asyncio.gather(*(guard.acquire(1) for _ in range(3)))
+    elapsed = time.monotonic() - started
+
+    assert all(ok for ok, _ in results)
+    # Three callers, two intervals between them. The old implementation reset `_last`
+    # before sleeping, so all three would have returned in ~40 ms.
+    assert elapsed >= 0.075, elapsed
+
+
+async def test_a_network_failure_does_not_consume_the_daily_budget():
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route to host")
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is False and result.status == "error"
+    assert llm.guard.calls == 0 and llm.guard.tokens == 0
+
+
+async def test_a_successful_call_settles_the_reservation_with_reported_tokens():
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [{"content": {"parts": [{"text": "OK"}]}}],
+                "usageMetadata": {
+                    "promptTokenCount": 21,
+                    "candidatesTokenCount": 3,
+                    "cachedContentTokenCount": 0,
+                },
+            },
+        )
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is True
+    assert llm.guard.calls == 1
+    assert llm.guard.tokens == 24, "the estimate is replaced by the provider's count"
+
+
+# --------------------------------------------------------------------------- #
+# schema and model resilience
+# --------------------------------------------------------------------------- #
+
+
+def test_optional_fields_are_not_required_and_nested_arrays_keep_their_shape():
+    schema = _schema_for(
+        {
+            "answer": "str",
+            "?why_not_more": "str",
+            "points": [{"id": "str", "met": "bool", "evidence": "str"}],
+            "items": ("array", {"type": "OBJECT"}),
+        }
+    )
+    assert schema is not None
+    assert schema["required"] == ["answer", "points", "items"]
+    assert schema["properties"]["why_not_more"] == {"type": "STRING"}
+
+    points = schema["properties"]["points"]
+    assert points["type"] == "ARRAY"
+    assert points["items"]["type"] == "OBJECT"
+    assert points["items"]["properties"]["met"] == {"type": "BOOLEAN"}
+    assert set(points["items"]["required"]) == {"id", "met", "evidence"}
+
+
+def test_the_teachback_judge_spec_is_expressible_as_an_array_of_objects():
+    from adapt.assessment.teachback import MODEL_SPEC
+
+    schema = _schema_for(MODEL_SPEC)
+    assert schema is not None
+    points = schema["properties"]["points"]
+    assert points["type"] == "ARRAY", "the quoted points must not be typed as a string"
+    assert points["items"]["type"] == "OBJECT"
+    assert set(schema["required"]) == {"points"}
+
+
+async def test_a_retired_model_id_retries_once_on_the_configured_fallback():
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if len(seen) == 1:
+            return httpx.Response(404, json={"error": {"message": "model not found"}})
+        return httpx.Response(200, json=_ok("from the fallback"))
+
+    llm = GeminiLLM(
+        _settings(gemini_model_fallback="gemini-fallback"),
+        transport=httpx.MockTransport(handler),
+    )
+    result = await _call(llm)
+    assert result.ok is True
+    assert result.model == "gemini-fallback"
+    assert len(seen) == 2, "one failed attempt, one successful fallback"
+    assert "gemini-fallback" in seen[1]
+
+    # The 404 is remembered: the next call goes straight to the fallback instead of
+    # paying the same failed round trip again.
+    second = await _call(llm)
+    await llm.aclose()
+    assert second.ok is True and second.model == "gemini-fallback"
+    assert len(seen) == 3 and "gemini-fallback" in seen[2]
+
+
+async def test_a_retired_light_model_retries_once_on_another_configured_class():
+    """A new key that cannot see the light model must still be able to answer.
+
+    This is the deployment failure the report described: every light task (including the
+    console probe) routes to one pinned ID, so a provider rename or a gated model takes
+    down the whole class with no way to recover short of editing the environment.
+    """
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if "flash-lite" in str(request.url):
+            return httpx.Response(404, json={"error": {"message": "model not found"}})
+        return httpx.Response(200, json=_ok("from the standard model"))
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    # The console probe is a *light* task, which is what the operator's failing command
+    # runs; ``ai2_explain`` would route to the standard model and never see the 404.
+    result = await llm.complete(
+        system="Reply with the single word OK.",
+        user="Connection check.",
+        purpose="console_connection_test",
+        role="ai2",
+        temperature=0.0,
+        max_output_tokens=8,
+    )
+    await llm.aclose()
+
+    assert result.ok is True
+    assert result.model == "gemini-2.5-flash"
+    assert len(seen) == 2, "one failed attempt on the retired ID, one on the next class"
+    assert "gemini-2.5-flash-lite" in seen[0] and "gemini-2.5-flash:" in seen[1]
+
+
+async def test_no_retry_is_attempted_when_every_class_is_the_same_model():
+    """One model configured everywhere means there is nothing else to try."""
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(404, json={"error": {"message": "model not found"}})
+
+    llm = GeminiLLM(
+        _settings(
+            gemini_model_light="only-model",
+            gemini_model_standard="only-model",
+            gemini_model_deep="only-model",
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+    result = await _call(llm)
+    await llm.aclose()
+
+    assert result.ok is False and result.status == "error"
+    assert len(seen) == 1
+    assert "404" in (result.error or "")
+
+
+async def test_a_refused_cache_is_released_and_the_full_prompt_reserves_once():
+    generate_bodies: list[dict] = []
+    cache_posts = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal cache_posts
+        if request.url.path.endswith("/cachedContents"):
+            cache_posts += 1
+            return httpx.Response(200, json={"name": "cachedContents/refused"})
+        body = json.loads(request.content)
+        generate_bodies.append(body)
+        if "cachedContent" in body:
+            return httpx.Response(400, json={"error": {"message": "cached content unsupported"}})
+        return httpx.Response(200, json=_ok("the full-prompt answer"))
+
+    llm = GeminiLLM(
+        _settings(
+            ai_context_cache=True,
+            gemini_context_cache_min_tokens=1,
+            gemini_context_cache_max_tokens=100_000,
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+    result = await llm.complete(
+        system="DYNAMIC",
+        user="hello",
+        purpose="ai2_explain",
+        cache_prefix="STATIC HEAD",
+    )
+    await llm.aclose()
+
+    assert cache_posts == 1
+    assert result.ok is True, result
+    assert len(generate_bodies) == 2
+    assert "cachedContent" in generate_bodies[0]
+    assert "cachedContent" not in generate_bodies[1]
+    assert generate_bodies[1]["systemInstruction"]["parts"][0]["text"].startswith("STATIC HEAD")
+    assert llm.guard.calls == 1, "the 400 was released; only the successful retry is charged"
+    assert llm.cache.refused(llm.cache.key_for(result.model or "", "STATIC HEAD"))
+
+
+def test_the_fallback_model_name_is_scrubbed_like_every_other_model_name():
+    from adapt.security.secrecy import scrub_public_payload, scrub_text
+
+    settings = _settings(gemini_model_fallback="fallback-model-canary")
+
+    assert "fallback-model-canary" not in scrub_text(
+        "the request used fallback-model-canary", settings
+    )
+    assert scrub_public_payload(
+        {"fallback_model": "fallback-model-canary"}, settings
+    ) == {}
+
+
+def test_the_cache_can_measure_the_prefix_it_registers():
+    from adapt.ai.context_cache import ContextCache
+
+    cache = ContextCache(min_tokens=1)
+    assert cache.estimate("a static head that is used for every learner") > 0
+
+
+async def test_the_operator_can_list_the_models_the_key_can_call():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models")
+        assert request.url.params.get("pageSize") == "200"
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "name": "models/gemini-one",
+                        "supportedGenerationMethods": ["generateContent"],
+                    },
+                    {
+                        "name": "models/embedding-only",
+                        "supportedGenerationMethods": ["embedContent"],
+                    },
+                    {"name": "models/gemini-two"},
+                    {"nope": "no name"},
+                ]
+            },
+        )
+
+    llm = GeminiLLM(_settings(), transport=httpx.MockTransport(handler))
+    models = await llm.list_models()
+    await llm.aclose()
+
+    assert models == ["gemini-one", "gemini-two"]
+
+
+async def test_the_model_list_is_empty_when_no_key_is_configured():
+    llm = GeminiLLM(_settings(gemini_api_key=None))
+    assert await llm.list_models() == []
+    await llm.aclose()

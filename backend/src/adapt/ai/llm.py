@@ -36,9 +36,10 @@ import logging
 import re
 import threading
 import time
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -51,13 +52,32 @@ log = logging.getLogger("adapt.llm")
 
 JSON_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
+#: Categories the Generative Language API accepts a threshold for. The threshold itself is
+#: one deployment setting (``ADAPT_GEMINI_SAFETY_THRESHOLD``) so the policy is stated in the
+#: request instead of inferred from a provider default that differs by category and model.
+SAFETY_CATEGORIES = (
+    "HARM_CATEGORY_HARASSMENT",
+    "HARM_CATEGORY_HATE_SPEECH",
+    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+    "HARM_CATEGORY_DANGEROUS_CONTENT",
+)
+
+#: Candidate finish reasons that mean "the provider refused to produce text", as opposed to
+#: "the provider produced no text" (no candidates, an empty parts list, a length cut).
+_BLOCKED_FINISH_REASONS = frozenset(
+    {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY"}
+)
+
 
 @dataclass
 class LLMResult:
     ok: bool
     text: str = ""
     data: dict[str, Any] | None = None
-    status: str = "ok"  # ok | quota | disabled | consent_required | error | parse_error | throttled
+    #: ok | quota | disabled | consent_required | error | parse_error | throttled | blocked | empty.
+    #: ``blocked``/``empty`` are *failures*: a 200 with no usable candidate text is not an
+    #: answer, and call sites must fall back exactly as they do for a transport error.
+    status: str = "ok"
     provider: str = "gemini"
     model: str | None = None
     latency_ms: int = 0
@@ -95,7 +115,23 @@ class LLMResult:
 
 
 class QuotaGuard:
-    """Daily budget + spacing enforcement for the free tier."""
+    """Daily budget + spacing enforcement for the free tier.
+
+    ``acquire`` **reserves** one call and its estimated tokens under the lock, before any
+    request is sent. ``settle`` replaces that estimate with what the provider reported;
+    ``release`` gives it back when no billable request happened. Checking and reserving in
+    one critical section is what makes the daily budget a ceiling instead of a race: two
+    concurrent callers can no longer both see the last free slot.
+
+    Spacing is reserved the same way. ``_last`` moves to the moment this caller may send,
+    so a second caller arriving during the first one's sleep queues *behind* it instead of
+    sleeping beside it. A queue whose next slot is further away than
+    :data:`MAX_PACING_WAIT_S` is refused: the local fallback is better than a request that
+    has already timed out by the time it is sent.
+    """
+
+    #: Refuse rather than make a caller wait longer than this for its turn.
+    MAX_PACING_WAIT_S = 3.0
 
     def __init__(
         self,
@@ -117,7 +153,7 @@ class QuotaGuard:
 
     @staticmethod
     def _today() -> str:
-        return datetime.now(timezone.utc).date().isoformat()
+        return datetime.now(UTC).date().isoformat()
 
     def _rollover(self) -> None:
         today = self._today()
@@ -129,32 +165,64 @@ class QuotaGuard:
     def headroom(self) -> dict[str, object]:
         with self._lock:
             self._rollover()
-        return {
-            "day": self.day,
-            "calls_used": self.calls,
-            "calls_left": max(0, self.daily_calls - self.calls),
-            "tokens_used": self.tokens,
-            "tokens_left": max(0, self.daily_tokens - self.tokens),
-            "budget_calls": self.daily_calls,
-            "budget_tokens": self.daily_tokens,
-        }
+            return {
+                "day": self.day,
+                "calls_used": self.calls,
+                "calls_left": max(0, self.daily_calls - self.calls),
+                "tokens_used": self.tokens,
+                "tokens_left": max(0, self.daily_tokens - self.tokens),
+                "budget_calls": self.daily_calls,
+                "budget_tokens": self.daily_tokens,
+            }
 
     async def acquire(self, estimated_tokens: int) -> tuple[bool, str]:
-        """Reserve budget. Returns ``(allowed, reason)``; callers must fall back."""
+        """Reserve one call and ``estimated_tokens``. Returns ``(allowed, reason)``.
+
+        A caller that receives ``True`` owns the reservation and must call
+        :meth:`settle` (billable response) or :meth:`release` (no billable request) with
+        the same token estimate before the process is done with it.
+        """
+        estimated = max(1, int(estimated_tokens))
         with self._lock:
             self._rollover()
             if self.calls >= self.daily_calls:
                 return False, f"daily call budget ({self.daily_calls}) reached"
-            if self.tokens + estimated_tokens > self.daily_tokens:
+            if self.tokens + estimated > self.daily_tokens:
                 return False, "daily token budget reached"
-            wait = self.min_interval_s - (time.monotonic() - self._last)
-            self._last = time.monotonic()
+            now = time.monotonic()
+            wait = max(0.0, self.min_interval_s - (now - self._last))
+            # A configured interval larger than the cap is still one legal wait; the cap
+            # exists to refuse a *backlog*, not to make the first caller impossible.
+            if wait > max(self.MAX_PACING_WAIT_S, self.min_interval_s):
+                return False, (
+                    f"local pacing backlog ({wait:.1f}s); the next slot is too far away"
+                )
+            # Move the schedule forward, not to "now": the next caller has to wait behind
+            # the slot this one just took.
+            self._last = now + wait
+            self.calls += 1
+            self.tokens += estimated
         if wait > 0:
-            # Pacing protects the RPM ceiling, but a demo must not stall: cap it.
-            await asyncio.sleep(min(wait, 3.0))
+            await asyncio.sleep(wait)
         return True, ""
 
+    def settle(self, reserved_tokens: int, actual_tokens: int) -> None:
+        """Reconcile a reservation with the provider's reported usage."""
+        reserve = max(0, int(reserved_tokens))
+        actual = max(0, int(actual_tokens))
+        with self._lock:
+            self._rollover()
+            self.tokens = max(0, self.tokens - reserve + actual)
+
+    def release(self, *, calls: int = 1, tokens: int = 0) -> None:
+        """Give a reservation back: the request never reached the billable path."""
+        with self._lock:
+            self._rollover()
+            self.calls = max(0, self.calls - max(0, int(calls)))
+            self.tokens = max(0, self.tokens - max(0, int(tokens)))
+
     def record(self, calls: int, tokens: int) -> None:
+        """Add usage that was not reserved through :meth:`acquire` (kept for callers)."""
         with self._lock:
             self._rollover()
             self.calls += calls
@@ -181,31 +249,86 @@ def estimate_tokens(messages: Sequence[str]) -> int:
     return max(1, int(sum(len(m) for m in messages) / 3.6))
 
 
+def _items_schema(extra: Any) -> dict[str, Any]:
+    """The ``items`` half of an array, from a Gemini fragment or a compact object spec."""
+    if not extra:
+        return {"type": "STRING"}
+    if isinstance(extra, dict):
+        if "type" in extra:
+            return dict(extra)
+        return _schema_for(extra) or {"type": "STRING"}
+    if isinstance(extra, list):
+        inner = _schema_for(extra[0]) if extra and isinstance(extra[0], dict) else None
+        return inner or {"type": "STRING"}
+    return {"type": "STRING"}
+
+
+def _type_schema(raw: Any) -> tuple[dict[str, Any], bool]:
+    """One property's schema, and whether the compact spec marked it optional."""
+    optional = False
+    if isinstance(raw, str) and raw.startswith("?"):
+        raw, optional = raw[1:], True
+    if isinstance(raw, tuple):
+        typ, extra = raw
+        if isinstance(typ, str) and typ.startswith("?"):
+            typ, optional = typ[1:], True
+        if typ == "array":
+            return {"type": "ARRAY", "items": _items_schema(extra)}, optional
+        if typ == "object" and isinstance(extra, dict):
+            nested = _schema_for(extra)
+            if nested:
+                return nested, optional
+        raw = typ
+    if isinstance(raw, list):
+        # ``[{"id": "str", ...}]`` is a compact array-of-object: the teach-back judge
+        # uses it for the quoted points, and treating it as a string (the old
+        # behaviour) told the provider the wrong shape.
+        inner = _schema_for(raw[0]) if raw and isinstance(raw[0], dict) else None
+        return {"type": "ARRAY", "items": inner or {"type": "STRING"}}, optional
+    if isinstance(raw, dict):
+        return dict(raw), optional
+    primitive = {
+        "str": "STRING",
+        "int": "INTEGER",
+        "num": "NUMBER",
+        "bool": "BOOLEAN",
+        "object": "OBJECT",
+        "array": "ARRAY",
+    }.get(str(raw), "STRING")
+    if primitive == "ARRAY":
+        return {"type": "ARRAY", "items": {"type": "STRING"}}, optional
+    return {"type": primitive}, optional
+
+
 def _schema_for(spec: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Translate a compact field spec into Gemini's OpenAPI-subset responseSchema."""
+    """Translate a compact field spec into Gemini's OpenAPI-subset responseSchema.
+
+    The compact form is ``{"field": "str"}``. A leading ``?`` on either the key or the
+    type marks a field the model may omit::
+
+        {"answer": "str", "?why_not_more": "str"}
+
+    Only non-optional fields go into ``required``. A schema that demands every field turns
+    a valid short answer into a parse failure, and a parse failure costs a local fallback
+    that was avoidable.
+    """
     if not spec:
         return None
     props: dict[str, Any] = {}
-    for key, typ in spec.items():
-        if isinstance(typ, tuple):
-            typ, extra = typ  # ("array", {...})
-        else:
-            extra = None
-        if typ == "str":
-            props[key] = {"type": "STRING"}
-        elif typ == "int":
-            props[key] = {"type": "INTEGER"}
-        elif typ == "num":
-            props[key] = {"type": "NUMBER"}
-        elif typ == "bool":
-            props[key] = {"type": "BOOLEAN"}
-        elif typ == "array":
-            props[key] = {"type": "ARRAY", "items": (extra or {"type": "STRING"})}
-        elif typ == "object":
-            props[key] = {"type": "OBJECT"}
-        else:
-            props[key] = {"type": "STRING"}
-    return {"type": "OBJECT", "properties": props, "required": list(props.keys())}
+    required: list[str] = []
+    for raw_key, raw_type in spec.items():
+        key = str(raw_key)
+        optional = key.startswith("?")
+        if optional:
+            key = key[1:]
+        value, type_optional = _type_schema(raw_type)
+        if not (optional or type_optional):
+            required.append(key)
+        props[key] = value
+    out: dict[str, Any] = {"type": "OBJECT", "properties": props}
+    if required:
+        out["required"] = required
+    return out
 
 
 class GeminiLLM:
@@ -249,12 +372,21 @@ class GeminiLLM:
         #: Cacheable tasks called without a static prefix -- a call site that left half the
         #: optimisation on the table. Recorded rather than raised: a slow prompt is not a bug.
         self.prefixless_calls: set[str] = set()
+        #: Model IDs that returned 404 in this process. A deployment whose configured
+        #: model was retired should not pay a failed round trip on every call.
+        self._unavailable_models: set[str] = set()
         self.stats: dict[str, int] = {
             "ok": 0,
             "quota": 0,
             "error": 0,
             "disabled": 0,
             "throttled": 0,
+            # A 200 that carried no usable answer is tracked apart from a transport
+            # failure: the first says the prompt or the filter needs attention, the
+            # second says the network does.
+            "blocked": 0,
+            "empty": 0,
+            "parse_error": 0,
             "cache_hits": 0,
             "cache_created": 0,
             "cache_missed": 0,
@@ -287,18 +419,88 @@ class GeminiLLM:
         """What this call would do, without making it. Used by tests, docs and the CLI."""
         return routing.plan(purpose, self.settings, role=role, **kw)
 
+    def _model_chain(self, model: str, fallback_model: str = "") -> list[str]:
+        """Models to try, in order, when ``model`` answers 404.
+
+        The operator's explicit ``ADAPT_GEMINI_MODEL_FALLBACK`` comes first, then the
+        other configured classes (standard before light before deep). Without that
+        second part, one retired tier ID -- a provider rename, a model that is gated for
+        a new key -- would take down every call that routes through that class, which is
+        exactly what a fresh deployment must not do. IDs that already failed in this
+        process are never retried.
+        """
+        class_models = [
+            routing.model_for_tier(tier, self.settings) for tier in ("standard", "light", "deep")
+        ]
+        candidates = [fallback_model, *class_models]
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in candidates:
+            name = str(raw or "").strip()
+            if not name or name == model or name in seen or name in self._unavailable_models:
+                continue
+            seen.add(name)
+            out.append(name)
+        return out
+
     def available(self) -> dict[str, object]:
         return {
             "provider": "gemini",
             "configured": self.configured,
             "models": effective_models(self.settings),
+            "fallback_model": (
+                str(getattr(self.settings, "gemini_model_fallback", "") or "") or None
+            ),
+            "unavailable_models": sorted(self._unavailable_models),
             "headroom": self.guard.headroom(),
             "last_error": self.last_error,
             "stats": dict(self.stats),
-            "routing": routing.report(self.settings, unknown=tuple(sorted(self.unregistered_purposes))),
+            "routing": routing.report(
+                self.settings, unknown=tuple(sorted(self.unregistered_purposes))
+            ),
             "context_reuse": self.cache.report(),
             "prefixless_tasks": sorted(self.prefixless_calls),
         }
+
+    async def list_models(self) -> list[str]:
+        """The model IDs this key can call, for the operator's console.
+
+        A diagnostic, not part of the learner path: it makes no learner data part of the
+        request and returns only the provider's own names. An unavailable list is an empty
+        list -- the CLI prints the failure rather than a traceback.
+        """
+        if not self.configured:
+            return []
+        url = f"{self.settings.gemini_base_url.rstrip('/')}/models?pageSize=200"
+        headers = {"x-goog-api-key": self.settings.gemini_api_key or ""}
+        try:
+            client = await self._http()
+            resp = await client.get(url, headers=headers)
+        except httpx.HTTPError as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"[:200]
+            return []
+        if resp.status_code != 200:
+            self.last_error = f"{resp.status_code}: {_err_text(resp)}"[:240]
+            return []
+        try:
+            data = resp.json()
+        except ValueError:
+            return []
+        rows = data.get("models") if isinstance(data, dict) else None
+        out: list[str] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            # A key can see embedding/TTS models it cannot use here. When the provider
+            # states the supported methods, keep only IDs that can answer a generateContent
+            # call; when it does not, keep the row rather than hide a usable model.
+            methods = row.get("supportedGenerationMethods")
+            if isinstance(methods, list) and "generateContent" not in methods:
+                continue
+            name = str(row.get("name") or "").strip()
+            if name:
+                out.append(name.removeprefix("models/"))
+        return out
 
     # -- main entry ----------------------------------------------------- #
 
@@ -326,9 +528,25 @@ class GeminiLLM:
         :mod:`adapt.ai.static_context`): when it is given and the provider accepts it, the
         head is registered once and referenced afterwards, and ``system`` carries only the
         part that differs per call.
+
+        A 200 response carrying no usable text is a failure, not an answer: safety blocks
+        and empty candidate lists return ``ok=False`` with ``status="blocked"`` or
+        ``"empty"`` so the caller takes its local fallback. A structured call whose text
+        is not the requested JSON is ``status="parse_error"`` for the same reason.
         """
         started = time.monotonic()
-        plan = self.plan(purpose, role=role, model=model, temperature=temperature, max_output_tokens=max_output_tokens)
+        plan = self.plan(
+            purpose,
+            role=role,
+            model=model,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+        fallback_model = str(getattr(self.settings, "gemini_model_fallback", "") or "").strip()
+        if plan.model in self._unavailable_models:
+            replacements = self._model_chain(plan.model, fallback_model)
+            if replacements:
+                plan = replace(plan, model=replacements[0])
         if not plan.registered:
             self.unregistered_purposes.add(str(purpose))
         if plan.cacheable and not cache_prefix and purpose != "console_connection_test":
@@ -354,8 +572,11 @@ class GeminiLLM:
             else:
                 try:
                     allowed = bool(self.consent_checker(student_id))
-                except Exception as exc:  # pragma: no cover - exercised through the service boundary
-                    log.warning("model consent lookup failed (%s); refusing learner call", type(exc).__name__)
+                except Exception as exc:  # pragma: no cover - exercised at the service boundary
+                    log.warning(
+                        "model consent lookup failed (%s); refusing learner call",
+                        type(exc).__name__,
+                    )
             if not allowed:
                 return LLMResult(
                     ok=False,
@@ -404,84 +625,118 @@ class GeminiLLM:
                 model=plan.model, prefix=safe_prefix, purpose=purpose
             )
 
-        payload_messages = [safe_system, safe_user, *(h["parts"][0]["text"] for h in safe_history)]
-        if cache_entry is None and safe_prefix:
-            # The uncached path sends the head in full, so the day's budget has to count it.
-            payload_messages = [safe_prefix, *payload_messages]
-        est = estimate_tokens(payload_messages) + (max_output_tokens or plan.max_output_tokens)
-        allowed, why = await self.guard.acquire(est)
-        if not allowed:
-            self.stats["quota"] += 1
-            return LLMResult(
-                ok=False,
-                status="quota",
-                error=why,
-                redacted_fields=redacted,
-                model=plan.model,
-                tier=plan.tier,
-            )
-        if self.limiter is not None:
-            ok, retry = self.limiter.allow("gemini", "shared")
-            if not ok:
-                self.stats["throttled"] += 1
-                return LLMResult(
-                    ok=False,
-                    status="throttled",
-                    error=f"local pacing limit ({retry:.1f}s)",
-                    redacted_fields=redacted,
-                    tier=plan.tier,
-                )
-
-        url = f"{self.settings.gemini_base_url.rstrip('/')}/models/{plan.model}:generateContent"
-        headers = {"x-goog-api-key": self.settings.gemini_api_key or "", "content-type": "application/json"}
-
+        base_url = self.settings.gemini_base_url.rstrip("/")
+        headers = {
+            "x-goog-api-key": self.settings.gemini_api_key or "",
+            "content-type": "application/json",
+        }
+        using_fallback = False
         attempts = 0
         last: LLMResult | None = None
-        # Two passes at most: the second exists only for a cache the provider turns out not
-        # to support, and it re-sends the full prompt. Everything else keeps the original
-        # retry budget.
-        for pass_no in range(2):
+        pass_no = 0
+
+        def failed(result: LLMResult) -> LLMResult:
+            """Stamp the shared failure fields on a result and count it once."""
+            self.stats["error"] += 1
+            result.tier = result.tier or plan.tier
+            result.latency_ms = int((time.monotonic() - started) * 1000)
+            result.redacted_fields = redacted
+            return result
+
+        # Two passes at most. The second exists only for a cache the provider turns out
+        # not to support, and it re-sends the full prompt. A 404 on a configured model is
+        # retried once on ``gemini_model_fallback`` without consuming a cache pass.
+        while pass_no < 2:
             if pass_no == 1:
                 # The cached head was refused: forget the entry we thought we had, remember
                 # the refusal, and send the prompt in full. This is the difference between
                 # "caching is unavailable on this deployment" and "every call pays for a
                 # failing round trip".
                 self.cache.invalidate(cache_key)
-                self.cache.refuse(cache_key, why=str(last.error if last else "cached call refused")[:120])
+                self.cache.refuse(
+                    cache_key,
+                    why=str(last.error if last else "cached call refused")[:120],
+                )
                 cache_entry = None
+
+            url = f"{base_url}/models/{plan.model}:generateContent"
+            history_text = [h["parts"][0]["text"] for h in safe_history]
+            payload_messages = [safe_system, safe_user, *history_text]
+            if cache_entry is None and safe_prefix:
+                # The uncached path sends the head in full, so the day's budget has to count it.
+                payload_messages = [safe_prefix, *payload_messages]
+            estimated = estimate_tokens(payload_messages) + plan.max_output_tokens
+            allowed, why = await self.guard.acquire(estimated)
+            if not allowed:
+                pacing = why.startswith("local pacing backlog")
+                self.stats["throttled" if pacing else "quota"] += 1
+                return LLMResult(
+                    ok=False,
+                    status="throttled" if pacing else "quota",
+                    error=why,
+                    redacted_fields=redacted,
+                    model=plan.model,
+                    tier=plan.tier,
+                    latency_ms=int((time.monotonic() - started) * 1000),
+                )
+            if self.limiter is not None:
+                ok, retry = self.limiter.allow("gemini", "shared")
+                if not ok:
+                    self.guard.release(tokens=estimated)
+                    self.stats["throttled"] += 1
+                    return LLMResult(
+                        ok=False,
+                        status="throttled",
+                        error=f"local pacing limit ({retry:.1f}s)",
+                        redacted_fields=redacted,
+                        tier=plan.tier,
+                    )
+
             body = self._body(
                 plan=plan, prefix=safe_prefix, system=safe_system, user=safe_user,
                 history=safe_history,
                 temperature=plan.temperature, max_output_tokens=plan.max_output_tokens,
                 response_spec=response_spec, cache_entry=cache_entry,
             )
+            restart_with_fallback = False
+            retry_without_cache = False
             for attempt in range(self.settings.gemini_max_retries + 1):
                 attempts = attempt + 1
                 try:
                     client = await self._http()
                     resp = await client.post(url, headers=headers, json=body)
                 except httpx.TimeoutException:
-                    last = LLMResult(ok=False, status="error", error="timeout", attempts=attempts, tier=plan.tier)
+                    last = LLMResult(
+                        ok=False,
+                        status="error",
+                        error="timeout",
+                        attempts=attempts,
+                        tier=plan.tier,
+                    )
                     if attempt < self.settings.gemini_max_retries:
                         await asyncio.sleep(1.5 * (attempt + 1))
                         continue
+                    self.guard.release(tokens=estimated)
                     break
                 except httpx.HTTPError as exc:
                     # DNS/TLS/connection refused -- typical for a plane, a cafe, or a
                     # blocked egress. Treated exactly like a quota miss: fall back.
+                    self.guard.release(tokens=estimated)
                     self.last_error = f"{type(exc).__name__}: {exc}"[:200]
-                    return LLMResult(
+                    return failed(LLMResult(
                         ok=False,
                         status="error",
                         error=self.last_error,
                         attempts=attempts,
-                        redacted_fields=redacted,
                         latency_ms=int((time.monotonic() - started) * 1000),
                         tier=plan.tier,
-                    )
+                    ))
 
                 if resp.status_code == 429:
-                    self.guard.record(1, 0)
+                    # The provider rejected the call for rate reasons. The reservation
+                    # already counted the call; settle it with no tokens rather than
+                    # adding a second unit.
+                    self.guard.settle(estimated, 0)
                     self.stats["quota"] += 1
                     detail = _err_text(resp)
                     self.last_error = f"429 {detail}"[:200]
@@ -495,15 +750,44 @@ class GeminiLLM:
                         tier=plan.tier,
                     )
                 if resp.status_code in (401, 403):
+                    self.guard.release(tokens=estimated)
                     self.last_error = f"auth {resp.status_code}: {_err_text(resp)}"[:200]
-                    return LLMResult(
-                        ok=False, status="error", error=self.last_error, attempts=attempts, tier=plan.tier
+                    return failed(
+                        LLMResult(
+                            ok=False,
+                            status="error",
+                            error=self.last_error,
+                            attempts=attempts,
+                            tier=plan.tier,
+                        )
                     )
+                if resp.status_code == 404 and not using_fallback:
+                    # The configured model no longer exists (or is not enabled for this
+                    # key). One retry on the next viable model -- the operator's explicit
+                    # fallback, else another configured class -- and everything else about
+                    # the call is unchanged. The cache entry is model-specific, so it
+                    # cannot travel with the new model.
+                    self._unavailable_models.add(plan.model)
+                    replacements = self._model_chain(plan.model, fallback_model)
+                    if replacements:
+                        self.guard.release(tokens=estimated)
+                        self.last_error = f"404 {_err_text(resp)}"[:200]
+                        log.info(
+                            "configured model was not available; retrying once on %s",
+                            replacements[0],
+                        )
+                        using_fallback = True
+                        plan = replace(plan, model=replacements[0])
+                        cache_entry = None
+                        cache_key = ""  # the entry belonged to the model that was not found
+                        restart_with_fallback = True
+                        break
                 if resp.status_code == 400 and cache_entry is not None:
                     # The provider refused to use this cache with this call (an unsupported
                     # model, a deleted entry, a shifted payload). Take the cache out of the
                     # picture and send the prompt in full: a cache must never be the reason
                     # a learner gets no answer.
+                    self.guard.release(tokens=estimated)
                     last = LLMResult(
                         ok=False,
                         status="error",
@@ -511,36 +795,106 @@ class GeminiLLM:
                         attempts=attempts,
                         tier=plan.tier,
                     )
-                    log.info("cached call refused (%s); resending the full prompt", _err_text(resp)[:120])
+                    log.info(
+                        "cached call refused (%s); resending the full prompt",
+                        _err_text(resp)[:120],
+                    )
+                    retry_without_cache = True
                     break
                 if resp.status_code >= 500:
                     last = LLMResult(
-                        ok=False, status="error", error=f"upstream {resp.status_code}", attempts=attempts, tier=plan.tier
+                        ok=False,
+                        status="error",
+                        error=f"upstream {resp.status_code}",
+                        attempts=attempts,
+                        tier=plan.tier,
                     )
                     if attempt < self.settings.gemini_max_retries:
                         await asyncio.sleep(1.2 * (attempt + 1))
                         continue
+                    self.guard.release(tokens=estimated)
                     break
                 if resp.status_code != 200:
+                    self.guard.release(tokens=estimated)
                     self.last_error = f"{resp.status_code}: {_err_text(resp)}"[:240]
-                    return LLMResult(
-                        ok=False, status="error", error=self.last_error, attempts=attempts, tier=plan.tier
+                    return failed(
+                        LLMResult(
+                            ok=False,
+                            status="error",
+                            error=self.last_error,
+                            attempts=attempts,
+                            tier=plan.tier,
+                        )
                     )
 
-                data = resp.json()
-                text = _extract_text(data)
-                usage = data.get("usageMetadata") or {}
-                tin = int(usage.get("promptTokenCount") or estimate_tokens([safe_system, safe_user]))
+                try:
+                    data = resp.json()
+                except ValueError:
+                    data = None
+                if not isinstance(data, dict):
+                    self.guard.settle(estimated, 0)
+                    return failed(LLMResult(
+                        ok=False,
+                        status="error",
+                        error="the provider returned a body that was not a JSON object",
+                        attempts=attempts,
+                        tier=plan.tier,
+                    ))
+                text, outcome = _extract_text(data)
+                usage = data.get("usageMetadata")
+                usage = usage if isinstance(usage, dict) else {}
+                tin = int(usage.get("promptTokenCount") or estimate_tokens(payload_messages))
                 tout = int(usage.get("candidatesTokenCount") or 0)
                 cached_in = int(usage.get("cachedContentTokenCount") or 0)
                 if cached_in and cache_key:
                     self.cache.note_reuse(cache_key, cached_in)
-                self.guard.record(1, tin + tout)
-                self.stats["ok"] += 1
+                self.guard.settle(estimated, tin + tout)
+                if not text:
+                    # A 200 is not an answer. ``blocked`` is a safety/policy refusal;
+                    # ``empty`` covers every other no-text shape (no candidates, a
+                    # MAX_TOKENS cut before any content, an empty parts list). Both force
+                    # the caller's local fallback instead of silently teaching nothing.
+                    status = "blocked" if outcome.startswith("blocked") else "empty"
+                    self.stats[status] += 1
+                    return LLMResult(
+                        ok=False,
+                        text="",
+                        data=None,
+                        status=status,
+                        model=plan.model,
+                        tier=plan.tier,
+                        cached_tokens=cached_in,
+                        context_cached=cache_entry is not None,
+                        latency_ms=int((time.monotonic() - started) * 1000),
+                        tokens_in=tin,
+                        tokens_out=tout,
+                        redacted_fields=redacted,
+                        attempts=attempts,
+                        error=f"the model returned no usable text ({outcome})"[:240],
+                    )
                 parsed: dict[str, Any] | None = None
                 status = "ok"
                 if response_spec:
                     parsed, status = _parse_json(text)
+                    if parsed is None:
+                        self.stats["parse_error"] += 1
+                        return LLMResult(
+                            ok=False,
+                            text=text,
+                            data=None,
+                            status="parse_error",
+                            model=plan.model,
+                            tier=plan.tier,
+                            cached_tokens=cached_in,
+                            context_cached=cache_entry is not None,
+                            latency_ms=int((time.monotonic() - started) * 1000),
+                            tokens_in=tin,
+                            tokens_out=tout,
+                            redacted_fields=redacted,
+                            attempts=attempts,
+                            error="the model's reply was not the JSON object the schema required",
+                        )
+                self.stats["ok"] += 1
                 return LLMResult(
                     ok=True,
                     text=text,
@@ -556,15 +910,25 @@ class GeminiLLM:
                     redacted_fields=redacted,
                     attempts=attempts,
                 )
-            if last is not None and last.error and last.error.startswith("400 with cached context") and pass_no == 0:
-                continue  # retry the whole request without the cache
+
+            if restart_with_fallback:
+                continue
+            if retry_without_cache and pass_no == 0:
+                pass_no = 1
+                continue
             break
 
-        self.stats["error"] += 1
-        res = last or LLMResult(ok=False, status="error", error="unknown", attempts=attempts, tier=plan.tier)
+        res = last or LLMResult(
+            ok=False,
+            status="error",
+            error="unknown",
+            attempts=attempts,
+            tier=plan.tier,
+        )
         res.tier = res.tier or plan.tier
         res.latency_ms = int((time.monotonic() - started) * 1000)
         res.redacted_fields = redacted
+        self.stats["error"] += 1
         return res
 
     # -- request construction ------------------------------------------- #
@@ -609,7 +973,10 @@ class GeminiLLM:
         else:
             full_system = "\n\n".join(part for part in (prefix.strip(), system.strip()) if part)
             body = {
-                "system_instruction": {"parts": [{"text": full_system}]},
+                # camelCase is the documented JSON name for the Generative Language API.
+                # ``system_instruction`` is the proto name; sending it on the common
+                # (non-cached) path is what silently dropped every system prompt.
+                "systemInstruction": {"parts": [{"text": full_system}]},
                 "contents": [*history, {"role": "user", "parts": [{"text": user}]}],
             }
         body["generationConfig"] = {
@@ -621,6 +988,9 @@ class GeminiLLM:
         if schema:
             body["generationConfig"]["responseMimeType"] = "application/json"
             body["generationConfig"]["responseSchema"] = schema
+        safety = _safety_settings(self.settings)
+        if safety:
+            body["safetySettings"] = safety
         return body
 
     async def register_static(
@@ -650,12 +1020,18 @@ class GeminiLLM:
             "displayName": f"adapt-{purpose or 'static'}"[:128],
             "ttl": f"{self.cache.ttl_s}s",
         }
-        headers = {"x-goog-api-key": self.settings.gemini_api_key or "", "content-type": "application/json"}
+        headers = {
+            "x-goog-api-key": self.settings.gemini_api_key or "",
+            "content-type": "application/json",
+        }
         try:
             client = await self._http()
             resp = await client.post(url, headers=headers, json=body)
         except httpx.HTTPError as exc:
-            log.info("static context could not be registered (%s); sending full prompts", type(exc).__name__)
+            log.info(
+                "static context could not be registered (%s); sending full prompts",
+                type(exc).__name__,
+            )
             self.cache.refuse(key, why=type(exc).__name__)
             return None
         if resp.status_code != 200:
@@ -740,19 +1116,54 @@ def _err_text(resp: httpx.Response) -> str:
         return resp.text[:200]
 
 
-def _extract_text(data: dict[str, Any]) -> str:
+def _safety_settings(settings: Any) -> list[dict[str, str]]:
+    """The explicit safety policy sent with every request, or ``[]`` when switched off."""
+    threshold = str(getattr(settings, "gemini_safety_threshold", "") or "").strip().upper()
+    if not threshold:
+        return []
+    return [{"category": category, "threshold": threshold} for category in SAFETY_CATEGORIES]
+
+
+def _extract_text(data: dict[str, Any]) -> tuple[str, str]:
+    """Return ``(text, outcome)``.
+
+    ``outcome`` is ``""`` when text was found, ``"blocked:<reason>"`` when a safety or
+    policy filter emptied the response, and ``"empty:<reason>"`` for every other no-text
+    shape. The caller turns either non-empty outcome into ``ok=False`` -- the distinction
+    is for the log and the audit row, not for whether a fallback is needed.
+    """
     cands = data.get("candidates") or []
     parts: list[str] = []
+    finish = ""
     for cand in cands:
-        for p in ((cand.get("content") or {}).get("parts") or []):
-            if isinstance(p, dict) and p.get("text"):
-                parts.append(str(p["text"]))
-    if not parts:
-        reason = (data.get("promptFeedback") or {}).get("blockReason")
+        if not isinstance(cand, dict):
+            continue
+        reason = str(cand.get("finishReason") or "")
         if reason:
-            log.info("gemini blocked the prompt (safety=%s); using local answer", reason)
-        return ""
-    return "\n".join(parts).strip()
+            finish = reason
+        content = cand.get("content")
+        content = content if isinstance(content, dict) else {}
+        for part in content.get("parts") or []:
+            # Thought summaries are not the answer. Models that emit them mark the part;
+            # joining them into the learner's text would surface deliberation as teaching.
+            if isinstance(part, dict) and part.get("text") and not part.get("thought"):
+                parts.append(str(part["text"]))
+    feedback = data.get("promptFeedback")
+    feedback = feedback if isinstance(feedback, dict) else {}
+    blocked = str(feedback.get("blockReason") or "").strip()
+    if blocked:
+        log.info("gemini blocked the prompt (reason=%s); using local answer", blocked)
+        return "", f"blocked:{blocked}"
+    # A filter that cut the candidate short is a refusal even if a fragment of text
+    # survived; teaching from the fragment would present a truncated answer as complete.
+    if finish.upper() in _BLOCKED_FINISH_REASONS:
+        log.info("gemini blocked the candidate (finish=%s); using local answer", finish)
+        return "", f"blocked:{finish}"
+    if parts:
+        text = "\n".join(parts).strip()
+        if text:
+            return text, ""
+    return "", f"empty:{finish or 'no candidates'}"
 
 
 def _parse_json(text: str) -> tuple[dict[str, Any] | None, str]:
@@ -796,5 +1207,8 @@ def usage_totals(rows: Sequence[Any]) -> dict[str, object]:
         "by_class": by_tier,
         "redacted_fields_total": red,
         "cost_usd": 0.0,  # free tier by policy; shown so the demo can prove it
-        "note": "counts cover calls attempted through ADAPT only; the provider keeps its own usage page",
+        "note": (
+            "counts cover calls attempted through ADAPT only; "
+            "the provider keeps its own usage page"
+        ),
     }

@@ -141,7 +141,11 @@ def _validate_value(name: str, value: str) -> str:
         raise ConfigSecretError("key cannot be empty")
     if len(text) > 4096:
         raise ConfigSecretError("key is too long")
-    return text
+    # A key pasted from a password manager, notes app or browser can arrive with leading
+    # or trailing whitespace; sending that to the provider is a *rejected key*, which is
+    # indistinguishable from a wrong one at the console. The value has no meaningful
+    # surrounding space, so trim it once, at the boundary.
+    return text.strip()
 
 
 def write_managed_values(path: str | os.PathLike[str], values: Mapping[str, Any]) -> Path:
@@ -267,8 +271,30 @@ def settings_with_managed_values(settings: Any, path: str | os.PathLike[str] | N
     return settings.model_copy(update=updates)
 
 
+def value_sources(settings: Any, path: str | os.PathLike[str] | None = None) -> dict[str, str]:
+    """Where each managed value came from, so a shadowed console file is visible.
+
+    ``effective_values`` resolves process env > managed file > settings/.env, but until
+    this existed the console only said "configured": an ``ADAPT_GEMINI_API_KEY`` exported
+    in the shell or left in a ``.env`` silently won over the key just typed into
+    ``adapt config set-key``, and re-entering the key appeared to do nothing.
+    """
+    values = read_managed_values(path or config_file(settings.data_dir))
+    out: dict[str, str] = {}
+    for env_name, field_name in [*SECRET_FIELDS.values(), *BUDGET_FIELDS.items()]:
+        explicit = os.environ.get(env_name)
+        if explicit is not None and str(explicit).strip():
+            out[env_name] = "the environment"
+        elif env_name in values:
+            out[env_name] = "the console file"
+        elif getattr(settings, field_name, None) is not None:
+            out[env_name] = "the environment file (.env)"
+    return out
+
+
 def status_rows(settings: Any, path: str | os.PathLike[str] | None = None) -> list[dict[str, Any]]:
     effective = effective_values(settings, path)
+    sources = value_sources(settings, path)
     rows: list[dict[str, Any]] = []
     for service, (env_name, _field_name) in SECRET_FIELDS.items():
         secret = effective.get(env_name)
@@ -277,6 +303,7 @@ def status_rows(settings: Any, path: str | os.PathLike[str] | None = None) -> li
                 "service": service,
                 "configured": bool(secret),
                 "masked": masked_last_four(secret),
+                "source": sources.get(env_name, ""),
             }
         )
     return rows

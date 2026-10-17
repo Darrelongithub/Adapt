@@ -685,3 +685,104 @@ def test_generated_frontend_bundles_are_checked_when_present():
             assert term.lower().encode() not in data, (
                 f"{path} contains a private configuration literal"
             )
+
+
+def test_config_models_lists_provider_ids_without_echoing_the_key(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from adapt.ai.llm import GeminiLLM
+    from adapt.cli import app
+    from adapt.config import reset_settings_cache
+    from adapt.config_secrets import set_key
+
+    monkeypatch.setenv("ADAPT_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ADAPT_DB_ENCRYPTION", "field-only")
+    monkeypatch.delenv("ADAPT_GEMINI_API_KEY", raising=False)
+    reset_settings_cache()
+    set_key(tmp_path, "gemini", CANARY_KEY)
+
+    async def fake_list(self):
+        return ["gemini-one", "gemini-two"]
+
+    monkeypatch.setattr(GeminiLLM, "list_models", fake_list)
+    try:
+        result = CliRunner().invoke(app, ["config", "models"])
+    finally:
+        reset_settings_cache()
+
+    assert result.exit_code == 0, result.output
+    assert "gemini-one" in result.output and "gemini-two" in result.output
+    assert CANARY_KEY not in result.output
+
+
+def _config_test_with(tmp_path, monkeypatch, *, error: str, status: str = "error"):
+    """Run `adapt config test` against a stub client that returns one failure."""
+    from typer.testing import CliRunner
+
+    from adapt.ai.llm import GeminiLLM, LLMResult
+    from adapt.cli import app
+    from adapt.config import reset_settings_cache
+    from adapt.config_secrets import set_key
+
+    monkeypatch.setenv("ADAPT_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ADAPT_DB_ENCRYPTION", "field-only")
+    monkeypatch.delenv("ADAPT_GEMINI_API_KEY", raising=False)
+    reset_settings_cache()
+    set_key(tmp_path, "gemini", CANARY_KEY)
+
+    async def fake_complete(self, **kwargs):
+        return LLMResult(ok=False, status=status, error=error)
+
+    async def fake_aclose(self):
+        return None
+
+    monkeypatch.setattr(GeminiLLM, "complete", fake_complete)
+    monkeypatch.setattr(GeminiLLM, "aclose", fake_aclose)
+    try:
+        return CliRunner().invoke(app, ["config", "test"])
+    finally:
+        reset_settings_cache()
+
+
+def test_config_test_says_which_model_id_was_not_found(tmp_path, monkeypatch):
+    result = _config_test_with(
+        tmp_path,
+        monkeypatch,
+        error="404: models/gemini-2.5-flash-lite is not found for API version v1beta",
+    )
+
+    assert result.exit_code == 1
+    assert "model ID does not exist for this key" in result.output
+    assert "gemini-2.5-flash-lite" in result.output, "the console may name the model"
+    assert CANARY_KEY not in result.output
+
+
+def test_config_test_says_when_the_provider_could_not_be_reached(tmp_path, monkeypatch):
+    result = _config_test_with(
+        tmp_path,
+        monkeypatch,
+        error="ConnectError: [Errno -3] Temporary failure in name resolution",
+    )
+
+    assert result.exit_code == 1
+    assert "could not be reached" in result.output
+    assert CANARY_KEY not in result.output
+
+
+def test_config_test_names_an_invalid_key(tmp_path, monkeypatch):
+    result = _config_test_with(
+        tmp_path,
+        monkeypatch,
+        error="400: API key not valid. Please pass a valid API key.",
+    )
+
+    assert result.exit_code == 1
+    assert "rejected the key itself" in result.output
+    assert CANARY_KEY not in result.output
+
+
+def test_a_key_pasted_with_surrounding_whitespace_is_stored_trimmed(tmp_path):
+    from adapt.config_secrets import read_managed_values, set_key
+
+    path = set_key(tmp_path, "gemini", "  AIza-pasted-with-spaces  ")
+    assert read_managed_values(path)["ADAPT_GEMINI_API_KEY"] == "AIza-pasted-with-spaces"
