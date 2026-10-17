@@ -194,4 +194,36 @@ class LearnerSubject(Base):
     )
 
 
-__all__ = ["LearnerSubject", "MethodTestRun", "SubjectRound", "SubjectSnapshot", "SubjectTrial"]
+class SubjectTestEvidence(Base):
+    """One scored interaction from a real subject test run (Round 6, Track B).
+
+    A test run produces these rows: item, answer, correct, ms, hints. Never a
+    self-report — every row came from an interaction code scored. The dashboard
+    and AI 1 read these; ``facts`` carries the item parameters as served, so a
+    result can be re-read without replaying the run.
+    """
+
+    __tablename__ = "subject_test_evidence"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("tevi"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    subject_id: Mapped[str | None] = mapped_column(String, index=True)
+    run_id: Mapped[str] = mapped_column(String, index=True)
+    item_id: Mapped[str] = mapped_column(String)
+    item_type: Mapped[str] = mapped_column(String(48))
+    skill: Mapped[str] = mapped_column(String(64))
+    difficulty: Mapped[int] = mapped_column(Integer, default=3)
+    answer: Mapped[str | None] = mapped_column(String(240))
+    correct: Mapped[bool] = mapped_column(Boolean, default=False)
+    ms: Mapped[int] = mapped_column(Integer, default=0)
+    hints_used: Mapped[int] = mapped_column(Integer, default=0)
+    facts: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(context="subject_test_evidence.facts"), default=dict)
+    observed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_subject_test_evidence_run", "student_id", "run_id", "observed_at"),
+        UniqueConstraint("run_id", "item_id", name="uq_subject_test_evidence_item"),
+    )
+
+
+__all__ = ["LearnerSubject", "MethodTestRun", "SubjectRound", "SubjectSnapshot", "SubjectTestEvidence", "SubjectTrial"]

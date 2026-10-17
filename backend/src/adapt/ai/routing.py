@@ -173,6 +173,14 @@ TASKS: dict[str, TaskPolicy] = {
         "writes new questions; each one is held to the item contract and calibrated or "
         "retired from real answers afterwards",
     ),
+    "test_plan": _p(
+        "deep",
+        0.5,
+        1200,
+        "authors a starting-check plan of interactive items; every item is validated "
+        "against the local registry and dropped if it does not fit, so the plan is a "
+        "proposal the code has the final word on",
+    ),
     "ai2_curate": _p(
         "light",
         0.2,
