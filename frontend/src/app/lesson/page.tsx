@@ -25,7 +25,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { get, post } from "@/lib/api";
 import { SceneStage } from "@/components/scenes";
-import { Btn, Card, Err, Field, Notice, Tag, Textarea, Trace, announce } from "@/components/ui";
+import { ReadAloud } from "@/components/voice/ReadAloud";
+import { Btn, Card, Err, Field, Notice, PageHeader, Tag, Textarea, Trace, announce } from "@/components/ui";
+import { Artwork } from "@/components/art/Artwork";
+import { Icon } from "@/components/icons";
+
+/** The reply shape of POST subjects/choose (journey API). */
+type SubjectReplyMini = { subject_id: string };
 import { useRovingTabIndex } from "@/lib/a11y/useRovingTabIndex";
 import {
   autoplayAllowed,
@@ -53,6 +59,7 @@ import type {
   Scene,
   SceneList,
 } from "@/lib/engine/types";
+import type { LearningOverview } from "@/components/home-dashboard";
 
 const SESSION_KEY = "adapt:lesson:session";
 
@@ -75,6 +82,15 @@ export default function LessonPlayer() {
   const savedIndex = useRef<number>(-1);
   const openedRef = useRef<OpenedRun | null>(null);
   openedRef.current = opened;
+
+  /* Round 6 (Track D): the learner's own subjects decide what this page shows.
+     No built-in demo lesson is visible before a subject is chosen; the empty
+     state is the classroom art with one question. */
+  const [subjects, setSubjects] = useState<LearningOverview["subjects"]>([]);
+  const [subjectsLoaded, setSubjectsLoaded] = useState(false);
+  const [chooseText, setChooseText] = useState("");
+  const [choosing, setChoosing] = useState(false);
+  const [sceneLibraryAllowed, setSceneLibraryAllowed] = useState(false);
 
   const scene = useMemo(
     () => (catalogue?.scenes ?? []).find((s) => s.id === opened?.scene_id) ?? null,
@@ -116,6 +132,18 @@ export default function LessonPlayer() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void get<LearningOverview>("learning/overview").then((result) => {
+      if (!alive) return;
+      setSubjects(result.data?.subjects ?? []);
+      setSubjectsLoaded(true);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -163,6 +191,9 @@ export default function LessonPlayer() {
         const session_id = await ensureSession();
         const out = await post<OpenedRun>("/api/v1/lessons/open", { scene_id: sceneId, session_id });
         setOpened(out);
+        // Round 6: the built-in scene library only appears once a scene was opened —
+        // e.g. via a subject lesson's deep link — never as a demo wall.
+        setSceneLibraryAllowed(true);
         savedIndex.current = out.frame_index;
         const gate = true;
         setPlayer({ ...init(out.frames, out.frame_index, gate), playing: !out.resumed && autoplayAllowed(reduced) });
@@ -334,24 +365,15 @@ export default function LessonPlayer() {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Interactive lessons</h1>
-          <p className="max-w-[70ch] text-[13px] text-[var(--muted)]">
-            {catalogue?.note ??
-              "Every scene is computed by a simulation in the backend. Nothing here is a video, and nothing here is graded into a mastery number."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
-          <Tag tone="line">{catalogue?.counts.scenes ?? 0} scenes</Tag>
-          <Tag tone="line">{catalogue?.counts.engine_kinds ?? 0} engines</Tag>
-        </div>
-      </header>
+      <PageHeader
+        title="Lessons"
+        subtitle="Your subjects' lessons, and the scenes that teach them."
+      />
 
       {loadError ? <Err error={loadError} /> : null}
       {error ? <Err error={error} /> : null}
       {notice ? (
-        <p className="flex items-start justify-between gap-3 rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-[13px]">
+        <p className="flex items-start justify-between gap-3 rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 t-small">
           <span>{notice}</span>
           <button type="button" className="text-[var(--muted)] hover:text-[var(--ink)]" onClick={() => setNotice(null)} aria-label="dismiss">
             ✕
@@ -360,38 +382,86 @@ export default function LessonPlayer() {
       ) : null}
 
       {!opened ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          {!catalogue && !loadError ? (
-            <Card title="lessons">
-              <p className="text-[13px] text-[var(--muted)]">
-                Asking the backend which scenes it has validated. The frames are computed there, so there is nothing to
-                show until it answers.
-              </p>
+        !subjectsLoaded ? (
+          <p role="status">Opening your lessons…</p>
+        ) : subjects.length === 0 ? (
+          /* Fresh learner: classroom art at the top, one question, no built-in lessons. */
+          <div className="lesson-empty">
+            <div className="lesson-empty-art" aria-hidden="true">
+              <Artwork name="classroom" />
+            </div>
+            <Card title="What do you want to learn?" tone="blue">
+              <form
+                className="stack-3"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!chooseText.trim() || choosing) return;
+                  setChoosing(true);
+                  try {
+                    const out = await post<SubjectReplyMini>("subjects/choose", { text: chooseText.trim() });
+                    window.location.href = `/first-lesson?subject=${encodeURIComponent(out.subject_id)}`;
+                  } catch (err) {
+                    setError((err as { shown?: string }).shown ?? "That subject could not be checked just now.");
+                    setChoosing(false);
+                  }
+                }}
+              >
+                <input
+                  className="input"
+                  value={chooseText}
+                  onChange={(e) => setChooseText(e.target.value)}
+                  placeholder="Type a subject or topic"
+                  aria-label="What do you want to learn?"
+                  maxLength={240}
+                />
+                <div className="wrap-2" aria-label="Suggestions">
+                  {["Maths", "Discrete structures", "Geometry", "Kiswahili", "Law", "Chemistry", "Coding"].map((item) => (
+                    <button key={item} type="button" className="tap-chip" aria-pressed={chooseText === item} onClick={() => setChooseText(item)}>
+                      {item}
+                    </button>
+                  ))}
+                </div>
+                <Btn icon="plus" kind="primary" type="submit" disabled={!chooseText.trim() || choosing}>
+                  {choosing ? "Checking…" : "Choose"}
+                </Btn>
+              </form>
             </Card>
-          ) : null}
-          {(catalogue?.scenes ?? []).map((s) => (
-            <SceneCard
-              key={s.id}
-              scene={s}
-              summary={kinds?.kinds[s.kind]?.summary}
-              busy={busy === "open"}
-              onOpen={() => void open(s.id)}
-            />
-          ))}
-          {!catalogue?.scenes.length ? (
-            <Card title="nothing seeded">
-              <p className="text-[13px] text-[var(--muted)]">
-                The backend has stored no scenes. They are seeded at startup from validated specifications, so an empty
-                list means the seed step did not run.
-              </p>
-              <p className="mt-2 text-[12px] text-[var(--muted)]">
-                Restart the backend. Seeding runs once at startup, and it refuses to store a spec the validator
-                rejects.
-              </p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            <Card title="Your lessons" icon={<Icon name="book" />}>
+              <div className="grid gap-3 md:grid-cols-2">
+                {subjects.map((subject) => (
+                  <Card key={subject.id} title={subject.title} tone={subject.stage === "tests" ? "sand" : "mint"}>
+                    <p className="t-small">
+                      {subject.stage === "tests" ? "Starting checks still to do." : subject.stage === "done" ? "Finished." : "Learning."}
+                    </p>
+                    <Btn icon="play" kind="primary" href={subject.next?.href ?? `/first-lesson?subject=${encodeURIComponent(subject.id)}`}>
+                      Continue: {subject.title}
+                    </Btn>
+                  </Card>
+                ))}
+              </div>
             </Card>
-          ) : null}
-          {evidence ? <EvidencePanel evidence={evidence} /> : null}
-        </div>
+            {sceneLibraryAllowed && catalogue ? (
+              <Card title="Lesson scenes" right={<Tag tone="line">{catalogue.counts.scenes ?? 0} scenes</Tag>}>
+                <p className="t-small">{catalogue.note ?? "Every scene is computed by a simulation in the backend."}</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {(catalogue.scenes ?? []).map((s) => (
+                    <SceneCard
+                      key={s.id}
+                      scene={s}
+                      summary={kinds?.kinds[s.kind]?.summary}
+                      busy={busy === "open"}
+                      onOpen={() => void open(s.id)}
+                    />
+                  ))}
+                </div>
+                {evidence ? <EvidencePanel evidence={evidence} /> : null}
+              </Card>
+            ) : null}
+          </div>
+        )
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <Card title={opened.title} right={<Tag tone="line">{opened.kind}</Tag>}>
@@ -413,10 +483,10 @@ export default function LessonPlayer() {
                 <Btn onClick={() => void finish()} disabled={busy === "finish"}>
                   end &amp; review
                 </Btn>
-                <label className="ml-auto flex items-center gap-2 text-[12px] text-[var(--muted)]">
+                <label className="ml-auto flex items-center gap-2 t-small text-[var(--muted)]">
                   speed
                   <select
-                    className="rounded-[2px] border border-[var(--line)] bg-transparent px-1 py-0.5 text-[12px]"
+                    className="rounded-[2px] border border-[var(--line)] bg-transparent px-1 py-0.5 t-small"
                     value={player.speed}
                     onChange={(e) => dispatch({ type: "speed", speed: Number(e.target.value) })}
                   >
@@ -464,6 +534,9 @@ export default function LessonPlayer() {
 
               <div className="frame-main" role="tabpanel">
                 <SceneStage frame={frame} kind={opened.kind} hasRenderer={opened.renderer?.available !== false} />
+                <div className="mt-2 flex items-center gap-2">
+                  <ReadAloud text={`${frame.title}. ${frame.narration}`} />
+                </div>
               </div>
 
               {asked ? (
@@ -476,7 +549,7 @@ export default function LessonPlayer() {
                   onAnswer={(choice) => void answer(choice)}
                 />
               ) : owed.length ? (
-                <p className="text-[12px] text-[var(--warn)]">
+                <p className="t-small text-[var(--warn)]">
                   you passed {owed.length} moment{owed.length === 1 ? "" : "s"} that asked you to say what happens next.
                   <button
                     type="button"
@@ -498,7 +571,7 @@ export default function LessonPlayer() {
               />
 
               {reduced ? (
-                <p className="text-[11px] text-[var(--muted)]">
+                <p className="t-small text-[var(--muted)]">
                   your system asks for reduced motion, so nothing starts moving on its own — play is a button, and the
                   arrows still step.
                 </p>
@@ -507,10 +580,10 @@ export default function LessonPlayer() {
           </Card>
 
           <div className="flex flex-col gap-4">
-            {opened.framing?.intro ? <Card title="before you watch"><p className="text-[13px]">{opened.framing.intro}</p></Card> : null}
+            {opened.framing?.intro ? <Card title="before you watch"><p className="t-small">{opened.framing.intro}</p></Card> : null}
             {scene?.last_run ? (
               <Card title="this run">
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px]">
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-1 t-small">
                   <dt className="text-[var(--muted)]">status</dt>
                   <dd className="font-mono">{scene.last_run.status}</dd>
                   <dt className="text-[var(--muted)]">frames seen</dt>
@@ -537,7 +610,7 @@ export default function LessonPlayer() {
             />
             {review ? <ReviewPanel review={review} frames={opened.frames} /> : null}
             <Trace title="what this screen is allowed to know">
-              <p className="text-[12px]">
+              <p className="t-small">
                 positions, which choice you made, how long you took, and whether the simulation agreed. no keystrokes,
                 no screenshots, and prediction accuracy is never fed into a mastery number.{" "}
                 <a className="link-inline" href="/progress">
@@ -582,18 +655,18 @@ function SceneCard({
       }
     >
       <div className="flex flex-col gap-2">
-        <p className="text-[13px] text-[var(--muted)]">{summary ?? scene.intent}</p>
-        <p className="text-[12px] text-[var(--muted)]">
+        <p className="t-small text-[var(--muted)]">{summary ?? scene.intent}</p>
+        <p className="t-small text-[var(--muted)]">
           {scene.frame_count} frames · {scene.prediction_count} moments where you say what happens next
           {scene.citations?.length ? ` · ${scene.citations.length} source${scene.citations.length === 1 ? "" : "s"}` : ""}
         </p>
         {!scene.has_renderer ? (
-          <p className="text-[12px] text-[var(--warn)]">
+          <p className="t-small text-[var(--warn)]">
             no renderer for this kind — it will play as narration and state values, not as a picture.
           </p>
         ) : null}
         {resume ? (
-          <p className="text-[12px] text-[var(--accent)]">
+          <p className="t-small text-[var(--accent)]">
             you stopped at frame {resume.frame_index + 1} of {scene.frame_count}
             {resume.predictions ? ` · ${resume.correct}/${resume.predictions} predictions right` : ""}
           </p>
@@ -651,14 +724,14 @@ function PredictionPanel({
             })}
           </div>
         ) : (
-          <p className="text-[12px] text-[var(--muted)]">
+          <p className="t-small text-[var(--muted)]">
             this frame asks for something this build does not have a control for (prediction type{" "}
             <span className="font-mono">{prompt.type}</span>), so it will not block you.
           </p>
         )}
-        {busy ? <p className="text-[12px] text-[var(--muted)]">asking the simulation…</p> : null}
+        {busy ? <p className="t-small text-[var(--muted)]">asking the simulation…</p> : null}
         {graded ? (
-          <div className="text-[13px]">
+          <div className="t-small">
             {graded.correct ? (
               <p className="text-[var(--good)]">
                 the trace agrees — {graded.expected !== null && graded.expected !== undefined ? <span className="font-mono">{graded.expected}</span> : "you had it"}.
@@ -669,7 +742,7 @@ function PredictionPanel({
                 {graded.why ? <span className="mt-1 block text-[var(--muted)]">{graded.why}</span> : null}
               </p>
             )}
-            <p className="mt-1 text-[11px] text-[var(--muted)]">
+            <p className="mt-1 t-small text-[var(--muted)]">
               frame {frame.i + 1} · graded by the simulation on the backend, not by this page ·{" "}
               {graded.totals?.predictions ?? 0} prediction{graded.totals?.predictions === 1 ? "" : "s"} so far, {graded.totals?.correct ?? 0} right
             </p>
@@ -714,18 +787,18 @@ function WhyPanel({
           <Btn kind="primary" onClick={onAsk} disabled={busy}>
             {busy ? "asking" : "ask"}
           </Btn>
-          <span className="text-[11px] text-[var(--muted)]">⌘/ctrl + enter</span>
+          <span className="t-small text-[var(--muted)]">⌘/ctrl + enter</span>
         </div>
         {answer ? (
           <div className="flex flex-col gap-1">
-            <p className="text-[13px] whitespace-pre-wrap">{answer.text}</p>
-            <p className="text-[11px] text-[var(--muted)]">
+            <p className="t-small whitespace-pre-wrap">{answer.text}</p>
+            <p className="t-small text-[var(--muted)]">
               source: <span className="font-mono">{answer.source}</span>
               {answer.cached ? " · from the cache" : ""}
             </p>
-            {answer.note ? <p className="text-[12px] text-[var(--warn)]">{answer.note}</p> : null}
+            {answer.note ? <p className="t-small text-[var(--warn)]">{answer.note}</p> : null}
             {answer.citations?.length ? (
-              <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-[var(--muted)]">
+              <ul className="mt-1 flex flex-col gap-0.5 t-small text-[var(--muted)]">
                 {answer.citations.map((c, ci) => (
                   <li key={`${c.ref}#${ci}`}>
                     <span className="font-mono">{c.ref}</span> — {c.claim}
@@ -801,14 +874,14 @@ function VariablesPanel({
   return (
     <Card title="your numbers" tone="muted">
       <div className="flex flex-col gap-2">
-        <p className="text-[12px] text-[var(--muted)]">
+        <p className="t-small text-[var(--muted)]">
           changing these makes a <em>new</em> scene, validated before it is stored, and starts a fresh run — the old
           one keeps its predictions instead of being rewritten.
         </p>
         {editable.map(([name, p]) => (
           <Field key={name} label={p.label ?? name} hint={p.help}>
             <input
-              className="w-full rounded-[2px] border border-[var(--line)] bg-transparent px-2 py-1 font-mono text-[12px]"
+              className="w-full rounded-[2px] border border-[var(--line)] bg-transparent px-2 py-1 font-mono t-small"
               name={name}
               value={field(name)}
               onChange={(e) => setField(name, e.target.value)}
@@ -817,7 +890,7 @@ function VariablesPanel({
         ))}
         <Field label="why did you change it?" hint="kept with your copy; it is how a scene of yours can be recognised as yours">
           <input
-            className="w-full rounded-[2px] border border-[var(--line)] bg-transparent px-2 py-1 text-[12px]"
+            className="w-full rounded-[2px] border border-[var(--line)] bg-transparent px-2 py-1 t-small"
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
@@ -827,7 +900,7 @@ function VariablesPanel({
           {busy ? "checking again" : "run again with these"}
         </Btn>
         {!editable.length ? (
-          <p className="text-[12px] text-[var(--warn)]">
+          <p className="t-small text-[var(--warn)]">
             the backend tells us nothing about the parameters of a <span className="font-mono">{kind}</span> scene, so
             there is nothing safe to edit.
           </p>
@@ -841,13 +914,13 @@ function ReviewPanel({ review, frames }: { review: Review; frames: Frame[] }) {
   const skipped = review.skipped_predictions ?? [];
   return (
     <Card title="what you just did" tone="good">
-      <div className="flex flex-col gap-2 text-[13px]">
-        <p className="text-[12px] text-[var(--muted)]">
+      <div className="flex flex-col gap-2 t-small">
+        <p className="t-small text-[var(--muted)]">
           {review.totals.accuracy === null
             ? "you made no predictions, so there is nothing to compare — the frames still count as seen"
             : `you called ${review.totals.correct} of ${review.totals.predictions} before the machine confirmed them (one third would be guessing)`}
         </p>
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px]">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 t-small">
           <dt className="text-[var(--muted)]">status</dt>
           <dd className="font-mono">{review.status}</dd>
           <dt className="text-[var(--muted)]">frames</dt>
@@ -860,13 +933,13 @@ function ReviewPanel({ review, frames }: { review: Review; frames: Frame[] }) {
           <dd className="font-mono">{review.totals.param_changes} change{review.totals.param_changes === 1 ? "" : "s"}</dd>
         </dl>
         {skipped.length ? (
-          <p className="text-[12px] text-[var(--warn)]">
+          <p className="t-small text-[var(--warn)]">
             {skipped.length} frame{skipped.length === 1 ? "" : "s"} asked and you moved past:{" "}
             {skipped.map((i) => frames[i]?.prompt?.type ?? `#${i}`).join(", ")}
           </p>
         ) : null}
         {review.predictions?.length ? (
-          <ul className="flex flex-col gap-1 text-[12px]">
+          <ul className="flex flex-col gap-1 t-small">
             {review.predictions.map((p, pi) => (
               <li key={`${p.frame}#${pi}`} className="flex items-baseline gap-2">
                 <span className="font-mono text-[var(--muted)]">f{p.frame + 1}</span>
@@ -877,7 +950,7 @@ function ReviewPanel({ review, frames }: { review: Review; frames: Frame[] }) {
             ))}
           </ul>
         ) : null}
-        {review.scene.framing?.outro ? <p className="text-[12px] text-[var(--muted)]">{review.scene.framing.outro}</p> : null}
+        {review.scene.framing?.outro ? <p className="t-small text-[var(--muted)]">{review.scene.framing.outro}</p> : null}
       </div>
     </Card>
   );
@@ -887,7 +960,7 @@ function EvidencePanel({ evidence }: { evidence: Evidence }) {
   const s = evidence.summary;
   return (
     <Card title="what has been recorded" tone="muted">
-      <div className="flex flex-col gap-1 text-[12px]">
+      <div className="flex flex-col gap-1 t-small">
         <p>
           {s.runs} run{s.runs === 1 ? "" : "s"} · {s.predictions} prediction{s.predictions === 1 ? "" : "s"}
           {s.accuracy === null ? "" : ` · ${Math.round(s.accuracy * 100)}% right before the answer was shown`}

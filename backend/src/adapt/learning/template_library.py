@@ -191,17 +191,40 @@ def validate_template(raw: Any) -> tuple[dict[str, Any] | None, list[str]]:
 
 
 def _frame(template: str, params: dict[str, Any], caption: str, step: int = 0) -> dict[str, Any]:
-    """A compact renderer-neutral frame made only of primitives."""
+    """A compact renderer-neutral frame made only of primitives.
+
+    The vocabulary is the one the animator draws: ``shapes`` (circle, rectangle),
+    ``person``, ``car``, ``triangle``, ``number line`` (a ticked line) and ``graph``
+    (a plotted curve or a node network). Every template maps onto those kinds, so a
+    scene always looks like its subject.
+    """
     objects: list[dict[str, Any]] = [{"type": "text", "x": 12, "y": 18, "text": caption}]
     if template in {"angle-sum-of-triangle", "pythagoras", "similar-triangles"}:
         objects += [{"type": "triangle", "x": 20, "y": 28, "size": 70, "labels": ["A", "B", "C"]}]
-    elif template in {"number-line-operations", "function-plot", "car-motion", "timeline"}:
-        objects += [{"type": "line", "x1": 10, "y1": 60, "x2": 230, "y2": 60, "arrow": True}]
+    elif template in {"number-line-operations", "timeline"}:
+        line = {"type": "line", "x1": 10, "y1": 60, "x2": 230, "y2": 60, "arrow": True}
+        ticks = [{"type": "line", "x1": 18 + i * 42, "y1": 54, "x2": 18 + i * 42, "y2": 66, "label": str(i)} for i in range(6)]
+        objects += [line] + ticks
+    elif template == "function-plot":
+        objects += [
+            {"type": "line", "x1": 10, "y1": 60, "x2": 230, "y2": 60, "arrow": True},
+            {"type": "line", "x1": 20, "y1": 78, "x2": 20, "y2": 22, "arrow": True},
+            {"type": "graph", "kind": str(params.get("kind") or "linear"), "a": params.get("a", 1), "b": params.get("b", 0)},
+        ]
+    elif template == "car-motion":
+        travel = min(210.0, (float(params.get("speed") or 20) / 120.0) * 27.0 * (step + 1))
+        objects += [
+            {"type": "line", "x1": 10, "y1": 62, "x2": 230, "y2": 62, "arrow": True},
+            {"type": "car", "x": 12 + travel, "y": 52},
+        ]
     elif template in {"venn-sets"}:
         objects += [{"type": "circle", "cx": 80, "cy": 55, "r": 30}, {"type": "circle", "cx": 125, "cy": 55, "r": 30}]
     elif template in {"graph-traversal", "binary-tree", "probability-tree", "cause-effect-chain", "cycle-diagram"}:
         objects += [{"type": "node", "x": 30 + i * 45, "y": 55, "label": str(value)} for i, value in enumerate(list(params.values())[0][:5])]
-    elif template in {"fraction-bars", "sorting", "binary-search", "flowchart", "grammar-sentence-diagram"}:
+    elif template == "grammar-sentence-diagram":
+        words = [{"type": "rectangle", "x": 12 + i * 34, "y": 40, "width": 28, "height": 24, "label": str(value)} for i, value in enumerate(list(params.values())[0][:5])]
+        objects += words + [{"type": "person", "x": 205, "y": 44}]
+    elif template in {"fraction-bars", "sorting", "binary-search", "flowchart"}:
         objects += [{"type": "rectangle", "x": 12 + i * 34, "y": 40, "width": 28, "height": 24, "label": str(value)} for i, value in enumerate(list(params.values())[0][:6])]
     else:
         objects += [{"type": "circle", "cx": 80, "cy": 55, "r": 24, "label": template.replace("-", " ")}]

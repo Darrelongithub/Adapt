@@ -20,6 +20,7 @@ import { useState } from "react";
 import { Btn, Card, Err, Notice, SessionLog, Tag, Textarea, announce, useSessionLedger } from "@/components/ui";
 import { get, post, useApi } from "@/lib/api";
 import type { RetentionCheck, ReviewComplete, ReviewDue } from "@/lib/types";
+import { ReadAloud } from "@/components/voice/ReadAloud";
 
 export default function Review() {
   const due = useApi<ReviewDue>("review/due", { within_hours: 72 });
@@ -106,8 +107,8 @@ export default function Review() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 04 · Review</div>
-          <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>Review queue</h1>
+          <h1 className="t-h1">Review queue</h1>
+          <p className="t-small">Short revisits when something is due.</p>
           <p className="mt-1 text-sm text-[var(--muted)]">{due.data?.rule}</p>
         </div>
         <span className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{rows.length ? `${rows.length} waiting` : "nothing due"}</span>
@@ -182,6 +183,7 @@ export default function Review() {
                   {checks[r.topic_id] ? (
                     <div className="mt-2 rounded-[2px] border border-[var(--line)] px-3 py-2 text-sm">
                       <p>{checks[r.topic_id].question}</p>
+                      <p className="mt-1"><ReadAloud text={checks[r.topic_id].question} label="Read the question aloud" /></p>
                       <p className="mt-1 text-xs text-[var(--muted)]">{checks[r.topic_id].rationale}</p>
                       {checkNotes[r.topic_id] ? (
                         <p className="mt-1 text-xs">
