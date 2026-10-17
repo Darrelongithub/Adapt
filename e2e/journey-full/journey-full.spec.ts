@@ -52,7 +52,7 @@ test("the full journey with the three lesson moments", async ({ page, context },
   expect(created.ok(), await created.text()).toBeTruthy();
 
   await page.goto("/journey", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("[data-testid='journey-stages']")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("journey-card")).toBeVisible({ timeout: 60_000 });
   expect((await journeyState(context)).stage).toBe("preferences");
   await shot(page, project, "01-journey-preferences");
 
@@ -60,9 +60,9 @@ test("the full journey with the three lesson moments", async ({ page, context },
   for (const stage of ["preferences", "games", "subject", "subject_round", "snapshot"]) {
     await page.goto("/journey", { waitUntil: "domcontentloaded" });
     // the stage list's own row (the current-step card carries data-stage too)
-    const row = page.locator(`[data-testid='journey-stages'] [data-stage='${stage}']`);
+    const row = page.locator(`[data-testid='journey-card'][data-stage='${stage}']`);
     await row.scrollIntoViewIfNeeded();
-    await row.locator("button", { hasText: /^skip$/i }).first().click();
+    await row.locator("button", { hasText: /^skip this step$/i }).first().click();
     await expect
       .poll(async () => stageStatus(context, stage), { timeout: 30_000 })
       .toBe("skipped");
@@ -117,7 +117,8 @@ test("the full journey with the three lesson moments", async ({ page, context },
 
   // -- mark the lesson done from the journey, then reach the practice loop -------------
   await page.goto("/journey", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: /already done this elsewhere/i }).click();
+  await page.getByText("see every step", { exact: true }).click();
+  await page.getByTestId("journey-mark-done").click();
   await expect.poll(async () => stageStatus(context, "first_lesson"), { timeout: 30_000 }).toBe("done");
   expect((await journeyState(context)).stage).toBe("practice");
 

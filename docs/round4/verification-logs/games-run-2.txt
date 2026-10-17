@@ -1,0 +1,21 @@
+
+> adapt-e2e-games@0.1.0 test
+> playwright test
+
+
+Running 11 tests using 1 worker
+
+  ✓   1 [desktop] › baseline-games.spec.ts:10:5 › the whole baseline: every game, the next-day check, and what the server recorded (2.1m)
+  ✓   2 [desktop] › snapshot-honesty.spec.ts:14:5 › stopping straight away records every game as not measured, and no number (1.9s)
+  ✓   3 [desktop] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached (1.9m)
+  ✓   4 [desktop] › subject-round.spec.ts:28:5 › the plan says why these skills, and the reason matches what was actually found (6.1s)
+  ✓   5 [desktop] › subject-round.spec.ts:51:5 › a whole subject round, answered by the bot, ends in a map that says what it did not reach (16.1s)
+  ✓   6 [mobile] › baseline-games.spec.ts:10:5 › the whole baseline: every game, the next-day check, and what the server recorded (2.1m)
+  -   7 [mobile] › snapshot-honesty.spec.ts:14:5 › stopping straight away records every game as not measured, and no number
+  -   8 [mobile] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached
+  ✓   9 [mobile] › subject-round.spec.ts:28:5 › the plan says why these skills, and the reason matches what was actually found (3.9s)
+  ✓  10 [mobile] › subject-round.spec.ts:51:5 › a whole subject round, answered by the bot, ends in a map that says what it did not reach (15.2s)
+  ✓  11 [keyboard] › keyboard.spec.ts:11:5 › the whole baseline with the keyboard alone, each trial sent once (2.3m)
+
+  2 skipped
+  9 passed (9.2m)

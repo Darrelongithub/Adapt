@@ -33,6 +33,7 @@ const BANNED = [
   "AI 2",
   "AI 3",
   "token",
+  "Pack",
 ];
 
 const failures = [];
@@ -120,7 +121,8 @@ async function createGuest(page) {
   const guestButton = page.getByRole("button", { name: /^continue as guest$/i }).first();
   if (!(await guestButton.count())) throw new Error("the signed-out home page did not offer guest access");
   await guestButton.click();
-  await page.waitForURL(/\/(baseline|onboarding|learn)(?:\?|$)/, { timeout: 20_000 });
+  await page.waitForURL(/\/journey(?:\?|$)/, { timeout: 3_000 });
+  await page.locator("[data-testid=journey-card] a").waitFor({ timeout: 3_000 });
   const me = await page.evaluate(async () => {
     const response = await fetch("/api/v1/me", { credentials: "same-origin" });
     return { status: response.status, body: await response.json().catch(() => null) };

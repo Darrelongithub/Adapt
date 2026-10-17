@@ -30,9 +30,9 @@ export function HomeDashboard({ me }: { me: Me }) {
         <h1 className="home-title">Pick up where you left off.</h1>
         <p className="mt-3 max-w-xl text-sm text-[var(--muted)]">Saved lessons and what your practice is showing. <a href="#what-this-is" className="link-inline">how the app sees you</a></p>
         <div className="home-cta-row mt-5">
-          <Btn kind="primary" href={primary}>{label}</Btn>
-          <Btn href="/journey">Your path</Btn>
-          {!me.onboarding_complete ? <Btn kind="ghost" href="/onboarding">Personalise your setup</Btn> : null}
+          <Btn icon="play" kind="primary" href={primary}>{label}</Btn>
+          <Btn icon="route" href="/journey">Your path</Btn>
+          {!me.onboarding_complete ? <Btn icon="sliders" kind="ghost" href="/onboarding">Personalise your setup</Btn> : null}
         </div>
         <details id="what-this-is" className="r3-question-why-tap">
           <summary>how the app sees you</summary>
@@ -43,7 +43,7 @@ export function HomeDashboard({ me }: { me: Me }) {
         </details>
       </header>
 
-      {dash.error ? <Card title="Your progress could not load"><Err error={dash.error} status={dash.status} /><Btn onClick={dash.reload}>Retry dashboard</Btn></Card> : null}
+      {dash.error ? <Card title="Your progress could not load"><Err error={dash.error} status={dash.status} /><Btn icon="refresh" onClick={dash.reload}>Retry dashboard</Btn></Card> : null}
       <div className="home-grid" aria-busy={dash.loading || reviews.loading}>
         <Stat label="Recorded practice" value={data ? data.data_volume.attempts ? String(data.data_volume.attempts) : "No answers yet" : "—"} note="Answers saved across your learning sessions." />
         <Stat label="This week" value={data ? String(data.last_7_days.attempts) : "—"} note={data?.last_7_days.mean_score != null ? `${Math.round(data.last_7_days.mean_score * 100)}% average score in the last 7 days.` : "No scored answers this week yet."} />
@@ -55,7 +55,7 @@ export function HomeDashboard({ me }: { me: Me }) {
         <ActivityCard title="Continue your lessons" items={activities?.lessons} loading={dash.loading} empty="No unfinished lessons. Choose a lesson to begin." action="Continue lesson" />
         <ActivityCard title="Unfinished assessments" items={activities?.tests} loading={dash.loading} empty="No unfinished checks. Your saved results remain in Progress." action="Resume assessment" />
       </div>
-      <Card title="Your learning progress" right={<Btn href="/progress">View all progress</Btn>}>
+      <Card title="Your learning progress" right={<Btn icon="bars" href="/progress">View all progress</Btn>}>
         {dash.loading ? <p role="status">Loading your progress…</p> : !data ? <p>Your progress is unavailable right now.</p> : measured.length ? (
           <ul className="divide-y divide-[var(--line)]">
             {measured.slice(0, 5).map(topic => <li key={topic.topic_id} className="py-3">
@@ -66,7 +66,7 @@ export function HomeDashboard({ me }: { me: Me }) {
           </ul>
         ) : <p className="text-sm text-[var(--muted)]">Not measured yet. As you practise, your topic estimates and the evidence behind them will appear here.</p>}
       </Card>
-      <div className="flex flex-wrap gap-3"><Btn href="/review">Review what is due</Btn><Btn href="/proposals">Review proposed changes</Btn><Tag>Saved to your learner account</Tag></div>
+      <div className="flex flex-wrap gap-3"><Btn icon="clock" href="/review">Review what is due</Btn><Btn icon="message" href="/proposals">Review proposed changes</Btn><Tag>Saved to your learner account</Tag></div>
     </div>
   );
 }
@@ -77,7 +77,7 @@ function ActivityCard({ title, items, loading, empty, action }: { title: string;
       <ul className="space-y-4">{items.map(item => <li key={item.id} className="space-y-2">
         <strong className="text-sm">{item.title}</strong>
         <p className="text-xs text-[var(--muted)]">{item.detail}</p>
-        <Btn href={item.href} ariaLabel={`${action}: ${item.title}`}>{action}</Btn>
+        <Btn icon="play" href={item.href} ariaLabel={`${action}: ${item.title}`}>{action}</Btn>
       </li>)}</ul>
     ) : <p className="text-sm text-[var(--muted)]">{empty}</p>}
   </Card>;

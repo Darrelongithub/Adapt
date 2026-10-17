@@ -46,7 +46,7 @@ from .validation import (
 
 log = logging.getLogger("adapt.content.skeleton")
 
-PACK_SPEC_VERSION = "pack-skeleton/1"
+PACK_SPEC_VERSION = "pack-skeleton/2"
 MODEL_TIMEOUT_SECONDS = 20.0
 MODEL_RETRY_BACKOFF_SECONDS = 0.15
 MAX_MODEL_CALLS_PER_PACK = 32  # 1 skeleton + 10 pairs + 20 verifiers, with one retry of slack

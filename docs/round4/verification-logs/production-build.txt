@@ -1,0 +1,49 @@
+
+> adapt-frontend@0.1.0 build
+> next build
+
+   ▲ Next.js 15.5.27
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.7s
+   Linting and checking validity of types ...
+
+   We detected TypeScript in your project and reconfigured your tsconfig.json file for you.
+   The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
+
+        - include was updated to add 'build/round4/types/**/*.ts'
+
+   Collecting page data ...
+   Generating static pages (0/19) ...
+   Generating static pages (4/19)
+   Generating static pages (9/19)
+   Generating static pages (14/19)
+ ✓ Generating static pages (19/19)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                    2.32 kB         135 kB
+├ ○ /_not-found                            995 B         104 kB
+├ ○ /baseline                            9.97 kB         143 kB
+├ ○ /contrast                            6.19 kB         143 kB
+├ ○ /diagnose                             2.3 kB         146 kB
+├ ○ /evidence                            4.79 kB         138 kB
+├ ○ /first-lesson                        4.16 kB         132 kB
+├ ○ /journey                             4.09 kB         137 kB
+├ ○ /learn                               2.59 kB         146 kB
+├ ○ /lesson                              10.9 kB         144 kB
+├ ○ /onboarding                          2.97 kB         136 kB
+├ ○ /progress                            6.59 kB         140 kB
+├ ○ /proposals                           6.32 kB         139 kB
+├ ○ /review                              3.75 kB         137 kB
+├ ○ /settings                            4.46 kB         137 kB
+├ ○ /subject                             13.3 kB         150 kB
+└ ○ /voice                               5.21 kB         138 kB
++ First Load JS shared by all             103 kB
+  ├ chunks/255-ce8c7c75002f810b.js       46.5 kB
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)          1.94 kB
+
+
+○  (Static)  prerendered as static content

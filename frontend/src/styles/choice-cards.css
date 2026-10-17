@@ -300,3 +300,21 @@
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Grid and choices share the same node on first-run screens. Leave room for focus. */
+.r3-choices.tall-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:24px 0 20px; }
+.r3-choices.pill-grid { display:grid; grid-template-columns:1fr; gap:12px; margin-top:16px; }
+.r3-choices .choice-card { min-height:48px; }
+.choice-card.is-correct { border-color:var(--good); background:color-mix(in srgb,var(--good) 12%,var(--panel)); }
+.choice-card.is-incorrect { border-color:var(--bad); background:color-mix(in srgb,var(--bad) 10%,var(--panel)); }
+@media(max-width:600px) { .r3-choices.tall-grid { grid-template-columns:1fr; } }
+
+.lesson-block { max-width:65ch; line-height:1.7; }
+.lesson-check { min-width:0; }
+.lesson-check legend { margin-bottom:8px; }
+.lesson-block:has(figure) { max-width:none; background:var(--panel); }
+.lesson-info summary { cursor:pointer; min-height:44px; display:flex; align-items:center; }
+.r3-choices .choice-card.is-selected.is-incorrect { opacity:1; border-color:var(--bad); background:color-mix(in srgb,var(--bad) 10%,var(--panel)); }
+.r3-choices .choice-card.is-selected.is-incorrect::after { content:"×"; color:var(--bad); }
+.r3-choices .choice-card.is-selected.is-correct { opacity:1; border-color:var(--good); background:color-mix(in srgb,var(--good) 12%,var(--panel)); }
+.r3-choices .choice-card.is-selected.is-correct::after { color:var(--good); }

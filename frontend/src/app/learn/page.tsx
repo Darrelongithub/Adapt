@@ -196,7 +196,7 @@ export default function Learn() {
       ) : null}
 
       {entry ? (
-        <>
+        <div data-practice-item>
           <Question
             key={entry.item.id}
             entry={entry}
@@ -225,7 +225,7 @@ export default function Learn() {
               nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice
             </span>
           </div>
-        </>
+        </div>
       ) : null}
 
       {plan?.why ? (

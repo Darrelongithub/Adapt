@@ -1,0 +1,42 @@
+
+> adapt-frontend@0.1.0 test:e2e:banned
+> node tests-e2e/banned-phrases.mjs
+
+Crawling 16 page routes: /, /baseline, /contrast, /diagnose, /evidence, /first-lesson, /journey, /learn, /lesson, /onboarding, /progress, /proposals, /review, /settings, /subject, /voice
+  ok  signed out / — HTTP 200
+  ok  signed out /baseline — HTTP 200
+  ok  signed out /contrast — HTTP 200
+  ok  signed out /diagnose — HTTP 200
+  ok  signed out /evidence — HTTP 200
+  ok  signed out /first-lesson — HTTP 200
+  ok  signed out /journey — HTTP 200
+  ok  signed out /learn — HTTP 200
+  ok  signed out /lesson — HTTP 200
+  ok  signed out /onboarding — HTTP 200
+  ok  signed out /progress — HTTP 200
+  ok  signed out /proposals — HTTP 200
+  ok  signed out /review — HTTP 200
+  ok  signed out /settings — HTTP 200
+  ok  signed out /subject — HTTP 200
+  ok  signed out /voice — HTTP 200
+  ok  signed out GET /api/v1/privacy is public — HTTP 200
+  ok  signed in / — HTTP 200
+  ok  signed in /baseline — HTTP 200
+  ok  signed in /contrast — HTTP 200
+  ok  signed-in /contrast uses learner-safe demo evidence wording
+  ok  signed in /diagnose — HTTP 200
+  ok  signed in /evidence — HTTP 200
+  ok  signed in /first-lesson — HTTP 200
+  ok  signed in /journey — HTTP 200
+  ok  signed in /learn — HTTP 200
+  ok  signed in /lesson — HTTP 200
+  ok  signed in /onboarding — HTTP 200
+  ok  signed in /progress — HTTP 200
+  ok  signed in /proposals — HTTP 200
+  ok  signed in /review — HTTP 200
+  ok  signed in /settings — HTTP 200
+  ok  signed in /subject — HTTP 200
+  ok  signed in /voice — HTTP 200
+  ok  signed in GET /api/v1/privacy is public — HTTP 200
+
+all banned-copy checks passed

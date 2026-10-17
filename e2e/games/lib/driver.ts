@@ -216,7 +216,7 @@ export async function screen(page: Page): Promise<Screen> {
   await page.waitForFunction(
     () =>
       document.querySelector(
-        '.baseline-snapshot, [aria-label="format preference"], fieldset.baseline-q-row, .baseline-task',
+        '.baseline-snapshot, [aria-label="format preference"], .r3-question-stack, .baseline-task',
       ) !== null,
     null,
     { timeout: 30_000 },
@@ -229,7 +229,7 @@ export async function screen(page: Page): Promise<Screen> {
       if (document.querySelector('[aria-label="format preference"]')) return "format";
       // The shopkeeper's quick answers are fieldsets too, so a task screen is checked before the questions.
       const task = document.querySelector(".baseline-task");
-      if (!task && document.querySelector("fieldset.baseline-q-row")) return "questions";
+      if (!task && document.querySelector(".r3-question-stack")) return "questions";
       if (!task) return "unknown";
       if (document.querySelector(".vault-grid")) return "vault";
       if (document.querySelector("#machine-in")) return "machine";
@@ -286,7 +286,7 @@ export async function noHorizontalScroll(page: Page, where: string): Promise<voi
 export async function smallTapTargets(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const out: string[] = [];
-    document.querySelectorAll<HTMLElement>(".baseline-task button, .baseline-snapshot button, .baseline-q-row button").forEach((el) => {
+    document.querySelectorAll<HTMLElement>(".baseline-task button, .baseline-snapshot button, .r3-question-stack button").forEach((el) => {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) return;
       if (Math.min(r.width, r.height) < 40) out.push(`${(el.textContent ?? "").trim().slice(0, 30)} ${Math.round(r.width)}x${Math.round(r.height)}`);

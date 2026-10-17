@@ -1,0 +1,271 @@
+:root {
+  --art-ink: var(--accent);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --art-ink: oklch(70% 0.13 258);
+  }
+}
+/* Three disjoint grid cells: an opaque central sheet and two empty gutters.
+   No viewport-wide pattern, overlay, or negative z-index can bleed into content. */
+.page-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 680px) minmax(0, 1fr);
+  position: relative;
+  min-height: calc(100dvh - 60px);
+  background: var(--bg);
+  isolation: isolate;
+}
+.page-sheet {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  background: var(--bg);
+  position: relative;
+  padding: 0 16px;
+}
+.pattern-zone {
+  display: none;
+  grid-row: 1;
+  margin: 24px 32px;
+  opacity: 0.12;
+  pointer-events: none;
+  position: relative;
+  mask-image:
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 40px,
+      #000 calc(100% - 40px),
+      transparent
+    ),
+    linear-gradient(
+      to right,
+      transparent,
+      #000 32px,
+      #000 calc(100% - 32px),
+      transparent
+    );
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  mask-composite: intersect;
+}
+.pattern-zone::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--art-ink);
+  mask-image: url(/art/topo.svg);
+  mask-repeat: repeat;
+  mask-size: 520px auto;
+}
+.pattern-left {
+  grid-column: 1;
+}
+.pattern-right {
+  grid-column: 3;
+}
+.artwork {
+  pointer-events: none;
+  background: var(--art-ink);
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  width: 100%;
+  height: 100%;
+}
+.brain-zone {
+  grid-column: 3;
+  grid-row: 1;
+  padding: 80px 24px 24px;
+  display: none;
+}
+.hero-zone {
+  grid-column: 2 / 4;
+  min-height: 260px;
+  padding: 32px;
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.hero-zone .artwork {
+  width: 260px;
+  height: 240px;
+  flex: none;
+}
+.hero-classroom {
+  grid-column: 2;
+  justify-content: center;
+  padding: 40px 16px;
+  min-height: 330px;
+}
+.hero-classroom .artwork {
+  width: min(640px, 100%);
+  height: 300px;
+}
+/* Once teaching/practice occupies the sheet there is no empty classroom zone. */
+.page-shell:has([data-testid="fl-moment"], [data-practice-item])
+  .hero-classroom {
+  display: none;
+}
+.page-shell:not(:has([data-testid="format-option"], .r3-question-stack))
+  .brain-zone {
+  display: none;
+}
+.shell-header-icon {
+  margin: 20px 16px 16px;
+  color: var(--art-ink);
+}
+.shell-access {
+  min-height: 100dvh;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 580px) minmax(0, 1fr);
+}
+.shell-access .page-sheet {
+  padding: 0 20px;
+}
+.shell-access .access-screen {
+  min-height: 0;
+  padding: 32px 0;
+}
+.shell-access .access-card {
+  width: 100%;
+}
+.shell-access .hero-flower {
+  grid-column: 1 / 3;
+  justify-content: flex-start;
+  min-height: 280px;
+  padding: 0 0 0 16px;
+  margin-top: 24px;
+}
+.shell-access .hero-flower .artwork {
+  width: 360px;
+  height: 320px;
+  mask-position: left bottom;
+}
+/* Sidebar consumes 232px. These breakpoints leave at least 140px per gutter. */
+@media (min-width: 1192px) {
+  .pattern-zone:not(.omit-pattern) {
+    display: block;
+  }
+  .brain-zone {
+    display: block;
+  }
+  .brain-zone .artwork {
+    height: 230px;
+    max-width: 230px;
+  }
+}
+@media (min-width: 900px) {
+  .shell-access .pattern-zone {
+    display: block;
+  }
+}
+/* No narrow-screen patterns, and on phones only the consent flower survives. */
+@media (max-width: 899px) {
+  .page-shell {
+    display: block;
+  }
+  .page-sheet {
+    padding: 0;
+  }
+  .hero-zone,
+  .brain-zone {
+    display: none;
+  }
+  .shell-access .hero-flower {
+    display: flex;
+    min-height: 180px;
+  }
+  .shell-access .hero-flower .artwork {
+    width: 200px;
+    height: 180px;
+  }
+  .shell-access:has([data-auth-step="auth"]) .hero-flower {
+    display: none;
+  }
+}
+/* Only sufficiently wide access gutters have a free viewport corner. The
+   compact layout keeps the flower in an empty flow tail, never under a form. */
+@media (min-width: 1240px) {
+  .shell-access .hero-flower {
+    position: fixed;
+    left: 16px;
+    bottom: 0;
+    width: 340px;
+    height: 560px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    display: block;
+  }
+  .shell-access .hero-flower .artwork {
+    width: 340px;
+    height: 560px;
+  }
+  .shell-access .pattern-left {
+    max-height: max(0px, calc(100dvh - 608px));
+  }
+}
+.opening-overlay {
+  overflow: auto;
+}
+.opening-overlay .page-shell {
+  width: 100%;
+}
+.welcome-sheet {
+  min-height: calc(100dvh - 360px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.opening-overlay .opening-skip {
+  bottom: 24px;
+  right: 24px;
+}
+@media (min-width: 1240px) {
+  .opening-overlay .welcome-sheet {
+    min-height: 100dvh;
+  }
+}
+@media (max-width: 899px) {
+  .welcome-sheet {
+    min-height: 100dvh;
+  }
+  .opening-overlay .hero-flower {
+    display: none;
+  }
+}
+.btn-ctl,
+.sidebar-item {
+  min-height: 44px;
+}
+.btn-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.sidebar-more:focus-visible,
+.btn-ctl:focus-visible,
+.sidebar-item:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (min-width: 1240px) {
+  .opening-overlay .welcome-sheet {
+    padding: 0 24px;
+  }
+}
+/* A 230px brain needs its own 278px gutter. Keep the left pattern gutter at
+   least 140px; below this width omit the brain rather than crowd the cards. */
+@media (min-width: 1192px) and (max-width: 1229px) {
+  .brain-zone {
+    display: none;
+  }
+}
+@media (min-width: 1230px) {
+  .shell-brain:has([data-testid="format-option"], .r3-question-stack) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 580px) minmax(0, 278px);
+  }
+}

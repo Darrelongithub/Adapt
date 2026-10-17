@@ -1,4 +1,5 @@
 'use client';
+import { PageShell } from './shell/PageShell';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -82,6 +83,7 @@ export function Opening({ children }: { children: ReactNode }) {
       }}
       tabIndex={-1}
     >
+      <PageShell access><div className="welcome-sheet">
       <p className="opening-mark">A·D·A·P·T</p>
       {phase !== "checking" ? <p className="opening-phrase" aria-live="off" aria-label={text}>
         {/* One word per span, and the *space is the CSS* (`margin-right` on .opening-word).
@@ -105,6 +107,7 @@ export function Opening({ children }: { children: ReactNode }) {
         Skip →
       </button>
       <span className="sr-only">Press any key or click anywhere to continue.</span>
+      </div></PageShell>
     </div> : null}
     </>
   );

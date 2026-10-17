@@ -21,9 +21,9 @@
  */
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { ProgressBar, SignedOutPath, StageCard, StageList } from "@/components/journey";
+import { ProgressBar, StageList } from "@/components/journey";
 import { Btn, Card, Err, Notice, Tag, useSession } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { STEPS, useJourney, type StageId } from "@/lib/journey";
@@ -45,7 +45,7 @@ function valueInWords(value: unknown): string {
 }
 
 export default function Journey() {
-  const { me, loading, unknown, refresh } = useSession();
+  const { me, loading } = useSession();
   const signedIn = Boolean(me);
   const journey = useJourney(signedIn);
   const prefs = useApi<Prefs>(signedIn ? "me/preferences" : null);
@@ -65,138 +65,35 @@ export default function Journey() {
   async function markDone(stage: StageId) {
     setNote(null);
     const out = await journey.advance(stage, "done");
-    if (!out.ok) setNote(out.error ?? "that did not save");
-  }
-
-  if (loading && !me) {
-    return (
-      <div className="mx-auto max-w-3xl px-3 py-6" style={{ padding: "clamp(24px,4vw,48px) clamp(16px,4vw,32px)" }}>
-        <h1 className="text-[clamp(24px,3.4vw,34px)] font-medium leading-tight" style={{ fontFamily: "var(--font-serif)" }}>
-          Your path
-        </h1>
-        <p className="mt-3 text-sm text-[var(--muted)]">still checking who you are — nothing here has been lost</p>
-      </div>
-    );
+    if (!out.ok) setNote(out.error ?? "That did not save.");
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-3 py-4" style={{ padding: "clamp(24px,4vw,48px) clamp(16px,4vw,32px)" }}>
-      <div className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
-        § Your path
-      </div>
-      <h1 className="mt-2 text-[clamp(24px,3.4vw,34px)] font-medium leading-tight" style={{ fontFamily: "var(--font-serif)" }}>
-        One step at a time
-      </h1>
-      <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-        {signedIn
-          ? "Each step below runs in turn. You can stop after any step."
-          : "Sign in or continue as a guest to start."}
-      </p>
-
-      {!signedIn ? (
-        <div className="mt-6 space-y-4">
-          <Card title="Start at the top" tone="muted">
-            <SignedOutPath />
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Btn kind="primary" href="/">
-                {STEPS.account.action}
-              </Btn>
-            </div>
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              {unknown ? `the app could not check your session just now (${unknown})` : "Consent comes first on that screen, in plain words, before anything is asked of you."}
-            </p>
-          </Card>
+    <section className="mx-auto max-w-3xl space-y-5 px-4 py-6" data-journey>
+      <h1 className="text-3xl font-medium" style={{ fontFamily: "var(--font-serif)" }}>Your path</h1>
+      <p className="text-sm text-[var(--muted)]">One step at a time. Stop whenever you like.</p>
+      <ProgressBar state={state} />
+      {journey.error ? <Err error={journey.error} status={journey.status} /> : null}
+      {note ? <Notice tone="warn">{note}</Notice> : null}
+      {currentRow ? <section data-testid="journey-current-stage" className="rounded border border-[var(--line)] bg-[var(--panel)] p-5">
+        <h2 className="text-xl font-medium">{STEPS[currentRow.id].title}</h2>
+        <div data-testid="journey-card" data-stage={currentRow.id} className="mt-4 flex flex-wrap gap-3">
+          <Btn kind="primary" href={STEPS[currentRow.id].href}>{STEPS[currentRow.id].action}</Btn>
+          {!["account", "practice"].includes(currentRow.id) ? <Btn kind="ghost" disabled={journey.busy} onClick={() => skip(currentRow.id)}>Skip this step</Btn> : null}
         </div>
-      ) : (
-        <div className="mt-6 space-y-6">
-          <Card
-            title="How far you are"
-            right={state ? <Tag tone="good">{state.stage === "practice" ? "the loop" : "next step"}</Tag> : null}
-          >
-            <ProgressBar state={state} />
-            {journey.loading ? <p className="mt-2 text-sm text-[var(--muted)]">…</p> : null}
-            {journey.error ? <Err error={journey.error} status={journey.status} /> : null}
-            {note ? <Notice tone="warn">{note}</Notice> : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Btn onClick={journey.reload} kind="ghost">
-                check again
-              </Btn>
-              <Btn onClick={refresh} kind="ghost">
-                reload who I am
-              </Btn>
-              <Btn href="/learn" kind="ghost">
-                open the menu
-              </Btn>
-            </div>
-          </Card>
-
-          {currentRow ? (
-            <Card title={`Step ${STEPS[currentRow.id].n} of 8`} tone="ask" data-testid="journey-stages">
-              <StageCard
-                row={currentRow}
-                onSkip={skip}
-                busy={journey.busy}
-                onComplete={() => markDone(currentRow.id)}
-              >
-                {currentRow.id === "first_lesson" ? (
-                  <WhyThisLesson prefs={prefs.data?.preferences} snapshot={snapshot.data} error={snapshot.error} />
-                ) : null}
-                {currentRow.id === "practice" ? (
-                  <p className="text-sm leading-relaxed">
-                    The loop from here: answer, see why it was right or wrong, come back to what is due. A wrong answer is not
-                    just marked — it gets the reason that the answer you gave was the tempting one, and then the idea again in a
-                    different way.
-                  </p>
-                ) : null}
-                {currentRow.id === "preferences" || currentRow.id === "games" ? (
-                  <p className="text-xs text-[var(--muted)]">
-                    These two steps are one screen: it asks the questions, then offers each game in turn. You can stop after any
-                    game and finish early — what you did not play is recorded as not measured.
-                  </p>
-                ) : null}
-                {currentRow.id === "snapshot" ? (
-                  <p className="text-xs text-[var(--muted)]">
-                    Ranges with the number of observations behind them. Where there is not enough evidence, it says so instead of
-                    showing a number.
-                  </p>
-                ) : null}
-              </StageCard>
-            </Card>
-          ) : null}
-
-          <details className="r3-question-why-tap">
-            <summary>see every step</summary>
-            <Card title="Every step" right={<span>stored with your account</span>}>
-              <StageList state={state} onSkip={skip} busy={journey.busy} />
-            </Card>
-          </details>
-
-          {state?.not_measured?.length ? (
-            <Card title="What you skipped" tone="warn">
-              <p className="text-sm leading-relaxed">
-                These steps were marked skipped, so whatever would have been measured there is recorded as <em>not measured</em>{" "}
-                — not as zero, and not as a guess:
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {state.not_measured.map((id) => (
-                  <Tag key={id} tone="warn">
-                    {STEPS[id as StageId]?.title ?? id}
-                  </Tag>
-                ))}
-              </div>
-            </Card>
-          ) : null}
+      </section> : <p role="status">{loading || journey.loading ? "Opening your path…" : "Your path is ready."}</p>}
+      <details className="r3-question-why-tap">
+        <summary>see every step</summary>
+        <div className="mt-4 space-y-4">
+          <StageList state={state} onSkip={skip} busy={journey.busy} />
+          {currentRow ? <p>{STEPS[currentRow.id].what} Skipping: {STEPS[currentRow.id].skipNote}.</p> : null}
+          <WhyThisLesson prefs={prefs.data?.preferences} snapshot={snapshot.data} error={snapshot.error} />
+          {currentRow && !["account", "practice"].includes(currentRow.id) ? <button type="button" className="btn-ctl btn-secondary" data-testid="journey-mark-done" disabled={journey.busy} onClick={() => markDone(currentRow.id)}>I have already done this</button> : null}
+          <Btn onClick={journey.reload}>Check again</Btn>
+          <Link href="/settings" className="link-inline">What is recorded</Link>
         </div>
-      )}
-
-      <p className="mt-6 text-[0.7rem] text-[var(--muted)]">
-        The path is a route, not a rule: every step but the first and last can be skipped, and the practice loop is where the
-        work actually happens.{" "}
-        <Link href="/settings" className="link-inline">
-          what is recorded about you
-        </Link>
-      </p>
-    </div>
+      </details>
+    </section>
   );
 }
 

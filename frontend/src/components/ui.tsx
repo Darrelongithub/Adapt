@@ -3,6 +3,7 @@
 /** The shared furniture. Everything here is deliberately dull: the only thing on a
  *  study screen that should compete for attention is the question being answered. */
 import Link from "next/link";
+import { Icon, type IconName } from "./icons";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { pushEntry, readLedger, writeLedger } from "@/lib/ledger";
@@ -51,6 +52,7 @@ export function Btn({
   title,
   pressed,
   ariaLabel,
+  icon,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -61,6 +63,7 @@ export function Btn({
   title?: string;
   pressed?: boolean;
   ariaLabel?: string;
+  icon?: IconName;
 }) {
   // btn-ctl is the marker the coarse-pointer tap-target rules in globals.css key off.
   const look =
@@ -82,12 +85,12 @@ export function Btn({
         aria-disabled={disabled ? "true" : undefined}
         {...pressedAttr}
       >
-        {children}
+        {icon ? <Icon name={icon} /> : null}{children}
       </Link>
     );
   return (
     <button type={type} onClick={onClick} disabled={disabled} className={look} title={title} aria-label={ariaLabel} {...pressedAttr}>
-      {children}
+      {icon ? <Icon name={icon} /> : null}{children}
     </button>
   );
 }

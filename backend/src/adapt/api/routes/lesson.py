@@ -228,29 +228,13 @@ def _current_authored_pack(topic: str, concept_id: str) -> dict[str, Any]:
     resolved_topic = topic_spec(breakdown.topic_key)
     subject_family = resolved_topic.family if resolved_topic else ""
 
-    misconceptions: list[dict[str, Any]] = []
-    for index, raw in enumerate(concept.misconceptions):
-        claim = str(raw.get("claim") or raw.get("wrong_belief") or "").strip()
-        if not claim:
-            continue
-        mis_id = str(raw.get("id") or f"{concept.id}:misconception:{index + 1}")
-        # These near-misses are authored specifically as common confusions by the
-        # chain-kit contract. The contrast is the checked explanation of why the
-        # selected rule differs; where no separate temptation phrase was authored,
-        # say that provenance honestly instead of ascribing a personal reason.
-        tempting = str(
-            raw.get("why_tempting")
-            or "This is an authored near-miss that learners commonly confuse with the checked idea."
-        )
-        correction = str(raw.get("correction") or raw.get("contrast") or why_it_works)
-        misconceptions.append(
-            {
-                "id": mis_id,
-                "wrong_belief": claim,
-                "why_tempting": tempting,
-                "correction": correction,
-            }
-        )
+    from ...content.distractors import authored_distractors
+
+    misconceptions = [
+        {key: value for key, value in row.items() if key != "rung"}
+        for row in authored_distractors(concept)
+        if row["rung"] in (3, 4)
+    ]
 
     items: list[dict[str, Any]] = []
     raw_pair = source_pack.pair or {}
@@ -1073,19 +1057,16 @@ def _grade_payload(
                     matched = option
                     selected_text = str(option.get("text") or "").strip() or None
                     break
-    correct = bool(
-        key
-        and matched is not None
-        and str(matched.get("id") or "").strip() == key
-    )
+    correct = bool(key and matched is not None and str(matched.get("id") or "").strip() == key)
     misconception_id: str | None = None
     if matched is not None and not correct:
-        misconception_id = (
-            str(matched.get("misconception_id") or "").strip() or None
-        )
-    return correct, misconception_id, (
-        str(matched.get("id") or "").strip() if matched is not None else None
-    ), selected_text
+        misconception_id = str(matched.get("misconception_id") or "").strip() or None
+    return (
+        correct,
+        misconception_id,
+        (str(matched.get("id") or "").strip() if matched is not None else None),
+        selected_text,
+    )
 
 
 @router.post("/grade")
@@ -1104,9 +1085,9 @@ def grade(
     """
     level = _learner_level(_snapshot(session, student.id, {}, None, topic_key=body.topic))
     language = str(
-        (_snapshot(session, student.id, {}, None, topic_key=body.topic).get("preferences") or {}).get(
-            "language"
-        )
+        (
+            _snapshot(session, student.id, {}, None, topic_key=body.topic).get("preferences") or {}
+        ).get("language")
         or "en"
     )
     try:

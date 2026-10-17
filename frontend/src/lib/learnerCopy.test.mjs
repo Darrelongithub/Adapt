@@ -78,7 +78,10 @@ test("the journey shell and the sidebar both lead to the one path", () => {
   // now the one-screen flow that runs each stage in turn.
   const gate = readFileSync(new URL("../components/account-gate.tsx", import.meta.url), "utf8");
   const dashboard = readFileSync(new URL("../components/home-dashboard.tsx", import.meta.url), "utf8");
-  assert.match(gate, /router\.replace\(["']\/journey["']\)/);
+  assert.match(gate, /router\.replace\(LEARNER_LANDING\)/);
+  const landing = readFileSync(new URL("./landing.ts", import.meta.url), "utf8");
+  assert.match(landing, /LEARNER_LANDING = "\/journey"/);
+  assert.match(chrome, /setLanding\(LEARNER_LANDING\)/);
   assert.match(home, /HomeDashboard/);
   assert.match(dashboard, /href="\/journey"/);
   assert.doesNotMatch(home, /onboarding\?\$\{carry\}/);
