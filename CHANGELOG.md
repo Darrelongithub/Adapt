@@ -67,6 +67,10 @@
 - `docs/shots_r6/`: every page at 1440×900 and 390×844 (30 shots) + `contact-sheet.png`
   + component shots (wizard, test-lab, journey). Regenerate with
   `frontend/tests-e2e/round6-shots.mjs`.
+- **Topo gutter pixel test** (`tests-e2e/round6-topo.mjs`): luminance spread measured
+  on 10 gutter strips across 5 pages (σ ≈ 4.6–5.1 where flat beige scores ~0) — the
+  pattern is visibly present in ≥4 pages' gutters. It found the gutter columns
+  collapsing to zero at 1440px and the grid now keeps a real minimum.
 - `docs/DESIGN_SYSTEM.md` — the token/type/layout rules in one page.
 - `scripts/live_model_check.py` was **not** run: no model key is configured in this
   sandbox (the script needs `GEMINI`/console key configuration).

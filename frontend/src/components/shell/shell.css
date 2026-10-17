@@ -183,7 +183,9 @@
 /* ---------- Sheet + pattern gutters ---------- */
 .page-frame {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, var(--content-max)) minmax(0, 1fr);
+  /* The side tracks keep a real minimum: at 1440 there is barely spare room, and
+     a 1fr track that may reach 0 will — taking the topo gutter with it. */
+  grid-template-columns: minmax(40px, 1fr) minmax(0, var(--content-max)) minmax(40px, 1fr);
   flex: 1;
   width: 100%;
   position: relative;
