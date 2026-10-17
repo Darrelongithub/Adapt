@@ -16,9 +16,23 @@ are implemented but *not* proven. Each item says what was done instead and how t
   `systemInstruction` rather than the snake_case proto name, explicit `safetySettings` for
   the four harm categories, optional response-schema fields, the rule that a 200 with no
   usable candidate text (`blocked`/`empty`) or non-JSON structured reply is `ok=False`,
-  quota reservations under concurrent callers, and the one-retry fallback for a retired
+  quota reservations under concurrent callers, and the replacement path for a retired
   model ID. `backend/tests/test_llm_gemini_path.py` drives all of that through
   `httpx.MockTransport`. What remains unverified is answer *quality*.
+* **Verified later (still without a real call):** that a `404` on the configured ID is
+  answered by trying up to two other models — the operator's fallback and another
+  configured class, then one **discovered from the key's own `/models`** and ranked for the
+  tier — with one discovery request per process, no replacement that cannot answer with
+  text, and the replacement and every dead ID remembered. Also that a failing discovery
+  degrades to the local path without raising, and that `adapt config test` names the model
+  that answered. All of it against `httpx.MockTransport`; **no key and no network**.
+* **Newly unverified, and the boundary moved:** whether a *real* key can call the model a
+  mock discovery picks. `/models` is what a key can **see**, not what it can **call** — a
+  retired versioned ID stays on the list while answering `404` (measured on one key in
+  October 2026: `gemini-2.5-flash` 404'd while still listed). So the ranking is a candidate
+  order to *try*, never a claim that a model works; only a `200` proves that, and no such
+  call has been made from this build. The class defaults are rolling aliases precisely
+  because of this, and the operator's own `adapt config test` is the check that settles it.
 * **Not verified:** whether a real model answer is *good*. No call has ever been made from
   this build. Prompt changes must be judged by the pilot's own outcomes
   (`docs/PILOT.md`), not by how the prompt reads.

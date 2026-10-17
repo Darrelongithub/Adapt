@@ -26,6 +26,15 @@ Five properties the blueprint asks for, implemented here:
   (:mod:`adapt.ai.context_cache`). A cache that cannot be created is a warning and one
   full prompt, never a failed answer, and learner text is refused inside a prefix
   because the cache is shared between learners.
+* **A retired model ID is not the end of the call.** Providers retire versioned model
+  IDs on their own schedule -- and keep them on ``/models`` afterwards, so the list is
+  not a statement of what a key can call. When a configured ID answers 404 the client
+  tries a replacement: the operator's ``ADAPT_GEMINI_MODEL_FALLBACK``, another
+  configured class, and then -- once per process, behind a lock -- a model discovered
+  from the key's own ``/models`` list, ranked for the tier that failed. Bounded at two
+  replacements and one discovery request; every dead ID and the model that replaced it
+  are remembered, so the next call goes straight to what works. Discovery that fails
+  is a local fallback, exactly like any other provider failure.
 """
 
 from __future__ import annotations
@@ -43,7 +52,14 @@ from typing import Any
 
 import httpx
 
-from ..config import Settings, get_settings
+from ..config import (
+    MODEL_ALIAS_SUFFIX,
+    MODEL_PREVIEW_SUFFIX,
+    NON_TEXT_MODEL_MARKERS,
+    TIER_MODEL_FAMILIES,
+    Settings,
+    get_settings,
+)
 from ..security.redact import redact_text
 from . import routing
 from .context_cache import ContextCache
@@ -67,6 +83,13 @@ SAFETY_CATEGORIES = (
 _BLOCKED_FINISH_REASONS = frozenset(
     {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY"}
 )
+
+#: How many alternative models one call may try after its configured ID answers 404.
+#: Two is the whole budget and the whole point: one *configured* replacement (the
+#: operator's fallback, or another class) and one *discovered* from the key's own model
+#: list. A third would be a loop, and a provider that 404s three IDs in a row is
+#: telling us to stop and use the local tutor.
+_MAX_MODEL_SWITCHES = 2
 
 
 @dataclass
@@ -331,6 +354,80 @@ def _schema_for(spec: dict[str, Any] | None) -> dict[str, Any] | None:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# reading the provider's own model list
+#
+# The point of this block is a fact measured on a real key: `/models` lists IDs the
+# key cannot call. `gemini-2.5-flash` was in the list while answering
+# `404 ... no longer available to new users`. So the list is used as *candidates to
+# try*, ranked, never as an answer about what works -- only a 200 proves that.
+# --------------------------------------------------------------------------- #
+
+#: ``(\d+(\.\d+)?)`` inside a model ID: ``gemini-3.8-flash`` -> 3.8, ``gemini-3-flash``
+#: -> 3.0, ``gemini-flash-latest`` -> 0.0 (an alias is ranked by being an alias).
+_VERSION_RE = re.compile(r"(\d+)(?:\.(\d+))?")
+
+
+def model_family(name: str) -> str:
+    """``flash-lite``, ``flash``, ``pro``, or ``""`` for a family this build does not know."""
+    lowered = str(name or "").lower()
+    if "flash-lite" in lowered:
+        return "flash-lite"
+    if "flash" in lowered:
+        return "flash"
+    if "pro" in lowered:
+        return "pro"
+    return ""
+
+
+def is_text_model(name: str) -> bool:
+    """Can this client ask this ID for teaching text?
+
+    ``/models`` mixes products: there are speech models (``*-tts``), music
+    (``lyria``), image models (``*-image``, ``nano-banana``), embedding models, and
+    separate surfaces (``deep-research``, ``antigravity``). Asking any of them for a
+    paragraph of teaching is a request that cannot succeed, so they are never offered
+    as a replacement for a retired ID.
+    """
+    lowered = str(name or "").lower()
+    return not any(marker in lowered for marker in NON_TEXT_MODEL_MARKERS)
+
+
+def _model_version(name: str) -> float:
+    match = _VERSION_RE.search(str(name or ""))
+    if not match:
+        return 0.0
+    return float(f"{match.group(1)}.{match.group(2) or 0}")
+
+
+def rank_models(names: Sequence[str], tier: str = "standard") -> list[str]:
+    """Text-capable models, best for ``tier`` first.
+
+    Four keys, in descending weight:
+
+    1. the family this class of work wants (:data:`adapt.config.TIER_MODEL_FAMILIES`);
+    2. a rolling alias over a versioned ID -- an alias tracks what the provider serves
+       *now*, which is the property that made it the default in the first place;
+    3. a stable release over a ``-preview``;
+    4. the newest version, then the name, so the order is a fact about the list rather
+       than about whatever order the provider happened to return it in.
+    """
+    order = TIER_MODEL_FAMILIES.get(str(tier), TIER_MODEL_FAMILIES["standard"])
+
+    def key(name: str) -> tuple[int, int, int, float, str]:
+        lowered = str(name).lower()
+        family = model_family(lowered)
+        return (
+            order.index(family) if family in order else len(order),
+            0 if lowered.endswith(MODEL_ALIAS_SUFFIX) else 1,
+            1 if MODEL_PREVIEW_SUFFIX in lowered else 0,
+            -_model_version(lowered),
+            lowered,
+        )
+
+    return sorted((str(n) for n in names if str(n).strip() and is_text_model(n)), key=key)
+
+
 class GeminiLLM:
     """Async wrapper over ``models/{model}:generateContent``."""
 
@@ -375,6 +472,23 @@ class GeminiLLM:
         #: Model IDs that returned 404 in this process. A deployment whose configured
         #: model was retired should not pay a failed round trip on every call.
         self._unavailable_models: set[str] = set()
+        #: Dead ID -> the model that answered for it. Stronger than the configured chain:
+        #: it is a model this key has already been answered by today.
+        self._replacements: dict[str, str] = {}
+        #: The filtered model list from one discovery, or None until discovery runs.
+        self._discovered: list[str] | None = None
+        #: The raw ``/models`` rows behind it, so `list_models` and discovery share one
+        #: request instead of racing each other.
+        self._model_rows_cache: list[dict[str, Any]] | None = None
+        #: Discovery is attempted at most once: a key whose list cannot be read must not
+        #: pay a second failed request on every call that follows.
+        self._discovery_failed = False
+        #: Why the last discovery attempt failed, for the operator's console. Kept apart
+        #: from ``last_error`` so a discovery failure cannot overwrite the 404 it was
+        #: trying to repair -- the 404 is the message the operator has to act on.
+        self.discovery_error: str | None = None
+        self._discovery_lock: asyncio.Lock | None = None
+        self._discovery_loop: Any = None
         self.stats: dict[str, int] = {
             "ok": 0,
             "quota": 0,
@@ -419,20 +533,35 @@ class GeminiLLM:
         """What this call would do, without making it. Used by tests, docs and the CLI."""
         return routing.plan(purpose, self.settings, role=role, **kw)
 
-    def _model_chain(self, model: str, fallback_model: str = "") -> list[str]:
+    def _model_chain(
+        self, model: str, fallback_model: str = "", *, extra: Sequence[str] = ()
+    ) -> list[str]:
         """Models to try, in order, when ``model`` answers 404.
 
-        The operator's explicit ``ADAPT_GEMINI_MODEL_FALLBACK`` comes first, then the
-        other configured classes (standard before light before deep). Without that
-        second part, one retired tier ID -- a provider rename, a model that is gated for
-        a new key -- would take down every call that routes through that class, which is
-        exactly what a fresh deployment must not do. IDs that already failed in this
-        process are never retried.
+        Three sources, in this order:
+
+        1. the operator's explicit ``ADAPT_GEMINI_MODEL_FALLBACK`` -- deliberate
+           configuration outranks anything this build inferred;
+        2. a model this process has already been answered by, remembered per dead ID;
+        3. any IDs discovered from the key's own ``/models`` list (``extra``) --
+           ranked ahead of the other classes, because by the time discovery runs the
+           configured classes have already failed once or had nothing to offer;
+        4. the other configured classes (standard before light before deep).
+
+        Without 2, 3 and 4, one retired tier ID -- a provider rename, a model gated for
+        a new key -- would take down every call that routes through that class, and a
+        deployment that pins all three classes (or pins a role) would have nothing left
+        to try at all. IDs that already failed in this process are never retried.
         """
         class_models = [
             routing.model_for_tier(tier, self.settings) for tier in ("standard", "light", "deep")
         ]
-        candidates = [fallback_model, *class_models]
+        candidates: list[str] = [
+            fallback_model,
+            self._replacements.get(model, ""),
+            *extra,
+            *class_models,
+        ]
         seen: set[str] = set()
         out: list[str] = []
         for raw in candidates:
@@ -443,6 +572,134 @@ class GeminiLLM:
             out.append(name)
         return out
 
+    # -- model discovery -------------------------------------------------- #
+
+    def _discovery_lock_for(self, loop: Any) -> asyncio.Lock:
+        """The single-flight lock, rebuilt if the running loop changed.
+
+        Lazily created and loop-keyed so one client can serve several event loops (a
+        test suite, a reload) instead of raising "is bound to a different event loop"
+        on the first 404 after a restart.
+        """
+        if self._discovery_lock is None or self._discovery_loop is not loop:
+            self._discovery_lock = asyncio.Lock()
+            self._discovery_loop = loop
+        return self._discovery_lock
+
+    async def _fetch_models(self) -> list[dict[str, Any]] | None:
+        """Raw rows from ``/models``, or ``None`` when the list could not be read.
+
+        ``None`` is not an empty list and the difference matters: an empty list says
+        "the list was read and has nothing in it", ``None`` says "ask again and you
+        will fail again". Discovery remembers the second so it is only paid once.
+        """
+        if not self.configured:
+            self.discovery_error = "no ADAPT_GEMINI_API_KEY"
+            return None
+        url = f"{self.settings.gemini_base_url.rstrip('/')}/models?pageSize=200"
+        headers = {"x-goog-api-key": self.settings.gemini_api_key or ""}
+        try:
+            client = await self._http()
+            resp = await client.get(url, headers=headers)
+        except httpx.HTTPError as exc:
+            self.discovery_error = f"{type(exc).__name__}: {exc}"[:200]
+            log.info("model discovery failed (%s); no replacement to offer", type(exc).__name__)
+            return None
+        if resp.status_code != 200:
+            self.discovery_error = f"{resp.status_code}: {_err_text(resp)}"[:240]
+            log.info("model discovery answered %s; no replacement to offer", resp.status_code)
+            return None
+        try:
+            data = resp.json()
+        except ValueError:
+            self.discovery_error = "the model list was not JSON"
+            return None
+        rows = data.get("models") if isinstance(data, dict) else None
+        return [row for row in rows or [] if isinstance(row, dict)]
+
+    async def _model_rows(self) -> list[dict[str, Any]] | None:
+        """The raw ``/models`` rows, read at most once per process.
+
+        Lazy (only when something needs it), single-flight (one coroutine asks; the
+        rest wait for its answer) and remembered -- including the failure, so a key
+        whose list cannot be read is not asked again on every later call.
+        """
+        if self._model_rows_cache is not None:
+            return self._model_rows_cache
+        if self._discovery_failed:
+            return None
+        async with self._discovery_lock_for(asyncio.get_running_loop()):
+            if self._model_rows_cache is not None:
+                return self._model_rows_cache
+            if self._discovery_failed:
+                return None
+            try:
+                rows = await self._fetch_models()
+            except Exception as exc:
+                # Discovery is an optimisation on top of a failure. Nothing it can raise
+                # -- not a transport quirk, not a shape the parser did not expect -- is
+                # allowed to reach a learner: the call takes its local fallback.
+                log.warning("model discovery raised %s; no replacement", type(exc).__name__)
+                self.discovery_error = f"{type(exc).__name__}: {exc}"[:200]
+                rows = None
+            if rows is None:
+                self._discovery_failed = True
+                return None
+            self._model_rows_cache = rows
+            return rows
+
+    async def _text_models(self) -> list[str]:
+        """The provider's generateContent-capable IDs, ranked nowhere yet.
+
+        Uses the same client, headers and settings as every other request: no SDK, so
+        there is no second way to reach the provider that a test cannot fake.
+        """
+        if self._discovered is not None:
+            return self._discovered
+        rows = await self._model_rows()
+        if not rows:
+            return []
+        names: list[str] = []
+        for row in rows:
+            # A key can see embedding/TTS/image models it cannot use here. When the
+            # provider states the supported methods, keep only IDs that can answer a
+            # generateContent call; when it does not, keep the row rather than hide
+            # a usable model.
+            methods = row.get("supportedGenerationMethods")
+            if isinstance(methods, list) and "generateContent" not in methods:
+                continue
+            name = str(row.get("name") or "").strip().removeprefix("models/")
+            if name:
+                names.append(name)
+        self._discovered = names
+        log.info("model discovery offered %s generateContent-capable IDs", len(names))
+        return names
+
+    async def candidate_models(self, tier: str = "standard") -> list[str]:
+        """Models this key could call for ``tier``, best first, or ``[]`` if unknown.
+
+        Public because the operator's console prints it: after a retired ID, ``adapt
+        config test`` names what this key *can* use. It costs nothing once discovery
+        has run (the answer is cached) and nothing at all when discovery has not -- it
+        never turns a successful probe into two requests.
+        """
+        names = await self._text_models()
+        if not names:
+            return []
+        return rank_models(names, tier)
+
+    async def known_candidates(self, tier: str = "standard") -> list[str]:
+        """Models this key could call for ``tier``, **if that is already known**.
+
+        Returns ``[]`` rather than asking the provider. That is the whole point: this
+        exists so a console command that is already reporting a failure cannot add a
+        request of its own -- and it costs nothing when it is useful, because a 404
+        that reached the console has already run discovery and cached its answer.
+        """
+        if self._discovered is None:
+            return []
+        return rank_models(self._discovered, tier)
+
     def available(self) -> dict[str, object]:
         return {
             "provider": "gemini",
@@ -452,6 +709,9 @@ class GeminiLLM:
                 str(getattr(self.settings, "gemini_model_fallback", "") or "") or None
             ),
             "unavailable_models": sorted(self._unavailable_models),
+            "replacements": dict(sorted(self._replacements.items())),
+            "discovered_models": (0 if self._discovered is None else len(self._discovered)),
+            "discovery_error": self.discovery_error,
             "headroom": self.guard.headroom(),
             "last_error": self.last_error,
             "stats": dict(self.stats),
@@ -463,7 +723,11 @@ class GeminiLLM:
         }
 
     async def list_models(self) -> list[str]:
-        """The model IDs this key can call, for the operator's console.
+        """The model IDs this key can **see**, for the operator's console.
+
+        Note the verb: this is what ``/models`` lists, and a listed ID is not a promise
+        that it answers -- retired IDs stay on the list while returning 404, which is
+        why :meth:`candidate_models` exists and why ``adapt config models`` says so.
 
         A diagnostic, not part of the learner path: it makes no learner data part of the
         request and returns only the provider's own names. An unavailable list is an empty
@@ -471,35 +735,22 @@ class GeminiLLM:
         """
         if not self.configured:
             return []
-        url = f"{self.settings.gemini_base_url.rstrip('/')}/models?pageSize=200"
-        headers = {"x-goog-api-key": self.settings.gemini_api_key or ""}
-        try:
-            client = await self._http()
-            resp = await client.get(url, headers=headers)
-        except httpx.HTTPError as exc:
-            self.last_error = f"{type(exc).__name__}: {exc}"[:200]
+        rows = await self._model_rows()
+        if not rows:
+            self.last_error = self.discovery_error
             return []
-        if resp.status_code != 200:
-            self.last_error = f"{resp.status_code}: {_err_text(resp)}"[:240]
-            return []
-        try:
-            data = resp.json()
-        except ValueError:
-            return []
-        rows = data.get("models") if isinstance(data, dict) else None
         out: list[str] = []
-        for row in rows or []:
-            if not isinstance(row, dict):
-                continue
-            # A key can see embedding/TTS models it cannot use here. When the provider
-            # states the supported methods, keep only IDs that can answer a generateContent
-            # call; when it does not, keep the row rather than hide a usable model.
+        for row in rows:
+            # A key can see embedding/TTS/image models it cannot use here. When the
+            # provider states the supported methods, keep only IDs that can answer a
+            # generateContent call; when it does not, keep the row rather than hide a
+            # usable model.
             methods = row.get("supportedGenerationMethods")
             if isinstance(methods, list) and "generateContent" not in methods:
                 continue
-            name = str(row.get("name") or "").strip()
+            name = str(row.get("name") or "").strip().removeprefix("models/")
             if name:
-                out.append(name.removeprefix("models/"))
+                out.append(name)
         return out
 
     # -- main entry ----------------------------------------------------- #
@@ -533,6 +784,11 @@ class GeminiLLM:
         and empty candidate lists return ``ok=False`` with ``status="blocked"`` or
         ``"empty"`` so the caller takes its local fallback. A structured call whose text
         is not the requested JSON is ``status="parse_error"`` for the same reason.
+
+        A 404 -- the configured model ID retired or not enabled for this key -- is not
+        the end of the call either: up to :data:`_MAX_MODEL_SWITCHES` other models are
+        tried, the second of them discovered from the key's own ``/models`` list, and
+        ``result.model`` names whichever one answered.
         """
         started = time.monotonic()
         plan = self.plan(
@@ -630,7 +886,11 @@ class GeminiLLM:
             "x-goog-api-key": self.settings.gemini_api_key or "",
             "content-type": "application/json",
         }
-        using_fallback = False
+        switches = 0
+        # IDs that answered 404 during this one call. Whatever ends up answering is
+        # remembered against each of them, so the next call starts from a model this key
+        # was already answered by.
+        dead_here: list[str] = []
         attempts = 0
         last: LLMResult | None = None
         pass_no = 0
@@ -644,8 +904,9 @@ class GeminiLLM:
             return result
 
         # Two passes at most. The second exists only for a cache the provider turns out
-        # not to support, and it re-sends the full prompt. A 404 on a configured model is
-        # retried once on ``gemini_model_fallback`` without consuming a cache pass.
+        # not to support, and it re-sends the full prompt. A 404 on a configured model
+        # retries on up to two other models -- a configured replacement, then one
+        # discovered from the key's own model list -- without consuming a cache pass.
         while pass_no < 2:
             if pass_no == 1:
                 # The cached head was refused: forget the entry we thought we had, remember
@@ -761,22 +1022,38 @@ class GeminiLLM:
                             tier=plan.tier,
                         )
                     )
-                if resp.status_code == 404 and not using_fallback:
+                if resp.status_code == 404 and switches < _MAX_MODEL_SWITCHES:
                     # The configured model no longer exists (or is not enabled for this
-                    # key). One retry on the next viable model -- the operator's explicit
-                    # fallback, else another configured class -- and everything else about
-                    # the call is unchanged. The cache entry is model-specific, so it
-                    # cannot travel with the new model.
+                    # key). Retry on the next viable model, up to two of them, and leave
+                    # everything else about the call unchanged. The cache entry is
+                    # model-specific, so it cannot travel with the new model.
+                    #
+                    # Where the next model comes from is the whole of the recovery:
+                    # first the operator's explicit fallback and the other configured
+                    # classes, and -- once configuration has nothing left -- the key's
+                    # own ``/models`` list, ranked for this call's tier. That last part
+                    # is what makes a *fresh* install work: the provider retires IDs on
+                    # its own schedule (and keeps them on the list afterwards), so a
+                    # deployment that only knows its three pinned IDs has nowhere to go
+                    # when they are gone.
+                    dead_here.append(plan.model)
                     self._unavailable_models.add(plan.model)
-                    replacements = self._model_chain(plan.model, fallback_model)
+                    extra: list[str] = []
+                    configured = self._model_chain(plan.model, fallback_model)
+                    if switches or not configured:
+                        # Configuration has been tried (or has nothing to offer): ask
+                        # the provider what this key can see. One request, once.
+                        extra = await self.candidate_models(str(plan.tier or "standard"))
+                    replacements = self._model_chain(plan.model, fallback_model, extra=extra)
                     if replacements:
                         self.guard.release(tokens=estimated)
-                        self.last_error = f"404 {_err_text(resp)}"[:200]
+                        self.last_error = f"404 {_err_text(resp)}"[:600]
                         log.info(
-                            "configured model was not available; retrying once on %s",
+                            "model %s was not available; retrying on %s",
+                            plan.model,
                             replacements[0],
                         )
-                        using_fallback = True
+                        switches += 1
                         plan = replace(plan, model=replacements[0])
                         cache_entry = None
                         cache_key = ""  # the entry belonged to the model that was not found
@@ -816,7 +1093,7 @@ class GeminiLLM:
                     break
                 if resp.status_code != 200:
                     self.guard.release(tokens=estimated)
-                    self.last_error = f"{resp.status_code}: {_err_text(resp)}"[:240]
+                    self.last_error = f"{resp.status_code}: {_err_text(resp)}"[:600]
                     return failed(
                         LLMResult(
                             ok=False,
@@ -894,6 +1171,12 @@ class GeminiLLM:
                             attempts=attempts,
                             error="the model's reply was not the JSON object the schema required",
                         )
+                if switches and dead_here:
+                    # Remember what answered, per dead ID. The next call on this process
+                    # starts from a model this key was already answered by, instead of
+                    # paying the same 404 again.
+                    for dead in dead_here:
+                        self._replacements[dead] = plan.model
                 self.stats["ok"] += 1
                 return LLMResult(
                     ok=True,
@@ -1108,12 +1391,19 @@ def _red(text: str) -> tuple[tuple[str, int], list[str]]:
 
 
 def _err_text(resp: httpx.Response) -> str:
+    """The provider's own words, whole.
+
+    The limit is generous because the sentence is the actionable part: a retired model
+    ID is reported as one long message that ends with the ID the provider wants you to
+    use instead, and truncating it at 200 characters cut that recommendation in half
+    mid-word. The console clips it again for display; nothing else reads it.
+    """
     try:
         j = resp.json()
         err = j.get("error") or {}
-        return str(err.get("message") or j)[:200]
+        return str(err.get("message") or j)[:600]
     except Exception:
-        return resp.text[:200]
+        return resp.text[:600]
 
 
 def _safety_settings(settings: Any) -> list[dict[str, str]]:

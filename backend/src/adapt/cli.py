@@ -23,6 +23,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,7 +32,7 @@ from typing import Any
 import typer
 from sqlalchemy import select
 
-from .config import get_settings
+from .config import MODEL_ALIAS_SUFFIX, get_settings
 
 app = typer.Typer(
     name="adapt",
@@ -1200,15 +1201,23 @@ _CONNECTION_FAILURES = {
 }
 
 
-def _without_secret(text: str, settings: Any) -> str:
-    """One line, bounded, with the configured key removed if it somehow appears."""
+def _without_secret(text: str, settings: Any, limit: int = 600) -> str:
+    """One line, bounded, with the configured key removed if it somehow appears.
+
+    The limit is generous on purpose. A retired model ID is reported by the provider in
+    one long sentence that names the model to use instead, and clipping it at 200
+    characters cut that recommendation off mid-word -- the one part of the message an
+    operator can act on.
+    """
     secret = str(getattr(settings, "gemini_api_key", "") or "")
     if secret:
         text = text.replace(secret, "[key]")
-    return " ".join(str(text or "").split())[:200]
+    return " ".join(str(text or "").split())[:limit]
 
 
-def _connection_failure_reason(result: Any, settings: Any) -> tuple[str, str]:
+def _connection_failure_reason(
+    result: Any, settings: Any, *, candidates: Sequence[str] = ()
+) -> tuple[str, str]:
     """``(plain-language cause, provider's own words)`` for a failed probe.
 
     The old command printed one generic sentence for a 404, a timeout, a rejected key and
@@ -1221,10 +1230,20 @@ def _connection_failure_reason(result: Any, settings: Any) -> tuple[str, str]:
     status = str(getattr(result, "status", "") or "")
     lowered = error.lower()
     if error.startswith("404"):
-        hint = (
-            "the configured model ID does not exist for this key; "
-            "`adapt config models` lists the IDs it can call"
-        )
+        hint = "the configured model ID does not exist for this key"
+        if candidates:
+            hint += (
+                ". The provider retires IDs on its own schedule and leaves them on the "
+                "model list, so that list is not a promise: the IDs below are the ones "
+                "this key can actually call"
+            )
+        else:
+            hint += (
+                ", and no replacement could be found: either this key reaches no model "
+                "list, or nothing on the one it reaches can answer with text. Check the "
+                "key's model access, or name an ID explicitly with "
+                "ADAPT_GEMINI_MODEL_STANDARD"
+            )
     elif error.startswith(("auth 401", "auth 403")):
         hint = (
             "the key was rejected. Check `adapt config status`: an exported "
@@ -1257,9 +1276,12 @@ def _connection_failure_reason(result: Any, settings: Any) -> tuple[str, str]:
 def config_test() -> None:
     """One minimal connection check, with the reason printed when it fails.
 
-    If the configured model ID is unknown to the provider, the client retries once on
-    another configured class before this reports a failure (see ``GeminiLLM._model_chain``),
-    so a retired ID is distinguishable from a bad key or a blocked network.
+    If the configured model ID is unknown to the provider, the client retries on another
+    configured class and then on a model discovered from the key's own ``/models`` list
+    (see ``GeminiLLM._model_chain``), so a retired ID recovers without a configuration
+    change and is distinguishable from a bad key or a blocked network. On success this
+    names the model that answered -- which is the difference between "it works" and
+    "it works, but only because your configured ID was gone".
     """
     from .config_secrets import ConfigSecretError, settings_with_managed_values
     from .security.secrecy import install_log_redaction
@@ -1280,14 +1302,16 @@ def config_test() -> None:
     install_log_redaction(st)
     from .ai.llm import GeminiLLM
 
-    # The command promises one minimal request: no retries, delays, learner text, or
-    # configured budget figures are exposed by its output.
+    # No retry/backoff loop and no pacing delay, and the probe carries no learner text:
+    # the only extra requests this can make are the two replacements a retired ID is
+    # allowed (one configured, one discovered) plus that one discovery request. None of
+    # them is a retry of a call that already answered.
     st = st.model_copy(update={"gemini_max_retries": 0, "gemini_min_interval_ms": 0})
     llm = GeminiLLM(st)
 
     async def one_minimal_request():
         try:
-            return await llm.complete(
+            result = await llm.complete(
                 system="Reply with the single word OK.",
                 user="Connection check.",
                 purpose="console_connection_test",
@@ -1295,28 +1319,96 @@ def config_test() -> None:
                 temperature=0.0,
                 max_output_tokens=8,
             )
+            # Only after a 404, and only from what the client already learned: a
+            # command that is printing a failure must not add a request of its own.
+            # Any 404 that reaches here has already run discovery (that is the only way
+            # the client runs out of models), so the answer is cached and this is free.
+            # The tier is the class the probe was planned under (see ai/routing.py),
+            # so the IDs listed are ranked the way the client ranked them.
+            candidates = (
+                await llm.known_candidates(result.tier or "standard")
+                if str(getattr(result, "error", "") or "").startswith("404")
+                else []
+            )
+            return result, candidates
         finally:
             await llm.aclose()
 
     try:
-        result = _run(one_minimal_request())
+        result, candidates = _run(one_minimal_request())
     except Exception as exc:
         detail = _without_secret(f"{type(exc).__name__}: {exc}", st)
         typer.echo(f"Connection test failed: the client raised an error. {detail}".strip())
         raise typer.Exit(code=1) from None
     if result.ok:
-        typer.echo("Connection test passed.")
+        # Naming the model is the point: a deployment that only passes because its
+        # configured ID was replaced has a configuration to fix.
+        typer.echo(
+            f"Connection test passed ({result.model})."
+            if result.model
+            else "Connection test passed."
+        )
     else:
-        hint, detail = _connection_failure_reason(result, st)
+        hint, detail = _connection_failure_reason(result, st, candidates=candidates)
         typer.echo(f"Connection test failed: {hint}.")
         if detail:
             typer.echo(f"  the provider said: {detail}")
+        if candidates:
+            shown = ", ".join(candidates[:6])
+            typer.echo(f"  this key can call: {shown}")
+            if len(candidates) > 6:
+                typer.echo(f"  ... and {len(candidates) - 6} more; see `adapt config models`")
         raise typer.Exit(code=1)
+
+
+def _group_models(names: Sequence[str], tier: str = "standard") -> list[tuple[str, list[str]]]:
+    """``[(heading, ids)]``, with the IDs worth configuring first.
+
+    Three groups, because the provider's list mixes three things: rolling aliases that
+    always point at something current, ordinary text models, and models this build can
+    never ask for text (speech, music, images, embeddings, other products).
+    """
+    from .ai.llm import is_text_model, rank_models
+
+    aliases = [n for n in names if n.lower().endswith(MODEL_ALIAS_SUFFIX)]
+    taken = set(aliases)
+    text = [n for n in names if n not in taken and is_text_model(n)]
+    other = [n for n in names if n not in taken and not is_text_model(n)]
+    groups: list[tuple[str, list[str]]] = []
+    if aliases:
+        groups.append(
+            (
+                "rolling aliases -- these track whatever the provider serves now, "
+                "which is why they are the defaults",
+                aliases,
+            )
+        )
+    if text:
+        groups.append(
+            (
+                "text models -- in this build's preference order "
+                "(newest first inside each family)",
+                rank_models(text, tier),
+            )
+        )
+    if other:
+        groups.append(
+            (
+                "listed but not usable for text here (speech, image, other products)",
+                other,
+            )
+        )
+    return groups
 
 
 @config_app.command("models")
 def config_models() -> None:
-    """List the model IDs the configured key can call (operator diagnostic)."""
+    """List the model IDs the configured key can see (operator diagnostic).
+
+    "See" and not "call": the provider retires versioned IDs on its own schedule and
+    leaves them on this list afterwards, so an ID printed here can still answer 404.
+    Prefer a rolling alias; `adapt config test` proves which one actually answers.
+    """
     from .ai.llm import GeminiLLM
     from .config_secrets import ConfigSecretError, settings_with_managed_values
 
@@ -1346,8 +1438,18 @@ def config_models() -> None:
     if not models:
         typer.echo("The model list could not be read. Check connectivity and the console settings.")
         raise typer.Exit(code=1)
-    for name in models:
-        typer.echo(name)
+    typer.echo(
+        f"{len(models)} ID(s) this key can see. A listed ID is not a promise that it "
+        "answers: retired IDs stay on this list while returning 404, so confirm with "
+        "`adapt config test`."
+    )
+    # Ranked for the *standard* class: the operator is choosing a default, not
+    # reproducing the probe, and standard is where the product's own wording is made.
+    for heading, group in _group_models(models, "standard"):
+        typer.echo("")
+        typer.echo(f"{heading}:")
+        for name in group:
+            typer.echo(f"  {name}")
 
 
 @config_app.command("rotate")
