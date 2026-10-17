@@ -83,7 +83,7 @@ export const STEPS: Record<
   subject: {
     n: 4,
     title: "Choose a subject",
-    href: "/subject",
+    href: "/journey?step=subject",
     action: "choose a subject",
     what: "Type what you are working on. The app says what it can and cannot tell from it before anything is chosen.",
     skipNote: "no subject means no subject round; the ladder stays unanswered rather than guessed",
@@ -91,7 +91,7 @@ export const STEPS: Record<
   subject_round: {
     n: 5,
     title: "Subject round",
-    href: "/subject",
+    href: "/journey?step=subject",
     action: "start the round",
     what: "A short round on the skills your subject leans on, with the reason each test was chosen.",
     skipNote: "skill estimates stay “not measured”; practice still adapts from what you answer here",

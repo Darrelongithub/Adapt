@@ -15,7 +15,7 @@
 import type { Frame } from "@/lib/engine/types";
 
 const CELL =
-  "min-w-11 rounded-[2px] border px-1.5 py-1 text-center font-mono text-[13px] leading-tight transition-colors";
+  "min-w-11 rounded-[2px] border px-1.5 py-1 text-center font-mono t-small leading-tight transition-colors";
 const LINE = "border-[var(--line)]";
 const MUTED = "text-[var(--muted)]";
 
@@ -56,7 +56,7 @@ function Cells({
             >
               {String(v)}
             </span>
-            <span className={`${MUTED} text-[10px]`} aria-hidden="true">
+            <span className={`${MUTED} t-small`} aria-hidden="true">
               {m.label ?? i}
             </span>
           </div>
@@ -69,7 +69,7 @@ function Cells({
 function Reg({ name, value, lit }: { name: string; value: unknown; lit?: boolean }) {
   return (
     <div
-      className={`rounded-[2px] border px-2 py-1 font-mono text-[12px] ${lit ? "border-[var(--accent)] bg-[var(--accent)]/10" : LINE}`}
+      className={`rounded-[2px] border px-2 py-1 font-mono t-small ${lit ? "border-[var(--accent)] bg-[var(--accent)]/10" : LINE}`}
     >
       <span className={MUTED}>{name}</span> <span className="font-semibold">{value === null || value === undefined ? "—" : String(value)}</span>
     </div>
@@ -78,8 +78,8 @@ function Reg({ name, value, lit }: { name: string; value: unknown; lit?: boolean
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px]">
-      <span className={`${MUTED} w-28 shrink-0 text-[11px] uppercase tracking-wide`}>{label}</span>
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 t-small">
+      <span className={`${MUTED} w-28 shrink-0 t-small uppercase tracking-wide`}>{label}</span>
       <span className="min-w-0">{children}</span>
     </div>
   );
@@ -108,7 +108,7 @@ export function BinarySearchStage({ frame }: { frame: Frame }) {
         })}
       />
       <Row label="range still live">
-        <span className="font-mono text-[13px]">
+        <span className="font-mono t-small">
           lo {lo} … hi {hi}
         </span>
         <span className={`${MUTED} ml-2`}>
@@ -116,7 +116,7 @@ export function BinarySearchStage({ frame }: { frame: Frame }) {
         </span>
       </Row>
       <Row label="target and probes">
-        <span className="font-mono text-[13px]">{st.target === undefined ? "—" : String(st.target)}</span>
+        <span className="font-mono t-small">{st.target === undefined ? "—" : String(st.target)}</span>
         <span className={`${MUTED} ml-2`}>
           compared {compared.length ? compared.map((i) => `arr[${i}]`).join(", ") : "nothing yet"}
         </span>
@@ -139,9 +139,9 @@ export function SortingStage({ frame }: { frame: Frame }) {
   return (
     <div className="flex flex-col gap-3">
       {Number.isFinite(held ?? NaN) && held !== null ? (
-        <div className="text-[13px]">
+        <div className="t-small">
           <span className={MUTED}>holding</span> <span className="font-mono font-semibold">{held}</span>{" "}
-          <span className={`${MUTED} text-[12px]`}>— walking it left until it fits</span>
+          <span className={`${MUTED} t-small`}>— walking it left until it fits</span>
         </div>
       ) : null}
       <Cells
@@ -154,7 +154,7 @@ export function SortingStage({ frame }: { frame: Frame }) {
         })}
       />
       <Row label="sorted prefix">
-        <span className="font-mono text-[13px]">
+        <span className="font-mono t-small">
           0 … {placed < 0 ? "—" : placed}
         </span>
         <span className={`${MUTED} ml-2`}>
@@ -180,12 +180,12 @@ export function LogicGatesStage({ frame }: { frame: Frame }) {
       <div className="flex flex-wrap items-center gap-2">
         <Reg name="A" value={bit(st.a)} lit={inputsLit} />
         <Reg name="B" value={bit(st.b)} lit={inputsLit} />
-        <span className={`${MUTED} rounded-[2px] border border-dashed px-2 py-1 font-mono text-[12px] ${LINE}`}>
+        <span className={`${MUTED} rounded-[2px] border border-dashed px-2 py-1 font-mono t-small ${LINE}`}>
           {st.gate === undefined ? "gate" : String(st.gate)}
         </span>
         <Reg name="out" value={bit(st.out)} lit={outLit} />
       </div>
-      <table className="w-full max-w-sm border-collapse text-[13px]">
+      <table className="w-full max-w-sm border-collapse t-small">
         <thead>
           <tr className={`${MUTED} text-left`}>
             <th className="border-b py-1 font-medium">A</th>
@@ -231,7 +231,7 @@ export function CpuStage({ frame }: { frame: Frame }) {
           {cells.map((c, k) => (
             <span
               key={k}
-              className={`font-mono text-[12px] rounded-[2px] px-1 ${
+              className={`font-mono t-small rounded-[2px] px-1 ${
                 k < dataAt ? "bg-[var(--panel)]" : "bg-[var(--bg)]"
               } ${has(hi, "cells") && k === num(st.mar, -1) ? "outline outline-2 outline-[var(--accent)]" : ""} border ${LINE}`}
               title={k < dataAt ? "instruction" : "data"}
@@ -241,7 +241,7 @@ export function CpuStage({ frame }: { frame: Frame }) {
           ))}
         </div>
       </Row>
-      <div className={`${MUTED} text-[11px]`}>
+      <div className={`${MUTED} t-small`}>
         {cells.length ? `cells 0–${dataAt - 1} hold the program; ${dataAt}–${cells.length - 1} hold the data` : ""}
       </div>
     </div>
@@ -262,21 +262,21 @@ export function UnknownStage({ frame, kind }: { frame: Frame; kind: string }) {
   const entries = Object.entries(frame.state ?? {});
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[13px] text-[var(--warn)]">
+      <p className="t-small text-[var(--warn)]">
         There is no picture for a scene of kind <span className="font-mono">{kind}</span>. The frames below are the
         real ones — this is a renderer gap, not a broken lesson.
       </p>
       {entries.length ? (
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-1 t-small sm:grid-cols-2">
           {entries.map(([k, v]) => (
             <div key={k} className="flex items-baseline gap-2 border-b border-dashed py-0.5">
-              <dt className={`${MUTED} w-28 shrink-0 font-mono text-[11px]`}>{k}</dt>
-              <dd className="min-w-0 font-mono text-[12px] break-words">{render(v)}</dd>
+              <dt className={`${MUTED} w-28 shrink-0 font-mono t-small`}>{k}</dt>
+              <dd className="min-w-0 font-mono t-small break-words">{render(v)}</dd>
             </div>
           ))}
         </dl>
       ) : (
-        <p className={`${MUTED} text-[13px]`}>this frame carries no state</p>
+        <p className={`${MUTED} t-small`}>this frame carries no state</p>
       )}
     </div>
   );

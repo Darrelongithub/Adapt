@@ -5,19 +5,13 @@
  * are metric-similar stacks so even a cold cache renders in the right shape immediately. */
 @import "tailwindcss";
 
+/* Colours, type sizes, radii and spacing come from ../styles/tokens.css (loaded
+ * first in layout.tsx). This file only maps a few legacy aliases so older rules
+ * keep working with the new palette. Never define a new colour here. */
 :root {
-  --bg: oklch(94% 0.02 85);
-  --panel: oklch(97% 0.015 85);
-  --panel-2: oklch(90% 0.02 82);
-  --line: oklch(72% 0.02 75);
-  --ink: oklch(22% 0.01 60);
-  --muted: oklch(40% 0.015 60);
-  --accent: oklch(47% 0.16 258);
-  --accent-dim: oklch(90% 0.04 258);
-  --good: oklch(50% 0.12 150);
-  --warn: oklch(55% 0.15 70);
-  --bad: oklch(50% 0.18 25);
-  --think: oklch(55% 0.08 280);
+  --panel-2: color-mix(in srgb, var(--tint-sand) 55%, var(--panel));
+  --accent-dim: var(--accent-soft);
+  --art-ink: var(--accent);
 }
 
 @theme inline {
@@ -930,60 +924,26 @@ kbd {
 }
 
 /* ==========================================================================
-   THE BUTTON CONTRACT (brief 2.2)
-   Every control that submits, decides, rates, selects or advances state uses
-   one of the three classes below. The only thing allowed to look like plain
-   underlined text is a link to reference material (`.link-inline`), because it
-   navigates rather than doing something with a consequence.
-   .btn-ctl is the marker the coarse-pointer tap-target rules already keyed off;
-   it stays on every control so the 44px minimum keeps applying.
+   THE BUTTON CONTRACT (Round 6): the button look lives in styles/tokens.css
+   (.btn / .btn-primary / .btn-secondary / .btn-ghost / .btn-danger).
+   Primary = brand blue fill + white text. Secondary = white fill, blue border,
+   blue text. There are no black buttons and no uppercase mono button labels.
+   .btn-ctl is the marker the coarse-pointer tap-target rules key off.
    ========================================================================== */
 .btn-primary,
 .btn-secondary,
-.btn-ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.btn-ghost,
+.btn-danger {
   width: fit-content;
   text-align: left;
   cursor: pointer;
-  transition: all 0.15s;
 }
-.btn-primary {
-  background: var(--ink);
-  color: var(--bg);
-  border: 1.5px solid var(--ink);
-  padding: 13px 24px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.btn-primary:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent);
-  transform: translateY(-1px);
-  box-shadow: 0 3px 0 var(--line);
-}
-.btn-primary:disabled {
-  opacity: 0.35;
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-ghost:disabled,
+.btn-danger:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
-}
-.btn-secondary {
-  background: var(--panel);
-  color: var(--ink);
-  border: 1.5px solid var(--line);
-  padding: 11px 20px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.btn-secondary:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 /* Selected state. `aria-pressed` is what the decisions screen sets on the answer
    it recorded, `aria-checked` is what an option group sets, `aria-selected` is
@@ -991,53 +951,19 @@ kbd {
 .btn-secondary[aria-pressed="true"],
 .btn-secondary[aria-checked="true"],
 .btn-secondary[aria-selected="true"] {
-  background: var(--accent-dim);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--white);
 }
 .btn-secondary.danger[aria-pressed="true"] {
-  background: color-mix(in oklab, var(--bad) 10%, var(--panel));
+  background: color-mix(in oklab, var(--bad) 12%, var(--white));
   border-color: var(--bad);
   color: var(--bad);
 }
 .btn-secondary.good[aria-pressed="true"] {
-  background: color-mix(in oklab, var(--good) 10%, var(--panel));
+  background: color-mix(in oklab, var(--good) 12%, var(--white));
   border-color: var(--good);
   color: var(--good);
-}
-.btn-ghost {
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid transparent;
-  padding: 10px 14px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.btn-ghost:hover:not(:disabled) {
-  color: var(--ink);
-  border-color: var(--line);
-  background: var(--panel);
-}
-.btn-ghost:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-/* The one allowed plain-text link: it goes to reference material, it does not act. */
-.link-inline {
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  cursor: pointer;
 }
 
 /* ==========================================================================
@@ -1353,20 +1279,6 @@ kbd {
   border-radius: 6px;
   padding: 20px;
 }
-.stat-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted);
-  margin-bottom: 10px;
-}
-.stat-value {
-  font-family: var(--font-serif);
-  font-size: clamp(19px, 2.3vw, 28px);
-  font-weight: 600;
-  line-height: 1.15;
-}
 
 /* ==========================================================================
    Auth — the two-tab form behind the consent step
@@ -1398,8 +1310,8 @@ kbd {
   border-bottom-color: var(--accent);
 }
 
-/* Emphasis follows the same blue accent throughout the app. */
-strong, b, .font-bold, .font-semibold { color: var(--accent); }
+/* Emphasis is brand blue (see styles/tokens.css `.strong`). */
+strong, b, .font-semibold { color: var(--ink); font-weight: 650; }
 .access-screen {
   min-height: 100dvh;
   display: grid;
@@ -1425,11 +1337,6 @@ strong, b, .font-bold, .font-semibold { color: var(--accent); }
 }
 .access-step { font: 11px var(--font-mono); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
 .access-title { margin-top: 12px; font: 500 clamp(27px, 5vw, 38px)/1.15 var(--font-serif); color: var(--accent); }
-.dashboard-welcome { border-bottom: 1px solid var(--line); padding-bottom: 24px; }
-
-.home-greet { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
-.home-title { font-family: var(--font-serif); font-size: clamp(27px, 4vw, 42px); line-height: 1.15; max-width: 750px; }
-.stat-value { color: var(--accent); }
 
 /* Round 5 code-owned scene stage */
 .scene-stage { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 16px; max-width: 620px; margin: 0; }
@@ -1451,29 +1358,3 @@ strong, b, .font-bold, .font-semibold { color: var(--accent); }
 @media (max-width: 480px) { .scene-stage { padding:10px; } .scene-stage svg { min-height:160px; } .dev-animator-page { padding:20px 12px; } }
 .voice-switch { display:inline-flex; align-items:center; gap:5px; min-height:36px; padding:5px 9px; border:1px solid var(--line); border-radius:5px; background:var(--panel); color:var(--muted); cursor:pointer; font: .68rem var(--font-mono); }
 .voice-switch:hover, .voice-switch.on { color:var(--accent); border-color:var(--accent); background:var(--accent-dim); }
-/* Round 5 dashboard workspace */
-.dashboard-page { width:100%; max-width:none; padding:28px 0 64px; display:grid; gap:28px; }
-.dashboard-welcome { max-width:70ch; }
-.dashboard-copy { color:var(--muted); max-width:60ch; margin-top:10px; }
-.dashboard-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:24px; }
-.dashboard-stats .stat-card { min-height:148px; display:grid; align-content:space-between; gap:12px; }
-.stat-card svg { color:var(--accent); }
-.dashboard-page .stat-value { font:600 clamp(2rem,4vw,3.4rem)/1 var(--font-serif); color:var(--ink); }
-.dashboard-page .stat-label { font:.72rem var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
-.dashboard-columns { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(300px,1fr); gap:24px; align-items:start; }
-.dashboard-side { display:grid; gap:24px; }
-.dashboard-side .dashboard-number { font:600 2.5rem var(--font-serif); margin-bottom:4px; }
-.subject-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
-.subject-card { border:1px solid var(--line); border-radius:6px; background:var(--bg); padding:18px; display:grid; gap:12px; }
-.subject-card-heading { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font:.68rem var(--font-mono); text-transform:uppercase; letter-spacing:.06em; }
-.subject-family { display:flex; align-items:center; gap:6px; color:var(--accent); }
-.subject-family svg { width:18px; height:18px; }
-.subject-card h3 { font:500 1.35rem var(--font-serif); }
-.stage-label { text-align:right; }
-.subject-progress { height:8px; border-radius:99px; background:var(--panel-2); overflow:hidden; }
-.subject-progress span { display:block; height:100%; background:var(--accent); border-radius:inherit; }
-.progress-copy { color:var(--muted); font:.72rem var(--font-mono); }
-.empty-learning { display:grid; gap:16px; justify-items:start; padding:22px 0; }
-.dashboard-footnote { color:var(--muted); font:.72rem var(--font-mono); }
-@media (max-width:1100px) { .dashboard-columns { grid-template-columns:1fr; } .dashboard-side { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:760px) { .dashboard-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .dashboard-columns,.dashboard-side { grid-template-columns:1fr; } .dashboard-page { padding:20px 12px 48px; gap:20px; } }

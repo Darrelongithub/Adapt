@@ -111,7 +111,7 @@ export default function Onboarding() {
       <div className="grid gap-6 md:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-6">
           <div>
-            <div className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+            <div className="t-label">
               § Setup
             </div>
             <h1 className="mt-2 text-[clamp(24px,3.4vw,36px)] font-medium leading-tight" style={{ fontFamily: "var(--font-serif)" }}>

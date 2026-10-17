@@ -1,278 +1,348 @@
+/* ============================================================================
+   Shell (Round 6, Track A). Layout only — colours and type come from
+   styles/tokens.css. The frame is:
+     sidebar (sticky, full viewport height) | topbar + sheet + gutters + footer
+   The topo pattern sits ONLY in the empty gutters beside the sheet and in the
+   empty-state/hero corners that hold no words.
+   ========================================================================== */
+
 :root {
-  --art-ink: var(--accent);
+  --sidebar-w: 232px;
+  --topbar-h: 56px;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --art-ink: oklch(70% 0.13 258);
-  }
-}
-/* The sheet is a fluid 12-column workspace. Reading copy stays narrow inside cards; the
-   cards themselves use the available width instead of leaving a 650px island in a desert. */
-.page-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1280px) minmax(0, 1fr);
-  position: relative;
-  min-height: calc(100dvh - 60px);
+
+/* ---------- App frame ---------- */
+.app-frame {
+  display: flex;
+  align-items: stretch;
+  min-height: 100dvh;
   background: var(--bg);
-  isolation: isolate;
+}
+
+/* ---------- Sidebar: sticky, 100dvh, never ends mid-page ---------- */
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100dvh;
+  width: var(--sidebar-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4) var(--s2);
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  z-index: 30;
+}
+.sidebar-brand {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 550;
+  color: var(--ink);
+  text-decoration: none;
+  padding: var(--s1) var(--s2);
+}
+.sidebar-brand b { color: var(--accent); font-weight: 650; }
+.sidebar nav { display: flex; flex-direction: column; gap: 4px; }
+
+/* Nav items: 16px, icon tile behind each icon, active = blue fill */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 44px;
+  padding: 6px var(--s2);
+  border-radius: var(--r-tile);
+  color: var(--body);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 550;
+  text-decoration: none;
+}
+.sidebar-item:hover { background: var(--accent-soft); color: var(--ink); }
+.sidebar-item .icon-tile {
+  width: 32px;
+  height: 32px;
+}
+.sidebar-item .icon-tile svg { width: 18px; height: 18px; }
+.sidebar-item.active {
+  background: var(--accent);
+  color: var(--white);
+}
+.sidebar-item.active .icon-tile {
+  background: color-mix(in srgb, var(--white) 22%, transparent);
+  color: var(--white);
+}
+.sidebar-item.active:hover { background: var(--accent-strong); color: var(--white); }
+.sidebar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-more {
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.sidebar-more .sidebar-label { font-size: 14px; font-weight: 600; color: var(--muted); }
+.sidebar-more:hover .sidebar-label { color: var(--ink); }
+.sidebar-status {
+  margin-top: auto;
+  padding: var(--s2);
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- Main column ---------- */
+.main-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Top bar (every page): voice toggle, learner name, sign out ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-height: var(--topbar-h);
+  padding: var(--s1) var(--gutter);
+  background: color-mix(in srgb, var(--bg) 88%, white);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-section {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+.topbar-label {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.hamburger {
+  display: none;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: var(--r-tile);
+  border: 1.5px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.topbar-who {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 14px;
+}
+.topbar-name {
+  color: var(--body);
+  font-weight: 550;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-name:hover { color: var(--ink); }
+
+.voice-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--white);
+  color: var(--body);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 550;
+}
+.voice-switch:hover { border-color: var(--accent); color: var(--accent); }
+.voice-switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--white);
+}
+.voice-switch svg { width: 18px; height: 18px; }
+
+/* ---------- Sheet + pattern gutters ---------- */
+.page-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--content-max)) minmax(0, 1fr);
+  flex: 1;
+  width: 100%;
+  position: relative;
 }
 .page-sheet {
   grid-column: 2;
-  grid-row: 1;
   min-width: 0;
-  width: 100%;
-  background: var(--bg);
-  position: relative;
-  padding: 0 28px;
+  padding: var(--s5) var(--gutter) var(--s6);
 }
-.page-sheet > * { max-width: 100%; }
-.page-sheet .home-grid, .page-sheet .home-layout { max-width: none; }
+/* The gutters carry the topo pattern — empty space with no words and no other
+   art, so the pattern is allowed here (and only here at the shell level). */
 .pattern-zone {
-  display: none;
   grid-row: 1;
-  margin: 24px 32px;
-  opacity: 0.12;
-  pointer-events: none;
   position: relative;
-  mask-image:
-    linear-gradient(
-      to bottom,
-      transparent,
-      #000 40px,
-      #000 calc(100% - 40px),
-      transparent
-    ),
-    linear-gradient(
-      to right,
-      transparent,
-      #000 32px,
-      #000 calc(100% - 32px),
-      transparent
-    );
-  mask-size: 100% 100%;
-  mask-repeat: no-repeat;
-  mask-composite: intersect;
+  margin: var(--s4) var(--s3);
+  pointer-events: none;
+  opacity: 0.12;
 }
-.pattern-zone::before {
-  content: "";
+.pattern-zone .topo-fill {
   position: absolute;
   inset: 0;
-  background: var(--art-ink);
-  mask-image: url(/art/topo.svg);
-  mask-repeat: repeat;
-  mask-size: 520px auto;
+  opacity: 1;
 }
-.pattern-left {
-  grid-column: 1;
+.pattern-left { grid-column: 1; }
+.pattern-right { grid-column: 3; }
+
+/* Below the width where a real gutter exists, the pattern would be a smear
+   against the text: omit it there rather than crowding the sheet. */
+@media (max-width: 1180px) {
+  .pattern-zone { display: none; }
 }
-.pattern-right {
-  grid-column: 3;
+@media (max-width: 899px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    transform: translateX(-100%);
+    transition: transform 0.2s var(--ease);
+    box-shadow: var(--shadow);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .hamburger { display: inline-flex; }
+  .topbar-label { display: none; }
+  .page-frame { display: block; }
+  .page-sheet { padding: var(--s4) var(--gutter) var(--s6); }
 }
+
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  border: none;
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+@media (max-width: 899px) {
+  .sidebar-overlay.show { display: block; }
+}
+
+/* ---------- Footer (legal, 12px allowed here) ---------- */
+.page-footer {
+  padding: var(--s3) var(--gutter) var(--s5);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+  max-width: calc(var(--content-max) + 2 * var(--gutter));
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ---------- Access screens (sign in / consent / welcome): flower bottom-left ---------- */
+.access-shell {
+  position: relative;
+  min-height: 100dvh;
+}
+.access-flower {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  height: 380px;
+  pointer-events: none;
+  z-index: 0;
+}
+.access-flower .artwork {
+  width: 100%;
+  height: 100%;
+  mask-position: left bottom;
+}
+@media (max-width: 899px) {
+  .access-flower {
+    position: static;
+    width: 180px;
+    height: 160px;
+  }
+}
+
+/* ---------- Artwork (mask-based, currentColor-like: art is tinted with the accent) ---------- */
 .artwork {
   pointer-events: none;
-  background: var(--art-ink);
+  background: var(--accent);
   mask-size: contain;
+  -webkit-mask-size: contain;
   mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
   mask-position: center;
+  -webkit-mask-position: center;
   width: 100%;
   height: 100%;
 }
-.brain-zone {
-  grid-column: 3;
-  grid-row: 1;
-  padding: 80px 24px 24px;
-  display: none;
+
+.lesson-empty {
+  display: grid;
+  gap: var(--s4);
 }
-.hero-zone {
-  grid-column: 2 / 4;
-  min-height: 260px;
-  padding: 32px;
-  margin-top: 16px;
-  display: flex;
-  justify-content: flex-end;
-  align-items: flex-end;
-  pointer-events: none;
-}
-.hero-zone .artwork {
-  width: 500px;
-  height: 420px;
-  flex: none;
-}
-.hero-classroom {
-  grid-column: 2 / 4;
-  justify-content: center;
-  padding: 28px 16px;
-  min-height: 440px;
-}
-.hero-classroom .artwork {
-  width: min(720px, 100%);
-  height: 420px;
-}
-.hero-study .artwork { width: min(560px, 100%); height: 460px; }
-.brain-zone .artwork { width: min(420px, 100%); height: 360px; }
-.shell-access .hero-flower .artwork { width: 420px; height: 420px; }
-/* Once teaching/practice occupies the sheet there is no empty classroom zone. */
-.page-shell:has([data-testid="fl-moment"], [data-practice-item])
-  .hero-classroom {
-  display: none;
-}
-.page-shell:not(:has([data-testid="format-option"], .r3-question-stack))
-  .brain-zone {
-  display: none;
-}
-.shell-header-icon {
-  margin: 20px 16px 16px;
-  color: var(--art-ink);
-}
-.shell-access {
-  min-height: 100dvh;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 580px) minmax(0, 1fr);
-}
-.shell-access .page-sheet {
-  padding: 0 20px;
-}
-.shell-access .access-screen {
-  min-height: 0;
-  padding: 32px 0;
-}
-.shell-access .access-card {
+.lesson-empty-art {
+  height: 300px;
+  max-width: 640px;
   width: 100%;
+  margin: 0 auto;
 }
-.shell-access .hero-flower {
-  grid-column: 1 / 3;
-  justify-content: flex-start;
-  min-height: 280px;
-  padding: 0 0 0 16px;
-  margin-top: 24px;
+@media (max-width: 767px) {
+  .lesson-empty-art { height: 180px; }
 }
-.shell-access .hero-flower .artwork {
-  width: 360px;
-  height: 320px;
-  mask-position: left bottom;
+
+/* The wizard hero: classroom art BIG and fully visible in the empty state. */
+.wizard-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s4);
+  min-height: 320px;
+  padding: var(--s5);
+  margin-bottom: var(--s4);
 }
-/* Sidebar consumes 232px. These breakpoints leave at least 140px per gutter. */
-@media (min-width: 1192px) {
-  .pattern-zone:not(.omit-pattern) {
-    display: block;
-  }
-  .brain-zone {
-    display: block;
-  }
-  .brain-zone .artwork {
-    width: min(420px, 100%);
-    height: 360px;
-    max-width: none;
-  }
+.wizard-hero-art {
+  height: 280px;
+  z-index: 1;
 }
-@media (min-width: 900px) {
-  .shell-access .pattern-zone {
-    display: block;
-  }
-}
-/* No narrow-screen patterns, and on phones only the consent flower survives. */
-@media (max-width: 899px) {
-  .page-shell {
-    display: block;
-  }
-  .page-sheet {
-    padding: 0;
-  }
-  .hero-zone,
-  .brain-zone {
-    display: none;
-  }
-  .shell-access .hero-flower {
-    display: flex;
-    min-height: 180px;
-  }
-  .shell-access .hero-flower .artwork {
-    width: 200px;
-    height: 180px;
-  }
-  .shell-access:has([data-auth-step="auth"]) .hero-flower {
-    display: none;
-  }
-}
-/* Only sufficiently wide access gutters have a free viewport corner. The
-   compact layout keeps the flower in an empty flow tail, never under a form. */
-@media (min-width: 1240px) {
-  .shell-access .hero-flower {
-    position: fixed;
-    left: 16px;
-    bottom: 0;
-    width: 340px;
-    height: 560px;
+.wizard-hero-art .artwork { width: 100%; height: 100%; }
+.wizard-hero-copy { z-index: 2; display: grid; gap: var(--s2); justify-items: start; }
+@media (max-width: 767px) {
+  .wizard-hero {
+    grid-template-columns: 1fr;
     min-height: 0;
-    margin: 0;
-    padding: 0;
-    display: block;
+    padding: var(--s4);
   }
-  .shell-access .hero-flower .artwork {
-    width: 340px;
-    height: 560px;
-  }
-  .shell-access .pattern-left {
-    max-height: max(0px, calc(100dvh - 608px));
-  }
+  .wizard-hero-art { order: -1; height: 170px; }
 }
-.opening-overlay {
-  overflow: auto;
-}
-.opening-overlay .page-shell {
-  width: 100%;
-}
-.welcome-sheet {
-  min-height: calc(100dvh - 360px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.opening-overlay .opening-skip {
-  bottom: 24px;
-  right: 24px;
-}
-@media (min-width: 1240px) {
-  .opening-overlay .welcome-sheet {
-    min-height: 100dvh;
-  }
-}
-@media (max-width: 899px) {
-  .welcome-sheet {
-    min-height: 100dvh;
-  }
-  .opening-overlay .hero-flower {
-    display: none;
-  }
-}
-.btn-ctl,
-.sidebar-item {
-  min-height: 44px;
-}
-.btn-ctl {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
+
+/* ---------- Focus ---------- */
 .sidebar-more:focus-visible,
+.btn:focus-visible,
 .btn-ctl:focus-visible,
-.sidebar-item:focus-visible {
+.sidebar-item:focus-visible,
+.voice-switch:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
-}
-@media (min-width: 1240px) {
-  .opening-overlay .welcome-sheet {
-    padding: 0 24px;
-  }
-}
-/* A 230px brain needs its own 278px gutter. Keep the left pattern gutter at
-   least 140px; below this width omit the brain rather than crowd the cards. */
-@media (min-width: 1192px) and (max-width: 1229px) {
-  .brain-zone {
-    display: none;
-  }
-}
-@media (min-width: 1230px) {
-  .shell-brain:has([data-testid="format-option"], .r3-question-stack) {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 580px) minmax(0, 278px);
-  }
 }

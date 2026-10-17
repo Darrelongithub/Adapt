@@ -311,8 +311,8 @@ export default function VoicePage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 07 · Voice</div>
-          <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>Talk to it</h1>
+          <h1 className="t-h1">Talk to it</h1>
+          <p className="t-small">Greeting, read-aloud, and listen-and-answer.</p>
           <p className="mt-1 text-sm text-[var(--muted)]">
             Same tutor, same memory, different input. {c?.note ?? "transcription accuracy and teaching accuracy are measured separately."}
           </p>

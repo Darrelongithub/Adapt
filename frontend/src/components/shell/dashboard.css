@@ -1,25 +1,105 @@
-.dashboard-page { width:100%; max-width:none; padding: 28px 0 64px; display:grid; gap:28px; }
-.dashboard-welcome { max-width:70ch; }
-.dashboard-copy { color:var(--muted); max-width:60ch; margin-top:10px; }
-.dashboard-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:24px; }
-.dashboard-stats .stat-card { min-height:148px; display:grid; align-content:space-between; gap:12px; }
-.stat-card svg { color:var(--accent); }
-.stat-value { font:600 clamp(2rem,4vw,3.4rem)/1 var(--font-serif); color:var(--ink); }
-.stat-label { font: .72rem var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
-.dashboard-columns { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(300px,1fr); gap:24px; align-items:start; }
-.dashboard-side { display:grid; gap:24px; }
-.dashboard-side .dashboard-number { font:600 2.5rem var(--font-serif); margin-bottom:4px; }
-.subject-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
-.subject-card { border:1px solid var(--line); border-radius:6px; background:var(--bg); padding:18px; display:grid; gap:12px; }
-.subject-card-heading { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font:.68rem var(--font-mono); text-transform:uppercase; letter-spacing:.06em; }
-.subject-family { display:flex; align-items:center; gap:6px; color:var(--accent); }
-.subject-family svg { width:18px; height:18px; }
-.subject-card h3 { font:500 1.35rem var(--font-serif); }
-.stage-label { text-align:right; }
-.subject-progress { height:8px; border-radius:99px; background:var(--panel-2); overflow:hidden; }
-.subject-progress span { display:block; height:100%; background:var(--accent); border-radius:inherit; }
-.progress-copy { color:var(--muted); font:.72rem var(--font-mono); }
-.empty-learning { display:grid; gap:16px; justify-items:start; padding:22px 0; }
-.dashboard-footnote { color:var(--muted); font:.72rem var(--font-mono); }
-@media (max-width:1100px) { .dashboard-columns { grid-template-columns:1fr; } .dashboard-side { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:760px) { .dashboard-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .dashboard-columns,.dashboard-side { grid-template-columns:1fr; } .dashboard-page { padding:20px 12px 48px; gap:20px; } }
+/* Home layout (Round 6, Track C). Layout only — colours and type are tokens.css. */
+
+.home-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  align-items: center;
+  gap: var(--s4);
+  min-height: 300px;
+  padding: var(--s5);
+  margin-bottom: var(--s4);
+}
+.home-hero-copy {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+}
+.home-hero-title {
+  margin: 0;
+  max-width: 15ch;
+}
+.home-hero-line {
+  margin: 0;
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+  color: var(--body);
+}
+.home-hero-cta {
+  margin-top: var(--s2);
+}
+.home-hero-art {
+  position: relative;
+  z-index: 1;
+  height: 260px;
+}
+.home-hero-art .artwork {
+  width: 100%;
+  height: 100%;
+}
+/* Topo: only the empty corner of the hero, behind the art — never behind words. */
+.home-hero-topo {
+  position: absolute;
+  right: -24px;
+  bottom: -24px;
+  width: 45%;
+  height: 120%;
+  z-index: 0;
+  opacity: 0.12;
+  border-radius: var(--r-card);
+}
+
+.home-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+.subject-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--s3);
+}
+.subject-tile {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+  align-content: start;
+}
+.subject-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.subject-tile-title {
+  margin: 0;
+}
+.home-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+}
+
+/* Mobile 390: stacked, hero art ABOVE the headline, both above the fold. */
+@media (max-width: 767px) {
+  .home-hero {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: var(--s4);
+  }
+  .home-hero-art {
+    order: -1;
+    height: 160px;
+  }
+  .home-hero-title { max-width: none; }
+  .home-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s2);
+  }
+}

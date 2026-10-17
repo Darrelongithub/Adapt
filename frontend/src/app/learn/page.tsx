@@ -13,7 +13,8 @@ import { useRouter } from "next/navigation";
 
 import { EffectLine, type EffectSummary } from "@/components/evidence";
 import { Question } from "@/components/question";
-import { Btn, Card, Err, Notice, Tag } from "@/components/ui";
+import { Btn, Card, Err, Notice, PageHeader, Tag } from "@/components/ui";
+import { Artwork } from "@/components/art/Artwork";
 import { summarise, type AnalyzeRaw, type AnalyzeSummary } from "@/lib/analyze";
 import { useFlow } from "@/lib/flow";
 import { get, post } from "@/lib/api";
@@ -23,7 +24,9 @@ import type { ActiveAdaptation, PlanResponse, Receipt } from "@/lib/types";
 export default function Learn() {
   const router = useRouter();
   const flow = useFlow("practice");
-  const [gate, setGate] = useState<"checking" | "ready" | "redirecting" | "error">("checking");
+  const [gate, setGate] = useState<"checking" | "ready" | "empty" | "error">("checking");
+  const [chooseText, setChooseText] = useState("");
+  const [choosing, setChoosing] = useState(false);
   const [subjectTopicId, setSubjectTopicId] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [i, setI] = useState(0);
@@ -51,7 +54,12 @@ export default function Learn() {
         return;
       }
       const active = result.data.subjects.find((subject) => subject.id === result.data?.active_subject_id);
-      if (!active || active.stage === "tests") { setGate("redirecting"); router.replace(LEARNER_LANDING); return; }
+      if (!active || active.stage === "tests") {
+        // Round 6 (Track D): no built-in practice before a subject is chosen — the
+        // classroom empty state asks what they want to learn instead of redirecting.
+        setGate("empty");
+        return;
+      }
       const subject = await get<{ topic_id?: string | null }>(`subjects/${encodeURIComponent(active.id)}`);
       if (!alive) return;
       if (subject.error || !subject.data) {
@@ -131,7 +139,52 @@ export default function Learn() {
   }, [flow]);
 
   if (gate === "error") return <Err error={error ?? "Your active subject could not be opened."} status={null} />;
-  if (gate !== "ready") return <Card title="Opening your subject"><p role="status">{gate === "redirecting" ? "Choose a subject first…" : "Checking your active subject…"}</p></Card>;
+  if (gate === "empty") {
+    return (
+      <div className="lesson-empty" data-learn-empty>
+        <div className="lesson-empty-art" aria-hidden="true">
+          <Artwork name="classroom" />
+        </div>
+        <Card title="What do you want to learn?" tone="blue">
+          <form
+            className="stack-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!chooseText.trim() || choosing) return;
+              setChoosing(true);
+              try {
+                const out = await post<{ subject_id: string }>("subjects/choose", { text: chooseText.trim() });
+                window.location.href = `/first-lesson?subject=${encodeURIComponent(out.subject_id)}`;
+              } catch (err) {
+                setError(msg(err));
+                setChoosing(false);
+              }
+            }}
+          >
+            <input
+              className="input"
+              value={chooseText}
+              onChange={(e) => setChooseText(e.target.value)}
+              placeholder="Type a subject or topic"
+              aria-label="What do you want to learn?"
+              maxLength={240}
+            />
+            <div className="wrap-2" aria-label="Suggestions">
+              {["Maths", "Discrete structures", "Geometry", "Kiswahili", "Law", "Chemistry", "Coding"].map((item) => (
+                <button key={item} type="button" className="tap-chip" aria-pressed={chooseText === item} onClick={() => setChooseText(item)}>
+                  {item}
+                </button>
+              ))}
+            </div>
+            <Btn icon="plus" kind="primary" type="submit" disabled={!chooseText.trim() || choosing}>
+              {choosing ? "Checking…" : "Choose"}
+            </Btn>
+          </form>
+        </Card>
+      </div>
+    );
+  }
+  if (gate !== "ready") return <Card title="Opening your subject"><p role="status">Checking your active subject…</p></Card>;
   if (loading)
     return (
       <Card title="Practice" tone="muted">
@@ -142,11 +195,8 @@ export default function Learn() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
+      <PageHeader title="Practice" subtitle="One question at a time, taught your way." />
       <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] pb-3">
-        <div>
-          <div className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 01 · Practise</div>
-          <h1 className="text-[clamp(22px,3vw,30px)] font-medium" style={{ fontFamily: "var(--font-serif)" }}>Practice</h1>
-        </div>
         {items.length ? (
           <span className="ml-4 text-sm text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
             {Math.min(i + 1, items.length)} of {items.length}

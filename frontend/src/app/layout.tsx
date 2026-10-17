@@ -14,6 +14,7 @@ import "@fontsource-variable/jetbrains-mono";
 import "@fontsource-variable/jetbrains-mono/wght-italic.css";
 
 import "./globals.css";
+import "@/styles/tokens.css";
 import "@/styles/choice-cards.css";
 
 import { Chrome, SessionGate } from "@/components/chrome";

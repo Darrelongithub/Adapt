@@ -179,8 +179,8 @@ export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, cla
   return (
     <section className={`grid gap-3 ${className}`} aria-label="Lesson">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-[2px] border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--muted)]">{label}</span>
-        {lesson.method && !onPick && lesson.method !== "misconception_response" ? <span className="text-[11px] text-[var(--muted)]">Another way: {lesson.method.replaceAll("_", " ")}</span> : null}
+        <span className="rounded-[2px] border border-[var(--line)] px-2 py-1 t-small text-[var(--muted)]">{label}</span>
+        {lesson.method && !onPick && lesson.method !== "misconception_response" ? <span className="t-small text-[var(--muted)]">Another way: {lesson.method.replaceAll("_", " ")}</span> : null}
       </div>
       {(() => {
         const seen = new Set(excludeItemIds);

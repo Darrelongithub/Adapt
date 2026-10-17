@@ -117,7 +117,7 @@ export default function Proposals() {
       <h2 className="cf-sub">Nothing here takes effect until you decide.</h2>
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-4">
         <div>
-          <h1 className="text-xl font-medium" style={{ fontFamily: "var(--font-serif)" }}>Changes waiting for you</h1>
+          <h1 className="t-h1">Changes waiting for you</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
             {pending.data?.explain ??
               "Each row separates what was observed from what we think it means. Nothing here has been applied."}

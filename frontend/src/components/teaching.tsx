@@ -149,7 +149,7 @@ function SegmentWalkthrough({ teaching, headline }: { teaching: NonNullable<Teac
 
       {check?.question ? (
         <div className="mt-4 border-t border-[var(--line)] pt-3">
-          <label className="block text-[13px] font-medium">
+          <label className="block t-small font-medium">
             {check.question}
             <input
               className="mt-1 w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none"
@@ -227,7 +227,7 @@ function VisualTemplate({ visual, headline }: { visual: TeachingVisual; headline
           {(visual.nodes ?? []).map((n, i) => (
             <li key={i} className="flex gap-3 text-sm">
               <span
-                className="mt-[2px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--line)] text-[11px]"
+                className="mt-[2px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--line)] t-small"
                 style={{ fontFamily: "var(--font-mono)" }}
               >
                 {i + 1}
