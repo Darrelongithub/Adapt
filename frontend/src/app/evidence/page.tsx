@@ -79,7 +79,7 @@ export default function Evidence() {
 
   return <div className="space-y-4">
     <header>
-      <h1 className="text-2xl" style={{ fontFamily: "var(--font-serif)" }}>Preference and performance</h1>
+      <h1 className="t-h1">Preference and performance</h1>
       <p className="mt-2 text-sm text-[var(--muted)]">What you asked for is a preference, not a measurement. Here is what your own answers suggest across all topics.</p>
       <Btn href="/progress">Back to progress</Btn>
     </header>

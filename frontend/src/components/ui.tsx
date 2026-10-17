@@ -10,27 +10,60 @@ import { pushEntry, readLedger, writeLedger } from "@/lib/ledger";
 
 type Loader = (path: string, init: { method: string; json: unknown }) => Promise<unknown>;
 
-export function Card({ title, right, children, tone, icon }: { title?: ReactNode; right?: ReactNode; children: ReactNode; tone?: "ask" | "good" | "warn" | "muted"; icon?: ReactNode }) {
-  const edge =
-    tone === "ask"
-      ? "border-l-[3px] border-l-[var(--think)]"
-      : tone === "good"
-        ? "border-l-[3px] border-l-[var(--good)]"
-        : tone === "warn"
-          ? "border-l-[3px] border-l-[var(--warn)]"
-          : tone === "muted"
-            ? "border-l-[3px] border-l-[var(--line)]"
-            : "";
+export function Card({ title, right, children, tone, icon }: { title?: ReactNode; right?: ReactNode; children: ReactNode; tone?: "blue" | "sand" | "mint" | "peach" | "plain" | "ask" | "good" | "warn" | "muted"; icon?: ReactNode }) {
+  // The one Card component (Round 6, Track A). Tones are tinted backgrounds from
+  // tokens.css. The four semantic names map onto tints so older call sites keep
+  // their meaning without keeping a second card style.
+  const tint = tone === "ask" ? "blue" : tone === "good" ? "mint" : tone === "warn" ? "peach" : tone === "muted" ? "plain" : tone;
   return (
-    <section className={`rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-4 ${edge}`}>
+    <section className="card" data-tone={tint ?? undefined}>
       {(title || right) && (
-        <header className="mb-3 flex items-baseline justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-[var(--muted)] uppercase" style={{ fontFamily: "var(--font-mono)" }}>{icon ? <span aria-hidden="true">{icon}</span> : null}{title}</h2>
-          <div className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{right}</div>
+        <header className="card-head">
+          <h2 className="card-title">
+            {icon ? <span className="icon-tile" aria-hidden="true">{icon}</span> : null}
+            {title}
+          </h2>
+          <div className="card-right">{right}</div>
         </header>
       )}
       {children}
     </section>
+  );
+}
+
+/**
+ * The one page header (Round 6, Track A): serif title, one subtitle line, optional
+ * art on the right. Every page uses this instead of an ad-hoc header block.
+ */
+export function PageHeader({
+  title,
+  subtitle,
+  art,
+  actions,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  art?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="page-header">
+      <div className="page-header-text">
+        <h1 className="t-h1 page-title">{title}</h1>
+        {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
+        {actions ? <div className="wrap-2" style={{ marginTop: "var(--s3)" }}>{actions}</div> : null}
+      </div>
+      {art ? <div className="page-header-art" aria-hidden="true">{art}</div> : null}
+    </header>
+  );
+}
+
+/** A rounded tinted square behind an icon. One icon tile, used everywhere. */
+export function IconTile({ icon, tone = "blue", size }: { icon: ReactNode; tone?: "blue" | "sand" | "mint" | "peach" | "think"; size?: number }) {
+  return (
+    <span className="icon-tile" data-tone={tone} aria-hidden="true" style={size ? { width: size, height: size } : undefined}>
+      {icon}
+    </span>
   );
 }
 
@@ -57,7 +90,7 @@ export function Btn({
   children: ReactNode;
   onClick?: () => void;
   href?: string;
-  kind?: "quiet" | "primary" | "danger" | "ghost";
+  kind?: "quiet" | "primary" | "secondary" | "danger" | "ghost";
   disabled?: boolean;
   type?: "button" | "submit";
   title?: string;
@@ -65,15 +98,16 @@ export function Btn({
   ariaLabel?: string;
   icon?: IconName;
 }) {
-  // btn-ctl is the marker the coarse-pointer tap-target rules in globals.css key off.
+  // `btn` + `btn-ctl`: the design-system button and the marker the coarse-pointer
+  // tap-target rules in globals.css key off. The look is the tokens.css contract's.
   const look =
     kind === "primary"
-      ? "btn-ctl btn-primary"
+      ? "btn btn-ctl btn-primary"
       : kind === "danger"
-        ? "btn-ctl btn-secondary danger"
+        ? "btn btn-ctl btn-danger"
         : kind === "ghost"
-          ? "btn-ctl btn-ghost"
-          : "btn-ctl btn-secondary";
+          ? "btn btn-ctl btn-ghost"
+          : "btn btn-ctl btn-secondary"; // secondary + quiet share the white/blue look
   const pressedAttr = pressed === undefined ? {} : { "aria-pressed": pressed };
   if (href)
     return (
@@ -104,7 +138,20 @@ export function Tag({ children, tone = "line" }: { children: ReactNode; tone?: "
     think: "border-[var(--think)]/50 text-[var(--think)]",
     accent: "border-[var(--accent)]/50 text-[var(--accent)]",
   };
-  return <span className={`rounded-[2px] border px-2 py-0.5 text-[10px] uppercase tracking-[0.06em] ${map[tone]}`} style={{ fontFamily: "var(--font-mono)" }}>{children}</span>;
+  // Tiny status chips are the one allowed uppercase-mono label (tokens.css .status-chip).
+  return <span className={`status-chip ${map[tone]}`}>{children}</span>;
+}
+
+/** The pill chip from the design system: sentence case, 14px, medium weight. */
+export function Chip({ children, tone, selected, onClick }: { children: ReactNode; tone?: "accent" | "good" | "warn" | "bad"; selected?: boolean; onClick?: () => void }) {
+  if (onClick) {
+    return (
+      <button type="button" className="tap-chip" data-tone={tone} aria-pressed={selected ?? false} onClick={onClick}>
+        {children}
+      </button>
+    );
+  }
+  return <span className="chip" data-tone={tone}>{children}</span>;
 }
 
 /** The band word the backend chose, with a bar. No percentage is shown as a fact: the
@@ -185,26 +232,25 @@ export function Band({
 
 export function Notice({ children, tone = "warn" }: { children: ReactNode; tone?: "warn" | "bad" | "good" | "info" }) {
   const map: Record<string, string> = {
-    warn: "border-[var(--warn)]/40 bg-[var(--warn)]/5",
-    bad: "border-[var(--bad)]/40 bg-[var(--bad)]/5",
-    good: "border-[var(--good)]/40 bg-[var(--good)]/5",
+    warn: "border-[color-mix(in_srgb,var(--warn)_40%,transparent)] bg-[color-mix(in_srgb,var(--warn)_6%,white)]",
+    bad: "border-[color-mix(in_srgb,var(--bad)_40%,transparent)] bg-[color-mix(in_srgb,var(--bad)_6%,white)]",
+    good: "border-[color-mix(in_srgb,var(--good)_40%,transparent)] bg-[color-mix(in_srgb,var(--good)_6%,white)]",
     info: "border-[var(--line)] bg-[var(--panel-2)]",
   };
-  return <p className={`rounded-[2px] border px-3 py-2 text-sm ${map[tone]}`}>{children}</p>;
+  return <p className={`rounded-[12px] border px-4 py-3 ${map[tone]}`} style={{ fontSize: "var(--t-body)", lineHeight: "var(--t-body-lh)", color: "var(--body)" }}>{children}</p>;
 }
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[13px] font-medium text-[var(--ink)]" style={{ fontFamily: "var(--font-sans)" }}>{label}</span>
+      <span className="mb-1 block t-label">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-[var(--muted)]">{hint}</span>}
     </label>
   );
 }
 
-const inputLook =
-  "w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted)]/60 focus:border-[var(--accent)] focus:outline-none";
+const inputLook = "input";
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputLook} ${props.className ?? ""}`} />;

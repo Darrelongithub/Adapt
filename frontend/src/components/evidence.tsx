@@ -47,7 +47,7 @@ export function EvidenceBadge({ n, effectiveN, threshold = EARLY_SIGNAL_N, pilot
   const early = (effectiveN ?? n) < threshold;
   return (
     <span className="inline-flex flex-wrap items-center gap-1 align-middle">
-      <span className="text-[11px] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+      <span className="t-small text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         n={n}
       </span>
       {early ? <Tag tone="warn">early signal</Tag> : null}

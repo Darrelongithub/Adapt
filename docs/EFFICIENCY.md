@@ -118,7 +118,7 @@ The saving is measured, not assumed: `cachedContentTokenCount` from the provider
 
 `adapt/ai/routing.py` holds the whole decision in one table: every `purpose=` a call site
 passes maps to a **class of work**, and each class is a model name from configuration.
-Twenty tasks, three classes:
+Twenty-one tasks, three classes:
 
 | purpose | class | temperature | max output | static head | model calls | replaces |
 | --- | --- | ---: | ---: | --- | ---: | --- |
@@ -141,6 +141,7 @@ Twenty tasks, three classes:
 | `content_skeleton` | deep | 0.2 | 3000 | no | 1 | — |
 | `subject_leanings` | light | 0.1 | 520 | yes | 1 | — |
 | `subject_placement` | light | 0.0 | 700 | yes | 1 | `topic_resolve`, `subject_leanings` |
+| `test_plan` | deep | 0.5 | 1200 | yes | 1 | — |
 | `topic_resolve` | light | 0.0 | 160 | yes | 1 | — |
 
 * **light** (8 tasks) — answers checked against a fixed list or a rule, where being wrong is
@@ -149,8 +150,9 @@ Twenty tasks, three classes:
   whose failure a learner does not see.
 * **standard** (3) — the teaching reply, the teach-back judgement, the repair pass. The wording
   *is* the product, but the answer is still checked.
-* **deep** (3) — open-ended authoring where a weak answer costs a rewrite: new practice items,
-  a scene specification, a proposal about a learner's own learning.
+* **deep** (4) — open-ended authoring where a weak answer costs a rewrite: new practice items,
+  a starting-check plan of interactive items, a scene specification, a proposal about a
+  learner's own learning.
 
 Which model each class is comes from configuration, never from the table:
 `ADAPT_GEMINI_MODEL_LIGHT` / `_STANDARD` / `_DEEP`. Two overrides exist for a deployment that

@@ -1,0 +1,265 @@
+/* Real test items (Round 6, Track B). Layout only — colours and type are tokens.css. */
+
+.test-item {
+  display: grid;
+  gap: var(--s3);
+}
+.test-item-meta {
+  display: flex;
+  gap: var(--s1);
+  flex-wrap: wrap;
+}
+.test-item-body {
+  min-height: 180px;
+}
+.test-verdict {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-h3);
+  line-height: var(--t-h3-lh);
+  font-weight: 650;
+}
+.test-verdict.is-correct { color: var(--good); }
+.test-verdict.is-wrong { color: var(--bad); }
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--s2);
+}
+.option-tile {
+  display: grid;
+  justify-items: center;
+  gap: var(--s1);
+  padding: var(--s3);
+  min-height: 44px;
+  border-radius: var(--r-card);
+  border: 2px solid var(--line);
+  background: var(--white);
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+.option-tile:hover:not(:disabled) { border-color: var(--accent); }
+.option-tile.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.option-tile.is-correct {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 12%, white);
+}
+.option-tile.is-wrong {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 10%, white);
+}
+.option-tile-label {
+  font-size: var(--t-label);
+  line-height: var(--t-small-lh);
+  font-weight: 600;
+  color: var(--ink);
+  text-align: center;
+}
+
+.sequence-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+}
+.sequence-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+.sequence-arrow { color: var(--muted); font-size: 20px; }
+.sequence-q {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--r-card);
+  border: 2px dashed var(--accent);
+  color: var(--accent);
+  font-family: var(--font-serif);
+  font-size: 28px;
+}
+
+.order-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s1);
+}
+.order-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-tile);
+  border: 1.5px solid var(--line);
+  background: var(--white);
+}
+.order-grip { color: var(--muted); cursor: grab; }
+.order-text {
+  flex: 1;
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+  color: var(--body);
+}
+.order-movers { display: flex; gap: 4px; }
+.order-movers .btn { min-height: 36px; padding: 4px 10px; }
+
+.match-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s3);
+}
+.match-chip { width: 100%; justify-content: space-between; }
+.match-chip.is-used {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 10%, white);
+}
+.match-chip small { color: var(--muted); font-size: var(--t-small); }
+
+.truth-grid {
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 420px;
+}
+.truth-grid th, .truth-grid td {
+  border: 1.5px solid var(--line);
+  padding: var(--s1) var(--s2);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--ink);
+  background: var(--white);
+}
+.truth-grid th { background: var(--tint-blue); }
+.truth-cell {
+  min-width: 52px;
+  min-height: 40px;
+  border-radius: var(--r-tile);
+  border: 1.5px solid var(--accent);
+  background: var(--white);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: 650;
+  cursor: pointer;
+}
+.truth-cell.is-true {
+  background: var(--accent);
+  color: var(--white);
+}
+
+.venn-svg, .angle-svg, .numberline-svg {
+  width: 100%;
+  max-width: 460px;
+  height: auto;
+  touch-action: manipulation;
+}
+.venn-hit.is-selected circle { stroke-width: 4; }
+
+.fraction-bar {
+  display: flex;
+  width: 100%;
+  max-width: 420px;
+  height: 56px;
+  border: 2px solid var(--accent);
+  border-radius: var(--r-tile);
+  overflow: hidden;
+}
+.fraction-part {
+  flex: 1;
+  border-right: 1.5px solid var(--accent);
+  background: var(--white);
+}
+.fraction-part:last-child { border-right: none; }
+.fraction-part.is-filled { background: var(--accent-soft); }
+
+.cloze-sentence {
+  font-family: var(--font-serif);
+  font-size: var(--t-h2);
+  line-height: var(--t-h2-lh);
+  color: var(--ink);
+}
+
+/* ---- the run: steps + results ---- */
+.test-run {
+  display: grid;
+  gap: var(--s3);
+}
+.test-progress {
+  display: flex;
+  gap: var(--s1);
+}
+.test-progress span {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--r-chip);
+  background: var(--line);
+}
+.test-progress span.done { background: var(--good); }
+.test-progress span.miss { background: var(--bad); }
+.test-progress span.now { background: var(--accent); }
+
+.results-bars {
+  display: grid;
+  gap: var(--s2);
+}
+.results-bar {
+  display: grid;
+  grid-template-columns: minmax(120px, 200px) 1fr auto;
+  align-items: center;
+  gap: var(--s2);
+}
+.results-bar-track {
+  height: 12px;
+  border-radius: var(--r-chip);
+  background: var(--line);
+  overflow: hidden;
+}
+.results-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+/* choice tiles for level / style / goal */
+.tile-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s2);
+}
+.tile-btn {
+  display: grid;
+  justify-items: center;
+  gap: var(--s1);
+  padding: var(--s4) var(--s2);
+  border-radius: var(--r-card);
+  border: 2px solid var(--line);
+  background: var(--white);
+  cursor: pointer;
+  text-align: center;
+}
+.tile-btn:hover:not(:disabled) { border-color: var(--accent); }
+.tile-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.tile-btn-label {
+  font-family: var(--font-sans);
+  font-size: var(--t-h3);
+  line-height: var(--t-h3-lh);
+  font-weight: 650;
+  color: var(--ink);
+}
+.tile-btn-hint {
+  font-size: var(--t-small);
+  line-height: var(--t-small-lh);
+  color: var(--muted);
+}

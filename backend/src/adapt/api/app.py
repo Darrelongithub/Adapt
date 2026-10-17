@@ -43,6 +43,7 @@ from .routes import (
     lesson,
     lessons,
     system,
+    tests as tests_routes,
     tutor,
 )
 from .ws import router as ws_router
@@ -175,6 +176,7 @@ def create_app() -> FastAPI:
         journey.router,
         lesson_plan.router,
         subjects.router,
+        tests_routes.router,
         tutor.router,
         baseline.router,
         evidence.router,

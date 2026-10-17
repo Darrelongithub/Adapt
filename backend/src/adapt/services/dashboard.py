@@ -309,7 +309,7 @@ def unfinished_activity(s: Session, student_id: str) -> dict[str, list[dict[str,
     tests = []
     for model, title, route in (
         (BaselineRun, "Mind check", "/baseline"),
-        (SubjectRound, "Subject round", "/subject"),
+        (SubjectRound, "Subject round", "/journey"),
     ):
         rows = s.scalars(
             select(model).where(model.student_id == student_id, model.status == "in_progress")

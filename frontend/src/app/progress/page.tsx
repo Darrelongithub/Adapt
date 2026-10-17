@@ -7,12 +7,13 @@
  * loop's own steps read back from the data. Where the app has too little data it says so
  * in the same voice it uses when it has enough — no smoothing, no "keep it up".
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { MethodReport, type MethodRow } from "@/components/evidence";
 import { TopicTopo, TopoNote } from "@/components/topo";
-import { Btn, Card, Err, humanize, Notice, Tag } from "@/components/ui";
+import { Btn, Card, Err, humanize, Notice, PageHeader, Tag } from "@/components/ui";
 import { get, post, useApi } from "@/lib/api";
+
 import type { Journey } from "@/lib/types";
 
 type Dashboard = {
@@ -73,25 +74,28 @@ export default function Progress() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 05 · Progress</div>
-          <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>What the data says</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            {journey.data?.window_days ?? 30}-day window · {journey.data?.stats?.attempts ?? 0} answers ·{" "}
-            {journey.data?.stats?.events ?? 0} logged interactions ·{" "}
-            {journey.data?.stats?.mean_score !== undefined && journey.data?.stats?.mean_score !== null
-              ? `mean score ${journey.data.stats.mean_score.toFixed(2)}`
-              : "no mean yet"}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Btn onClick={() => Promise.all([dash.reload(), journey.reload(), methodReport.reload()])}>Reload</Btn>
-          <Btn onClick={retrain} disabled={training} title="derive the estimates again from the event log rather than trusting the cached ones">
-            {training ? "…" : "Recompute estimates"}
-          </Btn>
-        </div>
-      </div>
+      <PageHeader
+        title="What the data says"
+        subtitle={`${journey.data?.window_days ?? 30}-day window · ${journey.data?.stats?.attempts ?? 0} answers · ${journey.data?.stats?.events ?? 0} logged interactions`}
+        actions={
+          <>
+            <Btn kind="secondary" onClick={() => Promise.all([dash.reload(), journey.reload(), methodReport.reload()])}>Reload</Btn>
+            <Btn kind="secondary" onClick={retrain} disabled={training} title="derive the estimates again from the event log rather than trusting the cached ones">
+              {training ? "…" : "Recompute estimates"}
+            </Btn>
+          </>
+        }
+      />
+
+      {/* Round 6: moved here from Home — the one place that reads like a person. */}
+      <details className="card" data-tone="plain" id="what-this-is">
+        <summary className="t-label" style={{ cursor: "pointer" }}>How the app sees you</summary>
+        <p style={{ marginTop: "var(--s2)" }}>
+          Estimates, not labels: nothing here is a fixed trait about you, and nothing changes without your answer.
+        </p>
+      </details>
+
+      <TestEvidenceCard />
 
       {err ? <Notice tone="bad">{err}</Notice> : null}
       {trainOut ? <Notice tone="good">{trainOut}</Notice> : null}
@@ -314,5 +318,56 @@ function Stat({ label, value }: { label: string; value?: number | null }) {
       <dt className="text-xs text-[var(--muted)]">{label}</dt>
       <dd className="text-lg font-medium">{value === undefined || value === null ? "—" : typeof value === "number" && value < 1 && value > 0 ? value.toFixed(2) : String(Math.round(Number(value) * 10) / 10)}</dd>
     </div>
+  );
+}
+
+
+/** The real-test evidence rows (Round 6, Track B): item, answer, correct, ms. */
+type TestEvidenceRow = {
+  id: string;
+  run_id: string;
+  subject_id: string | null;
+  item_id: string;
+  item_type: string;
+  skill: string;
+  difficulty: number;
+  answer: string | null;
+  correct: boolean;
+  ms: number;
+  hints_used: number;
+  observed_at: string | null;
+};
+
+function TestEvidenceCard() {
+  const [rows, setRows] = useState<TestEvidenceRow[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void get<{ rows: TestEvidenceRow[] }>("tests/evidence").then((result) => {
+      if (alive) setRows(result.data?.rows ?? []);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return (
+    <Card title="Test evidence" tone="mint" right={<span>{rows?.length ?? 0} rows</span>}>
+      {!rows ? (
+        <p role="status">Reading your evidence…</p>
+      ) : rows.length === 0 ? (
+        <p>No checks yet. Your starting checks will show here.</p>
+      ) : (
+        <ul className="stack-2">
+          {rows.slice(0, 12).map((row) => (
+            <li key={row.id} className="wrap-3" style={{ alignItems: "baseline" }}>
+              <Tag tone={row.correct ? "good" : "bad"}>{row.correct ? "right" : "wrong"}</Tag>
+              <span className="t-small" style={{ color: "var(--body)" }}>
+                {row.item_type.replaceAll("_", " ")} · {row.skill.replaceAll(".", " ")} · {row.ms} ms
+                {row.hints_used ? ` · ${row.hints_used} hint${row.hints_used === 1 ? "" : "s"}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

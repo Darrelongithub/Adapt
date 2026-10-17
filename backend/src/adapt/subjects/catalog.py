@@ -77,7 +77,7 @@ def subject_payload(row: LearnerSubject) -> dict[str, Any]:
     topic_id = topic.get("bank_topic_id") or topic.get("topic_id")
     next_step = None if row.stage == "done" else progress.get("next") or {
         "label": "Start the subject checks",
-        "href": f"/subject/{row.id}",
+        "href": "/journey?step=subject",
     }
     return {
         "id": row.id,
@@ -126,13 +126,13 @@ def choose(s: Session, svc: Any, *, student_id: str, text: str) -> dict[str, Any
         active=not has_active,
         stage="tests",
         plan={"tests": built["tests"], "source": built["source"], "detail": built.get("detail")},
-        progress={"done": 0, "total": len(built["tests"]), "next": {"label": "Start the subject checks", "href": f"/subject/new"}},
+        progress={"done": 0, "total": len(built["tests"]), "next": {"label": "Start the subject checks", "href": "/journey?step=subject"}},
     )
     s.add(row)
     s.flush()
     payload = subject_payload(row)
     # the row id is only known after flush; replace the temporary href in the persisted JSON too
-    payload["next"] = {"label": "Start the subject checks", "href": f"/subject/{row.id}"}
+    payload["next"] = {"label": "Start the subject checks", "href": "/journey?step=subject"}
     row.progress = {"done": 0, "total": len(built["tests"]), "next": payload["next"]}
     s.commit()
     return payload

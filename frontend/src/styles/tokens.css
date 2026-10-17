@@ -1,0 +1,465 @@
+/* ============================================================================
+   ADAPT design tokens — the ONLY place colours, type sizes, radii and spacing
+   are defined (Round 6, Track A). Pages and components consume these; nothing
+   in frontend/src may hardcode a colour or a raw size for type.
+
+   Cheat sheet lives in docs/DESIGN_SYSTEM.md. The style grep in
+   `scripts/check-frontend-style.mjs` fails the build on `text-black`, `#000`,
+   `bg-black` or `font-bold` — bold is `.strong`, which colours with --ink.
+   ========================================================================== */
+
+:root {
+  /* ---- Palette (beige / blue, deepened for legibility) ---- */
+  --bg: #f4eee0;              /* beige page */
+  --panel: #fbf7ee;           /* raised panel */
+  --sheet: #fbf8f1;           /* the page sheet */
+  --line: #e2d9c6;            /* hairlines */
+  --ink: #123a8f;             /* brand deep blue: ALL headings + bold text */
+  --accent: #2456c8;          /* brand blue: fills, links, focus */
+  --accent-strong: #1c47a6;   /* hover on fills */
+  --accent-soft: #dfe8fb;     /* pale blue wash */
+  --body: #3c4a68;            /* dark slate-blue body text — never pure black */
+  --muted: #66739a;           /* secondary text (still >=14px) */
+  --white: #ffffff;
+
+  /* ---- Tinted card backgrounds (soft, low saturation) ---- */
+  --tint-blue: #e7eefc;
+  --tint-sand: #f4ead5;
+  --tint-mint: #e2f0e8;
+  --tint-peach: #fae8dc;
+
+  /* ---- Status ---- */
+  --good: #2c7a4d;
+  --warn: #a26810;
+  --bad: #b23a2c;
+  --think: #6558b8;
+
+  /* ---- Type scale (min body 16px; 14px floor except legal footer) ---- */
+  --t-display: 40px;
+  --t-display-lh: 44px;
+  --t-h1: 30px;
+  --t-h1-lh: 36px;
+  --t-h2: 22px;
+  --t-h2-lh: 28px;
+  --t-h3: 18px;
+  --t-h3-lh: 24px;
+  --t-body: 16px;
+  --t-body-lh: 26px;
+  --t-small: 14px;
+  --t-small-lh: 20px;
+  --t-label: 14px;
+  --t-chip: 12px;             /* tiny status chips only */
+
+  /* ---- Radii ---- */
+  --r-card: 20px;
+  --r-btn: 14px;
+  --r-tile: 12px;
+  --r-chip: 999px;
+  --r-input: 12px;
+
+  /* ---- Shadow: one soft shadow ---- */
+  --shadow: 0 12px 28px rgba(18, 58, 143, 0.10);
+  --shadow-soft: 0 6px 16px rgba(18, 58, 143, 0.08);
+
+  /* ---- Spacing scale 8/12/16/24/32/48 ---- */
+  --s1: 8px;
+  --s2: 12px;
+  --s3: 16px;
+  --s4: 24px;
+  --s5: 32px;
+  --s6: 48px;
+
+  /* ---- Page ---- */
+  --gutter: 32px;             /* desktop page gutter */
+  --content-max: 1180px;      /* content max width, centred */
+  --sheet-min: 900px;
+
+  /* ---- Motion (kept short; the app is a study surface) ---- */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-width: 767px) {
+  :root {
+    --gutter: 16px;
+    --t-display: 32px;
+    --t-display-lh: 38px;
+    --t-h1: 26px;
+    --t-h1-lh: 32px;
+  }
+}
+
+/* ============================================================================
+   Base type roles
+   ========================================================================== */
+
+.t-display {
+  font-family: var(--font-serif);
+  font-size: var(--t-display);
+  line-height: var(--t-display-lh);
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.t-h1, h1 {
+  font-family: var(--font-serif);
+  font-size: var(--t-h1);
+  line-height: var(--t-h1-lh);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.t-h2, h2 {
+  font-family: var(--font-sans);
+  font-size: var(--t-h2);
+  line-height: var(--t-h2-lh);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.t-h3, h3 {
+  font-family: var(--font-sans);
+  font-size: var(--t-h3);
+  line-height: var(--t-h3-lh);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+p, li, dd, .t-body {
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+  color: var(--body);
+}
+
+.t-small, small, .text-small {
+  font-size: var(--t-small);
+  line-height: var(--t-small-lh);
+  color: var(--muted);
+}
+
+/* Labels: sentence case, 14px, medium weight. Never UPPERCASE mono. */
+.t-label {
+  font-family: var(--font-sans);
+  font-size: var(--t-label);
+  line-height: var(--t-small-lh);
+  font-weight: 550;
+  color: var(--ink);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Bold text is brand blue — never black. Replaces `font-bold` (banned by lint). */
+.strong, strong, b {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+a {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 3px;
+}
+a:hover { color: var(--accent-strong); }
+
+/* ============================================================================
+   PageHeader — one per page (title, subtitle, optional art)
+   ========================================================================== */
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin: 0 0 var(--s5);
+}
+.page-header-text { min-width: 0; }
+.page-header .page-title {
+  margin: 0;
+}
+.page-header .page-subtitle {
+  margin: var(--s1) 0 0;
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+  color: var(--body);
+  max-width: 56ch;
+}
+.page-header-art {
+  flex: none;
+  pointer-events: none;
+}
+.page-header-art .artwork {
+  width: 180px;
+  height: 150px;
+}
+@media (max-width: 767px) {
+  .page-header { flex-direction: column-reverse; align-items: stretch; }
+  .page-header-art .artwork { width: 140px; height: 120px; }
+}
+
+/* ============================================================================
+   Card — one card component, tinted tones
+   ========================================================================== */
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-soft);
+  padding: var(--s4);
+}
+.card[data-tone="blue"] { background: var(--tint-blue); border-color: color-mix(in srgb, var(--accent) 18%, transparent); }
+.card[data-tone="sand"] { background: var(--tint-sand); border-color: color-mix(in srgb, var(--tint-sand) 70%, var(--line)); }
+.card[data-tone="mint"] { background: var(--tint-mint); border-color: color-mix(in srgb, var(--tint-mint) 60%, var(--line)); }
+.card[data-tone="peach"] { background: var(--tint-peach); border-color: color-mix(in srgb, var(--tint-peach) 60%, var(--line)); }
+.card[data-tone="plain"] { background: var(--panel); }
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-h3);
+  line-height: var(--t-h3-lh);
+  font-weight: 650;
+  color: var(--ink);
+}
+.card-title .icon-tile { width: 32px; height: 32px; }
+.card-right { font-size: var(--t-small); color: var(--muted); }
+
+/* ============================================================================
+   Icon tiles — rounded tinted square behind each icon
+   ========================================================================== */
+
+.icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-tile);
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: none;
+}
+.icon-tile svg { width: 22px; height: 22px; }
+.icon-tile[data-tone="sand"] { background: var(--tint-sand); color: var(--warn); }
+.icon-tile[data-tone="mint"] { background: var(--tint-mint); color: var(--good); }
+.icon-tile[data-tone="peach"] { background: var(--tint-peach); color: var(--bad); }
+.icon-tile[data-tone="blue"] { background: var(--accent-soft); color: var(--accent); }
+.icon-tile[data-tone="think"] { background: color-mix(in srgb, var(--think) 14%, white); color: var(--think); }
+
+/* ============================================================================
+   Buttons — primary = brand blue fill + white text; secondary = white fill,
+   blue border, blue text. NO black buttons anywhere.
+   ========================================================================== */
+
+/* Base layout is shared by `.btn` (the component) and `.btn-ctl` (legacy pages that
+   style a raw button with btn-ctl + btn-primary etc.). */
+.btn,
+.btn-ctl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s1);
+  min-height: 44px;
+  padding: 10px 20px;
+  border-radius: var(--r-btn);
+  font-family: var(--font-sans);
+  font-size: var(--t-label);
+  line-height: var(--t-small-lh);
+  font-weight: 600;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease), transform 0.1s var(--ease);
+}
+.btn svg { width: 18px; height: 18px; }
+.btn:active { transform: translateY(1px); }
+.btn[aria-disabled="true"], .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--white);
+  border-color: var(--accent);
+}
+.btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--white); }
+
+.btn-secondary {
+  background: var(--white);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn-secondary:hover { background: var(--accent-soft); color: var(--accent-strong); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--accent);
+  border-color: transparent;
+}
+.btn-ghost:hover { background: var(--accent-soft); }
+
+.btn-danger {
+  background: var(--white);
+  color: var(--bad);
+  border-color: var(--bad);
+}
+.btn-danger:hover { background: color-mix(in srgb, var(--bad) 8%, white); }
+
+/* ============================================================================
+   Chips + labels
+   ========================================================================== */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--line);
+  background: var(--white);
+  padding: 6px 14px;
+  font-size: var(--t-small);
+  line-height: var(--t-small-lh);
+  font-weight: 550;
+  color: var(--ink);
+}
+.chip[data-tone="accent"] { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--accent); }
+.chip[data-tone="good"] { background: color-mix(in srgb, var(--good) 10%, white); border-color: color-mix(in srgb, var(--good) 35%, transparent); color: var(--good); }
+.chip[data-tone="warn"] { background: color-mix(in srgb, var(--warn) 10%, white); border-color: color-mix(in srgb, var(--warn) 35%, transparent); color: var(--warn); }
+.chip[data-tone="bad"] { background: color-mix(in srgb, var(--bad) 8%, white); border-color: color-mix(in srgb, var(--bad) 35%, transparent); color: var(--bad); }
+
+/* Tiny status chips keep the mono uppercase look (the one allowed exception) */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 2px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--t-chip);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Suggestion / choice chips (tappable) */
+.tap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: var(--r-chip);
+  border: 1.5px solid var(--line);
+  background: var(--white);
+  font-size: var(--t-label);
+  font-weight: 550;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tap-chip:hover { border-color: var(--accent); color: var(--accent); }
+.tap-chip[aria-pressed="true"], .tap-chip.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--white);
+}
+
+/* ============================================================================
+   Stat tiles — coloured icon chip, big number, one word label
+   ========================================================================== */
+
+.stat-tile {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  border-radius: var(--r-card);
+  border: 1px solid var(--line);
+  padding: var(--s3) var(--s4);
+}
+.stat-tile[data-tone="blue"] { background: var(--tint-blue); }
+.stat-tile[data-tone="sand"] { background: var(--tint-sand); }
+.stat-tile[data-tone="mint"] { background: var(--tint-mint); }
+.stat-tile[data-tone="peach"] { background: var(--tint-peach); }
+.stat-value {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  line-height: 36px;
+  font-weight: 550;
+  color: var(--ink);
+}
+.stat-label {
+  font-size: var(--t-label);
+  line-height: var(--t-small-lh);
+  font-weight: 550;
+  color: var(--body);
+}
+
+/* ============================================================================
+   Inputs
+   ========================================================================== */
+
+.input, input[type="text"], input[type="search"], textarea, select {
+  width: 100%;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--white);
+  padding: 12px 14px;
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+  color: var(--body);
+}
+.input:focus, input:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+.input::placeholder, input::placeholder, textarea::placeholder { color: var(--muted); }
+
+/* ============================================================================
+   Topo pattern — ONLY in empty space (page gutters, empty-state surrounds,
+   hero corners behind NO text). Tiled at 520px native, 0.10–0.14 opacity,
+   behind content.
+   ========================================================================== */
+
+.topo-fill {
+  background-color: transparent;
+  background-image: url(/art/topo.svg);
+  background-repeat: repeat;
+  background-size: 520px auto;
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   Misc
+   ========================================================================== */
+
+.page-pad {
+  padding: var(--s5) var(--gutter) var(--s6);
+  max-width: calc(var(--content-max) + 2 * var(--gutter));
+  margin: 0 auto;
+  width: 100%;
+}
+
+.link-inline {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 3px;
+}
+.link-inline:hover { color: var(--accent-strong); }
+
+.stack-2 > * + * { margin-top: var(--s2); }
+.stack-3 > * + * { margin-top: var(--s3); }
+.stack-4 > * + * { margin-top: var(--s4); }
+
+.wrap-2 { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.wrap-3 { display: flex; flex-wrap: wrap; gap: var(--s3); }

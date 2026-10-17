@@ -267,7 +267,7 @@ function FirstLesson() {
   return (
     <section className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Your first lesson</h1>
+        <h1 className="t-h1">Your first lesson</h1>
         <p className="text-sm text-[var(--muted)]">
           One idea, written for you.
         </p>

@@ -10,7 +10,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, humanize, Input, Notice, Select, Tag, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, humanize, Input, Notice, PageHeader, Select, Tag, useSession } from "@/components/ui";
+import { Artwork } from "@/components/art/Artwork";
 import { del, post, useApi } from "@/lib/api";
 import type { Status } from "@/lib/types";
 
@@ -170,15 +171,18 @@ export default function Settings() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xs uppercase tracking-[0.12em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>§ 11 · Settings</div>
-      <h1 className="text-xl" style={{ fontFamily: "var(--font-serif)" }}>Settings, and what is kept</h1>
+      <PageHeader
+        title="Settings, and what is kept"
+        subtitle="Every claim here is read from the server that enforces it."
+        art={<Artwork name="gears" />}
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Your preferences" right={<span>{allowed.length} preferences</span>}>
+        <Card title="Your preferences" tone="blue" right={<span>{allowed.length} preferences</span>}>
           {prefs.error ? <Err error={prefs.error} status={prefs.status} /> : null}
           {prefs.loading ? <p role="status" className="text-sm text-[var(--muted)]">Loading your preferences…</p> : null}
           <div className="space-y-2">
-            {allowed.map((k) => (
+            {allowed.filter((k) => k !== "language" && k !== "want_voice").map((k) => (
               <Field key={k} label={k.replace(/_/g, " ")} hint={hintFor(k)}>
                 {PHRASES.has(k) ? (
                   <Input
@@ -221,7 +225,51 @@ export default function Settings() {
         </Card>
 
         <div className="space-y-4">
-          <Card title="Consent" tone="warn">
+          <Card title="Voice" tone="mint">
+            {!consent ? (
+              <p role="status" className="text-sm text-[var(--muted)]">Your voice settings appear once you are signed in.</p>
+            ) : (
+              <div className="space-y-3">
+                <Check
+                  label="Voice"
+                  checked={consent.voice}
+                  onChange={(v) => setConsent((c) => c && ({ ...c, voice: v }))}
+                  hint="Off means no microphone access at all. The keyboard path teaches the same thing. The top bar toggle turns voice on or off instantly."
+                />
+                {consent.voice ? (
+                  <Field label="Voice for replies">
+                    <Select value={consent.gender} onChange={(e) => setConsent((c) => c && ({ ...c, gender: e.target.value }))}>
+                      <option value="female">female</option>
+                      <option value="male">male</option>
+                    </Select>
+                  </Field>
+                ) : null}
+                {allowed.includes("want_voice") ? (
+                  <Check
+                    label="Start with voice on"
+                    checked={form.want_voice === true || form.want_voice === "true"}
+                    onChange={(v) => setForm((f) => ({ ...f, want_voice: v }))}
+                  />
+                ) : null}
+                <Btn onClick={saveConsent} disabled={busy} kind="primary">Save consent</Btn>
+              </div>
+            )}
+          </Card>
+
+          <Card title="Language" tone="sand">
+            <Field label="Language" hint="Lessons and replies follow this language.">
+              <Input
+                value={String(form.language ?? "")}
+                onChange={(e) => setForm((f) => ({ ...f, language: e.target.value }))}
+                placeholder="en · sw"
+              />
+            </Field>
+            <div className="mt-3">
+              <Btn kind="primary" onClick={savePrefs} disabled={busy || prefs.loading || !prefs.data}>Save</Btn>
+            </div>
+          </Card>
+
+          <Card title="Consent" tone="peach">
             {!consent ? (
               <p role="status" className="text-sm text-[var(--muted)]">
                 {unknown ? "Could not load your consent settings. Use the session retry above." : sessionLoading || me ? "Loading your consent settings…" : "Your consent settings will appear once you are signed in."}
@@ -265,7 +313,7 @@ export default function Settings() {
             </div>}
           </Card>
 
-          <Card title="This instance" tone="muted">
+          <Card title="Model key status" tone="plain">
             {status.error ? <Err error={status.error} status={status.status} /> : null}
             <ul className="space-y-1 text-xs text-[var(--muted)]">
               <li>{status.data?.lessons?.says ?? "Lessons: not reported"}</li>
@@ -277,7 +325,7 @@ export default function Settings() {
         </div>
       </div>
 
-      <Card title="What may be recorded about you" tone="muted" right={<span>what is recorded</span>}>
+      <Card title="Privacy: what may be recorded about you" tone="plain" right={<span>what is recorded</span>}>
         <p className="text-sm">{privacy.data?.telemetry?.note ?? "The server owns this list; the client cannot add a field to it."}</p>
         <div className="mt-2 grid gap-3 md:grid-cols-2">
           <div>
@@ -341,7 +389,7 @@ export default function Settings() {
         </div>
       </Card>
 
-      <Card title="Everything this system has done to your account" tone="muted" right={<span>{entries.length} rows</span>}>
+      <Card title="Everything this system has done to your account" tone="plain" right={<span>{entries.length} rows</span>}>
         {audit.error ? <Err error={audit.error} status={audit.status} /> : null}
         {entries.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">
@@ -376,7 +424,7 @@ export default function Settings() {
         )}
       </Card>
 
-      <Card title="Delete this learner" tone="warn">
+      <Card title="Delete this learner" tone="peach">
         {gone ? (
           <Notice tone="warn">{gone}</Notice>
         ) : (

@@ -249,8 +249,8 @@ export default function Contrast() {
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-xl font-semibold">The same lesson, taught two ways</h1>
-        <p className="max-w-[75ch] text-[13px] text-[var(--muted)]">
+        <h1 className="t-h1">The same lesson, taught two ways</h1>
+        <p className="max-w-[75ch] t-small text-[var(--muted)]">
           One concept, two made-up demo profiles. Both lessons below teach the same checked content — what changes is
           how it is laid out, and every change is decided from the profile next to it: what was measured, what the
           learner said they prefer, and what would change the decision. Nothing here is a real learner&apos;s data.
@@ -264,13 +264,13 @@ export default function Contrast() {
               {c.label}
             </Btn>
           ))}
-          <span className="ml-auto text-[11px] text-[var(--muted)]">demo content written for this screen</span>
+          <span className="ml-auto t-small text-[var(--muted)]">demo content written for this screen</span>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {[PROFILE_A, sameTwice ? { ...PROFILE_A, name: "Demo profile 1 — again" } : PROFILE_B].map((p, i) => (
             <div key={`${p.name}-${i}`} className="rounded-[2px] border border-[var(--line)] px-3 py-2">
-              <p className="text-[13px] font-medium">{p.name}</p>
-              <p className="mt-1 text-[12px] text-[var(--muted)]">{p.description}</p>
+              <p className="t-small font-medium">{p.name}</p>
+              <p className="mt-1 t-small text-[var(--muted)]">{p.description}</p>
             </div>
           ))}
         </div>
@@ -289,7 +289,7 @@ export default function Contrast() {
       ) : null}
       {loading && !data ? (
         <Card title="building both lessons">
-          <p className="text-[13px] text-[var(--muted)]">Preparing two versions of the same lesson for these example profiles.</p>
+          <p className="t-small text-[var(--muted)]">Preparing two versions of the same lesson for these example profiles.</p>
         </Card>
       ) : null}
 
@@ -298,7 +298,7 @@ export default function Contrast() {
           <Card title="what actually differs" tone={data.visibly_different ? "ask" : "muted"}>
             {data.visibly_different ? (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-[13px]">
+                <table className="w-full text-left t-small">
                   <thead>
                     <tr className="text-[var(--muted)]">
                       <th className="py-1 pr-3 font-medium">Difference</th>
@@ -318,7 +318,7 @@ export default function Contrast() {
                 </table>
               </div>
             ) : null}
-            <p className="mt-2 text-[12px] text-[var(--muted)]">{data.note}</p>
+            <p className="mt-2 t-small text-[var(--muted)]">{data.note}</p>
           </Card>
 
           {data.ai3_checked_output?.lessons?.length ? (
@@ -371,7 +371,7 @@ function BlockView({ block }: { block: Block }) {
     <section aria-label={`block ${block.block}: ${block.kind}`} className="rounded-[2px] border border-[var(--line)] px-3 py-2">
       <div className="mb-1.5 flex items-center gap-2">
         <Tag tone="line">{block.kind.replaceAll("_", " ")}</Tag>
-        <span className="text-[11px] text-[var(--muted)]">
+        <span className="t-small text-[var(--muted)]">
           why: {block.why.text}{" "}
           <span className="font-mono">{evidenceMark(block.why.source, block.why.n, block.why.evidence_ids)}</span>
         </span>
@@ -379,28 +379,28 @@ function BlockView({ block }: { block: Block }) {
       {block.kind === "visual" ? (
         <VisualFigure spec={c.spec} fallbackNote={typeof c.note === "string" ? c.note : undefined} />
       ) : block.kind === "worked_example" ? (
-        <ol className="flex list-decimal flex-col gap-1 pl-5 text-[13px]">
+        <ol className="flex list-decimal flex-col gap-1 pl-5 t-small">
           {(Array.isArray(c.steps) ? (c.steps as { text: string; why?: string }[]) : []).map((step, i) => (
             <li key={i}>
               {step.text}
-              {step.why ? <span className="block text-[11px] text-[var(--muted)]">{step.why}</span> : null}
+              {step.why ? <span className="block t-small text-[var(--muted)]">{step.why}</span> : null}
             </li>
           ))}
         </ol>
       ) : block.kind === "check" || block.kind === "predict" || block.kind === "explain" ? (
         <div>
-          <p className="text-[13px] font-medium">{String(c.question ?? "")}</p>
-          {typeof c.hint === "string" && c.hint ? <p className="mt-1 text-[12px] text-[var(--muted)]">hint: {c.hint}</p> : null}
+          <p className="t-small font-medium">{String(c.question ?? "")}</p>
+          {typeof c.hint === "string" && c.hint ? <p className="mt-1 t-small text-[var(--muted)]">hint: {c.hint}</p> : null}
         </div>
       ) : (
         <div>
-          <p className="whitespace-pre-wrap text-[13px]">{String(c.text ?? "")}</p>
-          {typeof c.note === "string" && c.note ? <p className="mt-1 text-[11px] text-[var(--warn)]">{c.note}</p> : null}
+          <p className="whitespace-pre-wrap t-small">{String(c.text ?? "")}</p>
+          {typeof c.note === "string" && c.note ? <p className="mt-1 t-small text-[var(--warn)]">{c.note}</p> : null}
           {typeof c.review_in_hours === "number" ? (
-            <p className="mt-1 text-[11px] text-[var(--muted)]">comes round again in about {c.review_in_hours} hours</p>
+            <p className="mt-1 t-small text-[var(--muted)]">comes round again in about {c.review_in_hours} hours</p>
           ) : null}
           {typeof c.evidence_of_success === "string" ? (
-            <p className="mt-1 text-[12px] text-[var(--good)]">{c.evidence_of_success}</p>
+            <p className="mt-1 t-small text-[var(--good)]">{c.evidence_of_success}</p>
           ) : null}
         </div>
       )}
@@ -412,8 +412,8 @@ function WhyPanel({ plan }: { plan: Plan }) {
   const panel = plan.why_panel;
   return (
     <section aria-label="why this lesson looks like this" className="rounded-[2px] border border-[var(--accent)]/40 bg-[var(--panel)] px-3 py-2">
-      <h3 className="text-[13px] font-semibold">{panel.title}</h3>
-      <ul className="mt-2 flex flex-col gap-1.5 text-[12px]">
+      <h3 className="t-small font-semibold">{panel.title}</h3>
+      <ul className="mt-2 flex flex-col gap-1.5 t-small">
         {panel.rows.map((row, i) => (
           <li key={i}>
             <span className="font-medium">{row.decision}.</span> {row.text}{" "}
@@ -423,20 +423,20 @@ function WhyPanel({ plan }: { plan: Plan }) {
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-[12px] font-medium">What would change it</p>
-      <ul className="list-disc pl-5 text-[12px] text-[var(--muted)]">
+      <p className="mt-2 t-small font-medium">What would change it</p>
+      <ul className="list-disc pl-5 t-small text-[var(--muted)]">
         {panel.what_would_change_it.map((line, i) => (
           <li key={i}>{line}</li>
         ))}
       </ul>
       {panel.fallbacks.length ? (
-        <ul className="mt-2 flex flex-col gap-1 text-[11px] text-[var(--warn)]">
+        <ul className="mt-2 flex flex-col gap-1 t-small text-[var(--warn)]">
           {panel.fallbacks.map((f, i) => (
             <li key={i}>{f}</li>
           ))}
         </ul>
       ) : null}
-      <p className="mt-2 text-[11px] text-[var(--muted)]">
+      <p className="mt-2 t-small text-[var(--muted)]">
         {contrastFoot({ modelVersion: plan.provenance.model_version, evidenceN: plan.provenance.evidence_n })}
       </p>
     </section>

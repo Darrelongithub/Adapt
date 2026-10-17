@@ -9,38 +9,49 @@ import { SessionProvider, useSession } from "./ui";
 import { get, isMock, logout, type Me } from "@/lib/api";
 import type { Health, Status } from "@/lib/types";
 import { Icon, routeIcon } from "./icons";
+import { IconTile } from "./ui";
 import { PageShell } from "./shell/PageShell";
-import { LEARNER_LANDING } from "@/lib/landing";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
 import { useVoice } from "@/components/voice/context";
 
-/** Always-shown entries for a new learner (round 3, Track R).
- *  Anything else is hidden behind the "More" disclosure so the sidebar
- *  has four items, not twelve, the first time a learner opens it. */
+/** Primary destinations, in plain words (Round 6, Track A). Five items, no more. */
 export const NAV_PRIMARY: { href: string; label: string }[] = [
   { href: "/", label: "Home" },
   { href: "/learn", label: "Learn" },
   { href: "/review", label: "Review" },
   { href: "/progress", label: "Progress" },
+  { href: "/settings", label: "Settings" },
 ];
 
-/** The rest of the destinations, hidden behind a "More" disclosure by default
- *  (round 3, Track R).  They remain in the same order as before so existing
- *  muscle memory still finds them. */
+/** The rest, under one short "More" group. Subject round is gone (Round 6). */
 export const NAV_MORE: { href: string; label: string }[] = [
   { href: "/lesson", label: "Lessons" },
+  { href: "/journey", label: "Your path" },
   { href: "/proposals", label: "Changes" },
-  { href: "/baseline", label: "Mind check" },
-  { href: "/subject", label: "Subject round" },
   { href: "/contrast", label: "Compare lessons" },
+  { href: "/baseline", label: "Mind check" },
   { href: "/evidence", label: "Evidence" },
   { href: "/voice", label: "Voice" },
-  { href: "/settings", label: "Settings" },
-  { href: "/journey", label: "Your path" },
 ];
 
 /** The combined list, used by `activeHref` so any route still resolves. */
 export const NAV = [...NAV_PRIMARY, ...NAV_MORE];
+
+/** Icon tone per nav destination, so the tiles read as a set. */
+const navTone: Record<string, "blue" | "sand" | "mint" | "peach" | "think"> = {
+  "/": "blue",
+  "/learn": "blue",
+  "/review": "sand",
+  "/progress": "mint",
+  "/settings": "think",
+  "/lesson": "blue",
+  "/journey": "sand",
+  "/proposals": "peach",
+  "/contrast": "think",
+  "/baseline": "think",
+  "/evidence": "mint",
+  "/voice": "blue",
+};
 
 /** Red bar, every screen, whenever the data on it is not real. */
 export function MockBanner() {
@@ -48,10 +59,8 @@ export function MockBanner() {
   useEffect(() => setMock(isMock()), []);
   if (!mock) return null;
   return (
-    // pl-4: there is no fixed corner control any more, so the banner starts at the edge
-    // on every screen size.
-    <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 py-2 pl-4 pr-4 text-center text-xs text-[var(--bad)]" style={{ fontFamily: "var(--font-mono)" }}>
-      <strong>EXAMPLE DATA.</strong> This preview uses sample information and does not change your saved data.{" "}
+    <div className="border-b border-[var(--bad)]/50 bg-[var(--bad)]/15 py-2 px-4 text-center" style={{ fontSize: "var(--t-small)", color: "var(--bad)" }}>
+      <strong>Example data.</strong> This preview uses sample information and does not change your saved data.{" "}
       <Link className="link-inline" href="/?mock=off">
         Exit the preview
       </Link>
@@ -66,9 +75,6 @@ export function StatusChip() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    // Both reads are independent, so they go out together. Chaining them made the second
-    // wait for the first on every screen the chip is rendered on — which is all of them —
-    // so the status line paid two round trips where one would do.
     (async () => {
       const [h, s] = await Promise.all([get<Health>("health"), get<Status>("status")]);
       if (!alive) return;
@@ -80,9 +86,6 @@ export function StatusChip() {
       alive = false;
     };
   }, []);
-  // On every page, so it says only what a learner may know: how lessons are produced,
-  // and whether answers are encrypted when that has actually been reported. A signed-out
-  // reader has no status payload, so the chip omits the protection clause rather than guessing.
   const lessons = status?.lessons ?? health?.lessons;
   const tutor = lessons?.says ?? "Lessons: not reported";
   const protection = status?.data_protection;
@@ -102,10 +105,9 @@ export function StatusChip() {
         : "service down";
   const text = [service, tutor, enc].filter(Boolean).join(" · ");
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+    <div className="status-chip" style={{ display: "block", borderRadius: "var(--r-tile)", textAlign: "left", textTransform: "none", letterSpacing: 0, lineHeight: "18px" }}>
       <span title="how lessons are produced right now">{text}</span>
-      {status?.version ? <span>v{status.version}</span> : null}
-      {status?.demo_mode ? <span className="text-[var(--warn)]">demo mode: writes need a passphrase</span> : null}
+      {status?.version ? <span> · v{status.version}</span> : null}
     </div>
   );
 }
@@ -113,13 +115,9 @@ export function StatusChip() {
 export function Chrome({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname() || "/";
-  // The drawer's focus trap only exists while it is open; the sidebar is always in the
-  // document on desktop, where trapping focus in it would be exactly the trap that makes
-  // the rest of the page unreachable.
   const drawerRef = useFocusTrap(open);
   const burgerRef = useRef<HTMLButtonElement>(null);
 
-  // Escape closes the drawer and hands focus back to the control that opened it.
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -135,23 +133,7 @@ export function Chrome({ children }: { children: ReactNode }) {
   const current = activeHref(pathname);
 
   return (
-    <>
-      {/* Below 860px the sidebar slides in from here. The control is a labelled button,
-          not a bare glyph: navigation must never be something you have to discover. */}
-      <div className="topbar">
-        <button
-          ref={burgerRef}
-          type="button"
-          className="hamburger"
-          aria-expanded={open}
-          aria-controls="adapt-sidebar"
-          onClick={() => setOpen((v) => !v)}
-        >
-          <span aria-hidden="true">☰</span>
-          <span>Menu</span>
-        </button>
-        <span className="topbar-label">{current ? NAV.find((n) => n.href === current)?.label : "ADAPT"}</span>
-      </div>
+    <div className="app-frame">
       <button
         type="button"
         className={`sidebar-overlay${open ? " show" : ""}`}
@@ -160,68 +142,79 @@ export function Chrome({ children }: { children: ReactNode }) {
         onClick={() => setOpen(false)}
       />
 
-      {/* The permanent sidebar: every top-level destination, in plain words, with the page
-          you are on marked in three ways (aria-current, colour, and the accent edge). */}
+      {/* The permanent sidebar: sticky, full viewport height, icon tiles, one blue
+          active fill. On phones it is a drawer behind the labelled Menu button. */}
       <aside id="adapt-sidebar" ref={drawerRef} className={`sidebar${open ? " open" : ""}`} aria-label="Main navigation">
         <Link href="/" className="sidebar-brand" onClick={() => setOpen(false)}>
           ad<b>apt</b>
         </Link>
         <nav data-testid="sidebar-nav">
-          {NAV_PRIMARY.map((n) => {
-            const here = n.href === current;
-            return (
-              <Link
-                key={n.href}
-                href={n.href}
-                className={`sidebar-item${here ? " active" : ""}`}
-                aria-current={here ? "page" : undefined}
-                onNavigate={() => setOpen(false)}
-              >
-                <Icon name={routeIcon[n.href] ?? "book"} />
-                <span className="sidebar-label">{n.label}</span>
-                <NavigationPending label={n.label} />
-              </Link>
-            );
-          })}
-          {/* Round 3 (Track R): the rest of the destinations sit under a
-              "More" disclosure.  It opens by default when the current route
-              lives there, so a learner who followed a deep link to /lesson
-              still sees the row they are on. */}
+          {NAV_PRIMARY.map((n) => (
+            <NavLink key={n.href} n={n} current={current} onClose={() => setOpen(false)} />
+          ))}
           <SidebarMore current={current} onClose={() => setOpen(false)} />
         </nav>
         <div className="sidebar-status">
-          {/* What the app is running on, in the one place that is on every screen. */}
           <StatusChip />
         </div>
       </aside>
 
-      <div className="main-content">
-        {/* Inside the content column, so it never runs under the fixed sidebar. */}
-        <MockBanner />
-        <div className="flex justify-end px-4 py-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
-          <div className="flex items-center gap-3">
+      <div className="main-column">
+        <div className="topbar">
+          <div className="topbar-section">
+            <button
+              ref={burgerRef}
+              type="button"
+              className="hamburger"
+              aria-expanded={open}
+              aria-controls="adapt-sidebar"
+              onClick={() => setOpen((v) => !v)}
+            >
+              <span aria-hidden="true">☰</span>
+              <span>Menu</span>
+            </button>
+            <span className="topbar-label">{current ? NAV.find((n) => n.href === current)?.label : "ADAPT"}</span>
+          </div>
+          <div className="topbar-section topbar-who">
             <VoiceControl />
             <Who />
           </div>
         </div>
+
+        <MockBanner />
         <VoiceGreeting />
 
         <main id="main-content" className="w-full">
           <PageShell>{children}</PageShell>
         </main>
-        <footer className="mx-auto max-w-5xl px-4 pb-10 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        <footer className="page-footer">
           Estimates, not labels: nothing here is a fixed trait, and no lasting change is applied without you answering a
           question about it. <Link href="/settings" className="link-inline">
-            what is recorded about you
+            What is recorded about you
           </Link>
         </footer>
       </div>
-    </>
+    </div>
   );
 }
 
-/** Next owns the pending state, including cancelled/rapid consecutive navigations.
- * A click-local boolean would get stuck on back/forward or when a later click wins. */
+function NavLink({ n, current, onClose }: { n: { href: string; label: string }; current: string | null; onClose: () => void }) {
+  const here = n.href === current;
+  return (
+    <Link
+      href={n.href}
+      className={`sidebar-item${here ? " active" : ""}`}
+      aria-current={here ? "page" : undefined}
+      onNavigate={onClose}
+    >
+      <IconTile icon={<Icon name={routeIcon[n.href] ?? "book"} />} tone={navTone[n.href] ?? "blue"} />
+      <span className="sidebar-label">{n.label}</span>
+      <NavigationPending label={n.label} />
+    </Link>
+  );
+}
+
+/** Next owns the pending state, including cancelled/rapid consecutive navigations. */
 function NavigationPending({ label }: { label: string }) {
   const { pending } = useLinkStatus();
   if (!pending) return null;
@@ -239,13 +232,13 @@ export function activeHref(pathname: string): string | null {
   return hit ? hit.href : null;
 }
 
-/** The "More" disclosure in the sidebar (round 3, Track R).
- *  Shows the secondary nav under a toggle; opens by default when the current
- *  route is in there, so a deep-linked learner sees the row they are on. */
+/** The "More" group in the sidebar. Opens by default when the current route lives there. */
 function SidebarMore({ current, onClose }: { current: string | null; onClose: () => void }) {
   const isOnMore = current ? NAV_MORE.some((n) => n.href === current) : false;
   const [open, setOpen] = useState<boolean>(isOnMore);
-  useEffect(() => { setOpen(isOnMore); }, [isOnMore]);
+  useEffect(() => {
+    setOpen(isOnMore);
+  }, [isOnMore]);
   return (
     <>
       <button
@@ -255,27 +248,15 @@ function SidebarMore({ current, onClose }: { current: string | null; onClose: ()
         onClick={() => setOpen((v) => !v)}
         data-testid="sidebar-more"
       >
-        <span className="sidebar-label">{open ? "Fewer destinations" : "More destinations"}</span>
-        <span style={{ transform:open ? "rotate(180deg)" : undefined }}><Icon name="chevron" /></span>
+        <IconTile icon={<Icon name="chevron" />} tone="blue" />
+        <span className="sidebar-label">{open ? "Fewer destinations" : "More"}</span>
+        <span style={{ transform: open ? "rotate(180deg)" : undefined }}><Icon name="chevron" /></span>
       </button>
       {open ? (
         <div data-testid="sidebar-more-items">
-          {NAV_MORE.map((n) => {
-            const here = n.href === current;
-            return (
-              <Link
-                key={n.href}
-                href={n.href}
-                className={`sidebar-item${here ? " active" : ""}`}
-                aria-current={here ? "page" : undefined}
-                onNavigate={onClose}
-              >
-                <Icon name={routeIcon[n.href] ?? "book"} />
-                <span className="sidebar-label">{n.label}</span>
-                <NavigationPending label={n.label} />
-              </Link>
-            );
-          })}
+          {NAV_MORE.map((n) => (
+            <NavLink key={n.href} n={n} current={current} onClose={onClose} />
+          ))}
         </div>
       ) : null}
     </>
@@ -286,13 +267,14 @@ function VoiceControl() {
   const { enabled, setEnabled, listening, speaking } = useVoice();
   const { me } = useSession();
   useEffect(() => {
-    // Account state is the default on a new device; a local choice wins after the learner has
-    // used this browser once. No microphone is touched by this sync.
     if (me?.voice_enabled && typeof window !== "undefined" && window.localStorage.getItem("adapt:voice-enabled") === null) setEnabled(true);
   }, [me?.voice_enabled, setEnabled]);
-  return <button type="button" className={`voice-switch${enabled ? " on" : ""}`} aria-pressed={enabled} onClick={() => setEnabled(!enabled)} title={enabled ? "Turn voice off" : "Turn voice on"}>
-    <Icon name="mic" /> <span>{enabled ? "Voice on" : "Voice off"}</span>{listening ? <span aria-label="listening">●</span> : speaking ? <span aria-label="speaking">◌</span> : null}
-  </button>;
+  return (
+    <button type="button" className={`voice-switch${enabled ? " on" : ""}`} aria-pressed={enabled} onClick={() => setEnabled(!enabled)} title={enabled ? "Turn voice off" : "Turn voice on"}>
+      <Icon name="mic" /> <span>{enabled ? "Voice on" : "Voice off"}</span>
+      {listening ? <span aria-label="listening">●</span> : speaking ? <span aria-label="speaking">◌</span> : null}
+    </button>
+  );
 }
 
 function VoiceGreeting() {
@@ -302,54 +284,55 @@ function VoiceGreeting() {
   useEffect(() => {
     if (!enabled || !me || greeted.current === me.student_id) return;
     greeted.current = String(me.student_id);
-    const subject = "ready to continue your learning?";
-    void speak(`Welcome back, ${me.display_name || "learner"}. ${subject}`, { interrupt: true }).then(() => listenOnce({ timeoutMs: 7000 }));
+    void speak(`Welcome back, ${me.display_name || "learner"}. Ready to continue your learning?`, { interrupt: true }).then(() => listenOnce({ timeoutMs: 7000 }));
   }, [enabled, me, speak, listenOnce]);
   return null;
 }
 
 function Who() {
   const { me, loading, unknown, refresh, signOut } = useSession();
-  if (loading && !me) return <span className="text-xs text-[var(--muted)]">…</span>;
+  if (loading && !me) return <span className="topbar-name">…</span>;
   if (!me && unknown)
     return (
-      <button type="button" onClick={() => refresh()} className="btn-ctl btn-ghost">
-        checking who you are… retry
+      <button type="button" onClick={() => refresh()} className="btn btn-ctl btn-secondary">
+        Checking who you are… retry
       </button>
     );
   if (!me) {
-    // Navigation, so a plain link is the right control for it; everything that *acts*
-    // wears one of the three button classes.
     return (
-      <Link href="/" className="link-inline text-xs" style={{ fontFamily: "var(--font-mono)" }}>
-        sign in
+      <Link href="/" className="btn btn-ctl btn-secondary">
+        Sign in
       </Link>
     );
   }
   return (
-    <span className="flex items-center gap-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
-      <Link href="/settings" className="text-[var(--muted)] hover:text-[var(--ink)] hover:underline">
+    <span className="topbar-who">
+      <Link href="/settings" className="topbar-name">
         {(me as Me).display_name || (me as Me).student_id}
       </Link>
       <button
         type="button"
-        className="btn-ctl btn-ghost"
+        className="btn btn-ctl btn-secondary"
         onClick={async () => {
           await signOut();
         }}
       >
-        sign out
+        Sign out
       </button>
     </span>
   );
 }
 
-/** Owns the only copy of "who is this browser". Every page reads it from context, so a
- *  sign-in on one screen cannot leave another one showing a stale name. */
+/**
+ * Owns the only copy of "who is this browser". Every page reads it from context.
+ *
+ * Round 6 (Track E): the landing gate is gone. It used to render "Opening your
+ * path…" over every screen while `landing` was set and the URL was anywhere but
+ * /journey — including a signed-in learner who clicked a sidebar link during the
+ * redirect, which is the account-gate vs /journey loop. If the server says this
+ * browser is somebody, the children render; navigation is navigation's job.
+ */
 export function SessionGate({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const [landing, setLanding] = useState<string | null>(null);
-  useEffect(() => { if (pathname === landing) setLanding(null); }, [pathname, landing]);
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   // `unknown` is not an error to show, it is a *state*: the server has not said this browser
@@ -370,13 +353,10 @@ export function SessionGate({ children }: { children: ReactNode }) {
         setUnknown(null);
         attempt.current = 0;
       } else if (refused) {
-        // the server answered, and the answer was no: that really is signed out
         setMe(null);
         setUnknown(null);
         attempt.current = 0;
       } else {
-        // no answer, or an answer that says nothing about the session (429, 5xx, network).
-        // Keep whoever was on screen and try again a few times, backing off.
         setUnknown(r.error ?? `the server answered ${r.status ?? "nothing"}`);
         if (attempt.current < 4) {
           attempt.current += 1;
@@ -398,12 +378,9 @@ export function SessionGate({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const establish = useCallback((profile: Record<string, unknown>) => {
-    // Invalidate any older /me request (including a pre-login 401) before accepting
-    // the profile returned with the new session cookie. No second network round trip.
     generation.current += 1;
     if (retry.current) clearTimeout(retry.current);
     attempt.current = 0;
-    setLanding(LEARNER_LANDING);
     setMe(profile as Me);
     setUnknown(null);
     setLoading(false);
@@ -424,13 +401,12 @@ export function SessionGate({ children }: { children: ReactNode }) {
     [me, loading, unknown, refresh, establish],
   );
   return <SessionProvider value={value}>
-    {me && (!landing || pathname === landing) ? children : !me && !loading && !unknown ? <AccountGate /> : (
+    {me ? children : !loading && !unknown ? <AccountGate /> : (
       <div className="access-screen"><section id="main-content" className="access-card" aria-busy={loading}>
         <h1 className="access-title">Welcome to <b>ADAPT</b>.</h1>
-        <p className="mt-3" role="status">{unknown ? "Your session could not be checked. Please retry; you do not need another account." : landing ? "Opening your path…" : "Checking your session…"}</p>
-        {unknown ? <button className="btn-ctl btn-primary mt-4" onClick={refresh}>Retry session check</button> : null}
+        <p className="mt-3" role="status">{unknown ? "Your session could not be checked. Please retry; you do not need another account." : "Checking your session…"}</p>
+        {unknown ? <button className="btn btn-ctl btn-primary mt-4" onClick={refresh}>Retry session check</button> : null}
       </section></div>
     )}
   </SessionProvider>;
 }
-

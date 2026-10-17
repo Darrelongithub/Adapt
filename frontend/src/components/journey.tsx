@@ -53,7 +53,7 @@ export function ProgressBar({ state }: { state: JourneyState | null }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 t-small text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
         <span data-testid="journey-percent">{pct}%</span>
         <span>{words}</span>
       </div>
@@ -81,17 +81,17 @@ export function StageList({ state, onSkip, busy }: { state: JourneyState | null;
               here ? "border-[var(--accent)] bg-[var(--panel)]" : "border-transparent"
             }`}
           >
-            <span className="text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+            <span className="t-small text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
               {String(step.n).padStart(2, "0")}
             </span>
             <Link href={step.href} className="link-inline">
               {step.title}
             </Link>
-            <span className="text-[0.7rem] text-[var(--muted)]">{STATUS_WORD[row.status]}</span>
+            <span className="t-small text-[var(--muted)]">{STATUS_WORD[row.status]}</span>
             {row.status === "todo" && row.id !== "account" && row.id !== "practice" ? (
               <button
                 type="button"
-                className="btn-ctl btn-ghost ml-auto text-[0.7rem]"
+                className="btn-ctl btn-ghost ml-auto t-small"
                 disabled={busy}
                 onClick={() => onSkip(row.id)}
                 aria-label={`skip ${step.title}`}
@@ -166,7 +166,7 @@ export function StageCard({
         ) : null}
       </div>
       {row.status === "todo" && !isLast ? (
-        <p className="text-[0.7rem] text-[var(--muted)]">
+        <p className="t-small text-[var(--muted)]">
           Skipping: {step.skipNote}
         </p>
       ) : null}
@@ -179,13 +179,13 @@ export function SignedOutPath() {
   return (
     <ol className="space-y-1" data-testid="journey-stages">
       <li data-stage="account" data-status="todo" aria-current="step" className="flex items-baseline gap-3 rounded-[2px] border border-[var(--accent)] bg-[var(--panel)] px-3 py-2 text-sm">
-        <span className="text-[0.7rem] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        <span className="t-small text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
           01
         </span>
         <Link href="/" className="link-inline">
           {STEPS.account.title}
         </Link>
-        <span className="text-[0.7rem] text-[var(--muted)]">still to do</span>
+        <span className="t-small text-[var(--muted)]">still to do</span>
       </li>
       <li className="px-3 py-2 text-sm text-[var(--muted)]">
         The rest of the path appears when the app knows who you are. It is not hidden behind the account: a guest account is

@@ -207,7 +207,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
           Placement shows none of it: a hint during placement would measure the wrong thing. */}
       {!aidless && teaching ? (
         <div className="mb-5 max-w-[660px]">
-          <p className="mb-2 text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+          <p className="mb-2 t-small uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
             {(pres as { method_label?: string }).method_label ?? "before the question"}
             {pres.max_words ? ` · ≤${pres.max_words} words a step` : ""}
           </p>

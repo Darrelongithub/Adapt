@@ -144,7 +144,6 @@ export const routeIcon: Record<string, IconName> = {
   "/progress": "bars",
   "/proposals": "message",
   "/baseline": "play",
-  "/subject": "maths",
   "/contrast": "compare",
   "/evidence": "search",
   "/voice": "mic",

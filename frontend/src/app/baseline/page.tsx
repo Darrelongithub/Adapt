@@ -256,7 +256,7 @@ export default function Baseline() {
       ) : null}
 
       {show_snapshot ? (
-        <><SnapshotScreen snap={snap} view={view} onChanged={async () => { if (snap) setSnap(await load_snapshot(snap.run_id)); }} /><div className="mt-5 flex gap-3"><Btn href="/" kind="primary">Go to your dashboard</Btn><Btn href="/subject">Choose a subject</Btn></div></>
+        <><SnapshotScreen snap={snap} view={view} onChanged={async () => { if (snap) setSnap(await load_snapshot(snap.run_id)); }} /><div className="mt-5 flex gap-3"><Btn href="/" kind="primary">Go to your dashboard</Btn><Btn href="/journey?step=subject">Choose a subject</Btn></div></>
       ) : view.kind === "format" ? (
         <FormatScreen view={view} onPick={choose_format} busy={busy} />
       ) : view.kind === "questions" ? (

@@ -29,18 +29,18 @@ export function SceneStage({
 }) {
   const Stage = STAGES[kind];
   if (!frame) {
-    return <p className="text-[13px] text-[var(--muted)]">no frame to draw — the trace was empty.</p>;
+    return <p className="t-small text-[var(--muted)]">no frame to draw — the trace was empty.</p>;
   }
   const wanted = Array.isArray(frame.highlights) ? frame.highlights.filter((x): x is string => typeof x === "string") : [];
   const unrendered = wanted.filter((h) => !(KNOWN[kind] ?? []).includes(h));
   return (
     <figure className="m-0 flex flex-col gap-3">
-      <figcaption className="flex flex-wrap items-baseline gap-2 text-[12px]">
-        <span className="rounded-[2px] border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--muted)]">
+      <figcaption className="flex flex-wrap items-baseline gap-2 t-small">
+        <span className="rounded-[2px] border border-[var(--line)] px-1.5 py-0.5 font-mono t-small text-[var(--muted)]">
           frame {frame.i + 1}
         </span>
-        <span className="font-semibold text-[13px]">{frame.title}</span>
-        <span className="text-[11px] text-[var(--muted)]">
+        <span className="font-semibold t-small">{frame.title}</span>
+        <span className="t-small text-[var(--muted)]">
           {kind}
           {hasRenderer && Stage !== undefined ? "" : " · no renderer"}
         </span>
@@ -51,13 +51,13 @@ export function SceneStage({
       <p className="max-w-[62ch] text-[15px] leading-relaxed">{frame.narration}</p>
 
       {frame.cause ? (
-        <p className="border-l-2 border-l-[var(--think)] pl-3 text-[13px] text-[var(--muted)]">
-          <span className="font-mono text-[11px] uppercase tracking-wide">because</span> {frame.cause}
+        <p className="border-l-2 border-l-[var(--think)] pl-3 t-small text-[var(--muted)]">
+          <span className="font-mono t-small uppercase tracking-wide">because</span> {frame.cause}
         </p>
       ) : null}
 
       {unrendered.length ? (
-        <p className="text-[11px] text-[var(--warn)]">
+        <p className="t-small text-[var(--warn)]">
           this frame also pointed at{" "}
           {unrendered.map((h, k) => (
             <span key={h}>
