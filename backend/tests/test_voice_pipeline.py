@@ -288,10 +288,53 @@ def test_voice_off_still_answers_with_text():
         await asyncio.sleep(0.1)
         assert turn.text
         assert tts.spoken == [], "voice off must not synthesise"
+        assert convo.state is State.IDLE
         return sent
 
     sent = asyncio.run(run())
     assert any(f.get("t") == "reply" for f in sent), "the answer itself must still be delivered"
+
+
+def test_voice_off_drops_audio_before_stt_or_recording():
+    async def run() -> tuple[VoiceConversation, _Stt, list[dict]]:
+        sent: list[dict] = []
+        stt = _Stt()
+        convo = _conversation(stt=stt, sent=sent)
+        convo.set_voice_enabled(False)
+        convo.start_listening()  # a stale push-to-talk command must not reopen input
+        await convo.push_audio(_pcm(_tone(500)))
+        await convo.push_audio(_pcm(_silence(700)))
+        await asyncio.sleep(0.05)
+        return convo, stt, sent
+
+    convo, stt, sent = asyncio.run(run())
+    assert stt.calls == 0, "voice-off audio must never reach speech-to-text"
+    assert convo.bytes_in == 0 and not convo.turns, "voice-off audio must not be counted or recorded"
+    assert not [frame for frame in sent if frame.get("t") == "transcript"]
+    assert convo.state is State.IDLE
+
+
+def test_turning_voice_off_cancels_pending_speech_and_reports_idle():
+    async def run() -> tuple[VoiceConversation, _Tts, list[dict], int]:
+        sent: list[dict] = []
+        tts = _Tts(chunks=10, delay=0.3)
+        convo = _conversation(tts=tts, sent=sent)
+        convo.start_text("explain equivalent fractions")
+        for _ in range(30):
+            await asyncio.sleep(0.02)
+            if convo.state is State.SPEAKING:
+                break
+        assert convo.state is State.SPEAKING
+        before = tts.yielded
+        convo.set_voice_enabled(False)
+        await asyncio.sleep(0.5)
+        return convo, tts, sent, before
+
+    convo, tts, sent, before = asyncio.run(run())
+    assert convo.state is State.IDLE
+    assert tts.yielded <= before + 1, "voice-off allowed obsolete speech to keep streaming"
+    stopped = [frame for frame in sent if frame.get("t") == "state" and frame.get("stopped") is True]
+    assert stopped and stopped[-1]["state"] == State.IDLE.value
 
 
 def test_a_typed_turn_does_not_hold_the_receive_loop():
@@ -335,7 +378,9 @@ def test_the_socket_answers_audio_frames_honestly_when_it_cannot_transcribe(clie
     caps = client.get("/api/v1/voice/capabilities", headers=learner["headers"]).json()
     assert caps["stt"]["local_stt"] in (True, False)
 
-    with client.websocket_connect("/ws/voice?sr=16000&encoding=s16le&voice_on=false") as ws:
+    # Voice is enabled here because this test exercises the audio/STT fallback. The
+    # privacy behavior for voice_on=false is covered immediately below.
+    with client.websocket_connect("/ws/voice?sr=16000&encoding=s16le&voice_on=true") as ws:
         first = json.loads(ws.receive_text())
         assert first["t"] == "hello"
         assert first["status"]["stt"], "the socket has to name the engine it is using"
@@ -371,6 +416,63 @@ def test_the_socket_answers_audio_frames_honestly_when_it_cannot_transcribe(clie
         assert not [f for f in frames if f.get("t") == "error" and f.get("where") == "audio"], kinds
 
 
+def test_the_socket_does_not_process_audio_when_voice_is_off(client, learner):
+    with client.websocket_connect("/ws/voice?sr=16000&encoding=s16le&voice_on=false") as ws:
+        hello = json.loads(ws.receive_text())
+        assert hello["t"] == "hello"
+        assert hello["status"]["voice_enabled"] is False
+        for _ in range(6):
+            ws.send_bytes(_pcm(_tone(100)))
+        for _ in range(6):
+            ws.send_bytes(_pcm(_silence(100)))
+        ws.send_text(json.dumps({"t": "status"}))
+        frames: list[dict] = []
+        for _ in range(20):
+            frame = json.loads(ws.receive_text())
+            frames.append(frame)
+            if frame["t"] == "status":
+                break
+        report = next(frame for frame in frames if frame["t"] == "status")
+        assert report["voice_enabled"] is False
+        assert report["turns"] == 0
+        assert not [frame for frame in frames if frame["t"] == "transcript"]
+
+
+def test_rest_voice_off_does_not_decode_or_synthesise(client, learner, monkeypatch):
+    from adapt.api.routes import system as system_routes
+
+    calls = {"stt": 0, "tts": 0}
+
+    def should_not_stt(*_args, **_kwargs):
+        calls["stt"] += 1
+        raise AssertionError("voice-off upload reached STT")
+
+    def should_not_tts(*_args, **_kwargs):
+        calls["tts"] += 1
+        raise AssertionError("voice-off request reached TTS")
+
+    monkeypatch.setattr(system_routes.STT, "get_stt", should_not_stt)
+    import adapt.voice.tts as tts_mod
+
+    monkeypatch.setattr(tts_mod, "synthesize_or_none", should_not_tts)
+    transcribe = client.post(
+        "/api/v1/voice/transcribe",
+        files={"file": ("clip.wav", b"not decoded", "audio/wav")},
+        data={"sample_rate": "16000"},
+        headers=learner["headers"],
+    )
+    assert transcribe.status_code == 200
+    assert transcribe.json()["backend"] == "disabled"
+    speak = client.post(
+        "/api/v1/voice/speak",
+        json={"text": "do not say this", "gender": "female"},
+        headers=learner["headers"],
+    )
+    assert speak.status_code == 200
+    assert speak.json()["reason"] == "voice_off"
+    assert calls == {"stt": 0, "tts": 0}
+
+
 def test_a_reconnect_starts_a_clean_conversation(client, learner):
     with client.websocket_connect("/ws/voice?sr=16000&encoding=s16le&voice_on=false") as first:
         hello = json.loads(first.receive_text())
@@ -401,6 +503,8 @@ def test_a_reconnect_starts_a_clean_conversation(client, learner):
 
 
 def test_voice_speak_returns_wav_bytes_when_tts_synthesizes(client, learner, monkeypatch):
+    enabled = client.post("/api/v1/me/voice", json={"enabled": True}, headers=learner["headers"])
+    assert enabled.status_code == 200, enabled.text
     from adapt.voice import tts as tts_mod
     from adapt.voice.audio import encode_wav
 

@@ -22,6 +22,7 @@
  */
 
 import { GameCards } from "@/components/icons/GameCards";
+import { useOptionalVoice } from "@/components/voice/context";
 import { Icon, gameIcon } from "@/components/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -68,6 +69,7 @@ export default function Baseline() {
   // the run, never instead of it: a learner who came back gets the new baseline as well.
   const [pending, setPending] = useState<NextDay | null>(null);
   const [pending_hidden, setPendingHidden] = useState(false);
+  const voice = useOptionalVoice();
 
   // When the current task appeared. Latency is measured here because only the browser knows it;
   // the server clamps anything absurd, and the questions screen tells the learner it happens.
@@ -79,6 +81,10 @@ export default function Baseline() {
     setWager(null);
     setView(next);
   }, []);
+
+  useEffect(() => {
+    if (voice?.enabled && view?.note) void voice.speak(view.note, { interrupt: true });
+  }, [voice?.enabled, view?.run_id, view?.task?.id]);
 
   useEffect(() => {
     if (opened.current) return;

@@ -132,8 +132,12 @@ RESOURCE_CURATION_SYSTEM_PROMPT = RESOURCE_CURATION_SYSTEM
 
 RETENTION_CHECK_SYSTEM = """\
 You are AI 1 designing a short spaced-repetition retention check for a
-topic the learner previously reached mastery on. Base the timing rationale
-on the Ebbinghaus forgetting curve. Output strict JSON:
+topic the learner previously reached mastery on. Keep the question grounded in
+the supplied topic title, material excerpt, and draft question; do not invent a
+new topic or unsupported fact. The Ebbinghaus forgetting curve is background
+context only: use the supplied days since practice and projected recall for the
+timing rationale rather than replacing measured timing with a generic claim about
+forgetting. Output strict JSON:
 { "question": string, "expectedAnswerNotes": string,
   "rationale": string (<=140 chars, why now, referencing days since
   practice) }.

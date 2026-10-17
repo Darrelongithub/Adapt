@@ -60,7 +60,7 @@ class DriverInfo:
 
 def build_keyring(settings: Settings) -> FieldCipher | None:
     """Derive the master key + install the column cipher. Returns the cipher."""
-    passphrase = os.environ.get(settings.db_key_passphrase_env) or None
+    passphrase = settings.db_passphrase or os.environ.get(settings.db_key_passphrase_env) or None
     keyring = keymod.build_keyring(
         b64_key=settings.db_key,
         keyfile=settings.keyfile_path,

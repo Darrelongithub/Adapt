@@ -96,6 +96,11 @@ class PreferencesBody(BaseModel):
     source: str = "settings"
 
 
+class VoiceBody(BaseModel):
+    enabled: bool
+    voice_gender: str | None = Field(default=None, max_length=8)
+
+
 @router.post("/students")
 def create_student(body: RegisterBody, request: Request, response: Response, s: Session = Depends(db_session)) -> dict[str, Any]:
     if body.as_guest and auth.demo_passphrase_required() and not auth.check_demo_passphrase(
@@ -253,6 +258,20 @@ def onboarding(
 @router.get("/me/preferences")
 def get_prefs(s: Session = Depends(db_session), student: Student = Depends(student_from_request)) -> dict[str, Any]:
     return {"preferences": S.get_preferences(s, student.id), "allowed_keys": sorted(S.PREFERENCE_KEYS)}
+
+
+@router.post("/me/voice")
+def set_voice(
+    body: VoiceBody,
+    s: Session = Depends(db_session),
+    student: Student = Depends(require_csrf),
+) -> dict[str, Any]:
+    """Persist the app-wide voice switch without storing spoken answers."""
+    student.voice_enabled = bool(body.enabled)
+    if body.voice_gender:
+        student.voice_gender = "male" if body.voice_gender.lower().startswith("m") else "female"
+    s.commit()
+    return {"enabled": student.voice_enabled, "voice_gender": student.voice_gender}
 
 
 @router.post("/me/preferences")

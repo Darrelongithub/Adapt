@@ -148,16 +148,20 @@ Restart `adapt host` so the new value is loaded.  The startup line that says
 key's *presence* is reported — the key itself never leaves the console file.
 
 A plain `.env` at the repo root is the fallback for machines where the console flow is
-not desired.  Copy `.env.example` to `.env` and uncomment the line, then restart:
+not desired. It is also the easiest way to configure the database and optional services:
 
 ```bash
 cd ~/Adapt
 cp .env.example .env
-$EDITOR .env                       # set ADAPT_GEMINI_API_KEY=…
+$EDITOR .env                       # defaults already work; optionally set ADAPT_GEMINI_API_KEY=…
 ```
 
+The template is read from the repository root whether the backend is started from `Adapt/`,
+`Adapt/backend/`, or by `npm run dev`. Do not put a real key in `frontend/.env.local`: the
+frontend loader intentionally ignores provider credentials. If you run the frontend separately,
+copy `frontend/.env.local.example` to `frontend/.env.local` for its proxy/port settings.
 The `ADAPT_GEMINI_API_KEY` value is read by the same code path whether it came from the
-console file or `.env`.  Both are checked at startup; the console file wins if both are set.
+console file or `.env`. Both are checked at startup; the console file wins if both are set.
 
 ### Advanced / separate services and checks
 
@@ -339,11 +343,15 @@ frontend/README.md  the web app: ports, dev origins, probes, and what the player
 ## Environment
 
 Everything has a working default, so `uvicorn adapt.api.app:app` runs with no configuration
-and stays in `local` mode. Prefix `ADAPT_`: `DATA_DIR`, `KEYFILE`, `DB_ENCRYPTION`
-(`auto|sqlcipher|field-only|off`), `GEMINI_API_KEY`, `GEMINI_DAILY_CALL_BUDGET`,
-`RATE_LIMIT_MULTIPLIER`, `MODE` (`local|tunnel`), `DEMO_PASSPHRASE`, `VOICE_ENABLED`,
-`WHISPER_MODEL_SIZE`, `TTS_ENGINE`, `ALLOWED_ORIGINS`, `FRONTEND_ORIGIN`.
-`GET /api/v1/status` reports the effective values, including which encryption you got.
+and stays in `local` mode. Copy `.env.example` for a known-good starting point. Backend names
+always use the `ADAPT_` prefix: `ADAPT_DATA_DIR`, `ADAPT_KEYFILE`, `ADAPT_DB_ENCRYPTION`
+(`auto|sqlcipher|field-only|off`), `ADAPT_DB_PASSPHRASE`, `ADAPT_GEMINI_API_KEY`,
+`ADAPT_GEMINI_DAILY_CALL_BUDGET`, `ADAPT_RATE_LIMIT_MULTIPLIER`, `ADAPT_MODE`
+(`local|tunnel|test`), `ADAPT_VOICE_ENABLED`, `ADAPT_WHISPER_MODEL_SIZE`,
+`ADAPT_TTS_ENGINE`, `ADAPT_ALLOWED_ORIGINS`, and `ADAPT_FRONTEND_ORIGIN`.
+`GET /api/v1/status` reports only learner-safe protection/lesson information; operator settings
+stay in the console. The database passphrase is now a real settings field, so placing
+`ADAPT_DB_PASSPHRASE=...` in the copied env file works as well as exporting it in the shell.
 
 Four kinds of setting decide what a model call costs, and every one of them has a safe default
 ([docs/EFFICIENCY.md](docs/EFFICIENCY.md) is the whole story, including which of them are

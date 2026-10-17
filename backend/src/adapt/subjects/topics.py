@@ -108,6 +108,8 @@ TOPIC_SPECS: tuple[TopicSpec, ...] = (
         aliases=(
             "discrete maths",
             "discrete mathematics",
+            "discrete structures",
+            "discrete structure",
             "combinatorics",
             "graph theory",
             "number theory",

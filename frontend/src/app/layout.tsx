@@ -18,6 +18,7 @@ import "@/styles/choice-cards.css";
 
 import { Chrome, SessionGate } from "@/components/chrome";
 import { Opening } from "@/components/opening";
+import { VoiceProvider } from "@/components/voice/context";
 
 export const metadata: Metadata = {
   title: "ADAPT — adaptive practice that asks before it changes anything",
@@ -34,11 +35,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh antialiased">
         <a href="#main-content" className="skip-link">Skip to content</a>
         <div aria-live="polite" className="sr-only" id="adapt-live-region" />
-        <Opening>
-          <SessionGate>
-            <Chrome>{children}</Chrome>
-          </SessionGate>
-        </Opening>
+        <VoiceProvider>
+          <Opening>
+            <SessionGate>
+              <Chrome>{children}</Chrome>
+            </SessionGate>
+          </Opening>
+        </VoiceProvider>
       </body>
     </html>
   );

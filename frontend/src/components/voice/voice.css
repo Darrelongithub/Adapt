@@ -1,0 +1,2 @@
+.voice-switch { display:inline-flex; align-items:center; gap:5px; min-height:36px; padding:5px 9px; border:1px solid var(--line); border-radius:5px; background:var(--panel); color:var(--muted); cursor:pointer; font: .68rem var(--font-mono); }
+.voice-switch:hover, .voice-switch.on { color:var(--accent); border-color:var(--accent); background:var(--accent-dim); }

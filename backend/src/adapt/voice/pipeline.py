@@ -143,17 +143,39 @@ class VoiceConversation:
             self.gender = gender
 
     def set_voice_enabled(self, enabled: bool) -> None:
-        """Voice on/off toggle: off still transcribes and answers, just silently."""
+        """Toggle spoken voice and microphone processing as one privacy boundary.
+
+        Typed turns still work through :meth:`push_text`, but turning voice off must
+        not leave an already-open socket able to transcribe another audio frame or
+        continue streaming speech that was already in progress.
+        """
         self.voice_enabled = bool(enabled)
+        if not self.voice_enabled:
+            self._speak_cancel.set()
+            self._buf = np.zeros(0, dtype=np.float32)
+            self.vad._reset()
+            if self.state in (State.IDLE, State.LISTENING, State.SPEAKING):
+                self.state = State.IDLE
 
     def start_listening(self) -> None:
-        """Open the gate. IDLE means 'the microphone is not ours yet'."""
+        """Open the gate only when voice input is enabled."""
+        if not self.voice_enabled:
+            self.state = State.IDLE
+            self._buf = np.zeros(0, dtype=np.float32)
+            self.vad._reset()
+            return
         self.state = State.LISTENING
         self._buf = np.zeros(0, dtype=np.float32)
         self.vad._reset()
 
     async def push_audio(self, raw: bytes, *, sample_rate: int | None = None, encoding: str = "s16le") -> None:
-        """One microphone frame from the client."""
+        """One microphone frame from the client.
+
+        The check happens before decoding or counting the frame, so voice-off means
+        no microphone audio is processed or recorded even if a stale client sends one.
+        """
+        if not self.voice_enabled:
+            return
         sr = int(sample_rate or self.sample_rate)
         if encoding == "wav":
             from .audio import decode_wav
@@ -359,7 +381,7 @@ class VoiceConversation:
 
     async def _speak(self, turn: Turn, text: str) -> None:
         if not self.voice_enabled or self.send_audio is None or getattr(self.tts, "name", "none") == "none":
-            self.state = State.LISTENING
+            self.state = State.LISTENING if self.voice_enabled else State.IDLE
             await self.send(
                 {
                     "t": "speak_unavailable",
@@ -398,10 +420,13 @@ class VoiceConversation:
         await self._finish_speaking(cancelled=self._speak_cancel.is_set(), chunks=chunks)
 
     async def _finish_speaking(self, *, cancelled: bool, chunks: int = 0) -> None:
-        self.state = State.LISTENING  # back to the gate: the learner may reply at once
+        # Turning voice off while a worker is pulling TTS can race with the worker's
+        # final callback. Do not report LISTENING after the privacy gate has closed.
+        state = State.LISTENING if self.voice_enabled else State.IDLE
+        self.state = state
         self._buf = np.zeros(0, dtype=np.float32)
         self.vad._reset()
-        await self.send({"t": "state", "state": State.LISTENING.value, "stopped": bool(cancelled), "chunks": chunks})
+        await self.send({"t": "state", "state": state.value, "stopped": bool(cancelled), "chunks": chunks})
 
 
 def _trim_silence(x: np.ndarray, *, sample_rate: int, keep_ms: int = 180) -> np.ndarray:

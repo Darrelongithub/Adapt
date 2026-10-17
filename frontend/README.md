@@ -43,7 +43,10 @@ without trusting a subnet — and it forwards a WebSocket `101` **header for hea
 extension the backend negotiated (permessage-deflate) is not silently dropped on the way back.
 `PORT` / `HOST` move the listener; **`ADAPT_API`** moves the backend (default
 `http://127.0.0.1:8000`; `ADAPT_API=offline` starts the interface with nothing behind it, and every
-screen has to say so rather than spinning). Nothing in `src/` reads `process.env` — browser code
+screen has to say so rather than spinning). For a frontend-only setup, copy
+`.env.local.example` to `.env.local`; the custom Node front door explicitly loads that file and
+also accepts the frontend-safe allowlisted values from the repository root `.env`. It never loads
+provider credentials into the Node process. Nothing in `src/` reads `process.env` — browser code
 that did would ship `undefined` — and `player.test.mjs` fails the build if engine code starts naming
 a host.
 

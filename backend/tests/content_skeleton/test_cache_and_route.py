@@ -96,6 +96,8 @@ def test_pack_item_observations_use_shared_calibration_and_retirement_rules(serv
 
 
 def test_prepare_router_job_and_status_contract(monkeypatch, services):
+    from types import SimpleNamespace
+
     from adapt.api.routes import content_prepare as prepare
 
     class DeferredExecutor:
@@ -110,8 +112,9 @@ def test_prepare_router_job_and_status_contract(monkeypatch, services):
     monkeypatch.setattr(prepare, "_WORKERS", executor)
     topic = f"unlisted social history {uuid.uuid4().hex[:8]}"
     body = prepare.PrepareBody(topic=topic, level=2, language="en")
+    acting_student = SimpleNamespace(id="stu_content_bridge")
     with services.scope() as session:
-        response = prepare.prepare_content(body, session=session, _student=None)
+        response = prepare.prepare_content(body, session=session, _student=acting_student)
         job_id = response["job_id"]
         row = session.get(ContentPrepareJob, job_id)
         assert row is not None
@@ -125,7 +128,7 @@ def test_prepare_router_job_and_status_contract(monkeypatch, services):
     assert len(executor.submissions) == 1
     fn, args = executor.submissions[0]
     assert fn is prepare._run_prepare
-    assert args == (job_id, topic, 2, "en")
+    assert args == (job_id, topic, 2, "en", acting_student.id)
     with services.scope() as session:
         status = prepare.prepare_status(job_id, session=session, _student=None)
         assert status == {"state": "running", "pack_source": None}

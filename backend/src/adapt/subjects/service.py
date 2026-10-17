@@ -246,7 +246,7 @@ class Subjects:
         chain = CUR.chain_for(resolved)
         pair = M.pair_for(resolved.topic_key)
         payload = plan.as_dict(with_tasks=True, tasks=tasks)
-        payload["topic"] = {**payload["topic"], **{"level_hint": resolved.level_hint, "resolved_from": resolved.source, "bank_code": resolved.bank_code}}
+        payload["topic"] = {**payload["topic"], **{"level_hint": resolved.level_hint, "resolved_from": resolved.source, "bank_code": resolved.bank_code, "bank_topic_id": resolved.bank_topic_id}}
         payload["placement"] = placement
         payload["round"] = {
             "stages": [{"key": k, "title": t} for k, t in STAGES],

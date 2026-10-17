@@ -274,7 +274,13 @@ async def _control(payload: dict[str, Any], conv: Any, send: Any, *, student_id:
         return
     if kind == "listen":
         conv.start_listening()
-        await send({"t": "state", "state": "listening", "reason": "push_to_talk"})
+        await send(
+            {
+                "t": "state",
+                "state": getattr(getattr(conv, "state", None), "value", "idle"),
+                "reason": "push_to_talk" if conv.voice_enabled else "voice_off",
+            }
+        )
         return
     if kind == "config":
         # ``voice_on`` is the name of the query parameter on this endpoint, so the
@@ -292,7 +298,13 @@ async def _control(payload: dict[str, Any], conv: Any, send: Any, *, student_id:
         return
     if kind in ("stop", "interrupt"):
         await conv.stop()
-        await send({"t": "state", "state": "listening", "reason": "stopped_by_learner"})
+        await send(
+            {
+                "t": "state",
+                "state": getattr(getattr(conv, "state", None), "value", "idle"),
+                "reason": "stopped_by_learner",
+            }
+        )
         return
     if kind == "status":
         await send({"t": "status", **conv.status()})

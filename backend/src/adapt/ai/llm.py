@@ -38,7 +38,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import httpx
 
@@ -57,7 +57,7 @@ class LLMResult:
     ok: bool
     text: str = ""
     data: dict[str, Any] | None = None
-    status: str = "ok"  # ok | quota | disabled | error | parse_error | throttled
+    status: str = "ok"  # ok | quota | disabled | consent_required | error | parse_error | throttled
     provider: str = "gemini"
     model: str | None = None
     latency_ms: int = 0
@@ -217,6 +217,7 @@ class GeminiLLM:
         *,
         limiter: Any = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        consent_checker: Callable[[str], bool] | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.guard = QuotaGuard(
@@ -225,6 +226,10 @@ class GeminiLLM:
             min_interval_ms=self.settings.gemini_min_interval_ms,
         )
         self.limiter = limiter
+        # The service container injects the learner-consent lookup. Keeping this at the
+        # provider boundary means a newly added call site cannot accidentally bypass the
+        # learner's sharing choice by forgetting an API-layer dependency.
+        self.consent_checker = consent_checker
         #: Injectable so a test can exercise the real request/response plumbing -- including
         #: the cache round trip -- without a key and without the network.
         self.transport = transport
@@ -336,6 +341,29 @@ class GeminiLLM:
                 provider="none",
                 tier=plan.tier,
             )
+
+        # Consent is checked immediately before any prompt is prepared or budget is
+        # reserved. ``student_id`` is absent for operator/content calls; learner-bound
+        # calls must have an explicit consent row *and* an injected lookup. A missing
+        # checker or a lookup failure fails closed so a wiring problem cannot turn into
+        # an unintended external disclosure.
+        if student_id:
+            allowed = False
+            if self.consent_checker is None:
+                log.warning("learner model call has no consent checker; refusing external call")
+            else:
+                try:
+                    allowed = bool(self.consent_checker(student_id))
+                except Exception as exc:  # pragma: no cover - exercised through the service boundary
+                    log.warning("model consent lookup failed (%s); refusing learner call", type(exc).__name__)
+            if not allowed:
+                return LLMResult(
+                    ok=False,
+                    status="consent_required",
+                    error="learner has not consented to sharing a summary with the model",
+                    provider="none",
+                    tier=plan.tier,
+                )
 
         # 1) minimize egress -- every string that leaves is scrubbed, including
         # conversation history, which is where a learner is most likely to name

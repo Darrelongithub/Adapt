@@ -23,7 +23,10 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 
 import LessonRenderer, { type LessonValue } from "@/components/lesson/LessonRenderer";
+import { SceneStage, type SceneSpec } from "@/components/animator";
+import { useOptionalVoice } from "@/components/voice/context";
 import { api, get, post } from "@/lib/api";
+import { useJourney } from "@/lib/journey";
 
 type Concept = { id: string; name: string };
 type PlanReply = { plan: LessonValue; job_id?: string | null };
@@ -66,13 +69,27 @@ function FirstLesson() {
   const [stage, setStage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [seq, setSeq] = useState(1);
+  const [scene, setScene] = useState<SceneSpec | null>(null);
+  const [lessonFinished, setLessonFinished] = useState(false);
+  const journey = useJourney(true);
+  const voice = useOptionalVoice();
+
+  useEffect(() => {
+    if (voice?.enabled && (scene || moments.length)) void voice.speak(moments.at(-1)?.heading ?? "Your visual lesson is ready.", { interrupt: true });
+  }, [voice?.enabled, scene?.template, moments.length]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const wanted = (params.get("topic") ?? "").trim();
+    const subjectId = (params.get("subject") ?? "").trim();
     if (wanted) {
       setTopicDraft(wanted);
       setTopic(wanted);
+    } else if (subjectId) {
+      void get<{ title: string }>(`subjects/${encodeURIComponent(subjectId)}`).then((result) => {
+        const title = result.data?.title?.trim();
+        if (title) { setTopicDraft(title); setTopic(title); }
+      });
     }
   }, []);
 
@@ -84,6 +101,9 @@ function FirstLesson() {
     setTopicMatch(null);
     setSource(null);
     setMoments([]);
+    const lower = wanted.toLowerCase();
+    const template = lower.includes("triangle") || lower.includes("geometry") ? "angle-sum-of-triangle" : lower.includes("function") ? "function-plot" : lower.includes("graph") ? "graph-traversal" : lower.includes("language") || lower.includes("grammar") || lower.includes("kiswahili") ? "grammar-sentence-diagram" : "flowchart";
+    setScene({ template, captions: [`A picture for ${wanted}.`, "Pause and predict the next step.", "Say what changed."], source: "simple" });
     setStage("Checking what can be taught for this topic…");
     // Ask for the checked pack first: a typed topic has nothing to teach from until the
     // prepare job has built and validated one. The status surface is honest — it answers
@@ -204,6 +224,12 @@ function FirstLesson() {
     ]);
   }
 
+  async function finishLesson() {
+    if (lessonFinished || journey.busy) return;
+    const out = await journey.advance("first_lesson", "done");
+    if (out.ok) setLessonFinished(true);
+  }
+
   /**
    * Round 3 (Track S): clicking a check option registers the answer with
    * the server, the server grades it, and the page reacts to the verdict.
@@ -258,6 +284,7 @@ function FirstLesson() {
           {stage}
         </p>
       ) : null}
+      {scene ? <SceneStage spec={scene} /> : null}
 
       <section className="rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4" aria-label="Choose a topic">
         <label htmlFor="fl-topic" className="text-sm font-medium">
@@ -362,6 +389,14 @@ function FirstLesson() {
           >
             I still don&apos;t get it — try another way
           </button>
+        </div>
+      ) : null}
+      {moments.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 border-t border-[var(--line)] pt-4">
+          <button type="button" className="btn-ctl btn-primary" onClick={() => void finishLesson()} disabled={lessonFinished || journey.busy}>
+            {lessonFinished ? "First lesson saved" : "Finish first lesson"}
+          </button>
+          {lessonFinished ? <a className="link-inline" href="/learn">Continue learning</a> : null}
         </div>
       ) : null}
     </section>

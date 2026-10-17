@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Btn, Card, Check, Err, Field, Notice, Select, Tag, Textarea, useSession } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
 import { createDeduper, debounce, type Deduper } from "@/lib/debounce";
+import { useVoice } from "@/components/voice/context";
 
 type Caps = {
   stt?: { local_stt?: boolean; detail?: string; fallback?: string; model_size?: string };
@@ -45,13 +46,13 @@ type Frame =
 
 export default function VoicePage() {
   const { me } = useSession();
+  const { enabled: voiceOn, setEnabled: setVoiceOn, speak: appSpeak } = useVoice();
   const caps = useApi<Caps>("voice/capabilities");
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<string>("idle");
   const [turns, setTurns] = useState<{ you: string; tutor: string; ms?: number; interrupted?: boolean }[]>([]);
   const [draft, setDraft] = useState("");
   const [partial, setPartial] = useState("");
-  const [voiceOn, setVoiceOn] = useState(true);
   const [gender, setGender] = useState("female");
   const [barge, setBarge] = useState(true);
   const [log, setLog] = useState<string[]>([]);
@@ -67,7 +68,7 @@ export default function VoicePage() {
   const rate = useRef(24000);
 
   const say = useCallback(async (text: string) => {
-    if (!text) return;
+    if (!voiceOn || !text) return;
     // Prefer the local server voice if it is installed; fall back to the browser's.
     try {
       const out = await post<{ available?: boolean; audio?: string | null; reason?: string; fallback?: string }>("voice/speak", { text, gender });
@@ -85,19 +86,13 @@ export default function VoicePage() {
     } catch {
       /* the browser voice is the point of the fallback, not an error */
     }
+    await appSpeak(text);
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       setLog((l) => [...l, "no speech engine at all — the text answer is still on screen"]);
-      return;
+    } else if (window.speechSynthesis.getVoices().length === 0) {
+      setLog((l) => [...l, "browser has no speech voices installed; text only"]);
     }
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
-    const want = voices.find((v) => (gender === "female" ? /female|zira|samantha|serena|google uk english female/i.test(v.name) : /male|david|daniel|google uk english male/i.test(v.name)));
-    if (want) u.voice = want;
-    u.rate = 0.98;
-    window.speechSynthesis.speak(u);
-    if (voices.length === 0) setLog((l) => [...l, "browser has no speech voices installed; text only"]);
-  }, [gender]);
+  }, [appSpeak, gender, voiceOn]);
 
   const stopTalking = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
@@ -117,6 +112,10 @@ export default function VoicePage() {
 
   async function start() {
     setError(null);
+    if (!voiceOn) {
+      setError("Turn voice on before connecting. When it is off, there is no microphone, audio, or voice recording.");
+      return;
+    }
     if (!me) {
       setError("voice needs a learner who is signed in: the session it joins is your session, and an anonymous microphone has no place to be recorded to.");
       return;
@@ -207,6 +206,21 @@ export default function VoicePage() {
     }, 250))(frame);
   };
 
+  useEffect(() => {
+    if (!voiceOn) {
+      rec.current?.stop();
+      rec.current = null;
+      ws.current?.close();
+      ws.current = null;
+      setOpen(false);
+      setState("idle");
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+      setMic(null);
+    } else if (ws.current?.readyState === WebSocket.OPEN) {
+      sendConfig({ t: "config", voice_on: voiceOn, gender, barge_in: barge });
+    }
+  }, [barge, gender, voiceOn]);
+
   async function playBinary(buf: ArrayBuffer) {
     if (!ctx.current) return;
     const pcm = new Int16Array(buf);
@@ -231,7 +245,7 @@ export default function VoicePage() {
 
   function sendText() {
     const text = draft.trim();
-    if (!text || !ws.current || ws.current.readyState !== WebSocket.OPEN) return;
+    if (!voiceOn || !text || !ws.current || ws.current.readyState !== WebSocket.OPEN) return;
     if ((sends.current ??= createDeduper(900)).seen(text)) {
       // The same words again inside the window: a double-click on send, or Enter held down.
       // One turn was started; the second copy is dropped here, where it costs nothing.
@@ -247,6 +261,7 @@ export default function VoicePage() {
   }
 
   async function dictate() {
+    if (!voiceOn) return;
     const SR = (window as unknown as { SpeechRecognition?: new () => unknown; webkitSpeechRecognition?: new () => unknown });
     const Impl = (SR.SpeechRecognition ?? SR.webkitSpeechRecognition) as (new () => {
       lang: string;
@@ -309,7 +324,7 @@ export default function VoicePage() {
               hang up
             </Btn>
           ) : (
-            <Btn kind="primary" onClick={start}>
+            <Btn kind="primary" onClick={start} disabled={!voiceOn} title={!voiceOn ? "Turn voice on before connecting" : undefined}>
               connect
             </Btn>
           )}
@@ -355,7 +370,7 @@ export default function VoicePage() {
               <Btn kind="primary" onClick={sendText} disabled={!open || !draft.trim()}>
                 send
               </Btn>
-              <Btn onClick={dictate} disabled={Boolean(mic)} title="uses your browser's own dictation; no audio goes to the server unless the local engine is installed and the websocket is streaming">
+              <Btn onClick={dictate} disabled={!voiceOn || Boolean(mic)} title={voiceOn ? "uses your browser's own dictation; no audio goes to the server unless the local engine is installed and the websocket is streaming" : "Turn voice on before using the microphone"}>
                 {mic ?? "hold to talk"}
               </Btn>
               {mic ? (
@@ -423,8 +438,8 @@ export default function VoicePage() {
                 </Btn>
               ) : null}
               <p className="text-xs text-[var(--muted)]">
-                The same three settings live on your account, on the settings screen. What you change here lasts for this session
-                only, so a borrowed laptop does not leave your voice preference switched off for the next person.
+                The voice switch is app-wide and is also available in the top bar. When it is off, no microphone, speech audio,
+                or voice turn is used; the keyboard path remains available.
               </p>
             </div>
           </Card>

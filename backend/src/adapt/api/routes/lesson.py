@@ -523,7 +523,15 @@ def _model_callable(student_id: str):
         from ...ai.llm import GeminiLLM
 
         client = (
-            GeminiLLM(services.settings, limiter=services.limiter)
+            GeminiLLM(
+                services.settings,
+                limiter=services.limiter,
+                # This synchronous lesson bridge creates a short-lived client to avoid
+                # sharing an async transport across event loops. Carry the same injected
+                # learner-consent guard across that boundary; otherwise AI3 would be the
+                # one model path able to bypass the common provider check.
+                consent_checker=getattr(base_llm, "consent_checker", None),
+            )
             if isinstance(base_llm, GeminiLLM)
             else base_llm
         )

@@ -163,4 +163,35 @@ class SubjectSnapshot(Base):
     )
 
 
-__all__ = ["MethodTestRun", "SubjectRound", "SubjectSnapshot", "SubjectTrial"]
+class LearnerSubject(Base):
+    """A subject a learner chose for the product-level learning flow.
+
+    The older ``SubjectRound`` tables remain the evidence ledger for a single sitting.  This
+    small row is the durable course spine around them: one learner may keep several subjects,
+    each with its own checked test plan and progress.  Keeping the plan on the row also makes a
+    resume deterministic when the model is unavailable on the next device.
+    """
+
+    __tablename__ = "learner_subjects"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("subject"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    text: Mapped[str] = mapped_column(String(240), nullable=False)
+    normalised_text: Mapped[str] = mapped_column(String(240), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    family: Mapped[str] = mapped_column(String(32), default="generic")
+    source: Mapped[str] = mapped_column(String(16), default="simple")  # model|simple
+    stage: Mapped[str] = mapped_column(String(16), default="tests")  # tests|learning|done
+    active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    plan: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    progress: Mapped[Any] = mapped_column(EncryptedJSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        Index("ix_learner_subjects_student", "student_id", "updated_at"),
+        UniqueConstraint("student_id", "normalised_text", name="uq_learner_subject_text"),
+    )
+
+
+__all__ = ["LearnerSubject", "MethodTestRun", "SubjectRound", "SubjectSnapshot", "SubjectTrial"]

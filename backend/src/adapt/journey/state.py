@@ -39,7 +39,7 @@ from ..db.models import (
     Student,
     utcnow,
 )
-from ..subjects.models import SubjectRound
+from ..subjects.models import LearnerSubject, SubjectRound
 from .models import JourneyStage
 from .stages import SETTABLE_STATUSES, STAGE_IDS, first_todo
 
@@ -70,8 +70,11 @@ def _derived(s: Session, student_id: str) -> dict[str, bool]:
     rounds = s.execute(
         select(SubjectRound.status).where(SubjectRound.student_id == student_id)
     ).scalars().all()
-    subject_chosen = bool(rounds)
-    round_done = any(str(status) == "complete" for status in rounds)
+    chosen_subjects = s.execute(
+        select(LearnerSubject.stage).where(LearnerSubject.student_id == student_id)
+    ).scalars().all()
+    subject_chosen = bool(rounds or chosen_subjects)
+    round_done = any(str(status) == "complete" for status in rounds) or any(str(stage) == "done" for stage in chosen_subjects)
 
     snapshot_done = (
         s.execute(

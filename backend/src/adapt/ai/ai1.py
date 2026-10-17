@@ -83,6 +83,31 @@ RETENTION_SPEC: dict[str, Any] = {
     "rationale": "str",
 }
 
+_RETENTION_STOPWORDS = frozenset(
+    "a an and are after be check checking days first for from how in is last of on the this to what when where why with your".split()
+)
+
+
+def _retention_is_grounded(question: str, *, topic_title: str, draft_question: str, rationale: str) -> bool:
+    """Reject a fluent retention question that wandered away from supplied material."""
+    question_words = {
+        word
+        for word in re.findall(r"[a-z0-9]+", question.casefold())
+        if len(word) > 2 and word not in _RETENTION_STOPWORDS
+    }
+    source_words = {
+        word
+        for word in re.findall(r"[a-z0-9]+", f"{topic_title} {draft_question}".casefold())
+        if len(word) > 2 and word not in _RETENTION_STOPWORDS
+    }
+    if not question_words or not (question_words & source_words):
+        return False
+    # The timing explanation must use the supplied timing evidence, rather than
+    # replacing it with a generic quote about forgetting.
+    timing_marker = re.search(r"\b\d+(?:\.\d+)?\s*(?:day|days|hour|hours)\b|\b\d+(?:\.\d+)?%", rationale.casefold())
+    first_check_marker = "first" in rationale.casefold() and "practice" in rationale.casefold()
+    return bool(timing_marker or first_check_marker)
+
 PROPOSAL_SPEC: dict[str, Any] = {
     "strategy": "str",
     "facts_text": "str",
@@ -1301,6 +1326,7 @@ class LearningIntelligence:
                     expected = SP.expected_recall(float(sched.half_life_hours), lag_hours)
 
             question, notes, grounded_item = self._ground_check(s, student_id, topic)
+            topic_title = str(topic.title or "")
             if expected is not None:
                 if lag_hours >= 24:
                     lag_text = f"{lag_hours / 24:.1f} days"
@@ -1380,6 +1406,14 @@ class LearningIntelligence:
         r = " ".join(str(data.get("rationale") or "").split())
         if not q or not n or not r:
             out["llm_check"] = "missing_fields"
+            return out
+        if not _retention_is_grounded(
+            q,
+            topic_title=topic_title,
+            draft_question=question,
+            rationale=r,
+        ):
+            out["llm_check"] = "not_grounded"
             return out
         out.update(
             {

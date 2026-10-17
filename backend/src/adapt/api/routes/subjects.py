@@ -32,12 +32,15 @@ from typing import Any, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...db.models import Student
 from ...services import current
 from ...subjects import TAXONOMY_VERSION
 from ...subjects.service import Subjects, SubjectsError
+from ...subjects.catalog import activate as activate_subject, choose as choose_subject, complete_tests, overview as subject_overview, subject_payload
+from ...subjects.models import LearnerSubject
 from ...subjects.taxonomy import taxonomy_payload
 from ..deps import db_session, rate, student_from_request
 
@@ -53,6 +56,16 @@ class ResolveBody(BaseModel):
     #: What the learner typed. Long enough for "gcse higher tier calculus", short enough that nobody
     #: pastes an essay into a topic box (the service refuses past 240 characters).
     text: str = Field(min_length=1, max_length=240)
+
+
+class ChooseBody(BaseModel):
+    """The learner's subject words are data, never instructions to a model."""
+
+    text: str = Field(min_length=1, max_length=240)
+
+
+class CompleteTestsBody(BaseModel):
+    completed_ids: list[str] = Field(default_factory=list, max_length=6)
 
 
 class RoundBody(BaseModel):
@@ -377,6 +390,82 @@ def submit_recheck(
         )
     except SubjectsError as exc:
         raise _refused(exc) from None
+
+
+# --------------------------------------------------------------------------- #
+# The product subject spine (kept next to, not mixed into, the older round API)
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/learning/overview")
+def learning_overview(
+    s: Session = Depends(db_session),
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    """The dashboard contract: several subjects, one active subject, and honest counts."""
+    return subject_overview(s, student.id)
+
+
+@router.post("/subjects/choose")
+def choose(
+    body: ChooseBody,
+    s: Session = Depends(db_session),
+    student: Student = Depends(rate("mutation")),
+) -> dict[str, Any]:
+    """Choose a subject and persist its code-checked plan.
+
+    The existing subject resolver/leaning/ladder code does the proposal and code validates the
+    resulting closed taxonomy. The browser receives only ``model`` or ``simple``; internal provider
+    names and configuration never cross this boundary.
+    """
+    try:
+        result = choose_subject(s, _subjects(), student_id=student.id, text=body.text)
+    except (ValueError, SubjectsError) as exc:
+        raise HTTPException(status_code=422, detail={"error": "subject_refused", "message": str(exc)}) from None
+    return {
+        "subject_id": result["id"],
+        "plan": result["plan"],
+        "subject": result,
+    }
+
+
+@router.get("/subjects/{subject_id}")
+def get_chosen_subject(
+    subject_id: str,
+    s: Session = Depends(db_session),
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    row = s.execute(
+        select(LearnerSubject).where(LearnerSubject.id == subject_id, LearnerSubject.student_id == student.id)
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"error": "unknown_subject", "message": "no such subject"})
+    return subject_payload(row)
+
+
+@router.post("/subjects/{subject_id}/activate")
+def activate_chosen_subject(
+    subject_id: str,
+    s: Session = Depends(db_session),
+    student: Student = Depends(rate("mutation")),
+) -> dict[str, Any]:
+    try:
+        return activate_subject(s, student.id, subject_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail={"error": "unknown_subject", "message": "no such subject"}) from None
+
+
+@router.post("/subjects/{subject_id}/tests/complete")
+def complete_subject_tests(
+    subject_id: str,
+    body: CompleteTestsBody,
+    s: Session = Depends(db_session),
+    student: Student = Depends(rate("mutation")),
+) -> dict[str, Any]:
+    try:
+        return complete_tests(s, student.id, subject_id, body.completed_ids)
+    except LookupError:
+        raise HTTPException(status_code=404, detail={"error": "unknown_subject", "message": "no such subject"}) from None
 
 
 __all__ = ["router", "TAXONOMY_VERSION"]

@@ -32,6 +32,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import sims
+from .template_library import (
+    TEMPLATE_IDS,
+    TEMPLATE_SCHEMAS,
+    dry_run as dry_run_template,
+    suggest_template,
+    validate_template,
+)
 
 TITLE_MAX = 120
 INTENT_MAX = 400
@@ -197,7 +204,20 @@ def _one(name: str, decl: dict[str, Any], raw: Any, errors: list[str]) -> Any:
 
 
 def validate(raw: dict[str, Any]) -> Result:
-    """Validate one proposed scene spec. Returns the canonical spec, or the reasons."""
+    """Validate one proposed scene spec.
+
+    Legacy simulations use the original ``kind`` envelope. New lesson visuals use the
+    closed template envelope; both are dry-run before being accepted.
+    """
+    if isinstance(raw, dict) and "template" in raw:
+        spec, errors = validate_template(raw)
+        if errors or spec is None:
+            return Result(errors=errors)
+        try:
+            spec["frames"] = dry_run_template(spec)
+        except Exception as exc:  # pragma: no cover - defensive future-template boundary
+            return Result(errors=[f"template dry run failed: {type(exc).__name__}"])
+        return Result(spec=spec)
     errors: list[str] = []
     warnings: list[str] = []
     if not isinstance(raw, dict):
@@ -382,3 +402,19 @@ def builtin_specs() -> list[dict[str, Any]]:
         if out.ok and out.spec:
             specs.append(out.spec)
     return specs
+
+# Round-five template surface. Keeping these aliases in this module makes the validator the one
+# import a lesson writer needs, while ``scene_api`` remains convenient for callers that only render.
+def validate_scene_spec(raw: Any) -> Result:
+    return validate(raw)
+
+
+def render_scene(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    clean, errors = validate_template(spec)
+    if errors or clean is None:
+        raise ValueError("; ".join(errors))
+    return dry_run_template(clean)
+
+
+def template_catalogue() -> dict[str, Any]:
+    return {"templates": [{"id": key, "params": schema} for key, schema in TEMPLATE_SCHEMAS.items()]}
