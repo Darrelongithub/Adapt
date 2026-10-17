@@ -12,6 +12,7 @@ import { Icon, routeIcon } from "./icons";
 import { PageShell } from "./shell/PageShell";
 import { LEARNER_LANDING } from "@/lib/landing";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
+import { useVoice } from "@/components/voice/context";
 
 /** Always-shown entries for a new learner (round 3, Track R).
  *  Anything else is hidden behind the "More" disclosure so the sidebar
@@ -199,9 +200,11 @@ export function Chrome({ children }: { children: ReactNode }) {
         <MockBanner />
         <div className="flex justify-end px-4 py-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
           <div className="flex items-center gap-3">
+            <VoiceControl />
             <Who />
           </div>
         </div>
+        <VoiceGreeting />
 
         <main id="main-content" className="w-full">
           <PageShell>{children}</PageShell>
@@ -277,6 +280,32 @@ function SidebarMore({ current, onClose }: { current: string | null; onClose: ()
       ) : null}
     </>
   );
+}
+
+function VoiceControl() {
+  const { enabled, setEnabled, listening, speaking } = useVoice();
+  const { me } = useSession();
+  useEffect(() => {
+    // Account state is the default on a new device; a local choice wins after the learner has
+    // used this browser once. No microphone is touched by this sync.
+    if (me?.voice_enabled && typeof window !== "undefined" && window.localStorage.getItem("adapt:voice-enabled") === null) setEnabled(true);
+  }, [me?.voice_enabled, setEnabled]);
+  return <button type="button" className={`voice-switch${enabled ? " on" : ""}`} aria-pressed={enabled} onClick={() => setEnabled(!enabled)} title={enabled ? "Turn voice off" : "Turn voice on"}>
+    <Icon name="mic" /> <span>{enabled ? "Voice on" : "Voice off"}</span>{listening ? <span aria-label="listening">●</span> : speaking ? <span aria-label="speaking">◌</span> : null}
+  </button>;
+}
+
+function VoiceGreeting() {
+  const { me } = useSession();
+  const { enabled, speak, listenOnce } = useVoice();
+  const greeted = useRef<string | null>(null);
+  useEffect(() => {
+    if (!enabled || !me || greeted.current === me.student_id) return;
+    greeted.current = String(me.student_id);
+    const subject = "ready to continue your learning?";
+    void speak(`Welcome back, ${me.display_name || "learner"}. ${subject}`, { interrupt: true }).then(() => listenOnce({ timeoutMs: 7000 }));
+  }, [enabled, me, speak, listenOnce]);
+  return null;
 }
 
 function Who() {

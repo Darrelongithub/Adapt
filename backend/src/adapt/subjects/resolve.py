@@ -58,7 +58,7 @@ LEVEL_HINTS: tuple[dict[str, Any], ...] = (
 #: classifier: it exists so "physics" is measured with science skills rather than the generic list,
 #: and anything it does not know honestly falls through to ``unresolved``.
 FAMILY_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "maths": ("maths", "math", "mathematics", "arithmetic", "geometry", "trigonometry", "numeracy", "hisabati"),
+    "maths": ("maths", "math", "mathematics", "arithmetic", "geometry", "trigonometry", "numeracy", "hisabati", "discrete"),
     "languages": ("english", "language", "literature", "reading", "writing", "french", "spanish", "arabic", "chinese", "lugha", "isimu"),
     "sciences": ("science", "physics", "chemistry", "biology", "agriculture", "geology", "astronomy", "computer science", "sayansi"),
     "history": ("history", "geography", "government", "civics", "religion", "business", "economics", "sociology", "philosophy", "psychology", "raia"),

@@ -9,6 +9,7 @@
  * rather than magic. `GET /practice` never carries an answer key, so nothing here can peek.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { EffectLine, type EffectSummary } from "@/components/evidence";
 import { Question } from "@/components/question";
@@ -16,10 +17,14 @@ import { Btn, Card, Err, Notice, Tag } from "@/components/ui";
 import { summarise, type AnalyzeRaw, type AnalyzeSummary } from "@/lib/analyze";
 import { useFlow } from "@/lib/flow";
 import { get, post } from "@/lib/api";
+import { LEARNER_LANDING } from "@/lib/landing";
 import type { ActiveAdaptation, PlanResponse, Receipt } from "@/lib/types";
 
 export default function Learn() {
+  const router = useRouter();
   const flow = useFlow("practice");
+  const [gate, setGate] = useState<"checking" | "ready" | "redirecting" | "error">("checking");
+  const [subjectTopicId, setSubjectTopicId] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [i, setI] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -36,16 +41,41 @@ export default function Learn() {
   const entry = items[i];
   const last = receipts[i] ?? null;
 
+  useEffect(() => {
+    let alive = true;
+    void get<{ active_subject_id: string | null; subjects: { id: string; stage: "tests" | "learning" | "done" }[] }>("learning/overview").then(async (result) => {
+      if (!alive) return;
+      if (result.error || !result.data) {
+        setError(result.error ?? "Your active subject could not be checked.");
+        setGate("error");
+        return;
+      }
+      const active = result.data.subjects.find((subject) => subject.id === result.data?.active_subject_id);
+      if (!active || active.stage === "tests") { setGate("redirecting"); router.replace(LEARNER_LANDING); return; }
+      const subject = await get<{ topic_id?: string | null }>(`subjects/${encodeURIComponent(active.id)}`);
+      if (!alive) return;
+      if (subject.error || !subject.data) {
+        setError(subject.error ?? "Your active subject could not be opened.");
+        setGate("error");
+        return;
+      }
+      setSubjectTopicId(subject.data.topic_id ?? null);
+      setGate("ready");
+    });
+    return () => { alive = false; };
+  }, [router]);
+
   // same hazard as /diagnose: `loading` blanks the practice card, and the card is where a typed or
   // ticked answer lives. Only an empty screen may be blanked.
   const painted = useRef(false);
   useEffect(() => {
     let alive = true;
+    if (gate !== "ready") return () => { alive = false; };
     (async () => {
       if (!painted.current) setLoading(true);
       try {
         const [planRes, act, dd] = await Promise.all([
-          get<PlanResponse>("/api/v1/practice?count=4"),
+          get<PlanResponse>("practice", { count: 4, ...(subjectTopicId ? { topic_id: subjectTopicId } : {}) }),
           get<{ active: ActiveAdaptation[] }>("/api/v1/adaptations/active"),
           get<{ count: number }>("/api/v1/review/due"),
         ]);
@@ -67,7 +97,7 @@ export default function Learn() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [gate]);
 
   useEffect(() => {
     if (entry) flow.onShown({ ...entry });
@@ -100,6 +130,8 @@ export default function Learn() {
     }
   }, [flow]);
 
+  if (gate === "error") return <Err error={error ?? "Your active subject could not be opened."} status={null} />;
+  if (gate !== "ready") return <Card title="Opening your subject"><p role="status">{gate === "redirecting" ? "Choose a subject first…" : "Checking your active subject…"}</p></Card>;
   if (loading)
     return (
       <Card title="Practice" tone="muted">

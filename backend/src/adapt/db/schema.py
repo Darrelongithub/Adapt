@@ -39,9 +39,16 @@ def upgrade_schema(engine: Engine) -> None:
                 Base.metadata.create_all(connection)
                 command.stamp(config, "0002")
             command.upgrade(config, "head")
+            # New additive tables (such as the learner subject spine) are declared in the
+            # ORM module rather than a destructive migration. create_all is existence-safe
+            # and lets an upgraded installation receive them without touching learner rows.
+            Base.metadata.create_all(connection)
             inspector = inspect(connection)
             missing = []
             for table in Base.metadata.sorted_tables:
+                if not inspector.has_table(table.name):
+                    missing.extend(f"{table.name}.{col.name}" for col in table.columns)
+                    continue
                 present = {col["name"] for col in inspector.get_columns(table.name)}
                 missing.extend(
                     f"{table.name}.{col.name}" for col in table.columns if col.name not in present

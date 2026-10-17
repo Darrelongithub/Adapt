@@ -6,11 +6,11 @@
     --art-ink: oklch(70% 0.13 258);
   }
 }
-/* Three disjoint grid cells: an opaque central sheet and two empty gutters.
-   No viewport-wide pattern, overlay, or negative z-index can bleed into content. */
+/* The sheet is a fluid 12-column workspace. Reading copy stays narrow inside cards; the
+   cards themselves use the available width instead of leaving a 650px island in a desert. */
 .page-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 680px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1280px) minmax(0, 1fr);
   position: relative;
   min-height: calc(100dvh - 60px);
   background: var(--bg);
@@ -20,10 +20,13 @@
   grid-column: 2;
   grid-row: 1;
   min-width: 0;
+  width: 100%;
   background: var(--bg);
   position: relative;
-  padding: 0 16px;
+  padding: 0 28px;
 }
+.page-sheet > * { max-width: 100%; }
+.page-sheet .home-grid, .page-sheet .home-layout { max-width: none; }
 .pattern-zone {
   display: none;
   grid-row: 1;
@@ -91,20 +94,23 @@
   pointer-events: none;
 }
 .hero-zone .artwork {
-  width: 260px;
-  height: 240px;
+  width: 500px;
+  height: 420px;
   flex: none;
 }
 .hero-classroom {
-  grid-column: 2;
+  grid-column: 2 / 4;
   justify-content: center;
-  padding: 40px 16px;
-  min-height: 330px;
+  padding: 28px 16px;
+  min-height: 440px;
 }
 .hero-classroom .artwork {
-  width: min(640px, 100%);
-  height: 300px;
+  width: min(720px, 100%);
+  height: 420px;
 }
+.hero-study .artwork { width: min(560px, 100%); height: 460px; }
+.brain-zone .artwork { width: min(420px, 100%); height: 360px; }
+.shell-access .hero-flower .artwork { width: 420px; height: 420px; }
 /* Once teaching/practice occupies the sheet there is no empty classroom zone. */
 .page-shell:has([data-testid="fl-moment"], [data-practice-item])
   .hero-classroom {
@@ -153,8 +159,9 @@
     display: block;
   }
   .brain-zone .artwork {
-    height: 230px;
-    max-width: 230px;
+    width: min(420px, 100%);
+    height: 360px;
+    max-width: none;
   }
 }
 @media (min-width: 900px) {

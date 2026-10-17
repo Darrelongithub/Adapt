@@ -10,7 +10,7 @@ import { pushEntry, readLedger, writeLedger } from "@/lib/ledger";
 
 type Loader = (path: string, init: { method: string; json: unknown }) => Promise<unknown>;
 
-export function Card({ title, right, children, tone }: { title?: ReactNode; right?: ReactNode; children: ReactNode; tone?: "ask" | "good" | "warn" | "muted" }) {
+export function Card({ title, right, children, tone, icon }: { title?: ReactNode; right?: ReactNode; children: ReactNode; tone?: "ask" | "good" | "warn" | "muted"; icon?: ReactNode }) {
   const edge =
     tone === "ask"
       ? "border-l-[3px] border-l-[var(--think)]"
@@ -25,7 +25,7 @@ export function Card({ title, right, children, tone }: { title?: ReactNode; righ
     <section className={`rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-4 ${edge}`}>
       {(title || right) && (
         <header className="mb-3 flex items-baseline justify-between gap-3">
-          <h2 className="text-[11px] font-semibold tracking-[0.08em] text-[var(--muted)] uppercase" style={{ fontFamily: "var(--font-mono)" }}>{title}</h2>
+          <h2 className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-[var(--muted)] uppercase" style={{ fontFamily: "var(--font-mono)" }}>{icon ? <span aria-hidden="true">{icon}</span> : null}{title}</h2>
           <div className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{right}</div>
         </header>
       )}
