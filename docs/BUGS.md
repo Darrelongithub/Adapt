@@ -473,3 +473,241 @@ it is the owner's call, not a cleanup's. **If you want the app to feel faster, t
 number to change** — `opening.tsx:57`, `4200` → something like `1500`, or gate the splash to
 first-ever visit with `localStorage` instead of `sessionStorage` so it is not paid again in
 every new tab.
+
+---
+
+# Gemini path hardening — 2026-10-17
+
+A tear-down of the model path found seven defects the existing 1368-test suite could not
+see, because `conftest.py` removes the key and every keyless run takes the local branch.
+The fixes keep that posture: no test needs a key or the network, and the new coverage uses
+`httpx.MockTransport` against the real `GeminiLLM` plumbing.
+
+| Check | Before | After |
+|---|---|---|
+| `cd backend && pytest -q` | 1368 passed, 2 skipped | **1401 passed, 2 skipped** |
+| `ruff check backend/src/adapt/ai/llm.py backend/src/adapt/ai/context_cache.py` | E501/UP findings | **0** |
+| keyless contract | local fallback only | local fallback **and** the configured-model branch is exercised through a mock transport |
+
+## P1 — the common request used the proto field name, not the JSON name
+
+`ai/llm.py::_body`. The non-cached branch sent `"system_instruction"`; the cache-registration
+branch sent `"systemInstruction"`. The Generative Language API's documented JSON name is the
+camelCase form, and every other field in the same body already used it. On the common path
+the system prompt was therefore at best ignored and at worst a 400.
+
+**Fix:** `"systemInstruction"` on both paths, with a comment saying why. Test:
+`test_the_system_prompt_uses_the_documented_camel_case_field` asserts the key is present and
+the snake_case key is absent.
+
+## P1 — a 200 with no usable text was counted as success
+
+`complete()` built `LLMResult(ok=True)` from whatever `_extract_text` returned, including
+`""` after a safety block or an empty candidate list. Callers that gate on `result.ok`
+treated that as a model answer; the audit row said `ok`; the learner got blank teaching where
+the local tutor would have answered.
+
+**Fix:** `_extract_text` now returns `(text, outcome)` and distinguishes `blocked:<reason>`
+(a `promptFeedback.blockReason` or a filter `finishReason`) from `empty:<reason>` (no
+candidates, an empty parts list, a `MAX_TOKENS` cut before content). Either one becomes
+`ok=False`, `status="blocked"|"empty"` and takes the caller's existing fallback; usage is
+still settled, so the audit row keeps its token counts. A structured reply that is not the
+requested JSON is likewise `ok=False` / `status="parse_error"`. Thought parts are excluded
+from the answer. New counters (`blocked`, `empty`, `parse_error`) appear in
+`available()["stats"]`.
+
+Tests: `test_a_200_without_usable_text_is_a_failure` (seven shapes),
+`test_a_structured_call_that_is_not_json_is_a_failure`,
+`test_thought_parts_are_not_mistaken_for_the_answer`,
+`test_a_non_json_http_body_is_a_typed_failure_not_an_exception`.
+
+## P1 — the daily budget was checked, not reserved
+
+`QuotaGuard.acquire`. Calls and tokens were only incremented in `record()` after a response,
+so concurrent callers all passed the check and could exceed the ceiling; `_last` was stamped
+before the sleep, so concurrent callers slept beside each other instead of queueing.
+
+**Fix:** `acquire` reserves one call and the estimated tokens under the lock, advances
+`_last` to the caller's scheduled send time, and sleeps for its slot. `settle(reserved,
+actual)` reconciles against the provider's `usageMetadata`; `release` returns a reservation
+when the request never reached the billable path (network error, 401/403, exhausted 5xx, a
+cache refusal). A queue whose next slot is more than 3 s away is refused as `throttled`
+rather than sent late. The cache-retry pass now releases pass one's reservation and acquires
+a second one, so a refused cached call is not charged as two calls.
+
+Tests: `test_budget_is_reserved_before_the_request_not_recorded_after_it`,
+`test_a_failed_request_gives_its_reservation_back`,
+`test_spacing_reserves_a_slot_instead_of_sleeping_in_parallel`,
+`test_a_network_failure_does_not_consume_the_daily_budget`,
+`test_a_successful_call_settles_the_reservation_with_reported_tokens`,
+`test_a_refused_cache_is_released_and_the_full_prompt_reserves_once`.
+
+## P1 — context caching crashed on its first successful registration
+
+`ContextCache` has no `estimate`; `GeminiLLM.register_static` called `self.cache.estimate(...)`
+after the provider returned a cache handle. The result was an `AttributeError` inside
+`complete()` the first time caching would actually have worked — a failure the tear-down
+described as "silently disabled", but which was in fact an unhandled crash on the success
+path.
+
+**Fix:** `ContextCache.estimate(prefix)` owns the estimator that eligibility and registration
+both use. Test:
+`test_a_refused_cache_is_released_and_the_full_prompt_reserves_once` drives a successful
+`cachedContents` registration followed by a refused cached call and a full-prompt retry.
+
+## P2 — every response-schema property was required, and one nested array was typed as a string
+
+`_schema_for` forced `required` to every key, so an optional field the model omitted became a
+parse failure and a needless local fallback. It also did not understand the compact
+array-of-object form: `MODEL_SPEC["points"] = [{"id": "str", ...}]` (the teach-back judge) was
+sent to the provider as a **STRING**, while the validator required a list of objects.
+
+**Fix:** a leading `?` on a key or type marks a field optional; only the rest go into
+`required`. A one-item list means "array of this object" and recurses, and array extras may be
+a Gemini fragment or a compact spec. The optional markers were applied where the code already
+has a fallback: `REPLY_SPEC` (everything but `answer`), `PROPOSAL_SPEC.action_payload`,
+`MODEL_SPEC`'s four judgement fields, `LEANING_RESPONSE_SPEC.reason`,
+`RESOLVE_RESPONSE_SPEC.level_hint`, and the narrator's `why_not_more`/`frame`.
+
+Tests: `test_optional_fields_are_not_required_and_nested_arrays_keep_their_shape`,
+`test_the_teachback_judge_spec_is_expressible_as_an_array_of_objects`.
+
+## P2 — safety policy was invisible in the request
+
+No `safetySettings` was sent, so the effective policy was a provider default that differs by
+category and model, and a block surfaced only as an empty candidate (see above).
+
+**Fix:** every `generateContent` body carries `safetySettings` for the four harm categories,
+with the threshold from `ADAPT_GEMINI_SAFETY_THRESHOLD` (default
+`BLOCK_MEDIUM_AND_ABOVE`, the provider's own value name). Test:
+`test_the_safety_policy_is_stated_in_every_request`.
+
+## P2 — a retired model ID failed every call with no runtime fallback
+
+Model IDs are deployment configuration, but there was no way to survive a rename or a gated
+model beyond editing the environment and restarting.
+
+**Fix:** optional `ADAPT_GEMINI_MODEL_FALLBACK`. A 404 from the configured model releases its
+reservation, retries the same prompt once on the fallback (without the old model's cache
+entry), and remembers the unavailable ID for the rest of the process. `available()` now
+reports `fallback_model` and `unavailable_models`, and `adapt config models` asks the
+provider for the IDs the key can actually call, so a pin can be chosen from what exists
+rather than from the README. Tests:
+`test_a_retired_model_id_retries_once_on_the_configured_fallback`,
+`test_no_fallback_is_attempted_when_none_is_configured`,
+`test_the_operator_can_list_the_models_the_key_can_call`,
+`test_config_models_lists_provider_ids_without_echoing_the_key`.
+
+## Docs — environment names were missing the `ADAPT_` prefix
+
+`README.md` advertised `GEMINI_MODEL_LIGHT`, `GEMINI_TASK_MODELS`, `AI_SINGLE_CALL`,
+`GEMINI_CONTEXT_CACHE` and `REALTIME_*`; the settings loader uses `ADAPT_` for all of them,
+and the cache flag is actually `ADAPT_AI_CONTEXT_CACHE`. The names now match `config.py`
+and `.env.example`, and the two new settings are documented there.
+
+## Left alone, deliberately
+
+* **The skeleton's all-required `responseSchema`.** `content/skeleton/schema.py::_object`
+  lists every property as required, and `_require_keys` re-checks the same contract after the
+  provider returns. The skeleton is all-or-nothing by design; the tutor's compact spec is the
+  one that gained `?`-optional fields. A comment now says this at the builder.
+* **Broad `except Exception` in the AI paths.** It is the product requirement (a lesson must
+  never 500), and the audit found every handler has a named fallback. Three silent `pass`
+  sites on the content path now log at debug with `exc_info=True`; removing the handlers
+  would trade a fallback for an outage.
+* **The consent field split.** Writes use `consent_share_with_llm`, reads use
+  `consent_share_with_ai`. That is privacy copy, not a rename; both ends now carry a comment
+  pointing at the mapping so a new endpoint has to notice it.
+* **`art_pkg.zip`, `adapt-web-application-prompts.zip`, `docs/screens/`.** Assets and docs,
+  not runtime code. Removing them would not change behaviour and would throw away material
+  the owner may still want; they are not part of any import path or build step.
+* **A live model-quality number.** This environment has no key and no egress to the provider.
+  `MODEL_QUALITY_REPORT.md` remains the template, now with a pointer to the wire-format tests
+  that *are* measured; `docs/UNVERIFIED.md` records the same boundary.
+
+---
+
+# A fresh key that "fails the connection test" — 2026-10-17
+
+Reported exactly as it happened:
+
+```
+$ ./.venv/bin/python -m adapt.cli config set-key --service gemini
+Stored the gemini credential in the owner-only console settings file.
+$ ./.venv/bin/python -m adapt.cli config test
+Connection test failed. Check connectivity and the console settings.
+```
+
+That sentence was every failure at once, so it told the operator nothing. Three separate
+defects could produce it, and all three are now either fixed or named on the console.
+
+## The probe used a model the key might not have
+
+The connection test is a *light* task, so it used `ADAPT_GEMINI_MODEL_LIGHT`
+(`gemini-2.5-flash-lite`). A newly created key can be missing that ID -- providers retire,
+rename and gate models, and a deployment's pins are configuration, not guarantees. A 404 on
+that ID failed the probe even though the same key could call `gemini-2.5-flash`.
+
+**Fix:** `GeminiLLM._model_chain` is now the single answer to "what could we try instead of
+this ID?". It prefers the operator's `ADAPT_GEMINI_MODEL_FALLBACK`, then the other configured
+classes (standard, light, deep), skipping IDs that already answered 404 in this process. The
+404 handler releases the reservation, retries **once** on the next viable model, and the
+pre-call swap uses the same chain, so the second call skips the dead ID instead of paying the
+same round trip again. This applies to every task, not only the probe: one retired tier model
+no longer takes down that whole class.
+
+Verified against a local stand-in provider: with `flash-lite` returning 404 and `flash`
+returning a candidate, `adapt config test` printed `Connection test passed.` after two
+requests (the second to `gemini-2.5-flash:`). With every configured ID returning 404 it
+printed the model-ID sentence below.
+
+## A key stored in one place could be overridden in another, invisibly
+
+`effective_values` resolves process env > console file > `.env`/settings, but `config status`
+only said "configured". An exported `ADAPT_GEMINI_API_KEY` or a leftover `.env` line silently
+won over the key just typed, so re-entering the key looked like it did nothing.
+
+**Fix:** `status_rows` carries a `source`, and `adapt config status` names it:
+
+```
+gemini: configured · ****1234 · from the console file
+youtube: not configured (set it with `adapt config set-key`)
+```
+
+An auth failure in `config test` now says the same thing in words: an exported variable or a
+`.env` entry overrides the console file.
+
+## A pasted key kept its surrounding whitespace
+
+`_validate_value` rejected newlines but kept leading/trailing spaces, so a key copied from a
+password manager or browser was stored and sent with them -- a provider-side *invalid key*,
+indistinguishable from a wrong one at the console.
+
+**Fix:** the stored value is `.strip()`ed at the boundary (no key has meaningful surrounding
+space), and the probe recognises `API key not valid` / `API key expired` and says so.
+
+## The failure message now names the cause
+
+`config test` prints one sentence for the cause plus the provider's own words, with the key
+literal removed and line breaks collapsed:
+
+| cause | what the console prints |
+|---|---|
+| 404 | the configured model ID does not exist for this key; `adapt config models` lists the IDs it can call |
+| 401/403 | the key was rejected (and: check whether the environment or `.env` is overriding the console file) |
+| 400 `API key not valid` | the provider rejected the key itself (copy/paste or expired) |
+| 429 | the key is rate-limited or its quota is spent |
+| timeout | the provider did not answer before the request timed out |
+| `ConnectError`/DNS/TLS/proxy | the provider could not be reached from this machine |
+| `blocked`/`empty`/`parse_error` | which of the three the reply was |
+
+Model names are printed on this surface on purpose: it is the operator's console (the same
+one `adapt config models` prints to), not a learner response, and §3 still scrubs every
+learner-facing body. The key itself is never printed.
+
+Tests: `test_a_retired_light_model_retries_once_on_another_configured_class`,
+`test_no_retry_is_attempted_when_every_class_is_the_same_model`,
+`test_config_test_says_which_model_id_was_not_found`,
+`test_config_test_says_when_the_provider_could_not_be_reached`,
+`test_config_test_names_an_invalid_key`,
+`test_a_key_pasted_with_surrounding_whitespace_is_stored_trimmed`.

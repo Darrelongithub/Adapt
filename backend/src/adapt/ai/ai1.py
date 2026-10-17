@@ -117,7 +117,9 @@ PROPOSAL_SPEC: dict[str, Any] = {
     "change_text": "str",
     "ask_text": "str",
     "expected_effect": "str",
-    "action_payload": "object",
+    # A proposal need not tune a knob; when it does, the model may only touch the keys the
+    # strategy already exposes. Optional so "no change to the payload" is expressible.
+    "?action_payload": "object",
 }
 
 
@@ -1475,7 +1477,7 @@ class LearningIntelligence:
             steps = rendered.get("solution_steps") or steps
             spec = rendered.get("answer_spec") or spec
         except Exception:  # an unrenderable template still leaves the stored stem
-            pass
+            log.debug("item template could not be rendered; using the stored stem", exc_info=True)
         if steps:
             notes = "A good answer: " + "; ".join(str(x) for x in steps[:2])
         else:

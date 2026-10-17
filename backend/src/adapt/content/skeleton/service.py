@@ -211,7 +211,9 @@ def _topic_identity(topic: str) -> tuple[str, str, int, str]:
             title = str(resolved.title or "Your topic")
             return key, title, redacted, resolved_family
     except Exception:
-        pass
+        # The digest key below is a correct fallback; keep the cause in the log so a
+        # broken resolver does not look like a cache-key design choice.
+        log.debug("topic key resolution failed; using the opaque digest", exc_info=True)
     # Do not copy free-form user text into the stable Pack key. Unknown topics remain cacheable and
     # distinct, but downstream lesson surfaces receive only an opaque digest, not an injection or
     # personal detail disguised as an identifier.
@@ -229,7 +231,7 @@ def _family_from_model(family: str, *, topic: str) -> str:
         if resolved.family and resolved.family != "generic":
             return str(resolved.family)
     except Exception:
-        pass
+        log.debug("family recognition failed; keeping the skeleton's family", exc_info=True)
     return family
 
 
@@ -348,6 +350,7 @@ def _default_model() -> Model | None:
         if shared is None or not getattr(shared, "configured", False):
             return None
     except Exception:
+        log.debug("content model client is unavailable; using the authored skeleton", exc_info=True)
         return None
 
     def call(
@@ -355,7 +358,14 @@ def _default_model() -> Model | None:
     ) -> dict[str, Any]:
         from ...ai.llm import GeminiLLM
 
-        client = GeminiLLM(settings=shared.settings, limiter=shared.limiter)
+        client = GeminiLLM(
+            settings=shared.settings,
+            limiter=shared.limiter,
+            # A content pack uses no learner text today, so no student id is sent. Carry the
+            # shared guard anyway: if this bridge ever gains a student id, the provider check
+            # must be the same fail-closed one as every other path, not a silent bypass.
+            consent_checker=getattr(shared, "consent_checker", None),
+        )
         # The quota object is shared with the app's AI 1/AI 2 client; a content pack must not reset
         # the per-process daily budget merely because this call uses a short-lived event loop.
         client.guard = shared.guard

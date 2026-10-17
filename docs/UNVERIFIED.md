@@ -12,6 +12,13 @@ are implemented but *not* proven. Each item says what was done instead and how t
   and backoff rules, and — most importantly — that every consumer has a **local fallback**
   whose response says `served_by: "your own material"` (a model-written reply says
   `"written for you"`) with `grounded: true|false`.
+* **Verified later (still without a real call):** the wire format itself —
+  `systemInstruction` rather than the snake_case proto name, explicit `safetySettings` for
+  the four harm categories, optional response-schema fields, the rule that a 200 with no
+  usable candidate text (`blocked`/`empty`) or non-JSON structured reply is `ok=False`,
+  quota reservations under concurrent callers, and the one-retry fallback for a retired
+  model ID. `backend/tests/test_llm_gemini_path.py` drives all of that through
+  `httpx.MockTransport`. What remains unverified is answer *quality*.
 * **Not verified:** whether a real model answer is *good*. No call has ever been made from
   this build. Prompt changes must be judged by the pilot's own outcomes
   (`docs/PILOT.md`), not by how the prompt reads.

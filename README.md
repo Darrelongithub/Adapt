@@ -138,9 +138,12 @@ adapt config set-key               # hidden prompt — type, do not paste on the
                                    # the key is stored in an owner-only console file
                                    # under the data dir, not in this repo
 adapt config status                # one line per service, e.g.
-                                   #   gemini: configured · …ab12
-                                   #   youtube: not configured
-adapt config test                  # one minimal request — prints "ok" or the reason
+                                   #   gemini: configured · …ab12 · from the console file
+                                   #   youtube: not configured (set it with `adapt config set-key`)
+adapt config test                  # one minimal request; on failure it names the cause
+                                   # (unknown model ID, rejected key, no route) instead of
+                                   # repeating one generic sentence
+adapt config models                # model IDs this key can call, for pinning
 ```
 
 Restart `adapt host` so the new value is loaded.  The startup line that says
@@ -168,7 +171,7 @@ console file or `.env`. Both are checked at startup; the console file wins if bo
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e "./backend[dev]"          # fastapi, sqlalchemy, numpy, cryptography, argon2…
-cd backend && pytest -q                  # 1333 passed, 2 skipped (measured 2026-10-15, round 2 integration); no network, no model call needed
+cd backend && pytest -q                  # 1401 passed, 2 skipped (measured 2026-10-17, Gemini-path round); no network, no model call needed
 adapt demo --turns 3                     # the whole loop, in a terminal, on a temp database
 adapt pilot --student-id <id> --seed     # the pre-demo pilot, written and labelled
 
@@ -357,20 +360,27 @@ Four kinds of setting decide what a model call costs, and every one of them has 
 ([docs/EFFICIENCY.md](docs/EFFICIENCY.md) is the whole story, including which of them are
 inert on a free tier because the provider's floor is higher than the prompt):
 
-* **which model, by class** — `GEMINI_MODEL_LIGHT` / `_STANDARD` / `_DEEP`
+* **which model, by class** — `ADAPT_GEMINI_MODEL_LIGHT` / `_STANDARD` / `_DEEP`
   (defaults: flash-lite / flash / pro). `ai/routing.py` says which task is in which class and
-  why; `adapt doctor` prints the table. To pin one task, `GEMINI_TASK_MODELS` takes
-  `'{"ai2_explain": "<model>"}'` or `ai2_explain=<model>`; `GEMINI_MODEL_AI1` / `_AI2` pin every
-  task a role performs. Precedence is explicit argument → task pin → role pin → class.
-* **how many calls** — `AI_SINGLE_CALL` (default `true`). `false` restores the two-call
-  placement path, so the merge can be measured against what it replaced rather than believed.
-* **how much of the prompt is re-sent** — `GEMINI_CONTEXT_CACHE` and friends (on by default):
-  `_MIN_TOKENS` is the provider's floor, `_TTL_S` their lifetime, `_MAX_ENTRIES` / `_MAX_TOKENS`
-  the bound. A cache that cannot be created is one full prompt, never a failed answer.
-* **how much runs at once** — `REALTIME_MAX_INFLIGHT`, `REALTIME_BURST_MAX`,
-  `REALTIME_BURST_WINDOW_MS` (defaults 4, 20, 1000) cap what one learner may have *running* on a
-  real-time route; `WS_DUPLICATE_WINDOW_MS` (900) collapses identical websocket frames.
-  `RATE_LIMIT_MULTIPLIER` scales all of these with the rest of the table.
+  why; `adapt doctor` prints the table. To pin one task, `ADAPT_GEMINI_TASK_MODELS` takes
+  `'{"ai2_explain": "<model>"}'` or `ai2_explain=<model>`; `ADAPT_GEMINI_MODEL_AI1` / `_AI2`
+  pin every task a role performs. Precedence is explicit argument → task pin → role pin →
+  class. `ADAPT_GEMINI_MODEL_FALLBACK` is an optional one-retry model for a deployment whose
+  primary ID has been retired (a 404), and `ADAPT_GEMINI_SAFETY_THRESHOLD` states the safety
+  threshold sent with every request.
+* **how many calls** — `ADAPT_AI_SINGLE_CALL` (default `true`). `false` restores the
+  two-call placement path, so the merge can be measured against what it replaced rather than
+  believed.
+* **how much of the prompt is re-sent** — `ADAPT_AI_CONTEXT_CACHE` and friends (on by
+  default): `ADAPT_GEMINI_CONTEXT_CACHE_MIN_TOKENS` is the provider's floor,
+  `ADAPT_GEMINI_CONTEXT_CACHE_TTL_S` their lifetime,
+  `ADAPT_GEMINI_CONTEXT_CACHE_MAX_ENTRIES` / `_MAX_TOKENS` the bound. A cache that cannot be
+  created is one full prompt, never a failed answer.
+* **how much runs at once** — `ADAPT_REALTIME_MAX_INFLIGHT`, `ADAPT_REALTIME_BURST_MAX`,
+  `ADAPT_REALTIME_BURST_WINDOW_MS` (defaults 4, 20, 1000) cap what one learner may have
+  *running* on a real-time route; `ADAPT_WS_DUPLICATE_WINDOW_MS` (900) collapses identical
+  websocket frames. `ADAPT_RATE_LIMIT_MULTIPLIER` scales all of these with the rest of the
+  table.
 
 A merged prompt, a cached head and a light model are all *attempts*: if any of them is refused,
 the answer comes from the local path and says so. `adapt doctor` prints which of them are in

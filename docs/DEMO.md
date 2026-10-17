@@ -50,8 +50,9 @@ Without a configured key, the deterministic tutor still runs in honest simple mo
 # 1. Optional live-model configuration. Input is hidden; status shows only configured yes/no
 #    and the last four characters. A live test makes one minimal request.
 adapt config set-key --service gemini
-adapt config status
-adapt config test
+adapt config status          # also says where the key came from: console file, environment or .env
+adapt config test           # on failure, names the cause (unknown model ID, bad key, no route)
+adapt config models         # the IDs this key can actually call, for pinning or a fallback
 
 # 2. Build clearly labelled, deterministic synthetic demo histories (not learner evidence).
 #    The helper creates two reserved .invalid accounts and displays a one-time password.

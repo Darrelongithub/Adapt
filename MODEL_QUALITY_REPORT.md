@@ -45,6 +45,14 @@ verification → a lesson for each of two profiles → the three explanation mom
 A threshold that is not met is named in the verdict, and the process exits non-zero. The full
 table of thresholds is in `scripts/live_model_check.py` (`THRESHOLDS`), which is what enforces them.
 
+## What is verified without a key
+
+`backend/tests/test_llm_gemini_path.py` drives the real request/response plumbing through
+`httpx.MockTransport`: the `systemInstruction` and `safetySettings` fields, the
+blocked/empty/parse-error outcomes, optional response-schema fields, quota reservations
+under concurrency, and the configured fallback-model retry. That verifies the *wiring*; it
+does not measure whether a real answer is good. Quality still needs the live run below.
+
 ## Status of this file
 
 | field | value |
@@ -52,4 +60,5 @@ table of thresholds is in `scripts/live_model_check.py` (`THRESHOLDS`), which is
 | live run | not made |
 | report produced by | nothing — this is the template |
 | harness tested against | the scripted fake in `backend/tests/fixtures/model/scripted_model.py` |
+| wire-format tests | `cd backend && pytest -q tests/test_llm_gemini_path.py` |
 | harness tests | `cd backend && PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_live_check_harness.py` |

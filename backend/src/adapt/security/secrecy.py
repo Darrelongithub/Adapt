@@ -149,6 +149,7 @@ def _configured_terms(settings: Any | None) -> tuple[str, ...]:
         "gemini_model_light",
         "gemini_model_standard",
         "gemini_model_deep",
+        "gemini_model_fallback",
         "gemini_base_url",
         "openalex_mailto",
     ):

@@ -54,13 +54,16 @@ from . import static_context as SC
 
 log = logging.getLogger("adapt.ai2")
 
+#: ``answer`` is the only field the reply cannot be built without; the rest have local
+#: fallbacks, so demanding them from the provider would turn a valid short answer into a
+#: schema failure. The ``?`` marks them optional in ``_schema_for``.
 REPLY_SPEC = {
     "answer": "str",
-    "sections": ("array", {"type": "OBJECT"}),
-    "next_action": "str",
-    "adaptations_applied": ("array", {"type": "STRING"}),
-    "ask_teachback": "str",
-    "resource_hint": "str",
+    "?sections": ("array", {"type": "OBJECT"}),
+    "?next_action": "str",
+    "?adaptations_applied": ("array", {"type": "STRING"}),
+    "?ask_teachback": "str",
+    "?resource_hint": "str",
 }
 
 _MODEL_MARKUP = re.compile(

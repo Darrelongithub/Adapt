@@ -448,11 +448,14 @@ def feedback_for(result: ChecklistResult) -> str:
 #: the recorded score -- the model's own number never does (see
 #: :func:`accept_judgement`).
 MODEL_SPEC: dict[str, Any] = {
+    # The one-item list means "array of this object" in the compact response-spec format.
+    # ``score``/``feedback``/``misconceptions``/``note`` are optional by contract: the
+    # quoted points are the gate, and a missing optional field is not a parse failure.
     "points": [{"id": "str", "met": "bool", "evidence": "str"}],
-    "note": "str",
-    "score": "num",
-    "feedback": "str",
-    "misconceptions": ("array", {"type": "STRING"}),
+    "?note": "str",
+    "?score": "num",
+    "?feedback": "str",
+    "?misconceptions": ("array", {"type": "STRING"}),
 }
 
 

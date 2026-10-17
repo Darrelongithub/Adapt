@@ -67,7 +67,8 @@ LEANING_RESPONSE_SPEC: dict[str, Any] = {
             "required": ["skill", "rating"],
         },
     ),
-    "reason": "str",
+    # The reason annotates the ratings; an empty one is a valid answer.
+    "?reason": "str",
 }
 
 #: How many words of a learner's own text a prompt may carry. Short on purpose: this is a topic

@@ -173,6 +173,9 @@ class Student(Base):
 
     # consent + privacy flags
     consent_analytics: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: DB and write-API name. Learner-facing *reads* call this ``consent_share_with_ai``
+    #: (``services/sessions.py``); the split is deliberate privacy copy, not a rename.
+    #: New endpoints should read through that mapping rather than exposing this name.
     consent_share_with_llm: Mapped[bool] = mapped_column(Boolean, default=True)
     retain_days: Mapped[int] = mapped_column(Integer, default=365)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime)

@@ -45,8 +45,9 @@ import json
 import logging
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 log = logging.getLogger("adapt.ai.cache")
 
@@ -175,6 +176,17 @@ class ContextCache:
 
     # -- eligibility ---------------------------------------------------- #
 
+    def estimate(self, prefix: str) -> int:
+        """Approximate the prefix's token count, using the client's own estimator.
+
+        Kept on the cache (rather than at the call site) because eligibility, the
+        registration record and the operator report all have to agree on the same number.
+        The import is local: :mod:`adapt.ai.llm` imports this module.
+        """
+        from .llm import estimate_tokens
+
+        return estimate_tokens([prefix])
+
     def eligible(self, prefix: str) -> tuple[bool, str]:
         """Can this prefix be cached at all? Returns ``(ok, reason)``.
 
@@ -190,9 +202,7 @@ class ContextCache:
         except StaticPrefixError as exc:
             self.stats.failed += 1
             return False, str(exc)
-        from .llm import estimate_tokens  # local import: llm imports this module
-
-        tokens = estimate_tokens([prefix])
+        tokens = self.estimate(prefix)
         if tokens < self.min_tokens:
             self.stats.skipped_small += 1
             return False, f"prefix is {tokens} tokens, under the {self.min_tokens} floor"
