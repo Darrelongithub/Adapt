@@ -81,9 +81,14 @@ test("the journey shell and the sidebar both lead to the one path", () => {
   assert.match(gate, /router\.replace\(LEARNER_LANDING\)/);
   const landing = readFileSync(new URL("./landing.ts", import.meta.url), "utf8");
   assert.match(landing, /LEARNER_LANDING = "\/journey"/);
-  assert.match(chrome, /setLanding\(LEARNER_LANDING\)/);
+  // Round 6 (Track E): the SessionGate landing gate is GONE — it rendered
+  // "Opening your path…" over every screen until the URL reached /journey and
+  // looped with the account gate. If the server says who this browser is, the
+  // children render. This assertion is the redirect-loop regression test.
+  assert.doesNotMatch(chrome, /setLanding\(LEARNER_LANDING\)/, "the landing gate must not come back");
+  assert.doesNotMatch(chrome, /Opening your path…/);
   assert.match(home, /HomeDashboard/);
-  assert.match(dashboard, /href="\/journey"/);
+  assert.match(dashboard, /href="\/journey/);
   assert.doesNotMatch(home, /onboarding\?\$\{carry\}/);
 });
 
