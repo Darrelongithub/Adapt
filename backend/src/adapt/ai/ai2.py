@@ -50,17 +50,31 @@ from ..db.models import (
 from ..learning.profile import to_llm_payload
 from ..security.redact import redact_payload
 from . import local_tutor as LT
+from .degrade import note
 from . import static_context as SC
 
 log = logging.getLogger("adapt.ai2")
 
+#: What the teaching reply must contain, and what it may leave out.
+#:
+#: A trailing ``?`` marks a field optional in the schema sent to the model
+#: (:func:`adapt.ai.llm._schema_for`). Only ``answer`` is required, because the reply is the
+#: answer: every other field is read through a helper that already has an answer for "the
+#: model said nothing" (sections fall back to the grounded ones, next action to ``None``,
+#: adaptations to what the rules applied). Requiring them anyway did not make the reply
+#: richer -- it made the model invent a `resource_hint` to satisfy a schema, or lose the
+#: whole call to a missing key the code was perfectly able to live without.
 REPLY_SPEC = {
     "answer": "str",
-    "sections": ("array", {"type": "OBJECT"}),
-    "next_action": "str",
-    "adaptations_applied": ("array", {"type": "STRING"}),
-    "ask_teachback": "str",
-    "resource_hint": "str",
+    "sections": ("array?", {"type": "OBJECT"}),
+    "next_action": "str?",
+    "adaptations_applied": ("array?", {"type": "STRING"}),
+    #: Asked for because the spoken turn benefits from one, and read by nobody on the
+    #: written path: the app decides whether a teach-back is owed from the presentation
+    #: rule, not from the model's willingness to ask. Kept optional so a reply without one
+    #: is a reply, not a parse failure.
+    "ask_teachback": "str?",
+    "resource_hint": "str?",
 }
 
 _MODEL_MARKUP = re.compile(
@@ -1157,14 +1171,19 @@ class EducationalIntelligence:
         if self.llm is None:
             return self._builtin_scene(text, wanted or None, why="a written-for-you scene is not available on this instance")
         hints = list(corrections or [])
+        # Only `kind` is required of the model. The validator already answers "and if it said
+        # nothing else?" -- the title comes from the simulation, the framing may be empty, the
+        # concepts are a garnish -- and a schema that demanded all of them turned a scene that
+        # would have validated into a rejected call, or bought filler prose invented to fill a
+        # field nobody reads.
         spec_kind = {
             "kind": "str",
-            "title": "str",
-            "intent": "str",
-            "intro": "str",
-            "outro": "str",
-            "concepts": ("array", {"type": "STRING"}),
-            "params_json": "str",
+            "title": "str?",
+            "intent": "str?",
+            "intro": "str?",
+            "outro": "str?",
+            "concepts": ("array?", {"type": "STRING"}),
+            "params_json": "str?",
         }
         # The task, the catalogue of kinds and the parameter rules used to be built here and
         # sent with every authoring request -- and again with the retry. They are the static
@@ -1391,7 +1410,7 @@ class EducationalIntelligence:
             best = resp.results[0]
             return f"{best.get('title')} ({best.get('provider')}, {best.get('year') or 'n.d.'}) — {best.get('url')}"
         except Exception as exc:  # resource lookup must never break an answer
-            log.info("resource hint skipped: %s", exc.__class__.__name__)
+            note("resource hint", exc, label="resources")
             return None
 
     async def curate_resources(
@@ -1438,7 +1457,7 @@ class EducationalIntelligence:
                 response_spec=CUR.CURATION_SPEC,
             )
         except Exception as exc:  # curation decorates a search; it must not break one
-            log.info("resource curation skipped: %s", exc.__class__.__name__)
+            note("resource curation", exc, label="ai2_curate")
             out["llm_status"] = "error"
             return out
         await self._log_llm("ai2_curate", "ai2", res, student_id or "anon", len(user), dropped, kinds=redacted_kinds)
@@ -1595,8 +1614,11 @@ class EducationalIntelligence:
                     )
                 )
                 s.commit()
-        except Exception:  # accounting must never break a reply
-            log.debug("llm call accounting failed", exc_info=True)
+        except Exception as exc:  # accounting must never break a reply
+            # An audit row that cannot be written is the one place the app is allowed to
+            # shrug -- but a shrug that says which table it tripped over, at a level that
+            # survives a quiet production log.
+            note("llm call accounting", exc, label="audit")
 
     async def _record(self, *, student_id: str, session_id: str | None, question: str, reply: Reply, topic_id: str | None) -> None:
         with self.sf() as s:

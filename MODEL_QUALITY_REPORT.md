@@ -53,3 +53,16 @@ table of thresholds is in `scripts/live_model_check.py` (`THRESHOLDS`), which is
 | report produced by | nothing — this is the template |
 | harness tested against | the scripted fake in `backend/tests/fixtures/model/scripted_model.py` |
 | harness tests | `cd backend && PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_live_check_harness.py` |
+| last self-test run | 2026-10-17, `python scripts/live_model_check.py --selftest` — PASS, 12/12 topics, 144 scripted calls, report written to `/tmp/adapt-live-check-selftest.md` (a self-test may not overwrite this file without `--force`) |
+
+A self-test is a test of the *harness*, not of any model: the fake answers every call. It is
+recorded here so the difference between "the measuring instrument works" and "something was
+measured" stays visible in the one file a reader would mistake for a measurement.
+
+Two things worth doing on the machine that does have a key, before the first live run:
+`adapt config test` (one minimal request — it now distinguishes "the model id does not exist"
+from "the request failed"), and `adapt config models` (which of the configured names the
+provider will actually answer to). The request shape the live run will exercise —
+`systemInstruction` in camelCase, explicit safety settings, empty candidate lists refused — is
+pinned offline by `backend/tests/test_llm_wire.py`, so a live run is a quality measurement and
+not a wiring check.

@@ -67,6 +67,7 @@ from ..learning import patterns as P
 from ..learning import spacing as SP
 from ..learning import strategies as ST
 from ..learning.effect import evaluate_change, retention_calibration
+from .degrade import note as note_failure
 from ..learning.profile import Directive, LearnerProfile, TopicTrace, to_llm_payload
 from ..security.redact import redact_payload
 from . import static_context as SC
@@ -117,7 +118,12 @@ PROPOSAL_SPEC: dict[str, Any] = {
     "change_text": "str",
     "ask_text": "str",
     "expected_effect": "str",
-    "action_payload": "object",
+    # Optional, and not because the payload does not matter: the strategy's own defaults are
+    # already a valid payload, and the model is only allowed to *tune* a knob that exists
+    # (`ai1.py` filters its keys against the strategy's). A schema that required this object
+    # asked a model proposing a wording change to invent a parameter it had no reason to
+    # touch, in order to satisfy a shape.
+    "action_payload": "object?",
 }
 
 
@@ -1376,7 +1382,9 @@ class LearningIntelligence:
                 response_spec=RETENTION_SPEC,
             )
         except Exception as exc:  # a check generator must never break the review screen
-            log.info("retention check llm skipped: %s", exc.__class__.__name__)
+            # `note` picks the level: a provider that is down is weather at INFO, a
+            # TypeError inside this generator is a bug and gets a warning and a traceback.
+            note_failure("retention check", exc, label="ai1_retention_check")
             out["llm_status"] = "error"
             return out
         with self.sf() as s:

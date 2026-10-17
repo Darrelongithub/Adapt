@@ -950,7 +950,7 @@ class LlmCall(Base):
     purpose: Mapped[str] = mapped_column(String(32), index=True)  # ai1_analyze|ai2_explain|...
     role: Mapped[str] = mapped_column(String(8))  # ai1|ai2
     model: Mapped[str] = mapped_column(String(48))
-    status: Mapped[str] = mapped_column(String(24))  # ok|quota|error|fallback|disabled
+    status: Mapped[str] = mapped_column(String(24))  # ok|quota|error|parse_error|throttled|disabled|consent_required|blocked|empty|model_unavailable
     tokens_in: Mapped[int] = mapped_column(Integer, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)
     latency_ms: Mapped[int | None] = mapped_column(Integer)

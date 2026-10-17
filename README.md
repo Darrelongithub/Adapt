@@ -346,7 +346,8 @@ Everything has a working default, so `uvicorn adapt.api.app:app` runs with no co
 and stays in `local` mode. Copy `.env.example` for a known-good starting point. Backend names
 always use the `ADAPT_` prefix: `ADAPT_DATA_DIR`, `ADAPT_KEYFILE`, `ADAPT_DB_ENCRYPTION`
 (`auto|sqlcipher|field-only|off`), `ADAPT_DB_PASSPHRASE`, `ADAPT_GEMINI_API_KEY`,
-`ADAPT_GEMINI_DAILY_CALL_BUDGET`, `ADAPT_RATE_LIMIT_MULTIPLIER`, `ADAPT_MODE`
+`ADAPT_GEMINI_DAILY_CALL_BUDGET`, `ADAPT_GEMINI_SAFETY_MODE` (`balanced|strict|provider`),
+`ADAPT_GEMINI_MODEL_ALTERNATES`, `ADAPT_RATE_LIMIT_MULTIPLIER`, `ADAPT_MODE`
 (`local|tunnel|test`), `ADAPT_VOICE_ENABLED`, `ADAPT_WHISPER_MODEL_SIZE`,
 `ADAPT_TTS_ENGINE`, `ADAPT_ALLOWED_ORIGINS`, and `ADAPT_FRONTEND_ORIGIN`.
 `GET /api/v1/status` reports only learner-safe protection/lesson information; operator settings

@@ -5,14 +5,22 @@ key never lands in a URL or an access log). No SDK dependency: the free tier is 
 plain JSON API and keeping it to ``httpx`` means one less thing to break on the
 demo machine.
 
-Five properties the blueprint asks for, implemented here:
+Six properties the blueprint asks for, implemented here:
 
 * **Free-tier safety.** :class:`QuotaGuard` counts calls/tokens per UTC day against
-  configured budgets and throttles with a minimum inter-call spacing. When the
-  budget is gone, callers get ``status="quota"`` and fall back to the local
-  reasoner instead of hammering the API into a longer lockout.
-* **Graceful degradation.** Every failure mode (no key, DNS failure, 429, 5xx,
-  bad JSON) returns a typed result, never raises, so the app still answers.
+  configured budgets and throttles with a minimum inter-call spacing. A call reserves its
+  budget *before* it goes out and settles against the provider's real usage afterwards, so
+  a hundred concurrent learners cannot all read the same untouched counter and decide there
+  is room for all of them. When the budget is gone, callers get ``status="quota"`` and fall
+  back to the local reasoner instead of hammering the API into a longer lockout.
+* **An empty answer is a failed answer.** A 200 whose candidate list is empty -- filtered by
+  safety, blocked by the prompt, or simply nothing -- is ``ok=False`` with
+  ``status="blocked"`` or ``"empty"``, never a success with an empty string in it. The
+  alternative is a tutor that "answered" and taught nothing, and a redaction count and a
+  latency figure that make the incident look healthy in every report.
+* **Graceful degradation.** Every failure mode (no key, DNS failure, 429, 5xx, bad JSON, a
+  model id the provider no longer recognises) returns a typed result, never raises, so the
+  app still answers.
 * **Minimized egress.** Prompts pass through :mod:`adapt.security.redact` and the
   count of withheld fields is recorded in ``llm_calls`` for the privacy panel.
 * **The right model for the job.** Every call names a ``purpose``, and
@@ -36,7 +44,7 @@ import logging
 import re
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Sequence
 
@@ -51,13 +59,93 @@ log = logging.getLogger("adapt.llm")
 
 JSON_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
+#: What each safety mode asks the provider to filter.
+#:
+#: ``provider`` sends no ``safetySettings`` at all, which means the answer depends on a
+#: default this codebase does not control -- for the Gemini 2.5 generation that default is
+#: documented as *off*, so the same prompt can produce a reply here and an empty candidate
+#: list after a provider-side change, with nothing in the log to explain the difference.
+#: ``balanced`` pins the four harm categories at ``BLOCK_ONLY_HIGH``: teaching text about
+#: war, biology or bullying survives, and what *is* filtered is filtered predictably
+#: enough to be *reported* -- a typed ``status="blocked"`` result, whose caller falls back
+#: to the local tutor rather than printing nothing. ``strict`` blocks at
+#: medium-and-above, which is what a deployment serving under-18 learners should run.
+#:
+#: Only the four categories the JSON API accepts appear here. Anything else is a
+#: Vertex-only name, and one of those in a body makes every request a 400 -- which is the
+#: opposite of the point.
+SAFETY_THRESHOLDS: dict[str, dict[str, str]] = {
+    "provider": {},
+    "balanced": {
+        "HARM_CATEGORY_HARASSMENT": "BLOCK_ONLY_HIGH",
+        "HARM_CATEGORY_HATE_SPEECH": "BLOCK_ONLY_HIGH",
+        "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_ONLY_HIGH",
+        "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_ONLY_HIGH",
+    },
+    "strict": {
+        "HARM_CATEGORY_HARASSMENT": "BLOCK_MEDIUM_AND_ABOVE",
+        "HARM_CATEGORY_HATE_SPEECH": "BLOCK_MEDIUM_AND_ABOVE",
+        "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_MEDIUM_AND_ABOVE",
+        "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_MEDIUM_AND_ABOVE",
+    },
+}
+
+#: Finish reasons that mean "the model was asked and refused", rather than "it ran out of
+#: room". The first is a blocked answer and gets its own status; the second is a truncated
+#: answer, which is kept, because a half-sentence the caller can still use beats no
+#: sentence at all.
+_BLOCKED_FINISH_REASONS = frozenset(
+    {
+        "SAFETY",
+        "PROHIBITED_CONTENT",
+        "BLOCKLIST",
+        "SPII",
+        "RECITATION",
+        "IMAGE_SAFETY",
+    }
+)
+
+
+def safety_settings_for(mode: str | None) -> list[dict[str, str]]:
+    """The ``safetySettings`` array for a configured mode, in stable order.
+
+    Stable order matters more than it looks: this array is part of the request body, and a
+    body whose key order wanders between two identical calls defeats any provider-side
+    request caching and makes a diff of two logged requests unreadable.
+    """
+    table = SAFETY_THRESHOLDS.get(
+        str(mode or "balanced").strip().lower(), SAFETY_THRESHOLDS["balanced"]
+    )
+    return [{"category": category, "threshold": table[category]} for category in sorted(table)]
+
+
+#: A provider answer that means "that model is not something I can call" rather than "that
+#: prompt was bad". A rename and a gated preview both land here, and the two deserve
+#: different reactions: one is a configuration problem worth routing elsewhere, the other is
+#: a refusal to route anywhere at all.
+#: The words have to appear *together* with a mention of a model, because "unsupported" is
+#: also what a rejected `responseSchema` says, and treating that as a retired model id would
+#: take a working model out of service for the rest of the process.
+_MODEL_UNAVAILABLE_MARKERS = (
+    "is not found",
+    "not found for api",
+    "does not exist",
+    "no such",
+    "is not a valid model",
+    "disabled for this project",
+)
+
 
 @dataclass
 class LLMResult:
     ok: bool
     text: str = ""
     data: dict[str, Any] | None = None
-    status: str = "ok"  # ok | quota | disabled | consent_required | error | parse_error | throttled
+    status: str = "ok"
+    # ok | quota | disabled | consent_required | error | parse_error | throttled | blocked | empty
+    # `blocked` and `empty` are the two that used to be `ok`: a response with no text in it is a
+    # failure the caller must fall back on, not a success it has to notice by accident.
+
     provider: str = "gemini"
     model: str | None = None
     latency_ms: int = 0
@@ -94,8 +182,63 @@ class LLMResult:
         }
 
 
+#: Ceiling on how long one caller will sit waiting for its paced slot. Pacing protects the
+#: RPM ceiling, but a lesson must not stall behind a queue: a caller that cannot get a slot
+#: inside this window takes it late rather than holding the whole loop open.
+MAX_PACE_WAIT_S = 3.0
+
+
+@dataclass
+class Reservation:
+    """One call's slice of the daily budget, taken *before* the request goes out.
+
+    The estimate is carried on the reservation so the guard can swap it for the provider's
+    real usage when the answer arrives (:meth:`QuotaGuard.settle`) or hand it all back when
+    nothing was billed (:meth:`QuotaGuard.refund`). Without that handle the day's count is
+    whatever the last response happened to report, which is how a guard can be both
+    over-subscribed and under-counted in the same hour.
+    """
+
+    tokens: int
+    #: Monotonic instant this caller is paced to. Waiting until it is what spaces calls out.
+    slot: float
+    settled: bool = False
+
+
+@dataclass
+class _Wallet:
+    """The reservation a call is currently paying with.
+
+    A cache the provider refuses means the request is re-sent and re-charged, so the
+    reservation is not fixed for the life of the call. Carrying it in a mutable holder rather
+    than a local variable is what lets the caller's ``finally`` refund the one that is
+    actually outstanding at the moment the request path exits, rather than the one it started
+    with -- a leak here is a learner quietly billed for a call nobody made.
+    """
+
+    reservation: Reservation | None = None
+
+
 class QuotaGuard:
-    """Daily budget + spacing enforcement for the free tier."""
+    """Daily budget + spacing enforcement for the free tier.
+
+    Three rules, all of them about concurrency rather than arithmetic:
+
+    * **A budget is spent when it is committed, not when it is billed.** :meth:`reserve`
+      adds the call and its estimated tokens under the lock, so twenty learners arriving at
+      once cannot each read the same untouched counter and each conclude there is room. The
+      estimate is corrected by :meth:`settle` once the provider reports real usage, and
+      reversed by :meth:`refund` for the attempts that never reached a model (DNS failure,
+      timeout, 5xx) -- a request that was never served should not eat a learner's day.
+    * **Spacing is a queue, not a glance.** Each reservation is handed the next free slot
+      and the schedule moves forward, so concurrent callers take turns instead of all
+      stamping the same "last call" instant and firing together. The wait happens after the
+      lock, and is capped at :data:`MAX_PACE_WAIT_S` because a stalled lesson is worse than
+      a slightly fast one.
+    * **The lock is never held across an await.** Everything here is synchronous and fast;
+      the sleeping is done by the caller. A :class:`threading.Lock` held over
+      ``await asyncio.sleep`` is how an async app turns a rate limiter into a deadlock.
+    """
 
     def __init__(
         self,
@@ -111,7 +254,10 @@ class QuotaGuard:
         self.min_interval_s = min_interval_ms / 1000.0
         self.calls = today_used
         self.tokens = today_tokens
-        self._last = 0.0
+        #: Tokens counted against the budget by reservations that have not settled yet.
+        #: Reported so ``adapt status`` can tell "the day is spent" from "a burst is in flight".
+        self.pending = 0
+        self._next_slot = 0.0
         self._lock = threading.Lock()
         self.day = self._today()
 
@@ -125,36 +271,81 @@ class QuotaGuard:
             self.day = today
             self.calls = 0
             self.tokens = 0
+            self.pending = 0
 
     def headroom(self) -> dict[str, object]:
         with self._lock:
             self._rollover()
+            pending = self.pending
+            calls = self.calls
+            tokens = self.tokens
         return {
             "day": self.day,
-            "calls_used": self.calls,
-            "calls_left": max(0, self.daily_calls - self.calls),
-            "tokens_used": self.tokens,
-            "tokens_left": max(0, self.daily_tokens - self.tokens),
+            "calls_used": calls,
+            "calls_left": max(0, self.daily_calls - calls),
+            "tokens_used": tokens,
+            "tokens_left": max(0, self.daily_tokens - tokens),
             "budget_calls": self.daily_calls,
             "budget_tokens": self.daily_tokens,
+            "tokens_reserved_in_flight": pending,
         }
 
-    async def acquire(self, estimated_tokens: int) -> tuple[bool, str]:
-        """Reserve budget. Returns ``(allowed, reason)``; callers must fall back."""
+    def reserve(self, estimated_tokens: int) -> tuple[Reservation | None, str]:
+        """Take a call and its estimated tokens out of the day. ``(None, why)`` means fall back."""
         with self._lock:
             self._rollover()
             if self.calls >= self.daily_calls:
-                return False, f"daily call budget ({self.daily_calls}) reached"
-            if self.tokens + estimated_tokens > self.daily_tokens:
-                return False, "daily token budget reached"
-            wait = self.min_interval_s - (time.monotonic() - self._last)
-            self._last = time.monotonic()
+                return None, f"daily call budget ({self.daily_calls}) reached"
+            if self.tokens + max(0, int(estimated_tokens)) > self.daily_tokens:
+                return None, "daily token budget reached"
+            now = time.monotonic()
+            # A slot behind the last caller that asked -- but never a slot so far in the
+            # future that the wait is longer than the app is willing to make a learner pay.
+            slot = min(max(now, self._next_slot), now + MAX_PACE_WAIT_S)
+            self._next_slot = slot + self.min_interval_s
+            self.calls += 1
+            self.tokens += max(0, int(estimated_tokens))
+            self.pending += max(0, int(estimated_tokens))
+            return Reservation(tokens=int(estimated_tokens), slot=slot), ""
+
+    async def pace(self, reservation: Reservation | None) -> None:
+        """Wait out this caller's turn. Called after the lock is released, never inside it."""
+        if reservation is None:
+            return
+        wait = reservation.slot - time.monotonic()
         if wait > 0:
-            # Pacing protects the RPM ceiling, but a demo must not stall: cap it.
-            await asyncio.sleep(min(wait, 3.0))
-        return True, ""
+            await asyncio.sleep(wait)
+
+    def settle(self, reservation: Reservation | None, *, tokens: int, billed: bool = True) -> None:
+        """Swap a reservation's estimate for the real usage of the request.
+
+        ``billed=False`` is for a request the provider refused before generating anything
+        (a refused cache handle, for instance): the day keeps no charge for it. A 429 is
+        settled with ``tokens=0`` instead: the call happened and the rate limiter saw it, so
+        counting it is what stops the next caller from hammering the same locked door.
+        """
+        if reservation is None or reservation.settled:
+            return
+        reservation.settled = True
+        with self._lock:
+            self._rollover()
+            self.pending = max(0, self.pending - max(0, reservation.tokens))
+            self.tokens = max(0, self.tokens - max(0, reservation.tokens) + (max(0, int(tokens)) if billed else 0))
+            if not billed:
+                self.calls = max(0, self.calls - 1)
+
+    def refund(self, reservation: Reservation | None) -> None:
+        """Give the whole reservation back: the request never reached a model."""
+        self.settle(reservation, tokens=0, billed=False)
 
     def record(self, calls: int, tokens: int) -> None:
+        """Accounting for usage this guard did not reserve for.
+
+        Not part of the request path any more -- :meth:`reserve` / :meth:`settle` own it --
+        but kept because a caller that writes its own audit row (a replay of a day's usage,
+        or a script that spent budget outside the client) needs the same counter rather
+        than a second one that disagrees with the first.
+        """
         with self._lock:
             self._rollover()
             self.calls += calls
@@ -181,31 +372,106 @@ def estimate_tokens(messages: Sequence[str]) -> int:
     return max(1, int(sum(len(m) for m in messages) / 3.6))
 
 
+#: Provider types that mean "this fragment is already a schema", as opposed to a compact
+#: field spec that still has to be translated. The distinction is what lets one call site
+#: write ``("array", {"type": "STRING", "maxLength": 64})`` and another ``["id": "str"]``.
+_RAW_SCHEMA_TYPES = frozenset({"OBJECT", "ARRAY", "STRING", "INTEGER", "NUMBER", "BOOLEAN"})
+
+
+def _is_raw_schema(fragment: Any) -> bool:
+    return isinstance(fragment, dict) and str(fragment.get("type") or "").upper() in _RAW_SCHEMA_TYPES
+
+
+def _items_for(fragment: Any) -> dict[str, Any]:
+    """The ``items`` schema for an array, from either spelling of "what's in the array".
+
+    Two shapes arrive here and both are in use across the codebase: a provider-shaped
+    fragment (``{"type": "OBJECT", "properties": ...}``, as the content pipeline writes) or
+    a compact field spec for one element (``[{"id": "str", "met": "bool"}]``, as the
+    teach-back rubric writes). Passing the second through untranslated is what made the
+    teach-back judge unanswerable: ``points`` reached the model as ``{"type": "STRING"}``,
+    so an answer could only ever be rejected for not being a list of points.
+    """
+    if fragment is None:
+        return {"type": "STRING"}
+    if _is_raw_schema(fragment):
+        return dict(fragment)
+    if isinstance(fragment, (list, tuple)):
+        element = fragment[0] if fragment else None
+        return {"type": "ARRAY", "items": _items_for(element)}
+    if isinstance(fragment, dict):
+        inner = _schema_for(fragment)
+        if inner is None:
+            return {"type": "STRING"}
+        return inner
+    return {"type": "STRING"}
+
+
 def _schema_for(spec: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Translate a compact field spec into Gemini's OpenAPI-subset responseSchema."""
+    """Translate a compact field spec into Gemini's OpenAPI-subset responseSchema.
+
+    A field whose type ends in ``?`` is *optional*: it appears in ``properties`` so the
+    model may answer it, and it stays out of ``required`` so the model may not. Marking
+    everything required was a false promise to the parser -- a field the prompt only asks
+    for "if you can" came back invented to satisfy the schema, or the honest answer came
+    back without it and the whole call was thrown away. Now a call site says which of its
+    fields it can live without, in the same dict it already passes.
+
+    The trailing ``?`` is stripped before the schema is built, so it is a marker on the
+    spec rather than a name the model has to match.
+    """
     if not spec:
         return None
     props: dict[str, Any] = {}
+    required: list[str] = []
     for key, typ in spec.items():
+        # The `?` may sit on the type name of a plain field ("str?") or on the first half of
+        # a tuple ("array?", {...}), so it is read off whichever spelling was used before
+        # either one is unpacked. Only the marker is removed here: the property keeps the
+        # name the validator reads back.
+        head = typ if isinstance(typ, str) else (typ[0] if isinstance(typ, tuple) and typ else "")
+        optional = isinstance(head, str) and head.strip().endswith("?")
+        extra: Any = None
         if isinstance(typ, tuple):
             typ, extra = typ  # ("array", {...})
-        else:
-            extra = None
-        if typ == "str":
+        if isinstance(typ, list):
+            # `[{"id": "str"}]` shorthand: an array whose elements are objects, spelled
+            # inline. `_items_for` translates the element spec instead of stringifying it.
+            props[key] = _items_for(typ)
+            if not optional:
+                required.append(key)
+            continue
+        name = typ.strip().rstrip("?").strip() if isinstance(typ, str) else typ
+        if name in ("array", "list"):
+            props[key] = {"type": "ARRAY", "items": _items_for(extra)}
+        elif _is_raw_schema(typ):
+            # Already a schema fragment (a nested object the caller wrote in the provider's
+            # own shape): pass it through rather than describing it as a string, which is
+            # what the `else` below would do.
+            props[key] = dict(typ)
+        elif isinstance(typ, dict):
+            nested = _schema_for(typ)
+            props[key] = nested or {"type": "OBJECT"}
+        elif name == "str":
             props[key] = {"type": "STRING"}
-        elif typ == "int":
+        elif name == "int":
             props[key] = {"type": "INTEGER"}
-        elif typ == "num":
+        elif name == "num":
             props[key] = {"type": "NUMBER"}
-        elif typ == "bool":
+        elif name == "bool":
             props[key] = {"type": "BOOLEAN"}
-        elif typ == "array":
-            props[key] = {"type": "ARRAY", "items": (extra or {"type": "STRING"})}
-        elif typ == "object":
+        elif name == "object":
             props[key] = {"type": "OBJECT"}
         else:
             props[key] = {"type": "STRING"}
-    return {"type": "OBJECT", "properties": props, "required": list(props.keys())}
+        if not optional:
+            required.append(key)
+    schema: dict[str, Any] = {"type": "OBJECT", "properties": props}
+    if required:
+        # An empty `required` list is legal but meaningless; some gateways reject it, and a
+        # schema where every field is optional does not need a key to say so.
+        schema["required"] = required
+    return schema
 
 
 class GeminiLLM:
@@ -249,12 +515,26 @@ class GeminiLLM:
         #: Cacheable tasks called without a static prefix -- a call site that left half the
         #: optimisation on the table. Recorded rather than raised: a slow prompt is not a bug.
         self.prefixless_calls: set[str] = set()
+        #: Model ids the provider said it cannot call, with the answer that said so. Kept for
+        #: the life of the process: a renamed model is a configuration fact, and re-learning
+        #: it on every one of a hundred calls is a hundred failed round trips.
+        self.unavailable_models: dict[str, str] = {}
         self.stats: dict[str, int] = {
             "ok": 0,
             "quota": 0,
             "error": 0,
             "disabled": 0,
             "throttled": 0,
+            #: A 200 that answered nothing: filtered by safety, or no candidates at all.
+            #: Counted apart from "error" because the fix is different -- one is a prompt
+            #: problem, the other is a network problem.
+            "blocked": 0,
+            "empty": 0,
+            "parse_error": 0,
+            #: Calls that had to move to a configured alternate because the id in the routing
+            #: table is no longer callable. Non-zero means the deployment is one env var away
+            #: from running on its intended model.
+            "model_fallback": 0,
             "cache_hits": 0,
             "cache_created": 0,
             "cache_missed": 0,
@@ -292,6 +572,12 @@ class GeminiLLM:
             "provider": "gemini",
             "configured": self.configured,
             "models": effective_models(self.settings),
+            #: Model ids this provider refused, and what it said. Surfaced because the failure
+            #: it describes is invisible from the learner's side: every call degrades to the
+            #: local tutor and nothing 500s.
+            "models_refused": dict(sorted(self.unavailable_models.items())),
+            "safety_mode": str(getattr(self.settings, "gemini_safety_mode", "balanced") or "balanced"),
+            "safety_categories": len(safety_settings_for(getattr(self.settings, "gemini_safety_mode", "balanced"))),
             "headroom": self.guard.headroom(),
             "last_error": self.last_error,
             "stats": dict(self.stats),
@@ -329,6 +615,7 @@ class GeminiLLM:
         """
         started = time.monotonic()
         plan = self.plan(purpose, role=role, model=model, temperature=temperature, max_output_tokens=max_output_tokens)
+        plan = self._avoid_dead_models(plan)
         if not plan.registered:
             self.unregistered_purposes.add(str(purpose))
         if plan.cacheable and not cache_prefix and purpose != "console_connection_test":
@@ -404,13 +691,17 @@ class GeminiLLM:
                 model=plan.model, prefix=safe_prefix, purpose=purpose
             )
 
-        payload_messages = [safe_system, safe_user, *(h["parts"][0]["text"] for h in safe_history)]
-        if cache_entry is None and safe_prefix:
-            # The uncached path sends the head in full, so the day's budget has to count it.
-            payload_messages = [safe_prefix, *payload_messages]
-        est = estimate_tokens(payload_messages) + (max_output_tokens or plan.max_output_tokens)
-        allowed, why = await self.guard.acquire(est)
-        if not allowed:
+        # What actually leaves the process decides what the day is charged for: a call that
+        # references a registered prefix does not pay for the prefix again.
+        out_budget = max_output_tokens or plan.max_output_tokens
+        tail = [safe_system, safe_user, *(h["parts"][0]["text"] for h in safe_history)]
+        est_tail = estimate_tokens(tail) + out_budget
+        est_full = (estimate_tokens([safe_prefix, *tail]) if safe_prefix else est_tail) + out_budget
+        est = est_tail if cache_entry is not None else est_full
+        # The reservation is taken here, before the first byte leaves: the whole point of the
+        # guard is that a hundred concurrent callers cannot each be told "there is room".
+        reservation, why = self.guard.reserve(est)
+        if reservation is None:
             self.stats["quota"] += 1
             return LLMResult(
                 ok=False,
@@ -420,26 +711,68 @@ class GeminiLLM:
                 model=plan.model,
                 tier=plan.tier,
             )
-        if self.limiter is not None:
-            ok, retry = self.limiter.allow("gemini", "shared")
-            if not ok:
-                self.stats["throttled"] += 1
-                return LLMResult(
-                    ok=False,
-                    status="throttled",
-                    error=f"local pacing limit ({retry:.1f}s)",
-                    redacted_fields=redacted,
-                    tier=plan.tier,
-                )
-
-        url = f"{self.settings.gemini_base_url.rstrip('/')}/models/{plan.model}:generateContent"
+        wallet = _Wallet(reservation)
+        url_base = self.settings.gemini_base_url.rstrip("/")
         headers = {"x-goog-api-key": self.settings.gemini_api_key or "", "content-type": "application/json"}
+        try:
+            # Waiting happens after the reservation, never inside the lock: the wait is the
+            # queue, and holding a lock across it is how a rate limiter becomes a deadlock.
+            await self.guard.pace(wallet.reservation)
+            if self.limiter is not None:
+                ok, retry = self.limiter.allow("gemini", "shared")
+                if not ok:
+                    # Nothing left this process, so nothing is charged to the learner's day.
+                    self.stats["throttled"] += 1
+                    return LLMResult(
+                        ok=False,
+                        status="throttled",
+                        error=f"local pacing limit ({retry:.1f}s)",
+                        redacted_fields=redacted,
+                        tier=plan.tier,
+                    )
+            return await self._send(
+                wallet=wallet, plan=plan, url_base=url_base, headers=headers,
+                safe_prefix=safe_prefix, safe_system=safe_system, safe_user=safe_user,
+                safe_history=safe_history, response_spec=response_spec,
+                cache_key=cache_key, cache_entry=cache_entry, est_full=est_full,
+                redacted=redacted, started=started,
+            )
+        finally:
+            # A guard that keeps an estimate for a request no longer in flight charges a
+            # learner for a call they never made, so the reservation is resolved here whatever
+            # happened below: settled by the response, refunded by an early return, or
+            # refunded because something raised. `settle` marks a reservation spent, so a
+            # call that already paid is never handed anything back.
+            self.guard.refund(wallet.reservation)
 
+    async def _send(
+        self,
+        *,
+        wallet: _Wallet,
+        plan: routing.CallPlan,
+        url_base: str,
+        headers: dict[str, str],
+        safe_prefix: str,
+        safe_system: str,
+        safe_user: str,
+        safe_history: Sequence[dict[str, Any]],
+        response_spec: dict[str, Any] | None,
+        cache_key: str,
+        cache_entry: Any,
+        est_full: int,
+        redacted: int,
+        started: float,
+    ) -> LLMResult:
+        """The request itself: two passes at most, and one settled reservation.
+
+        The second pass exists only for a cache the provider turns out not to support; it
+        re-sends the full prompt and pays for that request out of the same daily budget
+        rather than treating the retry as free. The wallet is the caller's, so the
+        reservation this method is holding at the moment it returns -- or raises, or swaps --
+        is the one that gets refunded by the caller's ``finally``.
+        """
         attempts = 0
         last: LLMResult | None = None
-        # Two passes at most: the second exists only for a cache the provider turns out not
-        # to support, and it re-sends the full prompt. Everything else keeps the original
-        # retry budget.
         for pass_no in range(2):
             if pass_no == 1:
                 # The cached head was refused: forget the entry we thought we had, remember
@@ -449,12 +782,32 @@ class GeminiLLM:
                 self.cache.invalidate(cache_key)
                 self.cache.refuse(cache_key, why=str(last.error if last else "cached call refused")[:120])
                 cache_entry = None
+                # The refused request was never served, so the day gives it back -- and the
+                # retry that *is* served reserves for itself. A cache must never be the
+                # reason a learner gets no answer, and it must never be the reason a day of
+                # budget is spent on requests that produced nothing either.
+                self.guard.settle(wallet.reservation, tokens=0, billed=False)
+                wallet.reservation, why = self.guard.reserve(est_full)
+                if wallet.reservation is None:
+                    self.stats["quota"] += 1
+                    return LLMResult(
+                        ok=False,
+                        status="quota",
+                        error=why,
+                        redacted_fields=redacted,
+                        model=plan.model,
+                        tier=plan.tier,
+                        attempts=attempts,
+                    )
+                await self.guard.pace(wallet.reservation)
             body = self._body(
                 plan=plan, prefix=safe_prefix, system=safe_system, user=safe_user,
                 history=safe_history,
                 temperature=plan.temperature, max_output_tokens=plan.max_output_tokens,
                 response_spec=response_spec, cache_entry=cache_entry,
             )
+            url = f"{url_base}/models/{plan.model}:generateContent"
+
             for attempt in range(self.settings.gemini_max_retries + 1):
                 attempts = attempt + 1
                 try:
@@ -481,7 +834,9 @@ class GeminiLLM:
                     )
 
                 if resp.status_code == 429:
-                    self.guard.record(1, 0)
+                    # The call happened and the rate limiter saw it, so the day keeps the call
+                    # and gives back the tokens that were never generated.
+                    self.guard.settle(wallet.reservation, tokens=0)
                     self.stats["quota"] += 1
                     detail = _err_text(resp)
                     self.last_error = f"429 {detail}"[:200]
@@ -498,6 +853,33 @@ class GeminiLLM:
                     self.last_error = f"auth {resp.status_code}: {_err_text(resp)}"[:200]
                     return LLMResult(
                         ok=False, status="error", error=self.last_error, attempts=attempts, tier=plan.tier
+                    )
+                if resp.status_code == 404 or (resp.status_code == 400 and cache_entry is None and self._unknown_model(resp)):
+                    # "No such model" is not a bad prompt, and it will not get better on a
+                    # retry: it is a name this deployment is carrying that the provider no
+                    # longer answers to. Remember it (so `adapt status` says so instead of
+                    # every call quietly degrading), hand the day back the estimate, and
+                    # answer from the local tutor. The next call in this process starts on the
+                    # configured alternate instead of rediscovering the rename.
+                    detail = _err_text(resp)
+                    self.unavailable_models[plan.model] = f"{resp.status_code} {detail}"[:200]
+                    self.last_error = f"model unavailable: {detail}"[:200]
+                    log.warning(
+                        "the model this deployment named for `%s` is not callable (%s); "
+                        "alternates: %s",
+                        plan.task,
+                        detail[:120],
+                        "configured" if self._alternate_for(plan.model) else "none configured",
+                    )
+                    return LLMResult(
+                        ok=False,
+                        status="model_unavailable",
+                        error=self.last_error,
+                        attempts=attempts,
+                        redacted_fields=redacted,
+                        latency_ms=int((time.monotonic() - started) * 1000),
+                        tier=plan.tier,
+                        model=plan.model,
                     )
                 if resp.status_code == 400 and cache_entry is not None:
                     # The provider refused to use this cache with this call (an unsupported
@@ -527,20 +909,83 @@ class GeminiLLM:
                         ok=False, status="error", error=self.last_error, attempts=attempts, tier=plan.tier
                     )
 
-                data = resp.json()
-                text = _extract_text(data)
+                try:
+                    data = resp.json()
+                    if not isinstance(data, dict):
+                        raise ValueError("the answer was not a JSON object")
+                except Exception as exc:
+                    # A 200 whose body is not JSON is a proxy, a captive portal or a
+                    # half-written response -- all of them "the lesson must not 500", none of
+                    # them a reason to hand the caller `text=""` and call it an answer.
+                    self.last_error = f"undecodable response: {type(exc).__name__}"[:200]
+                    return LLMResult(
+                        ok=False,
+                        status="error",
+                        error=self.last_error,
+                        attempts=attempts,
+                        redacted_fields=redacted,
+                        latency_ms=int((time.monotonic() - started) * 1000),
+                        tier=plan.tier,
+                    )
+                text, blocked, finish = _extract_completion(data)
                 usage = data.get("usageMetadata") or {}
                 tin = int(usage.get("promptTokenCount") or estimate_tokens([safe_system, safe_user]))
                 tout = int(usage.get("candidatesTokenCount") or 0)
                 cached_in = int(usage.get("cachedContentTokenCount") or 0)
                 if cached_in and cache_key:
                     self.cache.note_reuse(cache_key, cached_in)
-                self.guard.record(1, tin + tout)
+                # The prompt was read and the day pays for it even when the answer is empty --
+                # which is exactly why an empty answer has to be *named* rather than billed
+                # silently as a success.
+                self.guard.settle(wallet.reservation, tokens=tin + tout)
+                if not text:
+                    status = "blocked" if blocked else "empty"
+                    self.stats[status] += 1
+                    why = blocked or finish or "the response carried no text"
+                    log.warning(
+                        "`%s` returned a 200 with no answer (%s); falling back to the local tutor",
+                        plan.task,
+                        str(why)[:120],
+                    )
+                    return LLMResult(
+                        ok=False,
+                        status=status,
+                        error=f"the model returned no text ({str(why)[:120]})",
+                        model=plan.model,
+                        tier=plan.tier,
+                        cached_tokens=cached_in,
+                        context_cached=cache_entry is not None,
+                        latency_ms=int((time.monotonic() - started) * 1000),
+                        tokens_in=tin,
+                        tokens_out=tout,
+                        redacted_fields=redacted,
+                        attempts=attempts,
+                    )
                 self.stats["ok"] += 1
                 parsed: dict[str, Any] | None = None
                 status = "ok"
                 if response_spec:
                     parsed, status = _parse_json(text)
+                    if parsed is None:
+                        # A reply that does not answer the contract it was given is not a
+                        # reply the app can use. It used to be reported as ok=True with
+                        # data=None, which left every caller to invent the same check.
+                        self.stats["parse_error"] += 1
+                        log.info("`%s` answered outside its schema; using the local answer", plan.task)
+                        return LLMResult(
+                            ok=False,
+                            status="parse_error",
+                            text=text,
+                            model=plan.model,
+                            tier=plan.tier,
+                            cached_tokens=cached_in,
+                            context_cached=cache_entry is not None,
+                            latency_ms=int((time.monotonic() - started) * 1000),
+                            tokens_in=tin,
+                            tokens_out=tout,
+                            redacted_fields=redacted,
+                            attempts=attempts,
+                        )
                 return LLMResult(
                     ok=True,
                     text=text,
@@ -591,8 +1036,15 @@ class GeminiLLM:
         which of the two paths it is on, which is what makes turning caching off a
         configuration change rather than a code change.
 
-        Two things worth knowing about the cached shape:
+        Three things worth knowing about the shape:
 
+        * **the field is camelCase.** ``systemInstruction`` is what the REST API reads, and it
+          is what ``register_static`` already sends. The snake_case spelling here was a
+          second name for the same field, which the provider ignores rather than rejects --
+          so the shape was valid, the call succeeded, and every instruction in the static
+          head simply was not sent. A silently dropped system prompt is worse than a
+          rejected request, because nothing anywhere says it happened; the casing is now
+          asserted by a test rather than by a comment.
         * a request that references cached content must not *also* send the same text, so
           the static head leaves the request entirely -- and the provider rejects a
           ``systemInstruction`` alongside a cache that already contains one, which is why
@@ -609,7 +1061,7 @@ class GeminiLLM:
         else:
             full_system = "\n\n".join(part for part in (prefix.strip(), system.strip()) if part)
             body = {
-                "system_instruction": {"parts": [{"text": full_system}]},
+                "systemInstruction": {"parts": [{"text": full_system}]},
                 "contents": [*history, {"role": "user", "parts": [{"text": user}]}],
             }
         body["generationConfig"] = {
@@ -617,6 +1069,9 @@ class GeminiLLM:
             "maxOutputTokens": max_output_tokens,
             "topP": 0.95,
         }
+        safety = safety_settings_for(getattr(self.settings, "gemini_safety_mode", "balanced"))
+        if safety:
+            body["safetySettings"] = safety
         schema = _schema_for(response_spec)
         if schema:
             body["generationConfig"]["responseMimeType"] = "application/json"
@@ -627,6 +1082,28 @@ class GeminiLLM:
         self, *, model: str, prefix: str, purpose: str = ""
     ) -> Any | None:
         """Register a static head with the provider, or return None if it cannot be cached.
+
+        The promise is "a cache that cannot be created is a warning and one full prompt,
+        never a failed answer", and it is kept by catching *everything* here rather than the
+        handful of provider failures the happy path expects: a bug inside the optimisation
+        must cost a resent prefix, not a lesson. (An earlier version of this method raised on
+        its own success -- the provider answered with a cache handle and the client crashed
+        reading it, which every call site's broad ``except`` then reported as "no model".)
+        """
+        try:
+            return await self._register_static(model=model, prefix=prefix, purpose=purpose)
+        except Exception as exc:  # noqa: BLE001 - the whole point of this wrapper
+            log.warning(
+                "static context could not be registered (%s: %s); sending full prompts",
+                type(exc).__name__,
+                str(exc)[:120],
+            )
+            return None
+
+    async def _register_static(
+        self, *, model: str, prefix: str, purpose: str = ""
+    ) -> Any | None:
+        """The registration itself. Every failure below is a ``None``, never a raised answer.
 
         Called on the first use of a prefix. Everything about it is optional: below the
         documented minimum, switched off, a provider that answers 4xx, a network that is
@@ -688,6 +1165,98 @@ class GeminiLLM:
             except Exception:  # a cache expiring on its own is an acceptable outcome
                 log.debug("cache release skipped", exc_info=True)
 
+    def _alternate_for(self, model: str) -> str:
+        """The substitute an operator named for a model id, or ``""`` for "none".
+
+        Deliberately no default. Guessing at a model name the provider may or may not serve
+        turns a visible configuration problem into an invisible one, and a silent swap of the
+        model that writes to a learner is the kind of change this codebase only makes in a
+        table the operator reads.
+        """
+        table = getattr(self.settings, "gemini_model_alternates", None) or {}
+        try:
+            return str(table.get(model) or "").strip()
+        except AttributeError:  # a mapping-shaped config value that is not a mapping
+            return ""
+
+    def _unknown_model(self, resp: httpx.Response) -> bool:
+        """Is this error "that model is not callable here" rather than "that prompt was bad"?
+
+        A 404 on a ``models/{name}`` path needs no parsing. A 400 does, because that is also
+        the answer to a malformed request, and treating every 400 as a rename would let one
+        bad prompt retire a model for the whole process. So a 400 has to name a model *and*
+        say it cannot have it -- the two halves of "models/x is not found for API version".
+        """
+        if resp.status_code == 404:
+            return True
+        if resp.status_code not in (400, 403):
+            return False
+        detail = _err_text(resp).casefold()
+        if "model" not in detail:
+            return False
+        return any(marker in detail for marker in _MODEL_UNAVAILABLE_MARKERS)
+
+    def _avoid_dead_models(self, plan: routing.CallPlan) -> routing.CallPlan:
+        """Route around a model id this provider has already refused, if a substitute exists.
+
+        Learning the id is dead costs one call per process; paying for that lesson on every
+        call afterwards is how a rename turns into a permanent, silent, app-wide fallback.
+        With no substitute configured nothing changes -- the answer stays the typed
+        ``model_unavailable`` failure, which is honest in a way a guess is not.
+        """
+        current = plan.model
+        seen: set[str] = set()
+        while current in self.unavailable_models and current not in seen:
+            seen.add(current)
+            nxt = self._alternate_for(current)
+            if not nxt or nxt == current:
+                break
+            current = nxt
+        if current == plan.model:
+            return plan
+        self.stats["model_fallback"] += 1
+        log.info(
+            "`%s` answered on a configured alternate because %s is not callable here",
+            plan.task,
+            plan.model,
+        )
+        return replace(plan, model=current)
+
+    async def list_models(self) -> dict[str, Any]:
+        """Which of the models this deployment names the provider will actually answer to.
+
+        The point is a *named* failure. A pinned id that has been renamed or gated makes
+        every call fall back to the local tutor, which the learner sees as "plain answers"
+        and nobody sees as a bug until someone reads a log; this says, in one request, which
+        of the configured ids the provider recognises. Operator-facing only -- the result
+        carries model names, and §3 keeps those off every learner-visible surface.
+        """
+        if not self.configured:
+            return {"configured": False, "checked": False, "reason": "no credential configured"}
+        url = f"{self.settings.gemini_base_url.rstrip('/')}/models"
+        headers = {"x-goog-api-key": self.settings.gemini_api_key or ""}
+        try:
+            client = await self._http()
+            resp = await client.get(url, headers=headers, params={"pageSize": 200})
+        except httpx.HTTPError as exc:
+            return {"configured": True, "checked": False, "reason": f"unreachable ({type(exc).__name__})"}
+        if resp.status_code != 200:
+            return {"configured": True, "checked": False, "reason": f"{resp.status_code} {_err_text(resp)}"[:160]}
+        names = {
+            str(m.get("name") or "").removeprefix("models/")
+            for m in (resp.json() or {}).get("models", [])
+            if isinstance(m, dict)
+        }
+        wanted = {
+            tier: routing.model_for_tier(tier, self.settings) for tier in routing.TIERS
+        }
+        return {
+            "configured": True,
+            "checked": True,
+            "recognised": {tier: name in names for tier, name in sorted(wanted.items())},
+            "count": len(names),
+        }
+
     def _model_for(self, role: str) -> str:
         """The model for a role with no task context: the middle class.
 
@@ -740,19 +1309,33 @@ def _err_text(resp: httpx.Response) -> str:
         return resp.text[:200]
 
 
-def _extract_text(data: dict[str, Any]) -> str:
+def _extract_completion(data: dict[str, Any]) -> tuple[str, str | None, str]:
+    """Read a ``generateContent`` answer: ``(text, blocked_because, finish_reason)``.
+
+    The three-way return is the point. ``("...", None, "STOP")`` is an answer;
+    ``("", "safety", ...)`` is a refusal the learner should hear about through the local
+    tutor; ``("", None, "MAX_TOKENS")`` is an answer that ran out of room, which is a budget
+    problem rather than a content one. Collapsing all three into ``""`` is how a filtered
+    reply, a truncated reply and a successful empty reply used to look identical to the
+    caller -- and identical to a success.
+    """
     cands = data.get("candidates") or []
     parts: list[str] = []
+    finish = ""
     for cand in cands:
+        if not isinstance(cand, dict):
+            continue
         for p in ((cand.get("content") or {}).get("parts") or []):
             if isinstance(p, dict) and p.get("text"):
                 parts.append(str(p["text"]))
-    if not parts:
-        reason = (data.get("promptFeedback") or {}).get("blockReason")
-        if reason:
-            log.info("gemini blocked the prompt (safety=%s); using local answer", reason)
-        return ""
-    return "\n".join(parts).strip()
+        finish = str(cand.get("finishReason") or finish)
+    text = "\n".join(parts).strip()
+    if text:
+        return text, None, finish
+    blocked = (data.get("promptFeedback") or {}).get("blockReason")
+    if not blocked and finish in _BLOCKED_FINISH_REASONS:
+        blocked = f"finishReason={finish}"
+    return "", (str(blocked) if blocked else None), finish
 
 
 def _parse_json(text: str) -> tuple[dict[str, Any] | None, str]:

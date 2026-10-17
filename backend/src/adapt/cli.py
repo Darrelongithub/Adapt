@@ -1229,9 +1229,79 @@ def config_test() -> None:
         raise typer.Exit(code=1) from None
     if result.ok:
         typer.echo("Connection test passed.")
+    elif result.status == "model_unavailable":
+        # The one failure this command can name exactly, because it is the failure the
+        # connection test exists to find before a term of lessons does.
+        typer.echo(
+            "Connection test failed: the credential works and the model this deployment names "
+            "does not exist. Run `adapt config models`."
+        )
+        raise typer.Exit(code=1)
+    elif result.status in ("empty", "blocked"):
+        # A live model that answers nothing is not a passing connection test, and it is not
+        # the operator's prompt's fault either -- say which of the two it was.
+        typer.echo(
+            "Connection test failed: the request reached a model and the answer was empty "
+            f"({result.status}). Check the safety mode and the model id in the console settings."
+        )
+        raise typer.Exit(code=1)
     else:
         typer.echo("Connection test failed. Check connectivity and the console settings.")
         raise typer.Exit(code=1)
+
+
+@config_app.command("models")
+def config_models() -> None:
+    """Ask the provider which of the configured model names it will answer to.
+
+    Model names are printed here and nowhere a learner can read: this is the console of the
+    machine that holds the key, and §3 of the brief keeps the provider's identity off every
+    learner-visible surface, which is why there is no HTTP route for this.
+    """
+    from .config_secrets import settings_with_managed_values
+    from .security.secrecy import install_log_redaction
+
+    st = _settings()
+    try:
+        st = settings_with_managed_values(st)
+    except Exception:
+        typer.echo("Model check failed. Check the console settings file.")
+        raise typer.Exit(code=1) from None
+    install_log_redaction(st)
+    if not st.gemini_api_key:
+        typer.echo("No credential is configured, so every model class answers from the local tutor.")
+        raise typer.Exit(code=2)
+
+    from .ai import routing
+    from .ai.llm import GeminiLLM
+
+    llm = GeminiLLM(st)
+    try:
+        report = _run(llm.list_models())
+    except Exception:
+        typer.echo("Model check failed. Check connectivity and the console settings.")
+        raise typer.Exit(code=1) from None
+    finally:
+        _run(llm.aclose())
+
+    if not report.get("checked"):
+        typer.echo(f"Model check failed: {report.get('reason') or 'the provider did not answer'}.")
+        raise typer.Exit(code=1)
+    recognised = report.get("recognised") or {}
+    for tier, ok in recognised.items():
+        typer.echo(
+            f"{tier}: {'answers' if ok else 'NOT callable -- every call falls back to the local tutor'}"
+        )
+    missing = [tier for tier, ok in recognised.items() if not ok]
+    if missing:
+        typer.echo(
+            "point ADAPT_GEMINI_MODEL_ALTERNATES at a live id (name=other_name), or change the "
+            f"tier's model: {', '.join(missing)}"
+        )
+        raise typer.Exit(code=1)
+    pinned = routing.pinned_models(st)
+    if pinned:
+        typer.echo(f"{len(pinned)} task or role pin(s) in effect; they are listed by `adapt status`.")
 
 
 @config_app.command("rotate")

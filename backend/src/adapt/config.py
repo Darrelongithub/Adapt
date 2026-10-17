@@ -18,12 +18,18 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Mode = Literal["local", "tunnel", "test"]
+
+#: How much harm filtering a request asks the provider for. The table that turns a mode into
+#: categories and thresholds lives in :mod:`adapt.ai.llm`, which is the only place that speaks
+#: the provider's dialect; this list is here so a mistyped mode fails at start-up instead of
+#: quietly producing "provider" behaviour.
+SAFETY_MODES: tuple[str, ...] = ("provider", "balanced", "strict")
 
 
 def _repo_root() -> Path:
@@ -118,11 +124,28 @@ class Settings(BaseSettings):
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_timeout_s: float = 45.0
     # Free-tier guard: stop calling before the daily quota is exhausted and let
-    # the local reasoner carry the demo instead.
+    # the local reasoner carry the demo instead. The guard *reserves* against these
+    # numbers before a request leaves, so ten concurrent learners cannot each pass a
+    # check against the same untouched budget (see ``ai/llm.py::QuotaGuard``).
     gemini_daily_call_budget: int = 120
     gemini_daily_token_budget: int = 2_000_000
     gemini_min_interval_ms: int = 700  # smooths RPM limits
     gemini_max_retries: int = 2
+    # What the request says about harm filtering. "provider" sends no safetySettings and
+    # inherits whatever the model defaults to -- which for the 2.5 generation is *off*, so
+    # "why did this answer come back empty" has no stable answer. "balanced" pins the four
+    # harm categories at BLOCK_ONLY_HIGH (a block is a typed result the tutor falls back
+    # on, not a blank reply); "strict" moves them to BLOCK_MEDIUM_AND_ABOVE, which is what
+    # a deployment serving under-18 learners should set.
+    gemini_safety_mode: str = "balanced"
+    # A model id Google renames or gates makes *every* call fail closed to the local
+    # tutor, which looks like "the model is down" from the learner's side. An operator who
+    # wants a named substitute maps the retired id to the live one
+    # (`gemini-2.5-flash=gemini-flash-latest`); `adapt config models` says which of the
+    # configured ids the provider actually recognises. Empty means "no substitution",
+    # which is the honest default: inventing a model name here would be a guess at
+    # somebody else's catalogue.
+    gemini_model_alternates: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
 
     # -- context caching (item 2 of the cost round) ----------------------
     # The static head of a prompt -- system instructions, rubric, subject catalogue -- is
@@ -267,9 +290,9 @@ class Settings(BaseSettings):
             return [chunk.strip() for chunk in text.split(",") if chunk.strip()]
         return v
 
-    @field_validator("gemini_task_models", mode="before")
+    @field_validator("gemini_task_models", "gemini_model_alternates", mode="before")
     @classmethod
-    def _task_model_map(cls, v: object) -> object:
+    def _task_model_map(cls, v: object, info: Any) -> object:
         """Accept ``{"ai2_explain": "<model>"}`` and ``ai2_explain=<model>,...``.
 
         A typo'd pin used to be a silent no-op in the obvious implementation (parse,
@@ -277,7 +300,13 @@ class Settings(BaseSettings):
         whole purpose is *overriding* something: the operator would believe a task was
         pinned while it followed the tier. So a value that is neither shape raises, at
         import time, where the operator is looking.
+
+        One parser serves both maps (per-task model pins and per-model alternates) because
+        the failure mode of a second implementation would be the same in either case, and
+        the env var name is taken from the field so an error still names what to fix.
         """
+        field_name = str(getattr(info, "field_name", "") or "gemini_task_models")
+        env_name = "ADAPT_" + field_name.upper()
         if not isinstance(v, str):
             return v
         text = v.strip()
@@ -287,9 +316,9 @@ class Settings(BaseSettings):
             try:
                 decoded = json.loads(text)
             except ValueError as exc:
-                raise ValueError(f"ADAPT_GEMINI_TASK_MODELS is not valid JSON: {exc}") from None
+                raise ValueError(f"{env_name} is not valid JSON: {exc}") from None
             if not isinstance(decoded, dict):
-                raise ValueError("ADAPT_GEMINI_TASK_MODELS must be a JSON object of task names")
+                raise ValueError(f"{env_name} must be a JSON object of names")
             return decoded
         out: dict[str, str] = {}
         for chunk in text.split(","):
@@ -297,12 +326,30 @@ class Settings(BaseSettings):
                 continue
             if "=" not in chunk:
                 raise ValueError(
-                    "ADAPT_GEMINI_TASK_MODELS wants `task=model` pairs or a JSON object; "
+                    f"{env_name} wants `name=value` pairs or a JSON object; "
                     f"`{chunk.strip()}` is neither"
                 )
             task, _, name = chunk.partition("=")
             out[task.strip()] = name.strip()
         return out
+
+    @field_validator("gemini_safety_mode")
+    @classmethod
+    def _safety_mode(cls, v: str) -> str:
+        """One of three names, checked at load rather than at the first call.
+
+        A mistyped mode used to be indistinguishable from "the provider is filtering my
+        prompts", because the request would simply carry no safetySettings. Refusing the
+        value here means the operator finds out from start-up, not from a blank lesson.
+        """
+        mode = str(v or "").strip().lower() or "balanced"
+        if mode not in SAFETY_MODES:
+            raise ValueError(
+                "ADAPT_GEMINI_SAFETY_MODE must be one of "
+                + ", ".join(f"`{m}`" for m in SAFETY_MODES)
+                + f"; got `{v}`"
+            )
+        return mode
 
     @computed_field  # type: ignore[prop-decorator]
     @property

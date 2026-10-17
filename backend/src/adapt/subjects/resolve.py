@@ -372,7 +372,11 @@ def resolve_topic(
 RESOLVE_RESPONSE_SPEC: dict[str, Any] = {
     "family": "str",
     "topic_title": "str",
-    "level_hint": "str",
+    # The prompt offers "or empty" as a legitimate answer, and the validator drops a hint
+    # outside the ladder rather than failing the call -- so the schema must not demand one.
+    # A required field the prompt has just licensed is a contradiction the model resolves by
+    # inventing a level, which is the one outcome both sides agreed to refuse.
+    "level_hint": "str?",
     "confidence": "num",
 }
 

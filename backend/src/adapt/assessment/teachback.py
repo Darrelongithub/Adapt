@@ -447,12 +447,19 @@ def feedback_for(result: ChecklistResult) -> str:
 #: quoted ``points`` are this repo's addition, and they are the part that can move
 #: the recorded score -- the model's own number never does (see
 #: :func:`accept_judgement`).
+#:
+#: Only ``points`` is required, because only ``points`` is unforgivable to lose:
+#: :func:`accept_judgement` reads a missing score as ``None`` (the recorded score comes
+#: from the points anyway), a missing feedback as "keep the rule wording", and a missing
+#: misconception list as the empty one. Asking for them anyway forced the model to produce
+#: something for each -- which is exactly how a judgement with an invented number gets made
+#: instead of a reply that simply did not include one.
 MODEL_SPEC: dict[str, Any] = {
     "points": [{"id": "str", "met": "bool", "evidence": "str"}],
-    "note": "str",
-    "score": "num",
-    "feedback": "str",
-    "misconceptions": ("array", {"type": "STRING"}),
+    "note": "str?",
+    "score": "num?",
+    "feedback": "str?",
+    "misconceptions": ("array?", {"type": "STRING"}),
 }
 
 

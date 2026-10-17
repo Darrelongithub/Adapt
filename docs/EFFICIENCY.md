@@ -197,6 +197,66 @@ escape hatch rather than a silent edit.
 
 ---
 
+## 5. What a call is charged for
+
+A budget that is counted **after** the response can be blown by every caller standing in the
+same moment: a hundred concurrent requests each read "used 480 of 500, room for me", and the
+provider sees ten thousand calls. So `QuotaGuard` reserves *before* the request leaves and
+settles it when the response arrives:
+
+| what happened | calls | tokens | why |
+| --- | ---: | ---: | --- |
+| an answer came back | +1 | the provider's own usage figure | the request happened and was served |
+| `429` from the provider or the local limiter | +1 | +0 | the rate limiter saw the request either way — that is what the call budget is for |
+| an answer that produced nothing (`blocked`, `empty`, `parse_error`) | +1 | the estimated prompt | a refusal is still a request, and the prompt tokens were spent |
+| a model that refused to accept its own name (`model_unavailable`) | +0 | +0 | nothing was generated, and the id is remembered as dead |
+| timeout, DNS, TLS, `5xx`, or the fallback path | +0 | +0 | the day should not pay for a request the provider never answered |
+| a cached-head refusal that is re-sent in full | +1 | the full prompt | the wasted pass is given back and the retry reserves for itself |
+
+Two rules hold the rest up. **A wait is not a wait in line for the same slot**: pacing sleeps
+*after* the reservation is taken, inside the lock that hands out slots, so two callers separated
+by the minimum interval both get one — and the wait is capped, so a queue that has drifted into
+the past cannot park a request forever. **The reservation is always resolved**: `complete()`
+refunds in a `finally`, and `settle` marks a reservation spent so a call that already paid is
+never handed anything back. A refund of an estimate larger than what the response used is
+clamped, so `tokens_used` can never exceed `calls_used × the estimate` nor go negative.
+
+What counts as an answer is the other half of this, and it is a hard rule: **an accepted request
+that produced no text is a failure.** `finishReason` is read before `candidates[0]` — a blocked
+or empty completion becomes `ok=False` with `status` of `blocked` / `empty` / `parse_error`, and
+a 200 whose body is not JSON becomes `error`, never a silent success with empty text. Every call
+site already falls back when `ok` is false, so the learner gets the local answer instead of a
+blank one, and `adapt/ai/degrade.py` decides the *log* line by cause — an outage or a slow
+network is one line at INFO, a `TypeError` inside the client is a warning with a traceback,
+because a bug that always presents as "the provider is unreachable" is a bug nobody sees.
+`llm.status` and `adapt config test` name which of these it was.
+
+Two provider details are easy to get wrong and are therefore pinned in
+`tests/test_llm_wire.py`, which drives the real `GeminiLLM` against `httpx.MockTransport`
+(a stubbed `complete()` cannot fail the shape of a request, and did not catch either of these):
+
+* **`systemInstruction`, not `system_instruction`.** The REST API ignores a snake_case name, so
+  a request built that way is accepted, answers, and quietly drops the instructions that were
+  keeping the replies on-format. The one place in the app that still spelled it correctly — the
+  cache-create body — was the only place the field worked.
+* **`safetySettings` are sent explicitly, for all four harm categories.** An unset category
+  inherits the provider's default for that model, and that default has moved between generations
+  (off for the current ones, `BLOCK_MEDIUM_AND_ABOVE` for older). A tutor for a minor cannot sit
+  on a threshold that changes when a model id is edited in a console, so `ADAPT_GEMINI_SAFETY_MODE`
+  picks it — `balanced` (default, `BLOCK_ONLY_HIGH`: the most permissive setting that still
+  states a floor), `strict` (`BLOCK_MEDIUM_AND_ABOVE`), or `provider` (send nothing, and the
+  audit row and `/api/v1/quotas` say so in as many words).
+
+Model *ids* are the last piece of the cost story, because the cheapest request is the one that
+never reaches a name nobody has activated. A `404`/`400`/`403` naming a model marks that id
+unavailable for the process and returns `status="model_unavailable"`; an operator's
+`list_models()` on the key — or `adapt config models` — prints which tier would answer and which
+would not; `ADAPT_GEMINI_MODEL_ALTERNATES` maps a retired id to its successor so a rename costs
+one failed call and not a silent downgrade for every learner. Default alternates are deliberately
+empty: a guessed model name turns a visible configuration fault into an invisible one.
+
+---
+
 ## What it costs now, per request
 
 | learner action | model calls | of which cacheable heads | what it falls back to |

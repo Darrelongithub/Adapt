@@ -25,6 +25,131 @@ app and reading what came back, not by running the tests.
 
 ---
 
+# 2026-10-17 — the model path, branch `arena/c2eb7619-adapt`
+
+A second round, answering a written teardown of the Gemini path. Its numbered list is fixed
+in full (request casing, empty answers treated as success, the quota race, missing
+`safetySettings`, an all-required `responseSchema`, cache-retry accounting, pinned model ids,
+the consent field split). Two defects the teardown did *not* name were found while fixing it,
+and both are registered below because both are the same species as the ones it did name: a
+model path that only runs with a key configured.
+
+| Check | Before this round | After |
+|---|---|---|
+| `.venv/bin/python -m pytest backend/tests -q` | 1357 passed, 1 failed¹, 12 skipped | **1410 passed, 2 skipped** (139 s) |
+| `python scripts/teaching_quality_eval.py` | gate 0 flags | gate 0 flags (report unchanged) |
+| `python scripts/live_model_check.py --selftest` | PASS | PASS (12/12 topics, 144 calls) |
+| `ruff --select F` over the touched files | — | 0 in the changeset |
+
+¹ `test_a_migrated_database_is_still_encrypted_and_still_openable` — needs `sqlcipher3`,
+absent from this machine's venv at the baseline run; it passes with the wheel installed and
+was never a code defect.
+
+## P1 — a 200 with no text was reported as a successful answer
+
+**Where.** `ai/llm.py` — `extract_text` + the `200` branch of `complete()`.
+
+**What happened.** A safety block, an empty candidate list and a finished-but-blank reply all
+extracted to `""`, and the result was still `LLMResult(ok=True, text="")`. Call sites check
+`res.ok` before they read the payload — by design — so every one of them inherited the blank:
+a blocked prompt produced blank teaching, blank narration, a blank judge, and an `llm_calls`
+row that recorded `status="ok"` and a healthy latency.
+
+**Why the suite could not see it.** The key is popped at import (`tests/conftest.py`), so the
+200 branch is only reachable through a real provider. There was no test that stood up the
+client with a transport that answers.
+
+**Fix.** `_extract_completion` returns `(text, blocked_because, finish_reason)`; the 200 branch
+now refuses emptiness (`ok=False`, `status` in `blocked|empty`), a JSON contract that will not
+parse (`parse_error`), and a 200 whose body is not JSON (`error`). The refusal paths settle the
+budget from the provider's own usage — the prompt tokens *were* spent — and every one of them
+is pinned in `tests/test_llm_wire.py`, including the one that drives `ai2.explain` end to end
+and asserts the learner still gets an answer.
+
+## P1 — the system prompt was sent under a name the API does not read
+
+**Where.** `ai/llm.py`, `_body()`, non-cached path: `"system_instruction"`.
+
+**What happened.** The REST field is `systemInstruction`; the snake_case spelling is ignored
+rather than rejected. So the common path — caching off, or a prefix under the 1024-token floor
+— sent a valid request, got a normal answer, and had silently dropped the instructions that
+keep the answer on-format. The cache-*create* body spelled it correctly, which is the only
+reason the mismatch was visible at all.
+
+**Fix.** One spelling, asserted by two tests (`…the_field_the_api_reads`,
+`…every_field_the_body_carries_is_spelled_the_way_the_api_spells_it`).
+
+## P1 — the context cache crashed whenever it *succeeded* (found by this round)
+
+**Where.** `ai/llm.py:register_static` → `self.cache.estimate(prefix)`.
+
+**What happened.** `ContextCache` has no `estimate` method — never had one. So the
+registration path raised `AttributeError` on the first successful `cachedContents` create: the
+optimisation worked exactly once, and then blew up on the reply. Every call site's broad
+`except Exception` absorbed it and reported "no model", which is why nothing 500'd and why the
+teardown read it as "silently disabled; full prompt resent" rather than "crashes on success".
+
+**Why the suite could not see it.** Same reason, one level deeper: reaching `register_static`
+needs a key *and* a provider that answers the create. No test drove the cache round trip.
+
+**Fix.** `ContextCache.estimate()` added (and shared with `eligible()`, so the floor and the
+registered entry cannot disagree); `register_static` now wraps its body so a bug in the
+optimisation costs a resent prompt and a warning, never a lesson. Regression tests:
+`test_a_prefix_that_clears_the_floor_is_registered_and_then_reused`,
+`test_a_cache_that_cannot_be_registered_still_answers_the_question`.
+
+## P2 — the teach-back judge was asked for a string and marked wrong for not being a list (found by this round)
+
+**Where.** `ai/llm.py:_schema_for` + `assessment/teachback.py:MODEL_SPEC`.
+
+**What happened.** `MODEL_SPEC` spells `points` in the compact array-of-objects form,
+`[{"id": "str", "met": "bool", "evidence": "str"}]`. `_schema_for` recognised scalar types and
+tuple form only, so the list fell through to the catch-all and reached the provider as
+`{"type": "STRING"}`. With `responseSchema` enforced, the model could only answer with a
+string, and `_validated_points` rejects anything that is not a list of exactly `len(criteria)`
+points — so the model path for teach-back grading could never succeed, and could never fail
+loudly either: a rejected judgement just keeps the rule grade, which looks like the model
+quietly agreeing with the rules.
+
+**Fix.** `_schema_for`/`_items_for` translate the compact `[{}]` spelling (and nested
+fragments) properly; `points` now reaches the model as an array of objects with its own
+required keys. Test: `test_an_array_of_objects_written_in_the_compact_shape_is_an_array_of_objects`.
+
+## P2 — `purpose=` was reused for a log label (caught by an existing guard)
+
+**Where.** `ai/degrade.py` (new), call sites in `ai1/ai2/chain/scene_narrator`.
+
+**What happened.** The new swallowed-failure helper named its label parameter `purpose=`, and
+`tests/test_ai_efficiency.py::test_every_purpose_literal_in_the_source_is_in_the_table` treats
+every `purpose=` keyword in the source as a routing-table name. The guard failed the round's
+own diff — exactly the job it was added for. The parameter is `label=` now, and the guard
+stands.
+
+## Also changed, in the same shape
+
+* **Quota.** Reserve-before-send, settle-or-refund after; spacing is a queue of slots, not a
+  glance at `_last`; a cache-refusal retry reserves again instead of riding on the first
+  attempt. Ten concurrent callers against a budget of three now get three
+  (`test_concurrent_callers_cannot_all_be_told_there_is_room`).
+* **Safety settings.** Explicit `safetySettings` for all four harm categories, chosen by
+  `ADAPT_GEMINI_SAFETY_MODE` (`balanced` default), because an unset category inherits a
+  provider default that has moved between model generations.
+* **Optional schema fields.** `"str?"` in a compact spec = offered, not demanded. Applied
+  where the validator already tolerates absence (reply extras, proposal `action_payload`,
+  teach-back score/feedback, narrator `frame`, placement `level_hint`, leanings `reason`).
+* **Model ids.** A refusal that names a model returns `status="model_unavailable"`, is
+  remembered for the process, reported by `available()`/`adapt config models`, and routed
+  around only through `ADAPT_GEMINI_MODEL_ALTERNATES` — never by guessing a name.
+* **Consent field names.** The three spellings are one module's decision
+  (`security/consent.py`); write bodies accept either spelling so a client that round-trips
+  the name it read cannot have its consent update ignored
+  (`tests/test_consent_field_naming.py`).
+* **Swallowed exceptions.** `ai/degrade.py` logs by cause: an outage is INFO, a `TypeError`
+  inside our own code is WARNING with a traceback. The product behaviour (never 500 a lesson)
+  is unchanged.
+
+---
+
 ## P1 — CSRF was enforced on safe methods, which broke two live screens
 
 **Where.** `backend/src/adapt/api/deps.py` (`require_csrf`), reached through `rate(scope)`.

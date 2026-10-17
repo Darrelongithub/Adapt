@@ -223,6 +223,31 @@ class Refused(RuntimeError):
     """The run will not start: the operator asked for something this checkout cannot do."""
 
 
+#: A refusal that stops the run because nothing about the *content* was ever measured.
+_STOP_STATUSES = ("quota", "disabled", "throttled")
+#: A refusal that names a configuration problem rather than a model-quality one: the id in
+#: the routing table is not callable, so no topic in this run could have been answered.
+_CONFIGURATION_STATUSES = ("model_unavailable", "consent_required")
+
+
+def _stop_message(exc: "ModelUnavailable", topic: str) -> str:
+    """Say what stopped the run, in the words that describe that failure and not another.
+
+    One generic "the model could not be reached" used to cover a spent budget, an empty
+    candidate list, a filtered prompt and a renamed model id alike. Those four need four
+    different actions from whoever reads the report -- wait, change the prompt, change the
+    model -- so the report says which it was.
+    """
+    if exc.status in _STOP_STATUSES:
+        return f"the configured budget or pacing refused a call before '{topic}' ({exc.status})"
+    if exc.status in _CONFIGURATION_STATUSES:
+        return (
+            f"a configuration problem stopped the run before '{topic}': the model this "
+            f"deployment names is not callable ({exc})"
+        )
+    return f"the model could not answer '{topic}': {exc}"
+
+
 CallRecord = dict[str, Any]
 
 
@@ -1280,10 +1305,7 @@ def main(
             incomplete = f"the per-run call limit stopped the run before '{topic}': {exc}"
             break
         except ModelUnavailable as exc:
-            if exc.status in ("quota", "disabled", "throttled"):
-                incomplete = f"the configured budget or pacing refused a call before '{topic}' ({exc.status})"
-            else:
-                incomplete = f"the model could not be reached before '{topic}': {exc}"
+            incomplete = _stop_message(exc, topic)
             break
         except Exception as exc:  # a broken pipeline, or a stub that met an unexpected shape
             incomplete = f"the pipeline raised before '{topic}': {type(exc).__name__}: {exc}"
@@ -1312,9 +1334,12 @@ def main(
             incomplete = f"the per-run call limit stopped the run at the judge for '{topic}': {exc}"
             break
         except ModelUnavailable as exc:
-            if exc.status in ("quota", "disabled", "throttled"):
-                incomplete = f"the budget or pacing refused the judge call for '{topic}' ({exc.status})"
+            if exc.status in _STOP_STATUSES or exc.status in _CONFIGURATION_STATUSES:
+                incomplete = _stop_message(exc, f"{topic} (judge call)")
                 break
+            # A judge that cannot score is a gap in the report, not a stop: the artefacts
+            # were produced and the automated checks still ran, so the run keeps its verdict
+            # and says out loud which part is missing.
             judge_problems.append(f"{topic}: the judge call failed ({exc.status})")
         except Exception as exc:
             judge_problems.append(f"{topic}: the judge call failed ({type(exc).__name__}: {exc})")

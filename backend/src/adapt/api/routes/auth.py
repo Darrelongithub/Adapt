@@ -8,16 +8,17 @@ learner and their own data.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..deps import clear_login, db_session, issue_login, require_csrf, student_from_request
 from ...config import get_settings
 from ...db.models import Student
 from ...security import auth
+from ...security import consent
 from ...security.middleware import audit_event, client_ip
 from ...services import current
 from ...services import sessions as S
@@ -69,7 +70,9 @@ class RegisterBody(BaseModel):
     as_guest: bool = False
     # Older API clients omit these; the web door sends the explicit choice at creation.
     consent_analytics: bool | None = None
-    consent_share_with_llm: bool | None = None
+    consent_share_with_llm: Annotated[
+        bool | None, Field(validation_alias=AliasChoices(*consent.WRITE_FIELDS))
+    ] = None
 
 
 class LoginBody(BaseModel):
@@ -85,7 +88,13 @@ class LoginBody(BaseModel):
 class OnboardingBody(BaseModel):
     preferences: dict[str, Any] = Field(default_factory=dict)
     consent_analytics: bool = True
-    consent_share_with_llm: bool = True
+    # Both spellings, for the reason in :mod:`adapt.security.consent`: the learner-facing name
+    # is the one a client can read back out of `/me`, and a body that wrote it used to be
+    # accepted with `extra="ignore"` and change nothing. A silently ignored consent answer is
+    # the failure this field cannot be allowed to have.
+    consent_share_with_llm: Annotated[
+        bool, Field(validation_alias=AliasChoices(*consent.WRITE_FIELDS))
+    ] = True
     voice_enabled: bool = False
     voice_gender: str = "female"
     course_id: str | None = None

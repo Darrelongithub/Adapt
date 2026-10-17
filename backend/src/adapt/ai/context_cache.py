@@ -175,6 +175,17 @@ class ContextCache:
 
     # -- eligibility ---------------------------------------------------- #
 
+    def estimate(self, prefix: str) -> int:
+        """How big a prefix is, in the only unit the floor and the report are written in.
+
+        Its own method rather than an inline call at each use, because the number has to
+        agree in three places -- eligibility, the registered entry, and the operator's
+        report of what the cache saved -- and two of them were written apart from the third.
+        """
+        from .llm import estimate_tokens  # local import: llm imports this module
+
+        return estimate_tokens([str(prefix or "")])
+
     def eligible(self, prefix: str) -> tuple[bool, str]:
         """Can this prefix be cached at all? Returns ``(ok, reason)``.
 
@@ -190,9 +201,8 @@ class ContextCache:
         except StaticPrefixError as exc:
             self.stats.failed += 1
             return False, str(exc)
-        from .llm import estimate_tokens  # local import: llm imports this module
 
-        tokens = estimate_tokens([prefix])
+        tokens = self.estimate(prefix)
         if tokens < self.min_tokens:
             self.stats.skipped_small += 1
             return False, f"prefix is {tokens} tokens, under the {self.min_tokens} floor"

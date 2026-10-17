@@ -42,6 +42,7 @@ from ..db.models import (
     utcnow,
 )
 from ..security import auth
+from ..security import consent
 from . import telemetry
 
 log = logging.getLogger("adapt.sessions")
@@ -239,7 +240,9 @@ def complete_onboarding(
         "rejected_reasons": stored.get("rejected_reasons") or {},
         "consent": {
             "analytics": student.consent_analytics,
-            "share_summary_with_ai": student.consent_share_with_llm,
+            # Phrased as what is shared, in the onboarding's own words -- and from the same
+            # table the profile read uses, so the two can never disagree about the name.
+            **consent.onboarding_echo(student.consent_share_with_llm),
         },
         "note": (
             "No learning style question was asked. 'How you learn best' is measured from "
@@ -270,7 +273,10 @@ def profile_summary(s: Session, student_id: str) -> dict[str, Any]:
         "voice_gender": student.voice_gender,
         "language": student.preferred_language,
         "consent_analytics": student.consent_analytics,
-        "consent_share_with_ai": student.consent_share_with_llm,
+        # The learner-facing spelling of the sharing choice is produced by one function, in
+        # one module, so "which name goes on the wire" is not a decision each route makes
+        # again. See :mod:`adapt.security.consent`.
+        **consent.learner_view(student.consent_share_with_llm),
         "sessions": n_sessions,
         "preferences": get_preferences(s, student_id),
         "profile_taken_at": last.taken_at.isoformat() if last else None,

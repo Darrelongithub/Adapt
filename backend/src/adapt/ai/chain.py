@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
 from . import routing
+from .degrade import note
 
 log = logging.getLogger("adapt.ai.chain")
 
@@ -175,7 +176,7 @@ async def run(
             response_spec=spec,
         )
     except Exception as exc:  # a chain is an optimisation; it may never be the failure
-        log.info("chain %s could not be run (%s)", chain.name, type(exc).__name__)
+        note("chain", exc, label=chain.name)
         result.status = "error"
         result.hops = 1  # the call was attempted; the failure is the provider's, not the merge's
         result.sources = {step.key: "fallback" for step in chain.steps}

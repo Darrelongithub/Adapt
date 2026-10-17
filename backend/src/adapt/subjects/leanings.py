@@ -67,7 +67,10 @@ LEANING_RESPONSE_SPEC: dict[str, Any] = {
             "required": ["skill", "rating"],
         },
     ),
-    "reason": "str",
+    # The ratings are the answer; the sentence about them is a note the plan records if it
+    # arrives. Required, it bought a justification the model had not been asked to think
+    # about, and an omitted one used to cost the whole call.
+    "reason": "str?",
 }
 
 #: How many words of a learner's own text a prompt may carry. Short on purpose: this is a topic

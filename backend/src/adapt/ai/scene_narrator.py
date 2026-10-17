@@ -18,6 +18,7 @@ from typing import Any, Callable
 from ..learning import scenespec, sims
 from ..security.redact import redact_payload
 from . import static_context as SC
+from .degrade import note
 
 log = logging.getLogger("adapt.ai3")
 
@@ -135,10 +136,14 @@ class SceneNarrator:
                 student_id=student_id or "anon",
                 temperature=0.2,
                 max_output_tokens=320,
-                response_spec={"answer": "str", "why_not_more": "str", "frame": "int"},
+                # `answer` is the thing asked for. The other two are the model's own
+                # commentary: a frame number it may legitimately not know (the caller keeps
+                # the one it asked about) and a "why not more" nobody downstream reads, so
+                # neither is worth failing the call over -- nor worth inventing.
+                response_spec={"answer": "str", "why_not_more": "str?", "frame": "int?"},
             )
         except Exception as exc:  # a model that throws must not take the lesson down with it
-            log.info("ai3 call failed: %s", exc)
+            note("scene narration", exc, label="ai3_narrate")
             return Answer(
                 text=_template_answer(spec, frame_index, question),
                 source="template",
