@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
@@ -61,6 +62,50 @@ REPLY_SPEC = {
     "ask_teachback": "str",
     "resource_hint": "str",
 }
+
+_MODEL_MARKUP = re.compile(
+    r"<\s*/?\s*[A-Za-z!]|```|`|\*\*|__|(?:https?://|www\.|javascript:)",
+    re.IGNORECASE,
+)
+
+
+def _clean_model_text(value: Any, *, maximum: int) -> str:
+    """Plain learner-facing text only; malformed model prose falls back locally."""
+    text = " ".join(str(value or "").split()).strip()
+    if not text or _MODEL_MARKUP.search(text):
+        return ""
+    return text[:maximum].strip()
+
+
+def _accepted_reply_sections(raw: Any, fallback: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+    """Keep the local grounded sections unless the model returned the same safe shape."""
+    if not isinstance(raw, list) or not raw:
+        return [dict(row) for row in fallback if isinstance(row, Mapping)]
+    accepted: list[dict[str, str]] = []
+    for row in raw:
+        if not isinstance(row, Mapping):
+            return [dict(item) for item in fallback if isinstance(item, Mapping)]
+        label = _clean_model_text(row.get("label"), maximum=48)
+        text = _clean_model_text(row.get("text"), maximum=1200)
+        if not label or not text:
+            return [dict(item) for item in fallback if isinstance(item, Mapping)]
+        accepted.append({"label": label, "text": text})
+    return accepted
+
+
+def _accepted_next_action(value: Any, fallback: str | None) -> str | None:
+    """Enforce the contract's one-next-action rule instead of trusting a string field."""
+    candidate = _clean_model_text(value, maximum=320)
+    if candidate and len(LT.sentences(candidate)) == 1:
+        return candidate
+    return fallback
+
+
+def _accepted_adaptations(value: Any, directives: Sequence[Mapping[str, Any]], fallback: Sequence[str]) -> list[str]:
+    allowed = {str(row.get("strategy") or "") for row in directives if isinstance(row, Mapping)}
+    if not isinstance(value, list):
+        return list(fallback)
+    return [str(item) for item in value if isinstance(item, str) and str(item) in allowed]
 
 
 def bank_seed(student_id: str | None, item_id: str | None) -> int:
@@ -1029,6 +1074,17 @@ class EducationalIntelligence:
     async def feedback_for(self, student_id: str, item: dict[str, Any], g: dict[str, Any]) -> str:
         """LLM-optional enrichment of the rule-based feedback (never replaces it)."""
         base = g.get("feedback") or ""
+
+        def safe_feedback(value: Any) -> str:
+            text = _clean_model_text(value, maximum=1200)
+            if not text:
+                return ""
+            # FEEDBACK_TASK asks for two or three sentences. If the model does not
+            # meet that small contract, keep the deterministic grader wording rather
+            # than showing an unbounded or half-finished answer.
+            if len(LT.sentences(text)) not in (2, 3):
+                return ""
+            return text
         if self.llm is None or not getattr(self.llm, "configured", False):
             return base
         ctx = self.context(student_id, topic_id=item.get("topic_id"))
@@ -1056,8 +1112,10 @@ class EducationalIntelligence:
         await self._log_llm(
             "ai2_feedback", "ai2", res, student_id, len(user), dropped, kinds=redacted_kinds
         )
-        if res.ok and res.text.strip():
-            return res.text.strip()[:1200]
+        if res.ok:
+            accepted = safe_feedback(res.text)
+            if accepted:
+                return accepted
         return base
 
     # ------------------------------------------------------------------ #
@@ -1303,12 +1361,16 @@ class EducationalIntelligence:
             meta["fell_back_to"] = "local tutor (extractive, grounded in course material)"
             return None, meta
         data = dict(res.data or {})
-        if not data.get("answer") and res.text:
-            data["answer"] = res.text
-        if not data.get("answer"):
-            meta["fell_back_to"] = "local tutor (model returned no text)"
+        answer = _clean_model_text(data.get("answer"), maximum=3500)
+        if not answer:
+            meta["fell_back_to"] = "local tutor (model returned no safe answer)"
             return None, meta
-        data["answer"] = str(data["answer"])[:3500]
+        data["answer"] = answer
+        data["sections"] = _accepted_reply_sections(data.get("sections"), local.sections)
+        data["next_action"] = _accepted_next_action(data.get("next_action"), None)
+        data["adaptations_applied"] = _accepted_adaptations(
+            data.get("adaptations_applied"), ctx["directives"], local.directives_applied
+        )
         rules = ctx["presentation"]
         if rules.get("max_words"):
             words = data["answer"].split()

@@ -1201,6 +1201,8 @@ def test_an_open_question_records_an_event_and_a_row_the_learner_can_read(client
 
 
 def test_voice_capabilities_are_an_honest_account_of_the_machine(client, learner):
+    enabled = client.post("/api/v1/me/voice", json={"enabled": True}, headers=learner["headers"])
+    assert enabled.status_code == 200, enabled.text
     body = client.get("/api/v1/voice/capabilities", headers=learner["headers"]).json()
     assert body["stt"]["local_stt"] in (True, False)
     assert body["tts"]["local_tts"] in (True, False)

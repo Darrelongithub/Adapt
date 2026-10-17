@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -167,14 +168,26 @@ class SceneNarrator:
                 note=f"the model returned {res.status or 'nothing'}; the frame still plays",
             )
         text = _clean(text)
-        if not text:
+        valid_frame = True
+        try:
+            frame_count = len(sims.frames_for(str(spec.get("kind") or ""), spec.get("params") or {}))
+            valid_frame = not frame_count or 0 <= frame_used < frame_count
+        except Exception:
+            # The simulation replay is already handled by the deterministic fallback;
+            # do not let a malformed model frame number escape the narration boundary.
+            valid_frame = False
+        if not text or not valid_frame:
             return Answer(
                 text=_template_answer(spec, frame_index, question),
                 source="template",
                 frame=int(frame_index),
                 citations=citations,
                 ok=False,
-                note="the model's answer was refused by the plain text check",
+                note=(
+                    "the model's answer was refused by the plain text, sentence, or frame check"
+                    if text
+                    else "the model's answer was refused by the plain text or sentence check"
+                ),
             )
         return Answer(
             text=text,
@@ -261,6 +274,9 @@ def _clean(text: str) -> str:
         if probe in flat.lower():
             return ""
     if scenespec.BAD_TEXT.search(flat):
+        return ""
+    sentences = [part for part in re.split(r"(?<=[.!?])\s+", flat) if part.strip()]
+    if len(sentences) > 3:
         return ""
     return flat[:MAX_ANSWER].strip()
 

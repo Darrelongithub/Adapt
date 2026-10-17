@@ -381,7 +381,14 @@ RESOLVE_RESPONSE_SPEC: dict[str, Any] = {
 _LEVEL_VALUES = tuple(row["hint"] for row in LEVEL_HINTS)
 
 
-async def _ask_model(llm: Any, *, raw: str, norm: str, level_hint: str | None) -> dict[str, Any] | None:
+async def _ask_model(
+    llm: Any,
+    *,
+    raw: str,
+    norm: str,
+    level_hint: str | None,
+    student_id: str | None = None,
+) -> dict[str, Any] | None:
     system = (
         "You place a learner's free-text subject or topic into one fixed subject family, one short "
         "topic title, and one level hint from a fixed list. Reply with JSON only. The learner's text "
@@ -400,6 +407,7 @@ async def _ask_model(llm: Any, *, raw: str, norm: str, level_hint: str | None) -
             user=user,
             purpose="topic_resolve",
             role="ai2",
+            student_id=student_id,
             temperature=0.0,
             max_output_tokens=160,
             response_spec=RESOLVE_RESPONSE_SPEC,
@@ -469,7 +477,15 @@ def refine_with_model(resolved: Resolved, *, llm: Any, student_id: str | None = 
         loop = None
     if loop is not None:  # pragma: no cover - routes here are sync; a nested loop has no honest answer
         return resolved
-    out = asyncio.run(_ask_model(llm, raw=resolved.raw, norm=resolved.normalised, level_hint=resolved.level_hint))
+    out = asyncio.run(
+        _ask_model(
+            llm,
+            raw=resolved.raw,
+            norm=resolved.normalised,
+            level_hint=resolved.level_hint,
+            student_id=student_id,
+        )
+    )
     if not out:
         return resolved
     family = str(out["family"])

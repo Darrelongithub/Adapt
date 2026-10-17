@@ -301,6 +301,23 @@ async def transcribe(file: UploadFile = File(...), sample_rate: int = Form(16000
     loop stops every other learner's request mid-sentence.
     """
     st = get_settings()
+    if student is not None and not student.voice_enabled:
+        # Do not read, decode, count, or hand the upload to STT while the
+        # learner's server-side voice switch is off. The direct ``student=None``
+        # call remains useful for the isolated worker-thread test below; normal
+        # requests always arrive through ``require_csrf`` with a Student row.
+        await file.close()
+        return {
+            "text": "",
+            "backend": "disabled",
+            "language": "en",
+            "confidence": None,
+            "duration_s": 0.0,
+            "latency_ms": 0,
+            "model": None,
+            "segments": 0,
+            "note": "voice is off; no audio was processed",
+        }
     try:
         data = await _read_capped(file, CLIP_CAP_BYTES)
     finally:
@@ -320,6 +337,13 @@ async def transcribe(file: UploadFile = File(...), sample_rate: int = Form(16000
 async def speak(body: dict[str, Any], s: Session = Depends(db_session), student: Student = Depends(require_csrf)) -> dict[str, Any]:
     """Return WAV audio if Kokoro is installed, otherwise tell the client to use its own voice."""
     from fastapi.responses import Response
+
+    if student is not None and not student.voice_enabled:
+        return {
+            "available": False,
+            "reason": "voice_off",
+            "fallback": "text only; turn voice on before requesting speech",
+        }
 
     from ...voice.tts import synthesize_or_none
 

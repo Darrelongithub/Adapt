@@ -29,6 +29,7 @@ from ..ai.scene_narrator import SceneNarrator
 from ..ai.llm import GeminiLLM
 from ..config import Settings, get_settings
 from ..db.engine import Database, get_db, set_db
+from ..db.models import Student
 from ..resources.service import ResourceService
 from ..security.ratelimit import build_limiter
 from ..voice import pipeline as VP
@@ -251,8 +252,21 @@ def build(
     database = db or get_db()
     limiter = limiter if limiter is not None else build_limiter(multiplier=settings.rate_limit_multiplier)
     model = llm
+    def learner_consented(student_id: str) -> bool:
+        # This lookup is intentionally kept in the service container: it has the
+        # database factory, while the provider remains usable in isolated tests and
+        # for operator/content calls that have no learner id.
+        with database.session() as session:
+            student = session.get(Student, student_id)
+            return bool(student is not None and student.consent_share_with_llm)
+
     if model is None and settings.gemini_api_key:
-        model = GeminiLLM(settings, limiter=limiter)
+        model = GeminiLLM(settings, limiter=limiter, consent_checker=learner_consented)
+    elif isinstance(model, GeminiLLM) and model.consent_checker is None:
+        # A caller may inject a transport-configured Gemini client in a console or
+        # test build. Do not let that alternate construction silently bypass the
+        # same learner boundary used by the default client.
+        model.consent_checker = learner_consented
     elif model is None and settings.allow_local_fallback:
         model = None  # the tutor will use the local path; analysis will phrase its hypotheses locally
     # The store is constructed first: it is the one thing every intelligence shares, and it

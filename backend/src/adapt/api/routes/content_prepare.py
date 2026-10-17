@@ -45,9 +45,12 @@ class PrepareBody(BaseModel):
 class _GeminiBridge:
     """Adapt the existing async LLM client to the frozen synchronous model-call interface."""
 
-    def __init__(self, llm: Any, loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(
+        self, llm: Any, loop: asyncio.AbstractEventLoop, student_id: str | None = None
+    ) -> None:
         self.llm = llm
         self.loop = loop
+        self.student_id = student_id
 
     def __call__(
         self,
@@ -64,6 +67,7 @@ class _GeminiBridge:
                     user=user,
                     purpose=purpose,
                     role="ai2",
+                    student_id=self.student_id,
                     max_output_tokens=max_tokens,
                     response_spec=schema,
                 ),
@@ -96,7 +100,9 @@ def _update_job(*, job_id: str, state: str, source: str | None) -> None:
         row.updated_at = utcnow()
 
 
-async def _prepare_and_store(job_id: str, topic: str, level: int, language: str) -> None:
+async def _prepare_and_store(
+    job_id: str, topic: str, level: int, language: str, student_id: str | None = None
+) -> None:
     services = current_services()
     topic_key = canonical_topic_key(topic)
     identity = cache_identity(topic_key, level=level, language=language)
@@ -110,7 +116,7 @@ async def _prepare_and_store(job_id: str, topic: str, level: int, language: str)
     shared_llm = getattr(getattr(services, "ai2", None), "llm", None)
     model = None
     if shared_llm is not None and getattr(shared_llm, "configured", False):
-        model = _GeminiBridge(shared_llm, asyncio.get_running_loop())
+        model = _GeminiBridge(shared_llm, asyncio.get_running_loop(), student_id)
     pack = await asyncio.to_thread(
         get_pack,
         topic,
@@ -129,9 +135,11 @@ async def _prepare_and_store(job_id: str, topic: str, level: int, language: str)
             row.updated_at = utcnow()
 
 
-def _run_prepare(job_id: str, topic: str, level: int, language: str) -> None:
+def _run_prepare(
+    job_id: str, topic: str, level: int, language: str, student_id: str | None = None
+) -> None:
     try:
-        asyncio.run(_prepare_and_store(job_id, topic, level, language))
+        asyncio.run(_prepare_and_store(job_id, topic, level, language, student_id))
     except Exception:
         # Do not stringify exception messages: they can include provider or topic text.
         log.error("content_prepare_failed job_id=%s", job_id)
@@ -177,7 +185,14 @@ def prepare_content(
     job_id = job.id
     # Commit before submitting so the worker can safely see the job row on another DB connection.
     session.commit()
-    _WORKERS.submit(_run_prepare, job_id, body.topic, body.level, body.language)
+    _WORKERS.submit(
+        _run_prepare,
+        job_id,
+        body.topic,
+        body.level,
+        body.language,
+        getattr(_student, "id", None),
+    )
     return {"job_id": job_id}
 
 

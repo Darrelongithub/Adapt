@@ -4,6 +4,9 @@ Date: 2026-10-17 (Africa/Nairobi)
 
 ## Integrated surface
 
+- Follow-up privacy/voice audit fixes now enforce learner sharing consent at the common external-model boundary (including the asynchronous content and lesson bridges), make server-side Voice OFF discard audio before decode/VAD/STT/recording and cancel speech, and preserve typed tutoring without TTS.
+- Model responses from AI 1/AI 2/scene narration are accepted only after the new grounding, plain-text, shape, sentence-count, adaptation, and frame checks; deterministic/local fallbacks remain authoritative when a check fails.
+- Added focused consent, Voice OFF, retention, content-bridge, and model-plumbing regression coverage.
 - Added the learner subject spine and `P4` migration. The product contracts are:
   - `GET /api/v1/learning/overview`
   - `POST /api/v1/subjects/choose`
@@ -42,6 +45,22 @@ Backend:
 - `backend/src/adapt/subjects/resolve.py`
 - `backend/src/adapt/subjects/service.py`
 - `backend/src/adapt/subjects/topics.py`
+- `backend/src/adapt/ai/ai1.py`
+- `backend/src/adapt/ai/ai2.py`
+- `backend/src/adapt/ai/llm.py`
+- `backend/src/adapt/ai/prompts.py`
+- `backend/src/adapt/ai/scene_narrator.py`
+- `backend/src/adapt/api/routes/content_prepare.py`
+- `backend/src/adapt/api/routes/lesson.py`
+- `backend/src/adapt/api/routes/system.py`
+- `backend/src/adapt/api/ws.py`
+- `backend/src/adapt/services/__init__.py`
+- `backend/src/adapt/voice/pipeline.py`
+- `backend/tests/content_skeleton/test_cache_and_route.py`
+- `backend/tests/test_api_learner_loop.py`
+- `backend/tests/test_llm_consent.py`
+- `backend/tests/test_master_prompts_4_5_6.py`
+- `backend/tests/test_voice_pipeline.py`
 - `backend/tests/test_round5_subject_spine.py`
 
 Frontend:
@@ -71,11 +90,12 @@ Frontend:
 
 Passed:
 
-- `python3 -m compileall -q backend/src/adapt`
-- `cd backend && ../.venv/bin/pytest -q` — **1357 passed, 2 skipped**; the final
-  subject-spine/legacy regression subset passed **70**.
+- `python3 -m compileall -q backend/src/adapt` — passed.
+- `cd backend && ../.venv/bin/pytest -q` — **1368 passed, 2 skipped**; the new
+  consent/Voice OFF/retention/content-bridge regressions and the full legacy suite passed.
 - `cd backend && ../.venv/bin/pytest -q tests/test_round5_subject_spine.py` — **4 passed**.
 - `cd backend && ../.venv/bin/alembic check` — no new upgrade operations.
+- Same-origin host smoke — backend/web startup, `/healthz`, and `/` through the Next proxy passed; an unauthenticated voice capability request correctly returned 401.
 - `cd frontend && npm run typecheck` — passed.
 - `cd frontend && npm run lint` — passed contract check and TypeScript.
 - `cd frontend && npm run build` — passed production build.
@@ -97,11 +117,14 @@ The required browser binary was not present in this sandbox: `/opt/pw-browsers/c
 exist, and the Playwright cache also has no executable. I did **not** run `playwright install`.
 Consequently, the real Chromium owner-flow, mobile/desktop screenshots, keyboard traversal, dark-mode
 rendering, responsive overflow, live speech APIs, and banned-phrase browser crawl are **unverified**.
-The attempted command was:
+The attempted checks were:
 
 ```text
+node - <<'NODE' ... chromium.launch({ executablePath: '/opt/pw-browsers/chromium' }) ... NODE
 ADAPT_BASE_URL=http://127.0.0.1:3000 npm run test:e2e:banned
 ```
+
+The direct launch failed before navigation with `executable doesn't exist at /opt/pw-browsers/chromium`; no browser installation was attempted.
 
 It discovered all 17 routes, then exited 2 because Playwright could not launch Chromium. The required
 screenshot directory is present at `docs/screens/r5g/`; no screenshots are claimed there because

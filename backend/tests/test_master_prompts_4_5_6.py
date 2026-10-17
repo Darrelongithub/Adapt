@@ -294,18 +294,41 @@ async def test_check_cites_measured_recall_and_reuses_the_learners_own_item(serv
     assert out["expected_answer_notes"].startswith("A good answer")
 
 
-async def test_a_model_may_rewrite_the_check_and_is_refused_when_it_cannot(services, learner, session):
+async def test_a_model_may_rewrite_the_check_only_when_it_stays_grounded(services, learner, session):
     topic_id = await _seed_schedule(services, learner, session, with_recall=True, with_attempt=False)
+    with services.scope() as s:
+        title = s.get(Topic, topic_id).title
 
-    good = _CaptureLLM({"question": "What stayed from three weeks ago?", "expectedAnswerNotes": "the rule and one example", "rationale": "recall is projected near the check window now"})
+    question = f"What is the key idea of {title} after three days?"
+    good = _CaptureLLM(
+        {
+            "question": question,
+            "expectedAnswerNotes": "the rule and one example",
+            "rationale": "After 3.0 days, projected recall is about 40%, so this is a useful check.",
+        }
+    )
     saved = services.ai1.llm
     services.ai1.llm = good
     try:
         out = await services.ai1.design_retention_check(learner["student_id"], topic_id, use_llm=True)
     finally:
         services.ai1.llm = saved
-    assert out["source"] == "model" and out["question"] == "What stayed from three weeks ago?"
+    assert out["source"] == "model" and out["question"] == question
     assert len(out["rationale"]) <= 140
+
+    ungrounded = _CaptureLLM(
+        {
+            "question": "What stayed from three weeks ago?",
+            "expectedAnswerNotes": "the rule and one example",
+            "rationale": "recall is projected near the check window now",
+        }
+    )
+    services.ai1.llm = ungrounded
+    try:
+        out = await services.ai1.design_retention_check(learner["student_id"], topic_id, use_llm=True)
+    finally:
+        services.ai1.llm = saved
+    assert out["source"] == "rules" and out["llm_check"] == "not_grounded"
 
     empty = _CaptureLLM({"question": "", "expectedAnswerNotes": "", "rationale": ""})
     services.ai1.llm = empty
