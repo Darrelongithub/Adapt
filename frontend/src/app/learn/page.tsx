@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { EffectLine, type EffectSummary } from "@/components/evidence";
 import { Question } from "@/components/question";
 import { Btn, Card, Err, Notice, PageHeader, Tag } from "@/components/ui";
-import { Artwork } from "@/components/art/Artwork";
+import { PageArt } from "@/components/shell/PageArt";
 import { summarise, type AnalyzeRaw, type AnalyzeSummary } from "@/lib/analyze";
 import { useFlow } from "@/lib/flow";
 import { get, post } from "@/lib/api";
@@ -143,7 +143,7 @@ export default function Learn() {
     return (
       <div className="lesson-empty" data-learn-empty>
         <div className="lesson-empty-art" aria-hidden="true">
-          <Artwork name="classroom" />
+          <PageArt name="classroom" />
         </div>
         <Card title="What do you want to learn?" tone="blue">
           <form

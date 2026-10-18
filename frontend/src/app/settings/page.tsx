@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Btn, Card, Check, Err, Field, humanize, Input, Notice, PageHeader, Select, Tag, useSession } from "@/components/ui";
-import { Artwork } from "@/components/art/Artwork";
+import { PageArt } from "@/components/shell/PageArt";
 import { del, post, useApi } from "@/lib/api";
 import type { Status } from "@/lib/types";
 
@@ -174,7 +174,7 @@ export default function Settings() {
       <PageHeader
         title="Settings, and what is kept"
         subtitle="Every claim here is read from the server that enforces it."
-        art={<Artwork name="gears" />}
+        art={<PageArt name="gears" />}
       />
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -22,6 +22,8 @@
  */
 
 import { GameCards } from "@/components/icons/GameCards";
+import { PageArt } from "@/components/shell/PageArt";
+import { friendlyLabel } from "@/lib/labels";
 import { useOptionalVoice } from "@/components/voice/context";
 import { Icon, gameIcon } from "@/components/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -96,8 +98,8 @@ export default function Baseline() {
         if (first.kind !== "format" && first.kind !== "questions") {
           setResumed(
             first.completion?.complete != null && first.completion?.total != null
-              ? `Picking up where you left off: stage "${first.stage_title}", ${first.completion.complete} of ${first.completion.total} steps already done.`
-              : `Picking up where you left off: ${first.stage_title}.`,
+              ? `Picking up where you left off: ${friendlyLabel(first.stage_title) ?? "your mind check"}, ${first.completion.complete} of ${first.completion.total} steps already done.`
+              : `Picking up where you left off: ${friendlyLabel(first.stage_title) ?? "your mind check"}.`,
           );
         }
         advance(first);
@@ -219,12 +221,13 @@ export default function Baseline() {
 
   return (
     <section className="wrap baseline-page">
-      <header className="baseline-head">
+      <header className="baseline-head baseline-hero">
+        <PageArt name="brain" className="baseline-brain-art" />
         <div>
           <p className="muted small" style={{ margin: 0 }}>
             {show_snapshot ? "What we noticed" : step_label(view.stage) || "The baseline"} · {progress}% through
           </p>
-          <h1 style={{ margin: "2px 0 0" }}>{show_snapshot ? "What we noticed" : view.stage_title}</h1>
+          <h1 style={{ margin: "2px 0 0" }}>{show_snapshot ? "What we noticed" : friendlyLabel(view.stage_title) ?? "Your mind check"}</h1>
         </div>
         {!show_snapshot ? (
           <div className="baseline-actions">
@@ -568,7 +571,7 @@ function TaskScreen({
         <Tag tone="accent">{task.phase === "show" ? "looking time — not scored" : task.practice ? "practice — not scored" : "measured"}</Tag>
         {timers && left !== null ? <span className="muted small" aria-live="off">about {left}s left</span> : null}
       </div>
-      {task.prompt ? <h2 className="baseline-prompt flex items-start gap-3"><Icon name={gameIcon(task.game)} />{String(task.prompt)}</h2> : null}
+      {task.prompt ? <h2 className="baseline-prompt flex items-start gap-3"><Icon name={gameIcon(task.game)} />{friendlyLabel(task.prompt) ?? "A short mind game"}</h2> : null}
       {task.game === "codewords_study" ? <Study task={task} busy={busy} onSend={onSend} /> : null}
       {task.game === "codewords_cued" || task.game === "codewords_next_day" ? (
         <FreeText task={task} busy={busy} onSend={onSend} label="which one went with it?" />
@@ -1268,10 +1271,10 @@ function SnapshotScreen({
           &ldquo;not measured&rdquo; on purpose: a game you did not play is unknown, not a zero.
         </p>
         <ul className="baseline-factors">
-          {factors.map((f) => (
+          {factors.filter((f) => friendlyLabel(f.title) !== null).map((f) => (
             <li key={f.key} className={f.state === "measured" ? "" : "muted"}>
               <div className="row">
-                <strong style={{ flex: 1 }}>{f.title}</strong>
+                <strong style={{ flex: 1 }}>{friendlyLabel(f.title)}</strong>
                 {f.state === "measured" ? (
                   <Tag tone="good">{format_range(f.range)}</Tag>
                 ) : (
@@ -1324,7 +1327,7 @@ function SnapshotScreen({
       {snap.completion?.not_measured?.length ? (
         <Card title="Steps that did not happen">
           <p className="muted small">
-            Recorded as not measured, not as zero: {snap.completion.not_measured.join(", ")}.
+            Recorded as not measured, not as zero: {snap.completion.not_measured.map(friendlyLabel).filter(Boolean).join(", ") || "Some steps"}.
           </p>
         </Card>
       ) : null}

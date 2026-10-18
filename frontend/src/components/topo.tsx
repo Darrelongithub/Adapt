@@ -22,6 +22,7 @@
  */
 
 import { EARLY_SIGNAL_N, EvidenceBadge } from "./evidence";
+import { friendlyLabel } from "@/lib/labels";
 
 type TopoRow = {
   topic_id: string;
@@ -66,6 +67,7 @@ function uncertaintyPoints(ci?: [number, number] | null): number | null {
 }
 
 export function TopicTopo({ rows, minN = EARLY_SIGNAL_N }: { rows: TopoRow[]; minN?: number }) {
+  rows = rows.filter((r) => friendlyLabel(r.title || r.topic_id) !== null);
   if (!rows.length) return null;
   const height = TOP + rows.length * LANE_H + AXIS;
   const plotTop = TOP - 16;
@@ -98,7 +100,7 @@ export function TopicTopo({ rows, minN = EARLY_SIGNAL_N }: { rows: TopoRow[]; mi
           const n = Number(r.observations ?? 0);
           const unc = uncertaintyPoints(r.ci);
           const early = n < minN;
-          const title = r.title || r.topic_id;
+          const title = friendlyLabel(r.title || r.topic_id) ?? "";
           return (
             <g key={r.topic_id}>
               <title>{`${title}: ${pct(r.p_know)}${unc === null ? "" : ` ±${unc} points`}, ${n} answers, band ${r.band ?? "unknown"}`}</title>
@@ -169,7 +171,7 @@ export function TopicTopo({ rows, minN = EARLY_SIGNAL_N }: { rows: TopoRow[]; mi
               const unc = uncertaintyPoints(r.ci);
               return (
                 <tr key={r.topic_id}>
-                  <td>{r.title || r.topic_id}</td>
+                  <td>{friendlyLabel(r.title || r.topic_id)}</td>
                   <td>{r.band ?? "unknown"}</td>
                   <td>{pct(r.p_know)}</td>
                   <td>

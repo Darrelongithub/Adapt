@@ -5,7 +5,8 @@
  */
 
 .baseline-page {
-  max-width: 52rem;
+  width: 100%;
+  max-width: none;
   color: var(--ink);
 }
 
@@ -342,3 +343,8 @@
 .baseline-page .baseline-snapshot > section + section {
   margin-top: 1rem;
 }
+
+.baseline-hero { position: relative; overflow: hidden; border-radius: 24px; padding: clamp(24px,4vw,44px); background: var(--blue-soft, #eaf2fb); min-height: 190px; align-items: center; }
+.baseline-brain-art { position:absolute; right: 4%; top: 8%; width: min(28vw,240px); height: min(28vw,180px); }
+.baseline-hero > div:first-child { position:relative; z-index:1; max-width:68%; }
+@media(max-width:640px){ .baseline-hero { min-height:150px; padding:20px; } .baseline-brain-art { width:112px; height:100px; right:5px; top:18px; opacity:.7; } .baseline-hero > div:first-child { max-width:78%; } }

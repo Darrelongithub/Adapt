@@ -2,6 +2,17 @@ import type { ReactNode } from "react";
 
 const paths = {
   play: <path d="m9 5 11 7-11 7Z" />,
+  sprout: <><path d="M12 21v-9"/><path d="M12 12C5 12 4 7 4 4c5 0 9 2 8 8Zm0 2c0-5 3-8 8-8 0 4-1 8-8 8Z"/></>,
+  half: <><path d="M4 5h16v4H4zM4 11h16v4H4zM4 17h16v4H4z"/><path d="M4 5h16v4H4zM4 11h8v4H4z" fill="currentColor" stroke="none"/></>,
+  mountain: <><path d="m2 20 7-13 4 7 3-5 6 11H2Z"/><path d="m7 12 2 2 2-2m4 1 1 2 2-1"/></>,
+  eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
+  hand: <><path d="M8 12V6a1.5 1.5 0 0 1 3 0v5-7a1.5 1.5 0 0 1 3 0v7-5a1.5 1.5 0 0 1 3 0v7-3a1.5 1.5 0 0 1 3 0v5c0 4-2 7-6 7h-2c-2 0-3-1-4-3l-3-4a1.7 1.7 0 0 1 3-2Z"/></>,
+  ear: <><path d="M6 9a6 6 0 0 1 12 0c0 4-4 5-4 8a2 2 0 0 1-4 0"/><path d="M10 9a2 2 0 0 1 4 0c0 2-2 2-2 4"/></>,
+  pencil: <><path d="m4 16-1 5 5-1L20 8l-4-4L4 16Z"/><path d="m13 7 4 4"/></>,
+  wrench: <><path d="M14 6a6 6 0 0 0-8 8l-4 4 4 4 4-4a6 6 0 0 0 8-8l-4 4-4-4 4-4Z"/></>,
+  bulb: <><path d="M9 18h6m-5 3h4m-6-7a7 7 0 1 1 8 0c-1 1-1 2-1 4h-6c0-2 0-3-1-4Z"/></>,
+  brain: <><path d="M12 5a4 4 0 0 0-7 2 4 4 0 0 0-1 7 4 4 0 0 0 4 6h4Zm0 0a4 4 0 0 1 7 2 4 4 0 0 1 1 7 4 4 0 0 1-4 6h-4"/><path d="M8 8a3 3 0 0 0 0 6m8-6a3 3 0 0 1 0 6M8 17h2m4 0h2"/></>,
+
   route: (
     <>
       <path d="M12 3v18M5 5h13l3 3-3 3H5l-3-3ZM7 13h12v6H7l-3-3Z" />

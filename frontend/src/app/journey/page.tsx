@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Btn, Card, Err, Notice, PageHeader, useSession } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { Artwork } from "@/components/art/Artwork";
+import { PageArt } from "@/components/shell/PageArt";
 import { get, post } from "@/lib/api";
 import { useJourney } from "@/lib/journey";
 import { TestItemCard } from "@/components/tests/items";
@@ -233,7 +233,7 @@ export default function Journey() {
                   <p className="t-body">Type a subject. We will build the starting checks.</p>
                 </div>
                 <div className="wizard-hero-art" aria-hidden="true">
-                  <Artwork name="classroom" />
+                  <PageArt name="classroom" />
                 </div>
               </div>
               <SubjectChooser text={text} setText={setText} choose={choose} busy={busy} />
@@ -273,13 +273,15 @@ export default function Journey() {
       ) : (
         <>
           {(stage === "preferences" || stage === "games") && (
-            <Card title={stage === "preferences" ? "A few questions" : "Short mind games"} tone="sand" icon={<Icon name="sliders" />}>
+            <div className={stage === "games" ? "mind-games-hero" : ""}>
+            <Card title={stage === "preferences" ? "A few questions" : "Short mind games"} tone="sand" icon={<Icon name={stage === "games" ? "bulb" : "sliders"} />}>
               <p>{stage === "preferences" ? "Your choices shape the starting plan." : "Play the short games, or skip them."}</p>
               <div className="wrap-2">
                 <Btn icon="play" kind="primary" href="/baseline">Open mind check</Btn>
                 <Btn kind="ghost" disabled={busy} onClick={async () => { setBusy(true); await path.advance(stage, "skipped"); setBusy(false); }}>Skip this step</Btn>
               </div>
             </Card>
+            </div>
           )}
           {stage === "first_lesson" ? (
             <Card title="Your first lesson" tone="mint" icon={<Icon name="play" />}>
@@ -365,7 +367,7 @@ function SetupStep({
         <div className="tile-choice" role="group" aria-label="Level">
           {LEVELS.map((l) => (
             <button key={l.id} type="button" className="tile-btn" aria-pressed={level === l.id} onClick={() => setLevel(l.id)}>
-              <Icon name="bars" />
+              <Icon name={l.id === 1 ? "sprout" : l.id === 2 ? "half" : "mountain"} />
               <span className="tile-btn-label">{l.label}</span>
               <span className="tile-btn-hint">{l.hint}</span>
             </button>
@@ -376,7 +378,7 @@ function SetupStep({
         <div className="tile-choice" role="group" aria-label="Learning style">
           {STYLES.map((s) => (
             <button key={s.id} type="button" className="tile-btn" aria-pressed={style === s.id} onClick={() => setStyle(s.id)}>
-              <Icon name={s.id === "hear" ? "mic" : s.id === "try" ? "play" : s.id === "see" ? "search" : "book"} />
+              <Icon name={s.id === "hear" ? "ear" : s.id === "try" ? "hand" : s.id === "see" ? "eye" : "book"} />
               <span className="tile-btn-label">{s.label}</span>
               <span className="tile-btn-hint">{s.hint}</span>
             </button>
@@ -387,7 +389,7 @@ function SetupStep({
         <div className="tile-choice" role="group" aria-label="Goal">
           {GOALS.map((g) => (
             <button key={g.id} type="button" className="tile-btn" aria-pressed={goal === g.id} onClick={() => setGoal(g.id)}>
-              <Icon name={g.id === "exam" ? "key" : g.id === "skills" ? "gears" : "coin"} />
+              <Icon name={g.id === "exam" ? "pencil" : g.id === "skills" ? "wrench" : "bulb"} />
               <span className="tile-btn-label">{g.label}</span>
               <span className="tile-btn-hint">{g.hint}</span>
             </button>

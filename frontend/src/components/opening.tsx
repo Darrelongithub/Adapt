@@ -103,6 +103,10 @@ export function Opening({ children }: { children: ReactNode }) {
           );
         })}
       </p> : <p role="status">Opening ADAPT…</p>}
+      <div className="opening-actions">
+        <p className="opening-subline">A learning experience shaped around you.</p>
+        <button className="btn-ctl btn-primary opening-start" onClick={(e) => { e.stopPropagation(); dismiss(); }}>Start learning</button>
+      </div>
       <button ref={skipRef} className="btn-ctl btn-ghost opening-skip" onClick={(e) => { e.stopPropagation(); dismiss(); }}>
         Skip →
       </button>

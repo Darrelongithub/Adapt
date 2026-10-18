@@ -27,7 +27,7 @@ import { get, post } from "@/lib/api";
 import { SceneStage } from "@/components/scenes";
 import { ReadAloud } from "@/components/voice/ReadAloud";
 import { Btn, Card, Err, Field, Notice, PageHeader, Tag, Textarea, Trace, announce } from "@/components/ui";
-import { Artwork } from "@/components/art/Artwork";
+import { PageArt } from "@/components/shell/PageArt";
 import { Icon } from "@/components/icons";
 
 /** The reply shape of POST subjects/choose (journey API). */
@@ -388,7 +388,7 @@ export default function LessonPlayer() {
           /* Fresh learner: classroom art at the top, one question, no built-in lessons. */
           <div className="lesson-empty">
             <div className="lesson-empty-art" aria-hidden="true">
-              <Artwork name="classroom" />
+              <PageArt name="classroom" />
             </div>
             <Card title="What do you want to learn?" tone="blue">
               <form

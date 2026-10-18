@@ -249,7 +249,7 @@ function SidebarMore({ current, onClose }: { current: string | null; onClose: ()
         data-testid="sidebar-more"
       >
         <IconTile icon={<Icon name="chevron" />} tone="blue" />
-        <span className="sidebar-label">{open ? "Fewer destinations" : "More"}</span>
+        <span className="sidebar-label">{open ? "Less" : "More"}</span>
         <span style={{ transform: open ? "rotate(180deg)" : undefined }}><Icon name="chevron" /></span>
       </button>
       {open ? (

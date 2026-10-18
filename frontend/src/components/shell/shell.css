@@ -348,3 +348,6 @@
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
+/* Sizes/slots are selected exclusively by shell/artMap.ts; page-specific hero wrappers anchor them. */
+.art-size-large { min-width: 1px; min-height: 1px; }
+.art-size-small { min-width: 1px; min-height: 1px; }
