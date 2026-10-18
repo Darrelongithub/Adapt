@@ -18,7 +18,8 @@
 import { friendlyLabel } from "@/lib/labels";
 import { useState } from "react";
 
-import { Btn, Card, Err, Notice, SessionLog, Tag, Textarea, announce, useSessionLedger } from "@/components/ui";
+import { Btn, Card, Err, Notice, PageHeader, SessionLog, Tag, Textarea, announce, useSessionLedger } from "@/components/ui";
+import { PageArt } from "@/components/shell/PageArt";
 import { get, post, useApi } from "@/lib/api";
 import type { RetentionCheck, ReviewComplete, ReviewDue } from "@/lib/types";
 import { ReadAloud } from "@/components/voice/ReadAloud";
@@ -101,34 +102,49 @@ export default function Review() {
     return `${pct}%`;
   }
 
-  if (due.loading) return <Card title="Review" tone="muted"><p className="text-sm text-[var(--muted)]">checking what is due…</p></Card>;
-  if (due.error) return <Err error={due.error} status={due.status} />;
+  if (due.loading) return (
+    <div className="space-y-5">
+      <PageHeader title="Review queue" subtitle="Short revisits when something is due." art={<PageArt name="horizon-memory" />} />
+      <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading review queue">
+        <div className="loading-card-art" aria-hidden="true"><PageArt name="horizon-memory" /></div>
+        <p className="loading-text">Checking what is due…</p>
+        <div className="loading-spinner" aria-hidden="true" />
+      </div>
+      <div className="skeleton-grid">
+        <div className="skeleton-card"><div className="skeleton-line medium large" /><div className="skeleton-line full" /><div className="skeleton-line short" /></div>
+        <div className="skeleton-card"><div className="skeleton-line medium large" /><div className="skeleton-line full" /><div className="skeleton-line short" /></div>
+      </div>
+    </div>
+  );
+  if (due.error) return (
+    <div className="space-y-4">
+      <PageHeader title="Review queue" subtitle="Short revisits when something is due." art={<PageArt name="horizon-memory" />} />
+      <Err error={due.error} status={due.status} />
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <PageHeader title="Review queue" subtitle="Short revisits when something is due." art={<PageArt name="horizon-memory" />} />
+      <p className="t-small" style={{ color: "var(--muted)", marginTop: "-var(--s3)" }}>{due.data?.rule}</p>
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-4">
         <div>
-          <h1 className="t-h1">Review queue</h1>
-          <p className="t-small">Short revisits when something is due.</p>
-          <p className="mt-1 text-sm text-[var(--muted)]">{due.data?.rule}</p>
+          <h2 className="t-h2" style={{ margin: 0 }}>{rows.length ? `${rows.length} waiting` : "Up to date"}</h2>
         </div>
         <span className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{rows.length ? `${rows.length} waiting` : "nothing due"}</span>
       </div>
 
       {rows.length === 0 ? (
-        <Card title="Nothing scheduled" tone="good">
-          <p className="text-sm text-[var(--muted)]">
-            Every topic you have touched is still inside its own window. If that feels like it should be impossible, it is
-            worth remembering the window is derived from what you actually recalled — a topic you keep getting right earns a
-            long gap, and the app would rather ask you later than flatter you tomorrow.
+        <div className="card empty-state" data-empty="review">
+          <div className="empty-state-art" aria-hidden="true"><PageArt name="horizon-memory" /></div>
+          <p className="empty-state-text">All caught up. Every topic is still inside its window.</p>
+          <Btn kind="primary" href="/learn">Practise</Btn>
+          <p className="t-small" style={{ color: "var(--muted)", maxWidth: "48ch" }}>
+            A topic you keep getting right earns a long gap — the app would rather ask you later than flatter you tomorrow.
           </p>
-          <div className="mt-3 flex gap-2">
-            <Btn kind="primary" href="/learn">Practise</Btn>
-            <Btn href="/progress">See the estimates</Btn>
-          </div>
-        </Card>
+        </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {/* Horizon: spatial encoding of due position, driven by real due_at. */}
           <div className="horizon" aria-hidden="true">
             <span className="now-label">now</span>
@@ -160,7 +176,7 @@ export default function Review() {
             <div className="horizon-axis" style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: "var(--line)" }} />
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-5">
             {rows.map((r) => {
               const done = log[r.topic_id];
               return (

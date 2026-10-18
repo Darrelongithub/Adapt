@@ -199,26 +199,36 @@ export default function Journey() {
 
   if (loading || path.loading || overview.loading) {
     return (
-      <section>
-        <PageHeader title="Your path" subtitle="One step at a time." />
-        <p role="status">Opening your path…</p>
+      <section className="space-y-6">
+        <PageHeader title="Your path" subtitle="One step at a time." art={<PageArt name="stepping-stones" />} />
+        <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading your path">
+          <div className="loading-card-art" aria-hidden="true"><PageArt name="stepping-stones" /></div>
+          <p className="loading-text">Opening your path…</p>
+          <div className="loading-spinner" aria-hidden="true" />
+        </div>
+        <div className="skeleton-card" aria-hidden="true">
+          <div className="skeleton-line large medium" />
+          <div className="skeleton-line full" />
+          <div className="skeleton-line short" />
+        </div>
       </section>
     );
   }
   if (path.error && !state) {
     return (
-      <section>
-        <PageHeader title="Your path" subtitle="One step at a time." />
+      <section className="space-y-4">
+        <PageHeader title="Your path" subtitle="One step at a time." art={<PageArt name="stepping-stones" />} />
         <Err error={path.error} status={path.status} />
       </section>
     );
   }
 
   return (
-    <section data-journey>
+    <section data-journey className="space-y-6">
       <PageHeader
         title="Your path"
         subtitle="One step at a time. You can pause or skip any step."
+        art={<PageArt name="stepping-stones" />}
       />
       {notice ? <Notice tone="warn">{notice}</Notice> : null}
 
@@ -226,14 +236,14 @@ export default function Journey() {
         <>
           {step === "subject" ? (
             <>
-              {/* The wizard's empty state: classroom art BIG, in the hero, fully visible. */}
+              {/* The wizard's empty state: stepping-stones art BIG, in the hero, fully visible. */}
               <div className="wizard-hero card" data-tone="mint">
                 <div className="wizard-hero-copy">
                   <h2 className="t-display">What do you want to learn?</h2>
                   <p className="t-body">Type a subject. We will build the starting checks.</p>
                 </div>
                 <div className="wizard-hero-art" aria-hidden="true">
-                  <PageArt name="classroom" />
+                  <PageArt name="stepping-stones" />
                 </div>
               </div>
               <SubjectChooser text={text} setText={setText} choose={choose} busy={busy} />
