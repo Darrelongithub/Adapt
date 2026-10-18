@@ -263,3 +263,8 @@
   line-height: var(--t-small-lh);
   color: var(--muted);
 }
+.mind-games-hero { width: 100%; min-height: 230px; display: flex; align-items: stretch; }
+.mind-games-hero > * { flex: 1; }
+.mind-games-hero [data-card] { min-height: 230px; }
+.mind-games-hero .card { min-height: 230px; width: 100%; }
+.mind-games-hero .icon-tile .monoline-icon { width: 30px; height: 30px; }

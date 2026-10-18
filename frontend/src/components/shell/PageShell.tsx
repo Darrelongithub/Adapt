@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { Artwork } from "../art/Artwork";
+import { PageArt } from "./PageArt";
 import "./shell.css";
 
 /**
@@ -25,7 +25,7 @@ export function PageShell({ children, access = false }: { children: ReactNode; a
       </div>
       {access ? (
         <div className="access-flower" data-art="flower" aria-hidden="true">
-          <Artwork name="flower" />
+          <PageArt name="flower" />
         </div>
       ) : null}
     </div>

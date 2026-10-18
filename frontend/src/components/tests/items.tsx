@@ -9,6 +9,7 @@
  * Instruction copy is capped at ~12 words per screen (registry INSTRUCTIONS).
  */
 
+import { friendlyLabel } from "@/lib/labels";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../icons";
 import {
@@ -65,7 +66,7 @@ export function TestItemCard({
         <span className="status-chip">
           {position} of {total}
         </span>
-        <span className="status-chip">{item.skill}</span>
+        <span className="status-chip">{friendlyLabel(item.skill) ?? "Skill check"}</span>
       </div>
       <h2 className="t-h2">{INSTRUCTIONS[item.item_type]}</h2>
       <div className="test-item-body">

@@ -15,6 +15,7 @@
  * If the API lacks `due_at`, the layout falls back to discrete lanes rather than
  * inventing a continuous position.
  */
+import { friendlyLabel } from "@/lib/labels";
 import { useState } from "react";
 
 import { Btn, Card, Err, Notice, SessionLog, Tag, Textarea, announce, useSessionLedger } from "@/components/ui";
@@ -152,7 +153,7 @@ export default function Review() {
                     border: "2px solid var(--panel)",
                     boxShadow: "0 0 0 1px var(--line)",
                   }} />
-                  <span className="rv-label" style={{ fontFamily: "var(--font-mono)", fontSize: 10, whiteSpace: "nowrap", color: "var(--muted)", marginTop: 4, display: "block", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }}>{r.title}</span>
+                  <span className="rv-label" style={{ fontFamily: "var(--font-mono)", fontSize: 10, whiteSpace: "nowrap", color: "var(--muted)", marginTop: 4, display: "block", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }}>{friendlyLabel(r.title) ?? "Review topic"}</span>
                 </div>
               );
             })}
@@ -166,7 +167,7 @@ export default function Review() {
                 <Card
                   key={r.topic_id}
                   tone={r.overdue ? "warn" : "ask"}
-                  title={<span className="normal-case">{r.title}</span>}
+                  title={<span className="normal-case">{friendlyLabel(r.title) ?? "Review topic"}</span>}
                   right={
                     <span className="flex items-center gap-2 text-xs">
                       {r.overdue ? <Tag tone="bad">overdue</Tag> : null}

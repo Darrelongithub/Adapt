@@ -79,3 +79,13 @@
 - One zip without `node_modules`/`.next` (see the release attachment),
   `/home/user/adapt-round6.zip` — 9.6 MB. It omits `docs/screens/` (the older
   rounds' screenshot archive, still in git) and `art_pkg.zip` to stay under 25 MB.
+
+## Round 7 — repair and polish
+
+- Centralized route illustration eligibility and placement metadata in `frontend/src/components/shell/artMap.ts`; pages use the route-checked `PageArt` renderer instead of artwork directly.
+- Kept the Home study scene, baseline brain, Settings gears, and conditional classroom artwork limited to the wizard/Learn empty state. Other routes reject art.
+- Repaired the welcome overlay layout with a centered display headline, supporting line, primary action, and small Skip link.
+- Expanded the baseline content column and added a tinted top brain hero. Enlarged the journey short-games card.
+- Added one friendly-label dictionary, hid unknown identifier-like labels in test, baseline, review, and progress output, and replaced setup choice icons with meaningful line icons.
+- Changed the expanded sidebar toggle to “Less”. Added `frontend/tests-e2e/art-placement.mjs` and `docs/R7_PAGE_REVIEW.md`.
+- Verified: backend tests 1442 passed / 2 skipped; frontend typecheck and lint passed; engine tests 15 passed; build passed; style grep clean. Browser crawl/art screenshots were blocked because Chromium is not installed in the environment.

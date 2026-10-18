@@ -11,7 +11,7 @@
 import Link from "next/link";
 import { Btn, Card, Err, IconTile, PageHeader } from "./ui";
 import { Icon } from "./icons";
-import { Artwork } from "./art/Artwork";
+import { PageArt } from "./shell/PageArt";
 import { useApi, type Me } from "@/lib/api";
 import type { Mastery } from "@/lib/types";
 import "./shell/dashboard.css";
@@ -65,7 +65,7 @@ export function HomeDashboard({ me }: { me: Me }) {
           </div>
         </div>
         <div className="home-hero-art" aria-hidden="true">
-          <Artwork name="study" />
+          <PageArt name="study" />
         </div>
       </div>
 

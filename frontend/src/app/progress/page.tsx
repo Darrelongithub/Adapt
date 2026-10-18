@@ -7,6 +7,7 @@
  * loop's own steps read back from the data. Where the app has too little data it says so
  * in the same voice it uses when it has enough — no smoothing, no "keep it up".
  */
+import { friendlyLabel } from "@/lib/labels";
 import { useEffect, useState } from "react";
 
 import { MethodReport, type MethodRow } from "@/components/evidence";
@@ -150,7 +151,7 @@ export default function Progress() {
             <ul className="space-y-2 text-sm">
               {(d.knowledge_gaps ?? []).map((g, i) => (
                 <li key={i}>
-                  <strong>{g.topic_title ?? g.topic_id}</strong> is ahead of <em>{g.blocking_prerequisite_title}</em>
+                  <strong>{friendlyLabel(g.topic_title ?? g.topic_id) ?? "A topic"}</strong> is ahead of <em>{g.blocking_prerequisite_title}</em>
                   {g.severity !== undefined ? <span className="text-xs text-[var(--muted)]"> · gap {g.severity.toFixed(2)}</span> : null}
                 </li>
               ))}
