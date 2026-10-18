@@ -313,7 +313,7 @@ export default function Settings() {
             </div>}
           </Card>
 
-          <Card title="Model key status" tone="plain">
+          <Card title="System status" tone="plain">
             {status.error ? <Err error={status.error} status={status.status} /> : null}
             <ul className="space-y-1 text-xs text-[var(--muted)]">
               <li>{status.data?.lessons?.says ?? "Lessons: not reported"}</li>

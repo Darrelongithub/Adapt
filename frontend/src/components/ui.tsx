@@ -10,20 +10,43 @@ import { pushEntry, readLedger, writeLedger } from "@/lib/ledger";
 
 type Loader = (path: string, init: { method: string; json: unknown }) => Promise<unknown>;
 
-export function Card({ title, right, children, tone, icon }: { title?: ReactNode; right?: ReactNode; children: ReactNode; tone?: "blue" | "sand" | "mint" | "peach" | "plain" | "ask" | "good" | "warn" | "muted"; icon?: ReactNode }) {
+export function Card({
+  title,
+  sub,
+  right,
+  children,
+  tone,
+  icon,
+  id,
+  "data-empty": dataEmpty,
+}: {
+  title?: ReactNode;
+  sub?: ReactNode;
+  right?: ReactNode;
+  children: ReactNode;
+  tone?: "blue" | "sand" | "mint" | "peach" | "plain" | "ask" | "good" | "warn" | "muted";
+  icon?: ReactNode;
+  id?: string;
+  "data-empty"?: string;
+}) {
   // The one Card component (Round 6, Track A). Tones are tinted backgrounds from
   // tokens.css. The four semantic names map onto tints so older call sites keep
   // their meaning without keeping a second card style.
   const tint = tone === "ask" ? "blue" : tone === "good" ? "mint" : tone === "warn" ? "peach" : tone === "muted" ? "plain" : tone;
   return (
-    <section className="card" data-tone={tint ?? undefined}>
-      {(title || right) && (
+    <section className="card" id={id} data-tone={tint ?? undefined} data-empty={dataEmpty}>
+      {(title || right || sub) && (
         <header className="card-head">
-          <h2 className="card-title">
-            {icon ? <span className="icon-tile" aria-hidden="true">{icon}</span> : null}
-            {title}
-          </h2>
-          <div className="card-right">{right}</div>
+          <div className="min-w-0">
+            {title ? (
+              <h2 className="card-title">
+                {icon ? <span className="icon-tile" aria-hidden="true">{icon}</span> : null}
+                {title}
+              </h2>
+            ) : null}
+            {sub ? <p className="card-sub t-small" style={{ marginTop: "4px", color: "var(--muted)" }}>{sub}</p> : null}
+          </div>
+          {right ? <div className="card-right">{right}</div> : null}
         </header>
       )}
       {children}

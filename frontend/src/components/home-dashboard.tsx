@@ -54,8 +54,6 @@ export function HomeDashboard({ me }: { me: Me }) {
     <section data-dashboard>
       {/* ---------- Hero: headline left, study art right, at the TOP ---------- */}
       <div className="home-hero card" data-tone="blue" data-hero="home">
-        {/* Topo in the empty corners only (right of the copy, behind nothing with words). */}
-        <div className="home-hero-topo topo-fill" aria-hidden="true" />
         <div className="home-hero-copy">
           <h1 className="t-display home-hero-title">Hi {name}, ready to learn?</h1>
           <p className="home-hero-line">Pick up where you left off.</p>

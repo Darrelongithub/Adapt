@@ -202,12 +202,15 @@
   position: relative;
   margin: var(--s4) var(--s3);
   pointer-events: none;
-  opacity: 0.12;
+  opacity: 0.045;
 }
 .pattern-zone .topo-fill {
   position: absolute;
   inset: 0;
   opacity: 1;
+}
+.page-frame-access .pattern-zone {
+  display: none;
 }
 .pattern-left { grid-column: 1; }
 .pattern-right { grid-column: 3; }
@@ -401,45 +404,43 @@
   .page-hero-art { order: -1; height: 160px; }
 }
 
-/* Empty state: Art → short sentence → primary button, no large white space */
+/* Empty state: short calm text → clear primary button, no large white space */
 .empty-state {
   display: grid;
   gap: var(--s3);
-  justify-items: center;
-  text-align: center;
-  padding: var(--s5) var(--s4);
+  justify-items: start;
+  text-align: left;
+  padding: var(--s1) 0;
 }
 .empty-state-art {
-  height: 200px;
+  height: 110px;
   width: 100%;
-  max-width: 380px;
+  max-width: 240px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .empty-state-art .artwork { width: 100%; height: 100%; }
 .empty-state-text {
-  max-width: 44ch;
+  max-width: 56ch;
   font-size: var(--t-body);
   line-height: var(--t-body-lh);
   color: var(--body);
 }
 @media (max-width: 767px) {
-  .empty-state-art { height: 160px; }
+  .empty-state-art { height: 96px; }
 }
 
-/* ---------- Loading states: skeleton & calm centered card ---------- */
+/* ---------- Loading states: compact inline status & skeleton ---------- */
 .loading-card {
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: var(--s3);
-  justify-items: center;
-  text-align: center;
-  padding: var(--s5) var(--s4);
+  text-align: left;
+  padding: var(--s3) var(--s4);
 }
 .loading-card-art {
-  width: 100px;
-  height: 70px;
-  opacity: 0.65;
+  display: none;
 }
 .loading-card-art .artwork { width: 100%; height: 100%; }
 .loading-text {
@@ -447,8 +448,9 @@
   color: var(--muted);
 }
 .loading-spinner {
-  width: 20px;
-  height: 20px;
+  flex: none;
+  width: 18px;
+  height: 18px;
   border: 2px solid var(--line);
   border-top-color: var(--accent);
   border-radius: 50%;

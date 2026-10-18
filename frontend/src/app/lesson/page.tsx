@@ -27,7 +27,6 @@ import { get, post } from "@/lib/api";
 import { SceneStage } from "@/components/scenes";
 import { ReadAloud } from "@/components/voice/ReadAloud";
 import { Btn, Card, Err, Field, Notice, PageHeader, Tag, Textarea, Trace, announce } from "@/components/ui";
-import { PageArt } from "@/components/shell/PageArt";
 import { Icon } from "@/components/icons";
 
 /** The reply shape of POST subjects/choose (journey API). */
@@ -364,11 +363,10 @@ export default function LessonPlayer() {
   const owed = opened ? unanswered(opened.frames, player.answers) : [];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Lessons"
         subtitle="Your subjects' lessons, and the scenes that teach them."
-        art={<PageArt name="open-book" />}
       />
 
       {loadError ? <Err error={loadError} /> : null}
@@ -385,18 +383,12 @@ export default function LessonPlayer() {
       {!opened ? (
         !subjectsLoaded ? (
           <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading lessons">
-            <div className="loading-card-art" aria-hidden="true"><PageArt name="open-book" /></div>
-            <p className="loading-text">Opening your lessons…</p>
             <div className="loading-spinner" aria-hidden="true" />
+            <p className="loading-text">Opening your lessons…</p>
           </div>
         ) : subjects.length === 0 ? (
-          /* Fresh learner: open-book art at the top, one question, no built-in lessons. */
-          <div className="lesson-empty">
-            <div className="lesson-empty-art" aria-hidden="true">
-              <PageArt name="open-book" />
-            </div>
-            <Card title="What do you want to learn?" tone="blue">
-              <p className="t-small" style={{ marginBottom: "var(--s2)" }}>Choose a subject to see its lessons.</p>
+          <div className="stack-4">
+            <Card title="What do you want to learn?" sub="Choose a subject to open its interactive lessons." tone="blue" icon={<Icon name="book" />}>
               <form
                 className="stack-3"
                 onSubmit={async (event) => {
@@ -416,7 +408,7 @@ export default function LessonPlayer() {
                   className="input"
                   value={chooseText}
                   onChange={(e) => setChooseText(e.target.value)}
-                  placeholder="Type a subject or topic"
+                  placeholder="Type a subject or topic (e.g. Algebra, Chemistry, Coding)"
                   aria-label="What do you want to learn?"
                   maxLength={240}
                 />
@@ -427,11 +419,28 @@ export default function LessonPlayer() {
                     </button>
                   ))}
                 </div>
-                <Btn icon="plus" kind="primary" type="submit" disabled={!chooseText.trim() || choosing}>
-                  {choosing ? "Checking…" : "Choose"}
-                </Btn>
+                <div className="wrap-2" style={{ paddingTop: "var(--s1)" }}>
+                  <Btn icon="plus" kind="primary" type="submit" disabled={!chooseText.trim() || choosing}>
+                    {choosing ? "Checking…" : "Choose"}
+                  </Btn>
+                  <Btn kind="secondary" href="/journey?step=subject">
+                    Open your path
+                  </Btn>
+                </div>
               </form>
             </Card>
+
+            <div className="grid gap-3 md:grid-cols-3" aria-label="How interactive lessons work">
+              <Card title="Step through frames" tone="sand">
+                <p className="t-small">Pause, step back, and inspect each move at your own pace instead of watching a passive video.</p>
+              </Card>
+              <Card title="Predict before the reveal" tone="mint">
+                <p className="t-small">Short prediction prompts check what you expect to happen next before the simulation runs the step.</p>
+              </Card>
+              <Card title="Try your own numbers" tone="peach">
+                <p className="t-small">Re-run any lesson scene with your own inputs to test edge cases and see why the rule holds.</p>
+              </Card>
+            </div>
           </div>
         ) : (
           <div className="grid gap-3">
