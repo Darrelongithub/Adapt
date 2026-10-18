@@ -298,12 +298,33 @@
   height: 100%;
 }
 
+/* ---- Art sizing & placement: governed solely by artMap.ts ---- */
+.art-size-large {
+  /* Large art at top: hero scale, visible without scrolling on 390×844 and 1440×900 */
+  width: 320px;
+  height: 200px;
+  max-width: 100%;
+}
+.art-size-small {
+  width: 120px;
+  height: 90px;
+  max-width: 100%;
+}
+.art-position-hero-top,
+.art-position-hero-top-right {
+  /* anchored in hero or header, no overlap */
+}
+.art-position-header-right {
+  margin-left: auto;
+}
+
+/* ---------- Page heroes & empty states ---------- */
 .lesson-empty {
   display: grid;
   gap: var(--s4);
 }
 .lesson-empty-art {
-  height: 300px;
+  height: 280px;
   max-width: 640px;
   width: 100%;
   margin: 0 auto;
@@ -312,7 +333,7 @@
   .lesson-empty-art { height: 180px; }
 }
 
-/* The wizard hero: classroom art BIG and fully visible in the empty state. */
+/* The wizard hero: stepping-stones art BIG and fully visible in the empty state. */
 .wizard-hero {
   position: relative;
   overflow: hidden;
@@ -339,6 +360,186 @@
   .wizard-hero-art { order: -1; height: 170px; }
 }
 
+/* Generic page hero (Review, Contrast, Proposals, Lesson) */
+.page-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  align-items: center;
+  gap: var(--s4);
+  min-height: 260px;
+  padding: var(--s5);
+  margin-bottom: var(--s4);
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-soft);
+}
+.page-hero-copy {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+}
+.page-hero-art {
+  position: relative;
+  z-index: 1;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.page-hero-art .artwork { width: 100%; height: 100%; }
+@media (max-width: 767px) {
+  .page-hero {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: var(--s4);
+  }
+  .page-hero-art { order: -1; height: 160px; }
+}
+
+/* Empty state: Art → short sentence → primary button, no large white space */
+.empty-state {
+  display: grid;
+  gap: var(--s3);
+  justify-items: center;
+  text-align: center;
+  padding: var(--s5) var(--s4);
+}
+.empty-state-art {
+  height: 200px;
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.empty-state-art .artwork { width: 100%; height: 100%; }
+.empty-state-text {
+  max-width: 44ch;
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+  color: var(--body);
+}
+@media (max-width: 767px) {
+  .empty-state-art { height: 160px; }
+}
+
+/* ---------- Loading states: skeleton & calm centered card ---------- */
+.loading-card {
+  display: grid;
+  gap: var(--s3);
+  justify-items: center;
+  text-align: center;
+  padding: var(--s5) var(--s4);
+}
+.loading-card-art {
+  width: 100px;
+  height: 70px;
+  opacity: 0.65;
+}
+.loading-card-art .artwork { width: 100%; height: 100%; }
+.loading-text {
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Skeleton cards matching final layout */
+.skeleton-grid {
+  display: grid;
+  gap: var(--s4);
+}
+.skeleton-card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: var(--s4);
+  display: grid;
+  gap: var(--s3);
+}
+.skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--line);
+  opacity: 0.7;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.skeleton-line.short { width: 40%; }
+.skeleton-line.medium { width: 70%; }
+.skeleton-line.full { width: 100%; }
+.skeleton-line.large { height: 16px; }
+.skeleton-row {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+}
+.skeleton-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--line);
+  opacity: 0.6;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.skeleton-avatar {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner, .skeleton-line, .skeleton-circle { animation: none; }
+}
+
+/* Proposal card visual separation */
+.proposal-section {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.proposal-section:last-child { border-bottom: none; }
+.proposal-section-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* Dense pages vertical rhythm: Progress & Proposals */
+.page-dense {
+  display: grid;
+  gap: var(--s5); /* 32px between sections, not a wall of cards */
+}
+.page-dense .card + .card {
+  margin-top: 0; /* gap handles it */
+}
+
+/* Improve vertical spacing inside dense stacks */
+.stack-dense {
+  display: grid;
+  gap: var(--s5);
+}
+.stack-dense > * + * {
+  margin-top: 0;
+}
+
 /* ---------- Focus ---------- */
 .sidebar-more:focus-visible,
 .btn:focus-visible,
@@ -348,6 +549,3 @@
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
-/* Sizes/slots are selected exclusively by shell/artMap.ts; page-specific hero wrappers anchor them. */
-.art-size-large { min-width: 1px; min-height: 1px; }
-.art-size-small { min-width: 1px; min-height: 1px; }

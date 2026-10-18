@@ -14,7 +14,8 @@
  */
 import { useState } from "react";
 
-import { Btn, Card, Err, Field, humanize, Ledger, LedgerEntry, Notice, SessionLog, Tag, Textarea, When, announce, useSession, useSessionLedger } from "@/components/ui";
+import { Btn, Card, Err, Field, humanize, Ledger, LedgerEntry, Notice, PageHeader, SessionLog, Tag, Textarea, When, announce, useSession, useSessionLedger } from "@/components/ui";
+import { PageArt } from "@/components/shell/PageArt";
 import { EffectLine, type EffectSummary } from "@/components/evidence";
 import { post, useApi } from "@/lib/api";
 import type { ActiveAdaptation, DecisionReply, Proposal } from "@/lib/types";
@@ -112,8 +113,9 @@ export default function Proposals() {
     return <Err error="nobody is signed in, so there is nothing to approve" status={401} />;
 
   return (
-    <div className="page-changes">
-      <div className="cf-head">§ 03 · Changes</div>
+    <div className="page-changes space-y-6">
+      <PageHeader title="Changes waiting for you" subtitle="Each row separates what was observed from what we think it means. Nothing here has been applied." art={<PageArt name="balance-scale" />} />
+      <div className="cf-head" style={{ marginTop: "-var(--s4)" }}>§ 03 · Changes</div>
       <h2 className="cf-sub">Nothing here takes effect until you decide.</h2>
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-4">
         <div>
@@ -146,14 +148,22 @@ export default function Proposals() {
 
       {error ? <div className="mt-4"><Notice tone="bad">{error}</Notice></div> : null}
 
-      {rows.length === 0 && !pending.loading ? (
-        <Card title="Nothing to approve" tone="muted">
-          <p className="text-sm text-[var(--muted)]">
-            A proposal needs a pattern that repeats across enough answers to be worth your attention. If you have finished a
-            session and no proposal appeared, that means the data did not support one — which is the normal outcome, not a
-            failure to notice something.
+      {pending.loading ? (
+        <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading proposals">
+          <div className="loading-card-art" aria-hidden="true"><PageArt name="balance-scale" /></div>
+          <p className="loading-text">Loading your proposals…</p>
+          <div className="loading-spinner" aria-hidden="true" />
+        </div>
+      ) : null}
+      {!pending.loading && rows.length === 0 ? (
+        <div className="card empty-state" data-empty="proposals">
+          <div className="empty-state-art" aria-hidden="true"><PageArt name="balance-scale" /></div>
+          <p className="empty-state-text">No proposals right now. A pattern needs enough answers to be worth your time.</p>
+          <Btn kind="primary" href="/learn">Practise</Btn>
+          <p className="t-small" style={{ color: "var(--muted)", maxWidth: "48ch" }}>
+            If you have finished a session and no proposal appeared, that means the data did not support one — which is normal.
           </p>
-        </Card>
+        </div>
       ) : null}
 
       {rows.length ? (
@@ -196,7 +206,7 @@ export default function Proposals() {
                   </div>
                 }
               >
-                <dl className="space-y-3 text-sm">
+                <dl className="space-y-0 text-sm divide-y divide-[var(--line)]">
                   <Part label="What was observed" tone="good" body={p.facts} note="events only — no interpretation" />
                   {p.pattern ? <Part label="The pattern in them" body={p.pattern} /> : null}
                   <Part

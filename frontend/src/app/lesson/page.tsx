@@ -364,10 +364,11 @@ export default function LessonPlayer() {
   const owed = opened ? unanswered(opened.frames, player.answers) : [];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Lessons"
         subtitle="Your subjects' lessons, and the scenes that teach them."
+        art={<PageArt name="open-book" />}
       />
 
       {loadError ? <Err error={loadError} /> : null}
@@ -383,14 +384,19 @@ export default function LessonPlayer() {
 
       {!opened ? (
         !subjectsLoaded ? (
-          <p role="status">Opening your lessons…</p>
+          <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading lessons">
+            <div className="loading-card-art" aria-hidden="true"><PageArt name="open-book" /></div>
+            <p className="loading-text">Opening your lessons…</p>
+            <div className="loading-spinner" aria-hidden="true" />
+          </div>
         ) : subjects.length === 0 ? (
-          /* Fresh learner: classroom art at the top, one question, no built-in lessons. */
+          /* Fresh learner: open-book art at the top, one question, no built-in lessons. */
           <div className="lesson-empty">
             <div className="lesson-empty-art" aria-hidden="true">
-              <PageArt name="classroom" />
+              <PageArt name="open-book" />
             </div>
             <Card title="What do you want to learn?" tone="blue">
+              <p className="t-small" style={{ marginBottom: "var(--s2)" }}>Choose a subject to see its lessons.</p>
               <form
                 className="stack-3"
                 onSubmit={async (event) => {

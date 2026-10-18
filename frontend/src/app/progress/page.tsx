@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { MethodReport, type MethodRow } from "@/components/evidence";
 import { TopicTopo, TopoNote } from "@/components/topo";
 import { Btn, Card, Err, humanize, Notice, PageHeader, Tag } from "@/components/ui";
+import { PageArt } from "@/components/shell/PageArt";
 import { get, post, useApi } from "@/lib/api";
 
 import type { Journey } from "@/lib/types";
@@ -70,14 +71,39 @@ export default function Progress() {
     }
   }
 
-  if (dash.loading) return <Card title="Progress" tone="muted"><p className="text-sm text-[var(--muted)]">reading the log…</p></Card>;
-  if (dash.error) return <Err error={dash.error} status={dash.status} />;
+  if (dash.loading) return (
+    <div className="space-y-6 page-dense">
+      <PageHeader
+        title="What the data says"
+        subtitle="Your estimates, gaps and story — all derived from what you did."
+        art={<PageArt name="knowledge-tree" />}
+      />
+      <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading progress">
+        <div className="loading-card-art" aria-hidden="true"><PageArt name="knowledge-tree" /></div>
+        <p className="loading-text">Loading your progress…</p>
+        <div className="loading-spinner" aria-hidden="true" />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
+        <div className="skeleton-card"><div className="skeleton-line large medium" /><div className="skeleton-line full" /><div className="skeleton-line full" /><div className="skeleton-line short" /></div>
+        <div className="skeleton-card"><div className="skeleton-line large medium" /><div className="skeleton-line full" /><div className="skeleton-line short" /></div>
+        <div className="skeleton-card"><div className="skeleton-line medium" /><div className="skeleton-line full" /><div className="skeleton-line full" /></div>
+        <div className="skeleton-card"><div className="skeleton-line medium" /><div className="skeleton-line short" /><div className="skeleton-line full" /></div>
+      </div>
+    </div>
+  );
+  if (dash.error) return (
+    <div className="space-y-4">
+      <PageHeader title="What the data says" subtitle="Your estimates and story." art={<PageArt name="knowledge-tree" />} />
+      <Err error={dash.error} status={dash.status} />
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 page-dense">
       <PageHeader
         title="What the data says"
         subtitle={`${journey.data?.window_days ?? 30}-day window · ${journey.data?.stats?.attempts ?? 0} answers · ${journey.data?.stats?.events ?? 0} logged interactions`}
+        art={<PageArt name="knowledge-tree" />}
         actions={
           <>
             <Btn kind="secondary" onClick={() => Promise.all([dash.reload(), journey.reload(), methodReport.reload()])}>Reload</Btn>
@@ -101,7 +127,7 @@ export default function Progress() {
       {err ? <Notice tone="bad">{err}</Notice> : null}
       {trainOut ? <Notice tone="good">{trainOut}</Notice> : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
         <Card title="Topic estimates" right={<span>{(d.mastery ?? []).length} topics with data</span>}>
           {(d.mastery ?? []).length === 0 ? (
             <p className="text-sm text-[var(--muted)]">
@@ -164,14 +190,14 @@ export default function Progress() {
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
         <Card title="Hypotheses about how you learn" tone="ask" right={<span>not diagnoses</span>}>
           {(d.hypotheses ?? []).length === 0 ? (
             <p className="text-sm text-[var(--muted)]">None yet — and none will be invented to fill this box.</p>
           ) : (
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-3 text-sm">
               {(d.hypotheses ?? []).map((h) => (
-                <li key={h.id}>
+                <li key={h.id} className="border-b border-[var(--line)] pb-2 last:border-0">
                   <p>{h.statement}</p>
                   <p className="text-xs text-[var(--muted)]">
                     <Tag tone={h.status === "supported" ? "good" : h.status === "refuted" ? "bad" : "think"}>{h.status}</Tag>{" "}
@@ -239,9 +265,9 @@ export default function Progress() {
         {nodes.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">No nodes in this window.</p>
         ) : (
-          <ol className="space-y-2">
+          <ol className="space-y-3">
             {nodes.slice(0, 120).map((n, i) => (
-              <li key={i} className="flex gap-3 text-sm">
+              <li key={i} className="flex gap-3 text-sm border-b border-[var(--line)]/50 pb-2 last:border-0">
                 <span className="mt-1 w-2 shrink-0">
                   <span
                     className="block h-2 w-2 rounded-full"
@@ -281,9 +307,9 @@ export default function Progress() {
       </Card>
 
       <Card title="Guardrails the server says are on" tone="good" right={<span>{(strat.data?.strategies ?? []).length} strategies in the catalog</span>}>
-        <ul className="space-y-1 text-sm">
+        <ul className="space-y-2 text-sm">
           {Object.entries(d.guardrails ?? {}).map(([k, v]) => (
-            <li key={k}>
+            <li key={k} className="border-b border-[var(--line)]/50 pb-1.5 last:border-0">
               <Tag tone={v ? "good" : "bad"}>{v ? "on" : "off"}</Tag> {k.replace(/_/g, " ")}
             </li>
           ))}
@@ -296,7 +322,7 @@ export default function Progress() {
           </ul>
         ) : null}
         <p className="mt-2 text-xs text-[var(--muted)]">{strat.data?.note}</p>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-3 flex gap-2">
           <Btn href="/proposals">Changes</Btn>
           <Btn
             kind="ghost"
@@ -353,7 +379,10 @@ function TestEvidenceCard() {
   return (
     <Card title="Test evidence" tone="mint" right={<span>{rows?.length ?? 0} rows</span>}>
       {!rows ? (
-        <p role="status">Reading your evidence…</p>
+        <div className="loading-card" role="status" aria-busy="true" style={{ padding: "var(--s3)" }}>
+          <div className="loading-spinner" aria-hidden="true" />
+          <p className="loading-text">Reading your evidence…</p>
+        </div>
       ) : rows.length === 0 ? (
         <p>No checks yet. Your starting checks will show here.</p>
       ) : (

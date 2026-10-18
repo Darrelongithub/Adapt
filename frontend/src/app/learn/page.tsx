@@ -146,6 +146,7 @@ export default function Learn() {
           <PageArt name="classroom" />
         </div>
         <Card title="What do you want to learn?" tone="blue">
+          <p className="t-small" style={{ marginBottom: "var(--s2)" }}>Pick a subject to start practising.</p>
           <form
             className="stack-3"
             onSubmit={async (event) => {
@@ -184,18 +185,41 @@ export default function Learn() {
       </div>
     );
   }
-  if (gate !== "ready") return <Card title="Opening your subject"><p role="status">Checking your active subject…</p></Card>;
+  if (gate !== "ready") return (
+    <div className="mx-auto max-w-3xl space-y-4">
+      <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="desk-path" />} />
+      <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading practice">
+        <div className="loading-card-art" aria-hidden="true"><PageArt name="classroom" /></div>
+        <p className="loading-text">Checking your active subject…</p>
+        <div className="loading-spinner" aria-hidden="true" />
+      </div>
+      <div className="skeleton-card" aria-hidden="true">
+        <div className="skeleton-line medium" />
+        <div className="skeleton-line full" />
+        <div className="skeleton-line short" />
+      </div>
+    </div>
+  );
   if (loading)
     return (
-      <Card title="Practice" tone="muted">
-        <p className="text-sm text-[var(--muted)]">building your queue from the last session&rsquo;s data…</p>
-      </Card>
+      <div className="mx-auto max-w-3xl space-y-4">
+        <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="desk-path" />} />
+        <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading queue">
+          <div className="loading-card-art" aria-hidden="true"><PageArt name="desk-path" /></div>
+          <p className="loading-text">Building your queue from last session…</p>
+          <div className="loading-spinner" aria-hidden="true" />
+        </div>
+        <div className="skeleton-grid">
+          <div className="skeleton-card"><div className="skeleton-line large medium" /><div className="skeleton-line full" /><div className="skeleton-line full" /><div className="skeleton-line short" /></div>
+          <div className="skeleton-card"><div className="skeleton-line medium" /><div className="skeleton-line full" /></div>
+        </div>
+      </div>
     );
   if (error && items.length === 0) return <Err error={error} status={null} />;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <PageHeader title="Practice" subtitle="One question at a time, taught your way." />
+      <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="desk-path" />} />
       <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] pb-3">
         {items.length ? (
           <span className="ml-4 text-sm text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
