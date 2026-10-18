@@ -202,9 +202,8 @@ export default function Journey() {
       <section className="space-y-6">
         <PageHeader title="Your path" subtitle="One step at a time." art={<PageArt name="stepping-stones" />} />
         <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading your path">
-          <div className="loading-card-art" aria-hidden="true"><PageArt name="stepping-stones" /></div>
-          <p className="loading-text">Opening your path…</p>
           <div className="loading-spinner" aria-hidden="true" />
+          <p className="loading-text">Opening your path…</p>
         </div>
         <div className="skeleton-card" aria-hidden="true">
           <div className="skeleton-line large medium" />
@@ -223,6 +222,8 @@ export default function Journey() {
     );
   }
 
+  const existingSubjects = overview.data?.subjects ?? [];
+
   return (
     <section data-journey className="space-y-6">
       <PageHeader
@@ -235,19 +236,13 @@ export default function Journey() {
       {wizard ? (
         <>
           {step === "subject" ? (
-            <>
-              {/* The wizard's empty state: stepping-stones art BIG, in the hero, fully visible. */}
-              <div className="wizard-hero card" data-tone="mint">
-                <div className="wizard-hero-copy">
-                  <h2 className="t-display">What do you want to learn?</h2>
-                  <p className="t-body">Type a subject. We will build the starting checks.</p>
-                </div>
-                <div className="wizard-hero-art" aria-hidden="true">
-                  <PageArt name="stepping-stones" />
-                </div>
-              </div>
-              <SubjectChooser text={text} setText={setText} choose={choose} busy={busy} />
-            </>
+            <SubjectChooser
+              text={text}
+              setText={setText}
+              choose={choose}
+              busy={busy}
+              subjects={existingSubjects}
+            />
           ) : null}
           {step === "setup" && chosen ? (
             <SetupStep
@@ -281,22 +276,26 @@ export default function Journey() {
           ) : null}
         </>
       ) : (
-        <>
+        <div className="stack-4" data-testid="journey-card" data-stage={stage}>
           {(stage === "preferences" || stage === "games") && (
             <div className={stage === "games" ? "mind-games-hero" : ""}>
-            <Card title={stage === "preferences" ? "A few questions" : "Short mind games"} tone="sand" icon={<Icon name={stage === "games" ? "bulb" : "sliders"} />}>
-              <p>{stage === "preferences" ? "Your choices shape the starting plan." : "Play the short games, or skip them."}</p>
-              <div className="wrap-2">
-                <Btn icon="play" kind="primary" href="/baseline">Open mind check</Btn>
-                <Btn kind="ghost" disabled={busy} onClick={async () => { setBusy(true); await path.advance(stage, "skipped"); setBusy(false); }}>Skip this step</Btn>
-              </div>
-            </Card>
+              <Card title={stage === "preferences" ? "A few questions" : "Short mind games"} tone="sand" icon={<Icon name={stage === "games" ? "bulb" : "sliders"} />}>
+                <p>{stage === "preferences" ? "Your choices shape the starting plan." : "Play the short games, or skip them."}</p>
+                <div className="wrap-2">
+                  <Btn icon="play" kind="primary" href="/baseline">Open mind check</Btn>
+                  <Btn kind="secondary" onClick={() => setForceSubject(true)}>Choose a subject</Btn>
+                  <Btn kind="ghost" disabled={busy} onClick={async () => { setBusy(true); await path.advance(stage, "skipped"); setBusy(false); }}>Skip this step</Btn>
+                </div>
+              </Card>
             </div>
           )}
           {stage === "first_lesson" ? (
             <Card title="Your first lesson" tone="mint" icon={<Icon name="play" />}>
               <p>Open the first lesson for your active subject.</p>
-              <Btn icon="play" kind="primary" href={active?.next?.href ?? "/first-lesson"}>Open lesson</Btn>
+              <div className="wrap-2">
+                <Btn icon="play" kind="primary" href={active?.next?.href ?? "/first-lesson"}>Open lesson</Btn>
+                <Btn kind="secondary" onClick={() => setForceSubject(true)}>Add a subject</Btn>
+              </div>
             </Card>
           ) : null}
           {stage === "practice" ? (
@@ -304,7 +303,7 @@ export default function Journey() {
               <p>Your path is ready. Continue with a subject lesson.</p>
               <div className="wrap-2">
                 <Btn icon="play" kind="primary" href="/learn">Learn</Btn>
-                <Btn icon="plus" kind="secondary" href="/journey?step=subject">Add a subject</Btn>
+                <Btn icon="plus" kind="secondary" onClick={() => setForceSubject(true)}>Add a subject</Btn>
               </div>
             </Card>
           ) : null}
@@ -313,11 +312,27 @@ export default function Journey() {
               <p>See what was measured, then choose a subject.</p>
               <div className="wrap-2">
                 <Btn kind="primary" href="/baseline">See the snapshot</Btn>
+                <Btn kind="secondary" onClick={() => setForceSubject(true)}>Choose a subject</Btn>
                 <Btn kind="ghost" disabled={busy} onClick={async () => { setBusy(true); await path.advance("snapshot", "skipped"); setBusy(false); }}>Continue</Btn>
               </div>
             </Card>
           ) : null}
-        </>
+
+          <div className="grid gap-3 sm:grid-cols-3" aria-label="Path overview">
+            <div className="card" data-tone="sand" style={{ padding: "var(--s3) var(--s4)" }}>
+              <div className="kicker">Step 01</div>
+              <h3 className="t-h3" style={{ marginTop: "4px" }}>Mind check</h3>
+            </div>
+            <div className="card" data-tone="blue" style={{ padding: "var(--s3) var(--s4)" }}>
+              <div className="kicker">Step 02</div>
+              <h3 className="t-h3" style={{ marginTop: "4px" }}>Choose a subject</h3>
+            </div>
+            <div className="card" data-tone="mint" style={{ padding: "var(--s3) var(--s4)" }}>
+              <div className="kicker">Step 03</div>
+              <h3 className="t-h3" style={{ marginTop: "4px" }}>First tailored lesson</h3>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );
@@ -325,37 +340,83 @@ export default function Journey() {
 
 /* ------------------------------------------------------------------ steps */
 
-function SubjectChooser({ text, setText, choose, busy }: { text: string; setText: (v: string) => void; choose: () => void; busy: boolean }) {
+function SubjectChooser({
+  text,
+  setText,
+  choose,
+  busy,
+  subjects,
+}: {
+  text: string;
+  setText: (v: string) => void;
+  choose: () => void;
+  busy: boolean;
+  subjects: LearningOverview["subjects"];
+}) {
   return (
-    <Card title="Your subject" tone="blue" icon={<Icon name="search" />}>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void choose();
-        }}
-        className="stack-3"
-      >
-        <input
-          autoFocus
-          className="input subject-input"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder="Type a subject or topic"
-          aria-label="What do you want to learn?"
-          maxLength={240}
-        />
-        <div className="wrap-2" aria-label="Suggestions">
-          {SUGGESTIONS.map((item) => (
-            <button key={item} type="button" className="tap-chip" aria-pressed={text === item} onClick={() => setText(item)}>
-              {item}
-            </button>
-          ))}
+    <div className="stack-4">
+      <Card title="What do you want to learn?" sub="Pick a subject to build your starting checks." tone="blue" icon={<Icon name="search" />}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void choose();
+          }}
+          className="stack-3"
+        >
+          <input
+            autoFocus
+            className="input subject-input"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Type a subject or topic (e.g. Algebra, Spanish, Biology)"
+            aria-label="What do you want to learn?"
+            maxLength={240}
+          />
+          <div className="wrap-2" aria-label="Suggestions">
+            {SUGGESTIONS.map((item) => (
+              <button key={item} type="button" className="tap-chip" aria-pressed={text === item} onClick={() => setText(item)}>
+                {item}
+              </button>
+            ))}
+          </div>
+          <div className="wrap-2" style={{ paddingTop: "var(--s1)" }}>
+            <Btn icon="search" kind="primary" type="submit" disabled={!text.trim() || busy}>
+              {busy ? "Checking…" : "See the starting checks"}
+            </Btn>
+            <Btn kind="secondary" href="/baseline">
+              Open mind check
+            </Btn>
+          </div>
+        </form>
+      </Card>
+
+      <div className="grid gap-3 sm:grid-cols-3" aria-label="Path steps">
+        <div className="card" data-tone="sand" style={{ padding: "var(--s3) var(--s4)" }}>
+          <div className="kicker">Step 01</div>
+          <h3 className="t-h3" style={{ marginTop: "4px" }}>Choose a subject</h3>
         </div>
-        <Btn icon="search" kind="primary" type="submit" disabled={!text.trim() || busy}>
-          {busy ? "Checking…" : "See the starting checks"}
-        </Btn>
-      </form>
-    </Card>
+        <div className="card" data-tone="mint" style={{ padding: "var(--s3) var(--s4)" }}>
+          <div className="kicker">Step 02</div>
+          <h3 className="t-h3" style={{ marginTop: "4px" }}>Short starting checks</h3>
+        </div>
+        <div className="card" data-tone="peach" style={{ padding: "var(--s3) var(--s4)" }}>
+          <div className="kicker">Step 03</div>
+          <h3 className="t-h3" style={{ marginTop: "4px" }}>First tailored lesson</h3>
+        </div>
+      </div>
+
+      {subjects.length > 0 ? (
+        <Card title="Your active subjects" tone="plain" icon={<Icon name="book" />}>
+          <div className="wrap-2">
+            {subjects.map((s) => (
+              <Btn key={s.id} kind="secondary" href={s.next?.href ?? `/learn?subject=${encodeURIComponent(s.id)}`}>
+                {s.title}
+              </Btn>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+    </div>
   );
 }
 

@@ -19,7 +19,6 @@ import { friendlyLabel } from "@/lib/labels";
 import { useState } from "react";
 
 import { Btn, Card, Err, Notice, PageHeader, SessionLog, Tag, Textarea, announce, useSessionLedger } from "@/components/ui";
-import { PageArt } from "@/components/shell/PageArt";
 import { get, post, useApi } from "@/lib/api";
 import type { RetentionCheck, ReviewComplete, ReviewDue } from "@/lib/types";
 import { ReadAloud } from "@/components/voice/ReadAloud";
@@ -104,11 +103,10 @@ export default function Review() {
 
   if (due.loading) return (
     <div className="space-y-5">
-      <PageHeader title="Review queue" subtitle="Short revisits when something is due." art={<PageArt name="horizon-memory" />} />
+      <PageHeader title="Review queue" subtitle="Short revisits when something is due." />
       <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading review queue">
-        <div className="loading-card-art" aria-hidden="true"><PageArt name="horizon-memory" /></div>
-        <p className="loading-text">Checking what is due…</p>
         <div className="loading-spinner" aria-hidden="true" />
+        <p className="loading-text">Checking what is due…</p>
       </div>
       <div className="skeleton-grid">
         <div className="skeleton-card"><div className="skeleton-line medium large" /><div className="skeleton-line full" /><div className="skeleton-line short" /></div>
@@ -118,35 +116,44 @@ export default function Review() {
   );
   if (due.error) return (
     <div className="space-y-4">
-      <PageHeader title="Review queue" subtitle="Short revisits when something is due." art={<PageArt name="horizon-memory" />} />
+      <PageHeader title="Review queue" subtitle="Short revisits when something is due." />
       <Err error={due.error} status={due.status} />
     </div>
   );
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Review queue" subtitle="Short revisits when something is due." art={<PageArt name="horizon-memory" />} />
-      <p className="t-small" style={{ color: "var(--muted)", marginTop: "-var(--s3)" }}>{due.data?.rule}</p>
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-4">
-        <div>
-          <h2 className="t-h2" style={{ margin: 0 }}>{rows.length ? `${rows.length} waiting` : "Up to date"}</h2>
-        </div>
-        <span className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{rows.length ? `${rows.length} waiting` : "nothing due"}</span>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title="Review queue"
+        subtitle={due.data?.rule ?? "Short revisits when something is due."}
+        actions={<Btn onClick={() => due.reload()}>Reload</Btn>}
+      />
 
       {rows.length === 0 ? (
-        <div className="card empty-state" data-empty="review">
-          <div className="empty-state-art" aria-hidden="true"><PageArt name="horizon-memory" /></div>
-          <p className="empty-state-text">All caught up. Every topic is still inside its window.</p>
-          <Btn kind="primary" href="/learn">Practise</Btn>
-          <p className="t-small" style={{ color: "var(--muted)", maxWidth: "48ch" }}>
-            A topic you keep getting right earns a long gap — the app would rather ask you later than flatter you tomorrow.
-          </p>
-        </div>
+        <Card
+          title="All caught up — nothing due"
+          sub="Every topic is still inside its review window."
+          tone="mint"
+          data-empty="review"
+        >
+          <div className="empty-state">
+            <p className="empty-state-text">
+              A topic you keep getting right earns a longer gap — the app would rather ask you later than flatter you tomorrow.
+            </p>
+            <div className="wrap-2">
+              <Btn icon="play" kind="primary" href="/learn">Practise</Btn>
+              <Btn kind="secondary" href="/lesson">Open a lesson</Btn>
+            </div>
+          </div>
+        </Card>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-3">
+            <h2 className="t-h2" style={{ margin: 0 }}>{`${rows.length} waiting`}</h2>
+            <span className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{`${rows.length} waiting`}</span>
+          </div>
           {/* Horizon: spatial encoding of due position, driven by real due_at. */}
-          <div className="horizon" aria-hidden="true">
+          <div className="horizon" aria-hidden="true" style={{ marginTop: "var(--s3)" }}>
             <span className="now-label">now</span>
             <div className="now-line" />
             {rows.map((r) => {
@@ -269,43 +276,47 @@ export default function Review() {
         </div>
       )}
 
-      <SessionLog title="Reviews completed this session" entries={ledger.entries} empty="Nothing reviewed yet." />
+      <div className="grid items-start gap-4 md:grid-cols-2">
+        <div style={{ marginTop: 0 }}>
+          <SessionLog title="Reviews completed this session" entries={ledger.entries} empty="Nothing reviewed yet." />
+        </div>
 
-      <Card title="How well your own predictions line up" tone="muted" right={<span>{cal?.n ?? 0} checks</span>}>
-        {!cal || (cal.n ?? 0) < 3 ? (
-          <p className="text-sm text-[var(--muted)]">
-            Not enough delayed checks yet to say anything honest about calibration. With {cal?.n ?? 0} it would be noise with
-            a decimal point, so the table stays empty until there is something in it.
-          </p>
-        ) : (
-          <>
-            <p className="text-sm">
-              Brier score <strong>{cal.brier?.toFixed(3)}</strong> (lower is better, and answering 0.5 every time scores 0.25) ·
-              expected calibration error <strong>{cal.ece?.toFixed(3)}</strong>
+        <Card title="How well your own predictions line up" tone="muted" right={<span>{cal?.n ?? 0} checks</span>}>
+          {!cal || (cal.n ?? 0) < 3 ? (
+            <p className="text-sm text-[var(--muted)]">
+              Not enough delayed checks yet to say anything honest about calibration. With {cal?.n ?? 0} it would be noise with
+              a decimal point, so the table stays empty until there is something in it.
             </p>
-            <div className="table-scroll">
-              <table className="mt-2 w-full text-sm">
-                <thead className="text-xs text-[var(--muted)]">
-                  <tr>
-                    <th className="text-left">predicted</th>
-                    <th className="text-right">observed</th>
-                    <th className="text-right">n</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(cal.buckets ?? []).map((b, i) => (
-                    <tr key={i} className="border-t border-[var(--line)]">
-                      <td>{Math.round((b.predicted ?? 0) * 100)}%</td>
-                      <td className="text-right">{Math.round((b.observed ?? 0) * 100)}%</td>
-                      <td className="text-right text-[var(--muted)]">{b.n}</td>
+          ) : (
+            <>
+              <p className="text-sm">
+                Brier score <strong>{cal.brier?.toFixed(3)}</strong> (lower is better, and answering 0.5 every time scores 0.25) ·
+                expected calibration error <strong>{cal.ece?.toFixed(3)}</strong>
+              </p>
+              <div className="table-scroll">
+                <table className="mt-2 w-full text-sm">
+                  <thead className="text-xs text-[var(--muted)]">
+                    <tr>
+                      <th className="text-left">predicted</th>
+                      <th className="text-right">observed</th>
+                      <th className="text-right">n</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </Card>
+                  </thead>
+                  <tbody>
+                    {(cal.buckets ?? []).map((b, i) => (
+                      <tr key={i} className="border-t border-[var(--line)]">
+                        <td>{Math.round((b.predicted ?? 0) * 100)}%</td>
+                        <td className="text-right">{Math.round((b.observed ?? 0) * 100)}%</td>
+                        <td className="text-right text-[var(--muted)]">{b.n}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

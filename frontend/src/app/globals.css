@@ -129,22 +129,33 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
-  transition: opacity 0.5s ease;
+  padding: clamp(20px, 5vw, 48px);
+  background: radial-gradient(ellipse at 50% 0%, var(--accent-dim), transparent 70%), var(--bg);
+  transition: opacity 0.32s ease;
 }
-.opening-overlay.exiting {
+.opening-overlay.exiting,
+.opening-overlay.opening-fade {
   opacity: 0;
 }
+.welcome-sheet {
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding: clamp(24px, 5vw, 48px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 20px;
+}
 .opening-mark {
-  display: none;
-  /* The mark reads in the accent colour, not in muted grey: it is the only branding on the
-     screen, and grey on grey made it look like a caption for the skip button. */
-  position: absolute;
-  top: 40px;
-  left: 50%;
-  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: static;
+  transform: none;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 600;
   letter-spacing: 0.25em;
   text-transform: uppercase;
   color: var(--accent);
@@ -152,30 +163,25 @@ kbd {
 .opening-phrase {
   font-family: var(--font-serif);
   font-weight: 500;
-  font-size: clamp(38px, 6vw, 76px);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  font-size: clamp(46px, 7vw, 88px);
+  line-height: 1.16;
+  letter-spacing: -0.015em;
   text-align: center;
-  max-width: 980px;
+  color: var(--ink);
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 0 clamp(16px, 6vw, 40px);
+  padding: 0 clamp(16px, 5vw, 48px);
 }
 .opening-word {
   display: inline-block;
-  /* The gap between words is CSS, not a text space: a trailing space inside an
-     `inline-block` is trimmed by the line box, which rendered "Let's learn the right way"
-     as "Let'slearntherightway". The space before the first word is the phrase's own
-     default spacing; the last word's margin adds nothing visible because it is trailing. */
   margin-right: 0.26em;
   opacity: 0;
-  filter: blur(10px);
-  transform: translateY(22px);
-  /* Slower on purpose: at 0.55s a word arrived before the eye had settled on the one before
-     it, so the sentence was over before it read as a sentence. The reveal is now a beat per
-     word, and `Opening` holds the phrase long enough for the last word to land. */
-  animation: oreveal 1.15s cubic-bezier(0.16, 0.9, 0.2, 1) forwards;
+  filter: blur(8px);
+  transform: translateY(18px);
+  animation: oreveal 0.9s cubic-bezier(0.16, 0.9, 0.2, 1) forwards;
 }
-.opening-word.blue {
+.opening-word.blue,
+.opening-word.opening-word-accent {
   color: var(--accent);
 }
 @keyframes oreveal {
@@ -185,14 +191,34 @@ kbd {
     transform: translateY(0);
   }
 }
+.opening-subline {
+  margin: 0;
+  color: var(--body);
+  font-size: 16px;
+  line-height: 1.55;
+  max-width: 44ch;
+  text-align: center;
+}
+.opening-actions {
+  position: static;
+  transform: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  width: 100%;
+}
+.opening-start {
+  min-width: 176px;
+  justify-content: center;
+}
 .opening-skip {
-  /* Keep the low-commitment link in the centered content column, not over the patterned gutter. */
-  position: absolute;
-  bottom: 28px;
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  font-size: 13px;
+  position: static;
+  transform: none;
+  font-size: 14px;
+  justify-content: center;
 }
 @media (prefers-reduced-motion: reduce) {
   .opening-word {
@@ -458,7 +484,7 @@ kbd {
 }
 /* ========== Changes page specifics ========== */
 .page-changes {
-  padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 60px;
+  padding: 0;
 }
 .cf-head {
   font-family: var(--font-mono);
@@ -472,14 +498,14 @@ kbd {
   font-family: var(--font-serif);
   font-size: clamp(20px, 2.6vw, 28px);
   font-weight: 500;
-  margin-bottom: 46px;
+  margin-bottom: 24px;
 }
 .ledger-log {
-  margin-top: 40px;
+  margin-top: 24px;
   border: 1px solid var(--line);
   background: var(--panel);
   padding: 20px;
-  border-radius: 2px;
+  border-radius: var(--r-card);
 }
 .ledger-log h5 {
   font-family: var(--font-mono);
@@ -507,7 +533,7 @@ kbd {
 
 /* ========== Review - horizon line ========== */
 .page-review {
-  padding: clamp(40px, 8vw, 80px) clamp(24px, 8vw, 100px) 60px;
+  padding: 0;
 }
 .rv-head {
   font-family: var(--font-mono);
@@ -1364,11 +1390,6 @@ strong, b, .font-semibold { color: var(--ink); font-weight: 650; }
 @media (max-width: 480px) { .scene-stage { padding:10px; } .scene-stage svg { min-height:160px; } .dev-animator-page { padding:20px 12px; } }
 .voice-switch { display:inline-flex; align-items:center; gap:5px; min-height:36px; padding:5px 9px; border:1px solid var(--line); border-radius:5px; background:var(--panel); color:var(--muted); cursor:pointer; font: .68rem var(--font-mono); }
 .voice-switch:hover, .voice-switch.on { color:var(--accent); border-color:var(--accent); background:var(--accent-dim); }
-.opening-actions { position: absolute; top: calc(50% + 78px); left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 14px; }
-.opening-subline { margin: 0; color: var(--muted); font-size: 16px; text-align: center; }
-.opening-start { min-width: 180px; }
 @media (max-width: 600px) {
-  .opening-phrase { font-size: clamp(36px, 10vw, 48px); padding: 0 22px; }
-  .opening-actions { top: calc(50% + 70px); width: 100%; padding: 0 20px; }
-  .opening-skip { left: 50%; right: auto; bottom: 18px; transform: translateX(-50%); }
+  .opening-phrase { font-size: clamp(38px, 10vw, 54px); padding: 0 22px; }
 }

@@ -113,57 +113,57 @@ export default function Proposals() {
     return <Err error="nobody is signed in, so there is nothing to approve" status={401} />;
 
   return (
-    <div className="page-changes space-y-6">
-      <PageHeader title="Changes waiting for you" subtitle="Each row separates what was observed from what we think it means. Nothing here has been applied." art={<PageArt name="balance-scale" />} />
-      <div className="cf-head" style={{ marginTop: "-var(--s4)" }}>§ 03 · Changes</div>
-      <h2 className="cf-sub">Nothing here takes effect until you decide.</h2>
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-4">
-        <div>
-          <h1 className="t-h1">Changes waiting for you</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            {pending.data?.explain ??
-              "Each row separates what was observed from what we think it means. Nothing here has been applied."}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Btn onClick={() => Promise.all([pending.reload(), active.reload(), history.reload()])}>Reload</Btn>
-          <Btn
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await post("adaptations/evaluate", {});
-                active.reload();
-              } catch (err) {
-                setError((err as { shown?: string }).shown ?? String(err));
-              } finally {
-                setBusy(false);
-              }
-            }}
-            title="asks whether the approved changes are measurably helping"
-          >
-            Check the effect
-          </Btn>
-        </div>
-      </div>
+    <div className="page-changes space-y-5">
+      <PageHeader
+        title="Changes waiting for you"
+        subtitle={
+          pending.data?.explain ??
+          "Each row separates what was observed from what we think it means. Nothing here has been applied."
+        }
+        art={<PageArt name="balance-scale" />}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Btn onClick={() => Promise.all([pending.reload(), active.reload(), history.reload()])}>Reload</Btn>
+            <Btn
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await post("adaptations/evaluate", {});
+                  active.reload();
+                } catch (err) {
+                  setError((err as { shown?: string }).shown ?? String(err));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              title="asks whether the approved changes are measurably helping"
+            >
+              Check the effect
+            </Btn>
+          </div>
+        }
+      />
 
-      {error ? <div className="mt-4"><Notice tone="bad">{error}</Notice></div> : null}
+      {error ? <Notice tone="bad">{error}</Notice> : null}
 
       {pending.loading ? (
         <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading proposals">
-          <div className="loading-card-art" aria-hidden="true"><PageArt name="balance-scale" /></div>
-          <p className="loading-text">Loading your proposals…</p>
           <div className="loading-spinner" aria-hidden="true" />
+          <p className="loading-text">Loading your proposals…</p>
         </div>
       ) : null}
       {!pending.loading && rows.length === 0 ? (
-        <div className="card empty-state" data-empty="proposals">
-          <div className="empty-state-art" aria-hidden="true"><PageArt name="balance-scale" /></div>
-          <p className="empty-state-text">No proposals right now. A pattern needs enough answers to be worth your time.</p>
-          <Btn kind="primary" href="/learn">Practise</Btn>
-          <p className="t-small" style={{ color: "var(--muted)", maxWidth: "48ch" }}>
-            If you have finished a session and no proposal appeared, that means the data did not support one — which is normal.
-          </p>
-        </div>
+        <Card title="Nothing to approve right now" sub="Nothing here takes effect until you decide." tone="blue" data-empty="proposals">
+          <div className="empty-state">
+            <p className="empty-state-text">
+              No proposals right now. A pattern needs enough answers to be worth your time — if you have finished a session and no proposal appeared, that means the data did not support one.
+            </p>
+            <div className="wrap-2">
+              <Btn icon="play" kind="primary" href="/learn">Practise</Btn>
+              <Btn kind="secondary" href="/progress">View progress</Btn>
+            </div>
+          </div>
+        </Card>
       ) : null}
 
       {rows.length ? (
@@ -342,11 +342,9 @@ export default function Proposals() {
         </Ledger>
       ) : null}
 
-      <div className="mt-8">
-        <SessionLog title="Decisions made this session" entries={ledger.entries} empty="Nothing decided yet." />
-      </div>
+      <SessionLog title="Decisions made this session" entries={ledger.entries} empty="Nothing decided yet." />
 
-      <div className="grid gap-4 md:grid-cols-2 mt-6">
+      <div className="grid items-start gap-4 md:grid-cols-2">
         <Card
           title={active.loading && live.length === 0 ? "Active changes" : "On right now"}
           tone="good"

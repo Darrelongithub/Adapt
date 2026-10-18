@@ -21,7 +21,6 @@ import { useEffect, useState } from "react";
 import { VisualFigure } from "@/components/visual";
 import { LessonRenderer, type LessonValue } from "@/components/lesson/LessonRenderer";
 import { Btn, Card, Err, PageHeader, Tag } from "@/components/ui";
-import { PageArt } from "@/components/shell/PageArt";
 import { post } from "@/lib/api";
 import { contrastFoot, evidenceMark } from "@/lib/learnerCopy";
 
@@ -248,9 +247,12 @@ export default function Contrast() {
   }, [conceptId, sameTwice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader title="The same lesson, taught two ways" subtitle="One concept, two made-up demo profiles. Both lessons teach the same checked content — what differs is how it is laid out." art={<PageArt name="split-cards" />} />
-      <p className="t-small text-[var(--muted)]" style={{ marginTop: "-var(--s4)", maxWidth: "75ch" }}>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="The same lesson, taught two ways"
+        subtitle="One concept, two made-up demo profiles. Both lessons teach the same checked content — what differs is how it is laid out."
+      />
+      <p className="t-small text-[var(--muted)]" style={{ marginTop: "-var(--s3)", maxWidth: "75ch" }}>
         Every change is decided from the profile next to it: what was measured, what the learner said they prefer, and what would change the decision. Nothing here is a real learner&apos;s data.
       </p>
 
@@ -286,9 +288,8 @@ export default function Contrast() {
       ) : null}
       {loading && !data ? (
         <div className="card loading-card" role="status" aria-busy="true" aria-label="Building lessons">
-          <div className="loading-card-art" aria-hidden="true"><PageArt name="split-cards" /></div>
-          <p className="loading-text">Building both lessons for these example profiles…</p>
           <div className="loading-spinner" aria-hidden="true" />
+          <p className="loading-text">Building both lessons for these example profiles…</p>
         </div>
       ) : null}
 

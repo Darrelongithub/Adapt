@@ -141,12 +141,9 @@ export default function Learn() {
   if (gate === "error") return <Err error={error ?? "Your active subject could not be opened."} status={null} />;
   if (gate === "empty") {
     return (
-      <div className="lesson-empty" data-learn-empty>
-        <div className="lesson-empty-art" aria-hidden="true">
-          <PageArt name="classroom" />
-        </div>
-        <Card title="What do you want to learn?" tone="blue">
-          <p className="t-small" style={{ marginBottom: "var(--s2)" }}>Pick a subject to start practising.</p>
+      <div className="mx-auto max-w-3xl space-y-5" data-learn-empty>
+        <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="classroom" />} />
+        <Card title="What do you want to learn?" sub="Pick a subject to start practising." tone="blue">
           <form
             className="stack-3"
             onSubmit={async (event) => {
@@ -177,9 +174,14 @@ export default function Learn() {
                 </button>
               ))}
             </div>
-            <Btn icon="plus" kind="primary" type="submit" disabled={!chooseText.trim() || choosing}>
-              {choosing ? "Checking…" : "Choose"}
-            </Btn>
+            <div className="wrap-2">
+              <Btn icon="plus" kind="primary" type="submit" disabled={!chooseText.trim() || choosing}>
+                {choosing ? "Checking…" : "Choose"}
+              </Btn>
+              <Btn kind="secondary" href="/journey?step=subject">
+                Open your path
+              </Btn>
+            </div>
           </form>
         </Card>
       </div>
@@ -187,11 +189,10 @@ export default function Learn() {
   }
   if (gate !== "ready") return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="desk-path" />} />
+      <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="classroom" />} />
       <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading practice">
-        <div className="loading-card-art" aria-hidden="true"><PageArt name="classroom" /></div>
-        <p className="loading-text">Checking your active subject…</p>
         <div className="loading-spinner" aria-hidden="true" />
+        <p className="loading-text">Checking your active subject…</p>
       </div>
       <div className="skeleton-card" aria-hidden="true">
         <div className="skeleton-line medium" />
@@ -203,11 +204,10 @@ export default function Learn() {
   if (loading)
     return (
       <div className="mx-auto max-w-3xl space-y-4">
-        <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="desk-path" />} />
+        <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="classroom" />} />
         <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading queue">
-          <div className="loading-card-art" aria-hidden="true"><PageArt name="desk-path" /></div>
-          <p className="loading-text">Building your queue from last session…</p>
           <div className="loading-spinner" aria-hidden="true" />
+          <p className="loading-text">Building your queue from last session…</p>
         </div>
         <div className="skeleton-grid">
           <div className="skeleton-card"><div className="skeleton-line large medium" /><div className="skeleton-line full" /><div className="skeleton-line full" /><div className="skeleton-line short" /></div>
@@ -219,7 +219,7 @@ export default function Learn() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="desk-path" />} />
+      <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="classroom" />} />
       <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] pb-3">
         {items.length ? (
           <span className="ml-4 text-sm text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
