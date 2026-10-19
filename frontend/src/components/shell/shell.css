@@ -8,7 +8,8 @@
 
 :root {
   --sidebar-w: 232px;
-  --topbar-h: 56px;
+  --topbar-h: 60px;
+  --rail-min: 56px;
 }
 
 /* ---------- App frame ---------- */
@@ -185,40 +186,40 @@
   display: grid;
   /* The side tracks keep a real minimum: at 1440 there is barely spare room, and
      a 1fr track that may reach 0 will — taking the topo gutter with it. */
-  grid-template-columns: minmax(40px, 1fr) minmax(0, var(--content-max)) minmax(40px, 1fr);
+  grid-template-columns: minmax(var(--rail-min), 1fr) minmax(0, var(--content-max)) minmax(var(--rail-min), 1fr);
   flex: 1;
   width: 100%;
   position: relative;
 }
 .page-sheet {
   grid-column: 2;
+  position: relative;
+  z-index: 1; /* above the rails, below nothing: art and words are always on top of the pattern */
   min-width: 0;
   padding: var(--s5) var(--gutter) var(--s6);
 }
-/* The gutters carry the topo pattern — empty space with no words and no other
-   art, so the pattern is allowed here (and only here at the shell level). */
+/* The rails carry the contour pattern. They are their own grid columns, so the pattern
+   can never sit behind words, and they are painted below the sheet (z-index 0 vs 1). The
+   lines are the accent blue, strongest at the window edge and fading toward the sheet. */
 .pattern-zone {
   grid-row: 1;
   position: relative;
-  margin: var(--s4) var(--s3);
+  z-index: 0;
+  overflow: hidden;
   pointer-events: none;
-  opacity: 0.045;
-}
-.pattern-zone .topo-fill {
-  position: absolute;
-  inset: 0;
-  opacity: 1;
 }
 .page-frame-access .pattern-zone {
   display: none;
 }
-.pattern-left { grid-column: 1; }
-.pattern-right { grid-column: 3; }
+.pattern-left { grid-column: 1; --rail-fade: to right; --rail-pos: left top; }
+.pattern-right { grid-column: 3; --rail-fade: to left; --rail-pos: right top; }
 
 /* Below the width where a real gutter exists, the pattern would be a smear
    against the text: omit it there rather than crowding the sheet. */
 @media (max-width: 1180px) {
   .pattern-zone { display: none; }
+  .page-frame { grid-template-columns: minmax(0, 1fr); }
+  .page-sheet { grid-column: 1; }
 }
 @media (max-width: 899px) {
   .sidebar {
@@ -297,20 +298,20 @@
   -webkit-mask-repeat: no-repeat;
   mask-position: center;
   -webkit-mask-position: center;
-  width: 100%;
-  height: 100%;
 }
 
-/* ---- Art sizing & placement: governed solely by artMap.ts ---- */
+/* ---- Art sizing & placement: governed solely by artMap.ts ----
+   Every illustration sits in a fixed-height box and keeps its own proportions
+   (aspect-ratio is set from the file's real size), so a wide scene and a tall tree
+   take the same vertical room and no page jumps when its art arrives. */
 .art-size-large {
-  /* Large art at top: hero scale, visible without scrolling on 390×844 and 1440×900 */
-  width: 320px;
-  height: 200px;
+  height: 210px;
+  width: auto;
   max-width: 100%;
 }
 .art-size-small {
-  width: 120px;
-  height: 90px;
+  height: 150px;
+  width: auto;
   max-width: 100%;
 }
 .art-position-hero-top,
@@ -319,6 +320,40 @@
 }
 .art-position-header-right {
   margin-left: auto;
+}
+
+/* The scene that closes a page: ideas along a horizon. In flow, after the last card. */
+.page-scene {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  height: 132px;
+  margin-top: var(--s6);
+  pointer-events: none;
+  opacity: 0.55;
+}
+.page-scene .artwork {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  height: 100%;
+  mask-position: center;
+  -webkit-mask-position: center;
+}
+/* the art's own horizon sits at 91.5% of its height; extend it to the edges and fade it out */
+.page-scene::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 91.5%;
+  height: 1.5px;
+  background: var(--accent);
+  -webkit-mask-image: linear-gradient(to right, transparent, rgb(0 0 0) 22%, rgb(0 0 0) 78%, transparent);
+  mask-image: linear-gradient(to right, transparent, rgb(0 0 0) 22%, rgb(0 0 0) 78%, transparent);
+}
+@media (max-width: 767px) {
+  .page-scene { height: 88px; margin-top: var(--s5); }
 }
 
 /* ---------- Page heroes & empty states ---------- */
@@ -363,7 +398,7 @@
   .wizard-hero-art { order: -1; height: 170px; }
 }
 
-/* Generic page hero (Review, Contrast, Proposals, Lesson) */
+/* Generic page hero (Review, Proposals, Lesson) */
 .page-hero {
   position: relative;
   overflow: hidden;

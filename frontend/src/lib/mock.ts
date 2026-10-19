@@ -1301,6 +1301,17 @@ export const contentPack = {
 };
 
 const rows: Row[] = [
+  { method: "GET", match: /^\/api\/v1\/subjects\/[^/]+$/, body: { id: "subj_mock_maths", title: "GCSE Maths", topic_id: "top_fractions" } },
+  /* Home / Learn / Journey read this one; without it the preview shows an error card instead of the screen. */
+  { method: "GET", match: /^\/api\/v1\/learning\/overview/, body: {
+    active_subject_id: "subj_mock_maths",
+    subjects: [
+      { id: "subj_mock_maths", title: "GCSE Maths", family: "maths", stage: "learning", progress: { done: 3, total: 8 }, next: { label: "Adding fractions", href: "/learn" } },
+      { id: "subj_mock_bio", title: "Biology: cells", family: "sciences", stage: "tests", progress: { done: 0, total: 6 }, next: { label: "Start the checks", href: "/journey?step=subject" } },
+    ],
+    due: { count: 1 },
+    proposals: { count: 1 },
+  } },
   /* Phase 5's contrast screen renders two plans side by side. The fixtures keep the same shape the
      adapter returns: ordered blocks each carrying a chunk_id and a why with its n, a why-panel, and
      provenance. The two profiles must differ in a way the page can *read off* the plans. */

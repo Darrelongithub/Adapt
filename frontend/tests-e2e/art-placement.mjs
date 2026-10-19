@@ -1,8 +1,13 @@
 import { chromium } from 'playwright';
 
 const base = process.env.ADAPT_BASE_URL || 'http://127.0.0.1:3000';
-const routes = ['/', '/consent', '/signin', '/baseline', '/learn', '/journey', '/lesson', '/review', '/progress', '/settings', '/proposals', '/evidence', '/voice', '/contrast', '/onboarding', '/diagnose', '/first-lesson'];
-const expected = new Map([['/', ['study']], ['/baseline', ['brain']], ['/settings', ['gears']], ['/learn', ['classroom']], ['/journey', ['classroom']]]);
+const routes = ['/', '/consent', '/signin', '/baseline', '/learn', '/journey', '/lesson', '/review', '/progress', '/settings', '/proposals', '/evidence', '/voice', '/onboarding', '/diagnose', '/first-lesson'];
+// Mirrors ART_MAP in src/components/shell/artMap.ts: one header illustration per page.
+const expected = new Map([
+  ['/', ['study']], ['/baseline', ['brain']], ['/settings', ['gears']], ['/learn', ['classroom']],
+  ['/journey', ['stepping-stones']], ['/proposals', ['balance-scale']], ['/review', ['road-ahead']],
+  ['/progress', ['knowledge-tree']], ['/lesson', ['desk-path']], ['/voice', ['open-book']],
+]);
 const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
 let failed = false;
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
@@ -24,15 +29,16 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await page.waitForTimeout(350);
     const arts = await page.locator('[data-art]').evaluateAll(nodes => [...new Set(nodes.map(n => n.getAttribute('data-art')))]);
     const wanted = expected.get(route) ?? [];
-    // Classroom appears only for the subject chooser / empty Learn state; all other pages are art-free.
+    // Every signed-in page owns exactly one header illustration. Pages with no entry (consent,
+    // sign-in, onboarding, ...) show none except the access-screen flower.
     const observed = arts.filter(a => a !== 'flower');
-    const validConditional = (route === '/learn' || route === '/journey') && observed.length === 0;
-    if (!validConditional && (observed.length !== wanted.length || wanted.some(a => !observed.includes(a)))) {
+    if (observed.length !== wanted.length || wanted.some(a => !observed.includes(a))) {
       console.error(`${route} at ${viewport.width}: expected ${wanted.join(', ') || 'no art'}, saw ${observed.join(', ') || 'none'}`); failed = true;
     }
     if (route !== '/' && arts.includes('flower')) { console.error(`${route}: unexpected flower`); failed = true; }
     for (const art of await page.locator('[data-art]').all()) {
       const box = await art.boundingBox();
+      // Header art must be fully visible without scrolling. (The bottom scene is `data-scene`, not `data-art`.)
       if (!box || box.width < 1 || box.height < 1 || box.x < 0 || box.y < 0 || box.x + box.width > viewport.width || box.y + box.height > viewport.height) {
         console.error(`${route}: art outside first viewport`, box); failed = true;
       }

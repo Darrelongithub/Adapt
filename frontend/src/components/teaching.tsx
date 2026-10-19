@@ -135,7 +135,7 @@ function SegmentWalkthrough({ teaching, headline }: { teaching: NonNullable<Teac
       title={headline ? `Before the question — ${headline}` : "Before the question"}
       tone="muted"
       right={
-        <span className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        <span className="t-small text-[var(--muted)]">
           step {step.index} of {steps.length}
         </span>
       }
@@ -265,7 +265,7 @@ function VisualTemplate({ visual, headline }: { visual: TeachingVisual; headline
         <ol className="space-y-3 border-l border-[var(--line)] pl-4">
           {(visual.nodes ?? []).map((n, i) => (
             <li key={i} className="text-sm">
-              <span className="block text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+              <span className="block t-small text-[var(--muted)]">
                 {n.when || `point ${i + 1}`}
               </span>
               {n.text}
@@ -278,7 +278,7 @@ function VisualTemplate({ visual, headline }: { visual: TeachingVisual; headline
         <dl className="grid gap-2 sm:grid-cols-2">
           {(visual.labels ?? []).map((l, i) => (
             <div key={i} className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-2">
-              <dt className="text-xs uppercase tracking-wide text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+              <dt className="t-small text-[var(--muted)]">
                 {l.label || "unlabelled"}
               </dt>
               <dd className="text-sm">{l.text}</dd>

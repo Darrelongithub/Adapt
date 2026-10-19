@@ -206,7 +206,7 @@ export default function Proposals() {
                   </div>
                 }
               >
-                <dl className="space-y-0 text-sm divide-y divide-[var(--line)]">
+                <dl className="part-list">
                   <Part label="What was observed" tone="good" body={p.facts} note="events only — no interpretation" />
                   {p.pattern ? <Part label="The pattern in them" body={p.pattern} /> : null}
                   <Part
@@ -216,12 +216,12 @@ export default function Proposals() {
                     note="a hypothesis, not a diagnosis. Nobody is told what they are; they are shown what might be going on."
                   />
                   {p.alternatives?.length ? (
-                    <div>
-                      <dt className="text-xs text-[var(--muted)] uppercase" style={{ fontFamily: "var(--font-mono)" }}>Other things that would produce this</dt>
-                      <dd className="mt-1">
-                        <ul className="list-disc space-y-0.5 pl-5">
+                    <div className="part">
+                      <dt className="part-label">Other things that would produce this</dt>
+                      <dd className="part-body">
+                        <ul className="part-bullets">
                           {p.alternatives.map((a, i) => (
-                            <li key={i} className="text-[var(--muted)]">
+                            <li key={i}>
                               {typeof a === "string" ? a : humanize(a)}
                               {typeof a === "object" && (a as Record<string, unknown>).refuted_by ? <span className="opacity-70"> — refuted by {String((a as Record<string, unknown>).refuted_by)}</span> : null}
                             </li>
@@ -232,47 +232,47 @@ export default function Proposals() {
                   ) : null}
                   {p.caveat ? <Part label="What makes this shaky" tone="warn" body={p.caveat} /> : null}
                   <Part label="What saying yes would change" tone="accent" body={p.change ?? p.what_it_does} />
-                  <div>
-                    <dt className="text-xs text-[var(--muted)] uppercase" style={{ fontFamily: "var(--font-mono)" }}>How it would be judged</dt>
-                    <dd className="mt-1 space-y-1">
+                  <div className="part">
+                    <dt className="part-label">How it would be judged</dt>
+                    <dd className="part-body">
                       <p>
-                        <span className="text-[var(--accent)]">{p.review_metric ?? "the watch metric"}</span>{" "}
+                        <span className="part-metric">{p.review_metric ?? "the watch metric"}</span>{" "}
                         {p.review_window_text ?? `over ${p.review_window?.min_items ?? 6}-${p.review_window?.max_items ?? 14} more answers`}
                       </p>
-                      {p.expected_effect ? <p className="text-[var(--muted)]">expected: {p.expected_effect}</p> : null}
+                      {p.expected_effect ? <p className="part-note">expected: {p.expected_effect}</p> : null}
                       {p.baseline && Object.keys(p.baseline).length ? (
-                        <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+                        <p className="part-meta">
                           baseline now: {Object.entries(p.baseline).map(([k, v]) => `${k}=${typeof v === "number" ? round(v) : String(v)}`).join(", ")}
                         </p>
                       ) : null}
                     </dd>
                   </div>
                   {p.evidence_ids?.length ? (
-                    <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+                    <p className="part-meta">
                       built from {p.evidence_ids.length} logged evidence row{p.evidence_ids.length === 1 ? "" : "s"}
                       {p.hypothesis_ref ? <> · hypothesis {p.hypothesis_ref.status} at {round(p.hypothesis_ref.posterior ?? 0)}</> : null}
                     </p>
                   ) : null}
                   {p.citations?.length ? (
-                    <div>
-                      <dt className="text-xs text-[var(--muted)] uppercase" style={{ fontFamily: "var(--font-mono)" }}>Why anyone believes this works</dt>
-                      <dd className="mt-1 space-y-0.5 text-xs text-[var(--muted)]">
+                    <div className="part">
+                      <dt className="part-label">Why anyone believes this works</dt>
+                      <dd className="part-body part-cites">
                         {p.citations.map((c, i) => (
-                          <p key={c.ref ?? i} className="case-cite" style={{ display: "inline-block", margin: "2px 6px 2px 0", padding: "2px 6px", border: "1px solid var(--line)", background: "var(--panel-2)", borderRadius: "2px", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+                          <p key={c.ref ?? i} className="case-cite">
                             {c.url ? (
-                              <a className="underline" href={c.url} target="_blank" rel="noreferrer">
+                              <a href={c.url} target="_blank" rel="noreferrer">
                                 {c.ref ?? c.title}
                               </a>
                             ) : (
                               <span>{c.ref ?? c.title}</span>
                             )}
-                            {c.title && c.ref ? <span className="ml-1">— {c.title}</span> : null}
+                            {c.title && c.ref ? <span className="case-cite-title">{c.title}</span> : null}
                           </p>
                         ))}
                       </dd>
                     </div>
                   ) : (
-                    <p className="text-xs text-[var(--warn)]">
+                    <p className="part-meta part-warn">
                       no published evidence is attached to this strategy, so treat it as an experiment rather than a settled
                       technique.
                     </p>
@@ -299,7 +299,7 @@ export default function Proposals() {
                       {Object.entries(editing).map(([k, v]) => (
                         <Field key={k} label={k}>
                           <input
-                            className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 font-mono text-xs"
+                            className="w-full rounded-[12px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 font-mono text-xs"
                             value={v}
                             onChange={(e) => setEditing((s) => ({ ...s, [k]: e.target.value }))}
                           />
@@ -317,7 +317,7 @@ export default function Proposals() {
                           max={365}
                           value={days}
                           onChange={(e) => setDays(Number(e.target.value))}
-                          className="w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
+                          className="w-full rounded-[12px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"
                         />
                       </Field>
                     ) : null}
@@ -333,7 +333,7 @@ export default function Proposals() {
                     </button>
                   </div>
                 ) : null}
-                <div className="mt-2 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+                <div className="mt-2 t-small text-[var(--muted)]">
                   Status: {result?.proposal_id === p.id ? (result.ok ? result.decision : result.status) : "pending — nothing applied"}
                 </div>
               </LedgerEntry>
@@ -361,7 +361,7 @@ export default function Proposals() {
                   <div className="flex-1">
                     <p>
                       <strong>{a.label ?? a.strategy}</strong>{" "}
-                      <span className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+                      <span className="t-small text-[var(--muted)]">
                         since {a.started_at ? relative(a.started_at) : "—"} · watching {a.watch_metric ?? "the plan"}
                       </span>
                     </p>
@@ -415,11 +415,11 @@ export default function Proposals() {
 function Part({ label, body, note, tone }: { label: string; body?: string | null; note?: string; tone?: "good" | "warn" | "think" | "accent" }) {
   if (!body) return null;
   return (
-    <div>
-      <dt className={`text-xs uppercase ${tone ? `text-[var(--${tone})]` : "text-[var(--muted)]"}`} style={{ fontFamily: "var(--font-mono)" }}>{label}</dt>
-      <dd className="mt-1">
+    <div className="part" data-tone={tone}>
+      <dt className="part-label">{label}</dt>
+      <dd className="part-body">
         {body}
-        {note ? <span className="mt-0.5 block text-xs text-[var(--muted)]">{note}</span> : null}
+        {note ? <span className="part-note">{note}</span> : null}
       </dd>
     </div>
   );

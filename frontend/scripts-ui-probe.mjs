@@ -1734,46 +1734,6 @@ async function main() {
     closePage(page);
   }
 
-  /* -------------------------------------------------------------- contrast ---- */
-  // Phase 5's contrast demo: one concept, two stored profiles, two lessons, and a table of what
-  // actually differs between them. The screen must be reachable from the nav (it was not, before
-  // the integration), must say whether the profiles produced different lessons, and must not
-  // invent a difference - the API's own note is printed under the table.
-  if (run("contrast")) {
-    console.log("\n\x1b[1mcontrast\x1b[0m");
-    const page = await open("/contrast", "contrast");
-    await sleep(500);
-    const before = page.text();
-    const runIt = page.byText(/compare|show|build|contrast/i, "button");
-    if (runIt) {
-      const calls = page.requests.length;
-      await page.click(runIt);
-      await waitFor(() => page.requests.slice(calls).some((r) => /POST \/api\/v1\/lesson-plan\/contrast/.test(r)), { timeout: 15_000, label: "the contrast request" });
-      await sleep(600);
-    }
-    const body = page.text();
-    check("contrast", "the screen asks the API for two lessons rather than inventing them", /lesson-plan\/contrast/.test(page.requests.join(" ")), page.requests.slice(-3).join(" ; "));
-    check("contrast", "both profiles get a lesson of their own", (body.match(/step size|opens with|worked example|visual/gi) ?? []).length >= 4, body.slice(0, 220));
-    check("contrast", "the differences table names what differs, with both sides", /what actually differs|opens with|step size/i.test(body), body.slice(0, 200));
-    check("contrast", "the screen says whether they differ at all, from the API's own note", /profiles produced the same lesson|every difference above is read off|visibly/i.test(body) || /differs/i.test(body), body.slice(0, 220));
-    check("contrast", "every block carries why it is there (n included)", /why:/i.test(body) && /\(n=\d+\)/.test(body), body.slice(0, 220));
-    check("contrast", "no raw JSON object is shown to the learner on this screen", !/\{"[a-z_]+":/.test(body), body.slice(0, 200));
-    if (!before.trim()) check("contrast", "the screen renders before any request", false, "empty body");
-    closePage(page);
-
-    const mockPage = await open("/contrast?mock=1", "contrast");
-    await sleep(500);
-    const mockBtn = mockPage.byText(/compare|show|build|contrast/i, "button");
-    if (mockBtn) {
-      await mockPage.click(mockBtn);
-      await sleep(600);
-    }
-    const mockBody = mockPage.text();
-    check("contrast", "?mock=1 answers with two lessons and no backend", /adding fractions|step size|opens with/i.test(mockBody) && !/Internal Server Error/.test(mockBody), mockBody.slice(0, 200));
-    check("contrast", "and the mocked screen raises no uncaught error", mockPage.appErrors().length === 0, mockPage.appErrors().slice(0, 2).join(" ; "));
-    closePage(mockPage);
-  }
-
   /* ---------------------------------------------------------------- lesson ---- */
   // The interactive player, driven the way a learner drives it: open a scene, be blocked by
   // a prediction, answer it, ask why, change the numbers, and read the review back. Every

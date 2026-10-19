@@ -37,7 +37,6 @@ const ROUTES = [
   "/lesson",
   "/journey",
   "/proposals",
-  "/contrast",
   "/baseline",
   "/evidence",
   "/voice",

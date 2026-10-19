@@ -185,29 +185,21 @@ a:hover { color: var(--accent-strong); }
 }
 .page-header-art {
   flex: none;
+  position: relative;
+  z-index: 2; /* art is always above the rail pattern */
   pointer-events: none;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
+  max-width: 46%;
 }
-.page-header-art .artwork {
-  width: 180px;
-  height: 150px;
-}
-.page-header-art .art-size-large {
-  width: 200px;
-  height: 160px;
-}
-.page-header-art .art-size-small {
-  width: 120px;
-  height: 90px;
-}
+.page-header-art:empty { display: none; }
+.page-header-art .artwork { max-width: 100%; }
 @media (max-width: 767px) {
   .page-header { flex-direction: column; align-items: stretch; }
-  .page-header-art { order: -1; align-self: flex-start; margin-bottom: var(--s2); }
-  .page-header-art .artwork { width: 140px; height: 120px; }
-  .page-header-art .art-size-large { width: 160px; height: 130px; }
-  .page-header-art .art-size-small { width: 100px; height: 80px; }
+  .page-header-art { order: -1; align-self: flex-start; margin-bottom: var(--s2); max-width: 100%; }
+  .page-header-art .art-size-large { height: 130px; }
+  .page-header-art .art-size-small { height: 104px; }
 }
 
 /* ============================================================================
@@ -438,16 +430,27 @@ a:hover { color: var(--accent-strong); }
 .input::placeholder, input::placeholder, textarea::placeholder { color: var(--muted); }
 
 /* ============================================================================
-   Topo pattern — ONLY in the side gutters of PageShell (left and right of
-   the main sheet). Subtle low-opacity background watermark.
+   Topo pattern — ONLY in the side rails of PageShell (left and right of the
+   main sheet). The opacity is set once, here; the rail wrapper must not add a
+   second one (the two used to multiply to ~0.2%, which is why it was invisible).
    ========================================================================== */
 
 .topo-fill {
-  background-color: transparent;
-  background-image: url(/art/topo.svg);
-  background-repeat: repeat;
-  background-size: 640px auto;
-  opacity: 0.045;
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.2;
+  /* contour lines, tinted by the theme, fading from the window edge toward the sheet */
+  -webkit-mask-image: url(/art/topo.svg), linear-gradient(var(--rail-fade, to right), rgb(0 0 0), rgb(0 0 0 / 0));
+  mask-image: url(/art/topo.svg), linear-gradient(var(--rail-fade, to right), rgb(0 0 0), rgb(0 0 0 / 0));
+  -webkit-mask-size: 460px auto, 100% 100%;
+  mask-size: 460px auto, 100% 100%;
+  -webkit-mask-repeat: repeat-y, no-repeat;
+  mask-repeat: repeat-y, no-repeat;
+  -webkit-mask-position: var(--rail-pos, left top), 0 0;
+  mask-position: var(--rail-pos, left top), 0 0;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
   pointer-events: none;
 }
 

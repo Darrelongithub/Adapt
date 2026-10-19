@@ -207,7 +207,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
           Placement shows none of it: a hint during placement would measure the wrong thing. */}
       {!aidless && teaching ? (
         <div className="mb-5 max-w-[660px]">
-          <p className="mb-2 t-small uppercase tracking-[0.14em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+          <p className="pz-method">
             {(pres as { method_label?: string }).method_label ?? "before the question"}
             {pres.max_words ? ` · ≤${pres.max_words} words a step` : ""}
           </p>
@@ -360,7 +360,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
       </div>
 
       <div className="pz-bottom">
-        <div className="pz-due" style={{ fontFamily: "var(--font-mono)" }}>
+        <div className="pz-due">
           {entry.position ? `item ${entry.position} of ${entry.of ?? "?"}` : "practice"} · {item.est_seconds ? `~${item.est_seconds}s` : "untimed"}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -417,7 +417,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
         <div className="mt-4 max-w-[620px] space-y-2">
           {hints.map((h) => (
             <p key={h.no} className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">
-              <span className="mr-2 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>hint {h.no}</span>
+              <span className="mr-2 t-small text-[var(--muted)]">hint {h.no}</span>
               {h.text}
             </p>
           ))}
@@ -484,7 +484,7 @@ export function Question({ entry, presentation, onSubmit, onInteract, onChange, 
             <div className="prose-tutor mt-3 text-sm">
               <p>{reply.answer}</p>
               {reply.next_action ? <p className="text-[var(--accent)]">Next: {reply.next_action}</p> : null}
-              <p className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+              <p className="t-small text-[var(--muted)]">
                 {reply.served_by ?? "from your course material"}
                 {reply.meta?.grounded ? " · grounded" : " · not grounded in your material"} ·{" "}
                 {reply.privacy?.sent_to_model ? "a written-for-you reply was used" : "nothing left this machine"}
@@ -565,7 +565,7 @@ export function ReceiptView({ receipt }: { receipt: ReceiptType }) {
           ? <p>No method comparison was recorded. <Btn href="/evidence">View your evidence</Btn></p>
           : <Btn href={`/evidence?attempt=${encodeURIComponent(receipt.attempt_id)}`}>Continue the recovery check</Btn>}
       </Notice> : null}
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+      <div className="mt-2 flex flex-wrap items-center gap-3 t-small text-[var(--muted)]">
         {/* The interval the server computed, not `undefined`: this row used to print a bare
             estimate next to an observation count, which reads as a measurement. It now shows
             the range the evidence supports and, while there are fewer than eight answers, says

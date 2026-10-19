@@ -2,14 +2,17 @@
 
 import { type ReactNode } from "react";
 import { PageArt } from "./PageArt";
+import { PageScene } from "./PageScene";
 import "./shell.css";
+import "../../styles/premium.css"; // last, so it refines tokens/globals/shell without forking them
 
 /**
- * The shell around every page (Round 6, Track A): a centred sheet with two empty
- * gutters that carry the topo pattern — the only place the shell decorates, and
- * never behind words. Art is page-owned now (the hero on Home, classroom on the
- * learn empty state, gears on Settings, brain on the mind check, flower on the
- * signed-out welcome), so nothing floats at the bottom of a scrolling page.
+ * The shell around every page: a centred sheet flanked by two "rails" that carry the
+ * contour pattern, and a quiet horizon scene that closes the page.
+ *
+ * Stacking is fixed so nothing can sit on top of art: rails (0) < sheet (1) < art (2).
+ * The rails are their own grid columns, so the pattern is never behind words; the scene
+ * is in the page flow after the last card, so it is never over words either.
  */
 export function PageShell({ children, access = false }: { children: ReactNode; access?: boolean }) {
   return (
@@ -19,6 +22,7 @@ export function PageShell({ children, access = false }: { children: ReactNode; a
       </div>
       <div className="page-sheet" data-sheet>
         {children}
+        {access ? null : <PageScene />}
       </div>
       <div className="pattern-zone pattern-right" data-pattern="right" aria-hidden="true">
         <div className="topo-fill" />

@@ -141,7 +141,7 @@ export default function Learn() {
   if (gate === "error") return <Err error={error ?? "Your active subject could not be opened."} status={null} />;
   if (gate === "empty") {
     return (
-      <div className="mx-auto max-w-3xl space-y-5" data-learn-empty>
+      <div className="learn-column space-y-5" data-learn-empty>
         <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="classroom" />} />
         <Card title="What do you want to learn?" sub="Pick a subject to start practising." tone="blue">
           <form
@@ -188,7 +188,7 @@ export default function Learn() {
     );
   }
   if (gate !== "ready") return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="learn-column space-y-4">
       <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="classroom" />} />
       <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading practice">
         <div className="loading-spinner" aria-hidden="true" />
@@ -203,7 +203,7 @@ export default function Learn() {
   );
   if (loading)
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="learn-column space-y-4">
         <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="classroom" />} />
         <div className="card loading-card" role="status" aria-busy="true" aria-label="Loading queue">
           <div className="loading-spinner" aria-hidden="true" />
@@ -218,11 +218,11 @@ export default function Learn() {
   if (error && items.length === 0) return <Err error={error} status={null} />;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="learn-column space-y-4">
       <PageHeader title="Practice" subtitle="One question at a time, taught your way." art={<PageArt name="classroom" />} />
       <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] pb-3">
         {items.length ? (
-          <span className="ml-4 text-sm text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+          <span className="ml-4 t-small text-[var(--muted)]">
             {Math.min(i + 1, items.length)} of {items.length}
           </span>
         ) : null}

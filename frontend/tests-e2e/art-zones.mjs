@@ -74,8 +74,9 @@ export function inspectArtZones() {
     for (const a of art)
       if (intersects(box(p), box(a), 16)) failures.push("Pattern touches art");
   if (innerWidth < 900 && patterns.length) failures.push("Pattern below 900px");
-  if (innerWidth < 600 && art.some((n) => n.dataset.art !== "flower"))
-    failures.push("Phone hero other than consent flower");
+  // Phones may carry header art, but only the small version (it must never push the content down).
+  if (innerWidth < 600 && art.some((n) => n.dataset.art !== "flower" && n.getBoundingClientRect().height > 160))
+    failures.push("Phone art larger than the small header size");
   return {
     failures,
     patternCount: patterns.length,

@@ -53,7 +53,7 @@ export function ProgressBar({ state }: { state: JourneyState | null }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 t-small text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 t-small text-[var(--muted)]">
         <span data-testid="journey-percent">{pct}%</span>
         <span>{words}</span>
       </div>
@@ -81,7 +81,7 @@ export function StageList({ state, onSkip, busy }: { state: JourneyState | null;
               here ? "border-[var(--accent)] bg-[var(--panel)]" : "border-transparent"
             }`}
           >
-            <span className="t-small text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+            <span className="t-small text-[var(--muted)]">
               {String(step.n).padStart(2, "0")}
             </span>
             <Link href={step.href} className="link-inline">
@@ -179,7 +179,7 @@ export function SignedOutPath() {
   return (
     <ol className="space-y-1" data-testid="journey-stages">
       <li data-stage="account" data-status="todo" aria-current="step" className="flex items-baseline gap-3 rounded-[2px] border border-[var(--accent)] bg-[var(--panel)] px-3 py-2 text-sm">
-        <span className="t-small text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        <span className="t-small text-[var(--muted)]">
           01
         </span>
         <Link href="/" className="link-inline">

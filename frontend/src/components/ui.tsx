@@ -7,6 +7,7 @@ import { Icon, type IconName } from "./icons";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { pushEntry, readLedger, writeLedger } from "@/lib/ledger";
+import { RouteArt } from "./shell/PageArt";
 
 type Loader = (path: string, init: { method: string; json: unknown }) => Promise<unknown>;
 
@@ -76,7 +77,7 @@ export function PageHeader({
         {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
         {actions ? <div className="wrap-2" style={{ marginTop: "var(--s3)" }}>{actions}</div> : null}
       </div>
-      {art ? <div className="page-header-art" aria-hidden="true">{art}</div> : null}
+      <div className="page-header-art" aria-hidden="true">{art ?? <RouteArt />}</div>
     </header>
   );
 }
@@ -236,7 +237,7 @@ export function Band({
     <span className="inline-flex items-center gap-2">
       <Tag tone={tone as "good"}>{band}</Tag>
       {fallbackHasPoint && (
-        <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>
+        <span className="inline-flex items-center gap-1 t-small text-[var(--muted)]">
           <span className="h-1.5 w-16 overflow-hidden rounded-[2px] bg-[var(--panel-2)] border border-[var(--line)]">
             <span className="block h-full bg-[var(--accent)]" style={{ width: `${width}%` }} />
           </span>
@@ -265,10 +266,10 @@ export function Notice({ children, tone = "warn" }: { children: ReactNode; tone?
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <label className="block">
-      <span className="mb-1 block t-label">{label}</span>
+    <label className="field block">
+      <span className="field-label mb-1 block t-label">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-[var(--muted)]">{hint}</span>}
+      {hint && <span className="mt-1 block t-small text-[var(--muted)]">{hint}</span>}
     </label>
   );
 }
@@ -289,11 +290,11 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 
 export function Check({ label, checked, onChange, hint }: { label: ReactNode; checked: boolean; onChange: (v: boolean) => void; hint?: ReactNode }) {
   return (
-    <label className="flex cursor-pointer items-start gap-2 text-sm">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-1 accent-[var(--accent)]" />
+    <label className="check flex cursor-pointer items-start gap-3 text-sm">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="check-box mt-1 accent-[var(--accent)]" />
       <span>
         {label}
-        {hint && <span className="mt-0.5 block text-xs text-[var(--muted)]">{hint}</span>}
+        {hint && <span className="mt-0.5 block t-small text-[var(--muted)]">{hint}</span>}
       </span>
     </label>
   );
@@ -323,9 +324,9 @@ export function Trace({ title = "why", children }: { title?: string; children: R
 export function When({ ts }: { ts?: string | null }) {
   if (!ts) return null;
   const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return <span className="text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{ts}</span>;
+  if (Number.isNaN(d.getTime())) return <span className="when">{ts}</span>;
   return (
-    <span className="text-xs text-[var(--muted)]" title={d.toLocaleString()} style={{ fontFamily: "var(--font-mono)" }}>
+    <span className="when" title={d.toLocaleString()}>
       {d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
       {d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
     </span>
