@@ -155,7 +155,6 @@ export const routeIcon: Record<string, IconName> = {
   "/progress": "bars",
   "/proposals": "message",
   "/baseline": "play",
-  "/contrast": "compare",
   "/evidence": "search",
   "/voice": "mic",
   "/settings": "sliders",

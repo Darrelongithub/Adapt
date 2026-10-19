@@ -150,7 +150,6 @@ export default function Review() {
         <div className="space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-3">
             <h2 className="t-h2" style={{ margin: 0 }}>{`${rows.length} waiting`}</h2>
-            <span className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)" }}>{`${rows.length} waiting`}</span>
           </div>
           {/* Horizon: spatial encoding of due position, driven by real due_at. */}
           <div className="horizon" aria-hidden="true" style={{ marginTop: "var(--s3)" }}>
@@ -169,18 +168,12 @@ export default function Review() {
                   style={{ left, position: "absolute", top: "28px", transform: "translateX(-50%)", transition: "left 420ms cubic-bezier(0.22,1,0.36,1)" }}
                   title={`${r.title} · due ${when(scheduledDue)}${done ? ` · rated ${done.correct ? "recalled" : "forgotten"}` : ""}`}
                 >
-                  <span className="rv-dot" style={{
-                    display: "block",
-                    width: 10, height: 10, borderRadius: "50%",
-                    background: tone === "good" ? "var(--good)" : tone === "warn" ? "var(--warn)" : "var(--think)",
-                    border: "2px solid var(--panel)",
-                    boxShadow: "0 0 0 1px var(--line)",
-                  }} />
-                  <span className="rv-label" style={{ fontFamily: "var(--font-mono)", fontSize: 10, whiteSpace: "nowrap", color: "var(--muted)", marginTop: 4, display: "block", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }}>{friendlyLabel(r.title) ?? "Review topic"}</span>
+                  <span className="rv-dot" />
+                  <span className="rv-label">{friendlyLabel(r.title) ?? "Review topic"}</span>
                 </div>
               );
             })}
-            <div className="horizon-axis" style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: "var(--line)" }} />
+            <div className="horizon-axis" />
           </div>
 
           <div className="space-y-5">

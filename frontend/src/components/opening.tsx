@@ -1,6 +1,7 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Artwork } from './art/Artwork';
 
 // Exported so this is trivial to extend later — exact wording and blue word preserved
 // from product requirements; do not reorder or reword without explicit approval.
@@ -16,6 +17,13 @@ export const OPENING_PHRASES: { text: string; blue: string }[] = [
 ];
 
 const IDX_KEY = 'adapt:phrase-idx';
+
+/** The whole opening: about 6 seconds from first paint to the app (5.4s on screen + 0.6s fade).
+ *  Long enough to read the line and notice the drawing; short enough not to be waited out.
+ *  Any click or key press skips it. Reduced motion gets a shorter, static version. */
+export const OPENING_HOLD_MS = 5400;
+export const OPENING_FADE_MS = 600;
+const REDUCED_HOLD_MS = 2800;
 
 function pickPhrase() {
   if (typeof window === 'undefined') return OPENING_PHRASES[0];
@@ -51,10 +59,18 @@ export function Opening({ children }: { children?: ReactNode }) {
       }
       setPhase("showing");
     } else if (phase === "showing") {
-      const timer = setTimeout(dismiss, 10000);
-      return () => clearTimeout(timer);
+      const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      const timer = setTimeout(dismiss, reduced ? REDUCED_HOLD_MS : OPENING_HOLD_MS);
+      const skip = () => dismiss();
+      window.addEventListener("keydown", skip);
+      window.addEventListener("pointerdown", skip);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener("keydown", skip);
+        window.removeEventListener("pointerdown", skip);
+      };
     } else if (phase === "leaving") {
-      const timer = setTimeout(() => setPhase("done"), 500);
+      const timer = setTimeout(() => setPhase("done"), OPENING_FADE_MS);
       return () => clearTimeout(timer);
     }
   }, [allowedHere, phase, dismiss]);
@@ -71,24 +87,33 @@ export function Opening({ children }: { children?: ReactNode }) {
           role="status"
           aria-live="polite"
           aria-label="Loading ADAPT"
+          style={{ ['--opening-hold' as string]: `${OPENING_HOLD_MS}ms` }}
         >
-          {phrase ? (
-            <p className="opening-phrase" aria-label={phrase.text}>
-              {words.map((w, i) => {
-                const isBlue = w.replace(/[?.!,]/g, '') === phrase.blue || w.includes(phrase.blue);
-                return (
-                  <span
-                    key={`${phrase.text}-${i}`}
-                    aria-hidden="true"
-                    className={`opening-word${isBlue ? ' blue' : ''}`}
-                    style={{ animationDelay: `${i * 0.14}s` }}
-                  >
-                    {w}
-                  </span>
-                );
-              })}
-            </p>
-          ) : null}
+          <div className="opening-art" aria-hidden="true">
+            <Artwork name="knowledge-tree" scene />
+          </div>
+          <div className="opening-stage">
+            <span className="opening-mark" aria-hidden="true">adapt</span>
+            {phrase ? (
+              <p className="opening-phrase" aria-label={phrase.text}>
+                {words.map((w, i) => {
+                  const isBlue = w.replace(/[?.!,]/g, '') === phrase.blue || w.includes(phrase.blue);
+                  return (
+                    <span
+                      key={`${phrase.text}-${i}`}
+                      aria-hidden="true"
+                      className={`opening-word${isBlue ? ' blue' : ''}`}
+                      style={{ animationDelay: `${0.35 + i * 0.13}s` }}
+                    >
+                      {w}
+                    </span>
+                  );
+                })}
+              </p>
+            ) : null}
+            <span className="opening-hint" aria-hidden="true">Click or press any key to continue</span>
+          </div>
+          <div className="opening-progress" aria-hidden="true" />
         </div>
       ) : null}
     </>

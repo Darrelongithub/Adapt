@@ -318,7 +318,7 @@ export default function Journey() {
             </Card>
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-3" aria-label="Path overview">
+          <div className="path-steps grid gap-3 sm:grid-cols-3" aria-label="Path overview">
             <div className="card" data-tone="sand" style={{ padding: "var(--s3) var(--s4)" }}>
               <div className="kicker">Step 01</div>
               <h3 className="t-h3" style={{ marginTop: "4px" }}>Mind check</h3>
@@ -390,7 +390,7 @@ function SubjectChooser({
         </form>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-3" aria-label="Path steps">
+      <div className="path-steps grid gap-3 sm:grid-cols-3" aria-label="Path steps">
         <div className="card" data-tone="sand" style={{ padding: "var(--s3) var(--s4)" }}>
           <div className="kicker">Step 01</div>
           <h3 className="t-h3" style={{ marginTop: "4px" }}>Choose a subject</h3>

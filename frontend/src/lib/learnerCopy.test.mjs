@@ -22,15 +22,6 @@ test("demo profiles do not mention a profile version", () => {
   assert.doesNotMatch(foot, /piece/);
 });
 
-test("contrast page no longer prints the old footer or the raw mode note", () => {
-  const src = readFileSync(new URL("../app/contrast/page.tsx", import.meta.url), "utf8");
-  assert.match(src, /contrastFoot/);
-  assert.match(src, /evidenceMark/);
-  assert.doesNotMatch(src, /planned from profile version/);
-  assert.doesNotMatch(src, /\{panel\.mode_note\}/);
-  assert.doesNotMatch(src, /\(err as Error\)\.message/);
-});
-
 test("the onboarding exemption is gone: the old copy now fails on every route", () => {
   // Phase A asked Phase D to replace this sentence and then delete the allowance, so that
   // a regression cannot hide behind it. Both halves are asserted here: the text is caught

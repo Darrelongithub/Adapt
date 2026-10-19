@@ -18,7 +18,7 @@ const EXECUTABLE = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? "/opt/pw-browse
 const ROUTES = [
   ["home", "/"], ["learn", "/learn"], ["review", "/review"], ["progress", "/progress"],
   ["settings", "/settings"], ["lesson", "/lesson"], ["journey", "/journey"], ["proposals", "/proposals"],
-  ["contrast", "/contrast"], ["baseline", "/baseline"], ["evidence", "/evidence"], ["voice", "/voice"],
+  ["baseline", "/baseline"], ["evidence", "/evidence"], ["voice", "/voice"],
   ["onboarding", "/onboarding"], ["diagnose", "/diagnose"], ["first-lesson", "/first-lesson"],
 ];
 const SIZES = [["desktop", { width: 1440, height: 900 }], ["mobile", { width: 390, height: 844 }]];

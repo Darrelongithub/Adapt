@@ -94,10 +94,6 @@ async function crawlContext(context, label, routes) {
         !routeOk ? `HTTP ${response?.status() ?? "n/a"}` : "",
       ].filter(Boolean).join("; ");
       note(`${label} ${route}`, routeOk && hits.length === 0, detail || `HTTP ${response.status()}`);
-      if (label === "signed in" && route === "/contrast") {
-        const hasUnhelpfulCounts = /stated,\s*n=0|planned from profile version\s+0,?\s+0 pieces of evidence/i.test(text);
-        note("signed-in /contrast uses learner-safe demo evidence wording", !hasUnhelpfulCounts);
-      }
     } catch (error) {
       note(`${label} ${route}`, false, `could not crawl: ${error?.message ?? error}`);
     }
