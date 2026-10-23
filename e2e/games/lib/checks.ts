@@ -23,7 +23,9 @@ export function checkVerdicts(ledger: Ledger): void {
     if (want.correct !== undefined && want.correct !== null) {
       expect(scored.correct, `trial ${i} (${want.game}): the server's verdict; sent ${JSON.stringify(want.given)}, server said ${JSON.stringify(scored)}`).toBe(want.correct);
     }
-    if (want.game === "quick" || want.game === "trap") {
+    // A `timeout` is the clock ending the lap: it has no choice to compare (the server records an
+    // empty `given`), so the comparison only applies to the taps and traps that made one.
+    if ((want.game === "quick" || want.game === "trap") && want.given !== undefined) {
       expect(scored.given, `trial ${i} (${want.game}): the server stored a different choice`).toBe(want.given);
     }
     if (want.game === "codewords_delayed_predict") {

@@ -213,6 +213,11 @@ DEFAULT_LIMITS: dict[str, tuple[float, float]] = {
     "auth_fail": (5.0, 5.0),
     "guest_create": (6.0, 6.0),
     "mutation": (90.0, 180.0),
+    # A baseline trial is one tap in a self-paced game, and "Quick taps" asks for a tap every couple
+    # of seconds -- three laps of it is more than the general mutation bucket allows in a minute, so
+    # a fast learner was being throttled mid-lap and the page showed it as taps that did nothing.
+    # This is per (scope, student), so raising it cannot starve anyone else's bucket.
+    "baseline_trial": (240.0, 360.0),
     "llm": (8.0, 12.0),
     "gemini": (4.0, 8.0),
     "openalex": (50.0, 100.0),  # polite pool: 10/s documented, we stay far below

@@ -1,7 +1,10 @@
 /*
- * The baseline's own furniture (round 2, phase F). The baseline page used class names that no
- * stylesheet defined, so its choices, inputs and snapshot rows ran together on screen. Every rule
- * here sits under .baseline-page, so nothing leaks into the other pages.
+ * The baseline's own furniture (round 2, phase F) and its games (round 7).
+ *
+ * Every rule sits under .baseline-page so nothing leaks into the other pages. The game classes are
+ * additive: the names the probe and the Playwright suite rely on (.baseline-task, .baseline-pairs,
+ * .vault-grid, .baseline-story, .baseline-cue, .baseline-snapshot) keep their jobs, and the new
+ * classes only dress them.
  */
 
 .baseline-page {
@@ -27,7 +30,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
@@ -43,24 +46,47 @@
   position: relative;
   height: 6px;
   margin: 0.75rem 0 1rem;
-  background: var(--accent-dim);
-  border-radius: 2px;
+  background: var(--accent-dim, var(--tint-blue));
+  border-radius: 999px;
   overflow: hidden;
 }
 
 .baseline-page .baseline-bar > span {
   display: block;
   height: 100%;
-  background: var(--accent);
-  transition: width 0.3s ease;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--think));
+  transition: width 0.45s var(--ease);
 }
 
-/* A task: its header (timer and practice tag), prompt, story, cue. */
-.baseline-page .baseline-task {
+/* ------------------------------------------------------------------ the game ---- */
+
+/* The stage is a card the game lives inside: a soft tinted top, a quiet shadow, and enough room
+   that a phone can play it with a thumb. */
+.baseline-page .game-stage {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  padding: clamp(1rem, 2.4vw, 1.6rem);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background:
+    radial-gradient(120% 90% at 100% 0%, var(--tint-blue) 0%, transparent 58%),
+    radial-gradient(90% 80% at 0% 100%, var(--tint-sand) 0%, transparent 55%),
+    var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.baseline-page .game-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent), var(--think), var(--good));
+  opacity: 0.85;
 }
 
 .baseline-page .baseline-task-head {
@@ -71,17 +97,67 @@
   font-size: 0.9375rem;
 }
 
+.baseline-page .game-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 28px;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.baseline-page .game-chip.level {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.baseline-page .game-chip.ghost {
+  border-style: dashed;
+  color: var(--muted);
+  background: transparent;
+}
+
 .baseline-page .baseline-prompt {
-  font-size: 1.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
   font-weight: 600;
-  line-height: 1.3;
-  margin: 0.5rem 0 0.25rem;
+  line-height: 1.25;
+  margin: 0.35rem 0 0.15rem;
+  color: var(--ink);
+}
+
+.baseline-page .game-prompt .monoline-icon {
+  margin-top: 0.15rem;
+  padding: 0.35rem;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .baseline-page .baseline-story {
   margin: 0.5rem 0;
-  max-width: 40rem;
-  line-height: 1.5;
+  max-width: 44rem;
+  line-height: 1.55;
+}
+
+.baseline-page .story-card {
+  padding: 0.9rem 1rem;
+  border-left: 4px solid var(--accent);
+  border-radius: 0 var(--r-tile) var(--r-tile) 0;
+  background: var(--panel);
+  box-shadow: var(--shadow-soft);
 }
 
 .baseline-page .baseline-cue {
@@ -89,6 +165,19 @@
   font-size: 0.8125rem;
   color: var(--muted);
   margin: 0.25rem 0;
+}
+
+.baseline-page .cue-card {
+  display: inline-block;
+  margin: 0.5rem 0 0.85rem;
+  padding: 0.7rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: var(--white);
+  font-family: var(--font-serif);
+  font-size: clamp(1.35rem, 3vw, 1.9rem);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
 }
 
 .baseline-page .baseline-label {
@@ -121,6 +210,822 @@
   font-size: 0.875rem;
 }
 
+/* The verdict strip: shown on the screen that follows an answer, so nobody has to guess. */
+.baseline-page .result-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0.15rem 0 0.35rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: var(--panel);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  animation: result-in 0.28s var(--ease);
+}
+
+.baseline-page .result-strip.good {
+  border-color: var(--good);
+  background: var(--tint-mint);
+  color: var(--good);
+}
+
+.baseline-page .result-strip.bad {
+  border-color: var(--bad);
+  background: var(--tint-peach);
+  color: var(--bad);
+}
+
+.baseline-page .result-strip.neutral {
+  border-color: var(--line);
+  background: var(--accent-soft);
+  color: var(--body);
+}
+
+.baseline-page .result-why {
+  color: var(--body);
+  font-weight: 400;
+}
+
+@keyframes result-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------- game bodies ---- */
+
+/* Each game's own body is a plain wrapper with the same stack: one column, one rhythm. */
+.baseline-page .quick-stage,
+.baseline-page .vault-stage,
+.baseline-page .study-stage,
+.baseline-page .shop-stage,
+.baseline-page .machine-stage,
+.baseline-page .box-stage,
+.baseline-page .trap-stage,
+.baseline-page .delayed-stage,
+.baseline-page .predict-stage,
+.baseline-page .free-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.baseline-page .free-form .row {
+  margin-top: 0.1rem;
+}
+
+.baseline-page .game-help {
+  margin: 0.2rem 0 0;
+}
+
+/* ------------------------------------------------------------------- quick ---- */
+
+.baseline-page .quick-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.baseline-page .game-hud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.baseline-page .hud-score,
+.baseline-page .hud-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--white);
+  box-shadow: var(--shadow-soft);
+}
+
+.baseline-page .hud-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.baseline-page .hud-value {
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
+  color: var(--ink);
+}
+
+.baseline-page .hud-score.hot {
+  border-color: var(--warn);
+  background: var(--tint-sand);
+}
+
+.baseline-page .hud-clock.low .hud-value {
+  color: var(--bad);
+}
+
+.baseline-page .hud-streak {
+  flex: 1;
+  min-width: 8rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.baseline-page .timer-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--tint-blue);
+  overflow: hidden;
+}
+
+.baseline-page .timer-track > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--good), var(--accent));
+  transition: width 0.12s linear;
+}
+
+.baseline-page .timer-track.low > span {
+  background: linear-gradient(90deg, var(--warn), var(--bad));
+}
+
+.baseline-page .baseline-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.baseline-page .quick-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+.baseline-page .baseline-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 48px;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+
+.baseline-page .baseline-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-1px);
+}
+
+.baseline-page .baseline-option:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+}
+
+.baseline-page .baseline-option strong {
+  font-weight: 500;
+}
+
+.baseline-page .baseline-option.on,
+.baseline-page .baseline-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.baseline-page .baseline-option:disabled {
+  opacity: 0.62;
+  cursor: default;
+}
+
+.baseline-page .baseline-option:focus-visible,
+.baseline-page .coin:focus-visible,
+.baseline-page .vault-tile:focus-visible,
+.baseline-page .study-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A quick tap is a big, chunky key: on a phone it fills the row, and it answers with its colour. */
+.baseline-page .quick-option {
+  min-height: 76px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: clamp(1.1rem, 2.6vw, 1.45rem);
+  animation: option-in 0.22s var(--ease) both;
+}
+
+.baseline-page .quick-option.is-right {
+  border-color: var(--good);
+  background: var(--tint-mint);
+  color: var(--good);
+  transform: translateY(-2px);
+}
+
+.baseline-page .quick-option.is-wrong {
+  border-color: var(--bad);
+  background: var(--tint-peach);
+  color: var(--bad);
+  animation: shake 0.24s var(--ease);
+}
+
+/* The tap that has been sent but not yet judged: it stays lit, so a tap never looks ignored. */
+.baseline-page .quick-option.is-chosen {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  transform: translateY(-2px);
+}
+
+.baseline-page .quick-option.is-chosen::after {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-top: 0.15rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: tap-wait 0.7s ease-in-out infinite alternate;
+}
+
+.baseline-page .tap-mark {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.baseline-page .tap-mark.good {
+  color: var(--good);
+}
+
+.baseline-page .tap-mark.bad {
+  color: var(--bad);
+}
+
+.baseline-page .quick-retry {
+  align-items: center;
+}
+
+/* The ladder, as five pips: the level is visible without reading the chip. */
+.baseline-page .quick-rung {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.baseline-page .quick-rung-track {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.baseline-page .quick-rung-track > span {
+  width: 22px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.2s var(--ease);
+}
+
+.baseline-page .quick-rung-track > span.on {
+  background: var(--accent);
+}
+
+@keyframes tap-wait {
+  from {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.baseline-page .result-game {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 0.15rem;
+}
+
+@keyframes option-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+/* ------------------------------------------------------------- word memory ---- */
+
+.baseline-page .study-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.baseline-page .study-hud {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.baseline-page .study-ring {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  flex: none;
+}
+
+.baseline-page .study-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.baseline-page .study-ring circle {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.baseline-page .study-ring .ring-track {
+  stroke: var(--tint-blue);
+}
+
+.baseline-page .study-ring .ring-fill {
+  stroke: var(--accent);
+  stroke-dasharray: 113;
+  transition: stroke-dashoffset 0.4s linear;
+}
+
+.baseline-page .study-ring span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.baseline-page .study-hint {
+  flex: 1;
+  min-width: 12rem;
+  margin: 0;
+  color: var(--body);
+}
+
+.baseline-page .study-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.baseline-page .study-grid > li {
+  animation: card-deal 0.45s var(--ease) both;
+}
+
+.baseline-page .study-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  width: 100%;
+  min-height: 92px;
+  padding: 0.7rem 0.75rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background:
+    linear-gradient(160deg, var(--white) 0%, var(--tint-sand) 130%);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.baseline-page .study-card:hover {
+  transform: translateY(-2px) rotate(-0.4deg);
+  border-color: var(--accent);
+}
+
+.baseline-page .study-card::before {
+  content: attr(data-index);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.15rem;
+}
+
+.baseline-page .study-code {
+  font-family: var(--font-mono);
+  font-size: 1.02rem;
+  letter-spacing: 0.02em;
+}
+
+.baseline-page .study-arrow {
+  color: var(--accent);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.baseline-page .study-place {
+  font-size: 0.9rem;
+  color: var(--body);
+  transition: opacity 0.2s var(--ease), filter 0.2s var(--ease);
+}
+
+.baseline-page .study-card.is-covered {
+  border-color: var(--accent);
+  background:
+    repeating-linear-gradient(135deg, var(--accent-soft) 0 8px, var(--tint-blue) 8px 16px);
+}
+
+.baseline-page .study-card.is-covered .study-place,
+.baseline-page .study-card.is-covered .study-arrow {
+  opacity: 0;
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+.baseline-page .study-card.is-covered::after {
+  content: "tap to look again";
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+@keyframes card-deal {
+  from {
+    opacity: 0;
+    transform: translateY(14px) rotate(-1.5deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------------- vault ---- */
+
+.baseline-page .vault-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.baseline-page .vault-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.baseline-page .vault-state {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.baseline-page .vault-state.watching {
+  color: var(--think);
+}
+
+.baseline-page .vault-state.watching::before {
+  content: "● ";
+  animation: blink 0.9s steps(2, start) infinite;
+  color: var(--bad);
+}
+
+@keyframes blink {
+  to {
+    opacity: 0.2;
+  }
+}
+
+.baseline-page .vault-dots {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.baseline-page .vault-dots span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: transparent;
+  transition: background 0.15s var(--ease);
+}
+
+.baseline-page .vault-dots span.on {
+  background: var(--accent);
+}
+
+.baseline-page .vault-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  width: min(100%, 22rem);
+  margin: 0.25rem 0 0.35rem;
+}
+
+.baseline-page .vault-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: linear-gradient(160deg, var(--white), var(--panel));
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 1.35rem;
+  cursor: pointer;
+  box-shadow: inset 0 -3px 0 var(--line), var(--shadow-soft);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.baseline-page .vault-tile:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.baseline-page .vault-tile:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.baseline-page .vault-tile.flash {
+  background: linear-gradient(160deg, var(--accent), var(--think));
+  border-color: var(--accent-strong);
+  color: var(--white);
+  transform: scale(1.05);
+  box-shadow: 0 0 0 6px var(--accent-soft), var(--shadow);
+}
+
+.baseline-page .vault-tile.tapped {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.baseline-page .vault-tile.wrong {
+  border-color: var(--bad);
+  background: var(--tint-peach);
+  color: var(--bad);
+  animation: shake 0.24s var(--ease);
+}
+
+.baseline-page .vault-tile:disabled {
+  cursor: default;
+}
+
+/* During the flash the grid is `aria-disabled`, not disabled: the keyboard cursor stays put and a
+   tap is answered in words instead of being swallowed. */
+.baseline-page .vault-grid[aria-busy="true"] .vault-tile {
+  opacity: 0.8;
+  cursor: progress;
+}
+
+.baseline-page .vault-progress {
+  height: 6px;
+  width: min(100%, 22rem);
+  border-radius: 999px;
+  background: var(--tint-blue);
+  overflow: hidden;
+}
+
+.baseline-page .vault-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.2s var(--ease);
+}
+
+/* --------------------------------------------------------------- shopkeeper ---- */
+
+.baseline-page .shop-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.5rem;
+}
+
+.baseline-page .shop-items > li {
+  padding: 0.7rem 0.85rem;
+  border: 1px dashed var(--accent);
+  border-radius: var(--r-tile);
+  background: var(--accent-soft);
+}
+
+.baseline-page .shop-row {
+  margin-top: 0.4rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--line);
+}
+
+/* ----------------------------------------------------------------- machine ---- */
+
+.baseline-page .machine-meter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.baseline-page .meter-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 0.15rem;
+}
+
+.baseline-page .meter-label + .meter-dot {
+  margin-right: 0.5rem;
+}
+
+.baseline-page .meter-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: transparent;
+}
+
+.baseline-page .meter-dot.on {
+  background: var(--accent);
+}
+
+.baseline-page .meter-dot.bad {
+  border-color: var(--bad);
+}
+
+.baseline-page .meter-dot.bad.on {
+  background: var(--bad);
+}
+
+.baseline-page .machine-in-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.baseline-page .machine-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+}
+
+.baseline-page .machine-history li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--white);
+}
+
+.baseline-page .machine-history li.is-edge {
+  border-color: var(--think);
+  background: var(--tint-blue);
+}
+
+/* -------------------------------------------------------------- locked box ---- */
+
+.baseline-page .box-cases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0.65rem;
+}
+
+.baseline-page .box-case {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 3.6rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: var(--white);
+  box-shadow: var(--shadow-soft);
+}
+
+.baseline-page .box-case strong {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+}
+
+.baseline-page .box-case .box-n {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.baseline-page .box-case.unknown {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ----------------------------------------------------------------- predict ---- */
+
+.baseline-page .predict-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(3.2rem, 1fr));
+}
+
+.baseline-page .predict-option {
+  align-items: center;
+  min-height: 56px;
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+}
+
+/* Inputs and rows of controls. */
+.baseline-page .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.baseline-page .input {
+  min-width: min(100%, 18rem);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+}
+
+.baseline-page .input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.baseline-page .game-input {
+  min-height: 48px;
+  font-size: 1rem;
+}
+
 /* Questions: one fieldset per question, its choices as wrapped buttons. */
 .baseline-page .baseline-q {
   display: flex;
@@ -141,76 +1046,6 @@
   margin-bottom: 0.25rem;
   padding: 0;
   line-height: 1.4;
-}
-
-.baseline-page .baseline-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.baseline-page .baseline-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--panel);
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.baseline-page .baseline-option strong {
-  font-weight: 500;
-}
-
-.baseline-page .baseline-option.on,
-.baseline-page .baseline-option[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-  font-weight: 600;
-}
-
-.baseline-page .baseline-option:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.baseline-page .baseline-option:focus-visible,
-.baseline-page .coin:focus-visible,
-.baseline-page .vault-tile:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* Inputs and rows of controls. */
-.baseline-page .row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.baseline-page .input {
-  min-width: min(100%, 18rem);
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--panel);
-  color: var(--ink);
-  font: inherit;
-}
-
-.baseline-page .input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 /* Coins (confidence wager). */
@@ -236,42 +1071,7 @@
 .baseline-page .coin.on {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
-}
-
-/* The vault: a grid of tiles that light up, then are tapped back. */
-.baseline-page .vault-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
-  max-width: 18rem;
-  margin: 1rem 0;
-}
-
-.baseline-page .vault-tile {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 56px;
-  aspect-ratio: 1;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--panel);
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: 1.25rem;
-  cursor: pointer;
-}
-
-.baseline-page .vault-tile.flash {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.baseline-page .vault-tile.tapped {
-  border-color: var(--accent);
-  font-weight: 600;
+  color: var(--white);
 }
 
 /* Hint shop: a disclosure with a list of hints. */
@@ -294,6 +1094,60 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* ------------------------------------------------------------- the history ---- */
+
+.baseline-page .history-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.baseline-page .history-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.baseline-page .history-row:first-child {
+  border-top: 0;
+}
+
+.baseline-page .history-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.baseline-page .history-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.baseline-page .history-best {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  text-align: right;
+}
+
+.baseline-page .baseline-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 /* Snapshot: one ruled row per factor; the range and n sit on the title line. */
@@ -344,7 +1198,100 @@
   margin-top: 1rem;
 }
 
-.baseline-hero { position: relative; overflow: hidden; border-radius: 24px; padding: clamp(24px,4vw,44px); background: var(--blue-soft, #eaf2fb); min-height: 190px; align-items: center; }
-.baseline-brain-art { position:absolute; right: 4%; top: 8%; width: min(28vw,240px); height: min(28vw,180px); }
-.baseline-hero > div:first-child { position:relative; z-index:1; max-width:68%; }
-@media(max-width:640px){ .baseline-hero { min-height:150px; padding:20px; } .baseline-brain-art { width:112px; height:100px; right:5px; top:18px; opacity:.7; } .baseline-hero > div:first-child { max-width:78%; } }
+.baseline-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  padding: clamp(24px, 4vw, 44px);
+  background: var(--blue-soft, var(--tint-blue));
+  min-height: 190px;
+  align-items: center;
+}
+
+.baseline-brain-art {
+  position: absolute;
+  right: 4%;
+  top: 8%;
+  width: min(28vw, 240px);
+  height: min(28vw, 180px);
+}
+
+.baseline-hero > div:first-child {
+  position: relative;
+  z-index: 1;
+  max-width: 68%;
+}
+
+/* ---------------------------------------------------------------- phone ---- */
+
+@media (max-width: 767px) {
+  .baseline-page .game-stage {
+    padding: 0.9rem;
+    border-radius: 18px;
+  }
+
+  .baseline-page .study-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .baseline-page .study-card {
+    min-height: 84px;
+  }
+
+  .baseline-page .quick-option {
+    min-height: 64px;
+  }
+
+  .baseline-page .hud-streak {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .baseline-page .history-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .baseline-page .history-best {
+    width: 100%;
+    text-align: left;
+    padding-left: 3.1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .baseline-hero {
+    min-height: 150px;
+    padding: 20px;
+  }
+
+  .baseline-brain-art {
+    width: 112px;
+    height: 100px;
+    right: 5px;
+    top: 18px;
+    opacity: 0.7;
+  }
+
+  .baseline-hero > div:first-child {
+    max-width: 78%;
+  }
+}
+
+/* Motion is a garnish here: the sequence and the clock still show without it. */
+@media (prefers-reduced-motion: reduce) {
+  .baseline-page .quick-option,
+  .baseline-page .study-grid > li,
+  .baseline-page .result-strip,
+  .baseline-page .vault-state.watching::before {
+    animation: none;
+  }
+
+  .baseline-page .study-card,
+  .baseline-page .vault-tile,
+  .baseline-page .baseline-option,
+  .baseline-page .baseline-bar > span,
+  .baseline-page .timer-track > span {
+    transition: none;
+  }
+}

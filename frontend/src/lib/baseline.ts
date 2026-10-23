@@ -31,6 +31,30 @@ export type BaselineTask = {
   prompt?: string;
   practice?: boolean;
   max_latency_ms?: number;
+  /** Timed games: the lap's length and how far into it the task sits. */
+  lap_seconds?: number;
+  lap?: number;
+  lap_title?: string;
+  level?: number;
+  level_name?: string;
+  base_points?: number;
+  max_trials?: number;
+} & Json;
+
+/** The server's verdict on one answer, as the page is allowed to see it. */
+export type Scored = {
+  correct?: boolean | null;
+  expected?: string;
+  given?: unknown;
+  explain?: string;
+  action?: string;
+  points?: number;
+  streak?: number;
+  level?: number;
+  penalty_seconds?: number;
+  lap_over?: boolean;
+  hits?: number;
+  seconds_seen?: number | null;
 } & Json;
 
 export type FormatOption = { value: string; label: string; hint: string };
@@ -70,7 +94,7 @@ export type BaselineView = {
   answers?: Record<string, unknown>;
   completion?: Completion;
   /** The score of the trial just submitted, when there was one. */
-  scored?: Json | null;
+  scored?: Scored | null;
   duplicate?: boolean;
   refused?: string[];
   refused_note?: string;
@@ -124,6 +148,37 @@ export type NextDay = {
   note?: string;
 };
 
+/** One sitting and the best of each game, from the stored trial log. */
+export type RunRow = {
+  run_id: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  trials: number;
+  measured: number;
+  games: string[];
+};
+
+export type GameResult = {
+  game: string;
+  title: string;
+  plays: number;
+  answered: number;
+  correct: number;
+  last_played_at: string | null;
+  best: number | null;
+  best_label: string;
+  detail?: Json;
+};
+
+export type BaselineHistory = {
+  student_id: string;
+  has_open_run: boolean;
+  runs: RunRow[];
+  games: GameResult[];
+  totals: { sittings: number; completed_sittings: number; trials: number; measured: number };
+};
+
 export type TrialBody = {
   task_id: string;
   response: Json;
@@ -147,6 +202,9 @@ export const answer_questions = (run_id: string, answers: Record<string, unknown
 
 export const submit_trial = (run_id: string, body: TrialBody) =>
   post<BaselineView>(`/api/v1/baseline/${run_id}/trial`, body);
+
+/** Everything this learner has ever played, from the stored trials (never from a page's memory). */
+export const load_history = () => api<BaselineHistory>("/api/v1/baseline/history");
 
 /** Seal the run. A partial baseline is a finished baseline. */
 export const finish_baseline = (run_id: string) => post<BaselineSnapshot>(`/api/v1/baseline/${run_id}/finish`, {});

@@ -28,6 +28,7 @@ from .games import (
     locked_box_score,
     machine_respond,
     machine_switched,
+    quick_score,
     recall_score,
     seed_of,
     shopkeeper_score,
@@ -49,16 +50,33 @@ class BaselineError(RuntimeError):
 #: before the learner has answered: a served task that carries its own answer measures nothing.
 PRIVATE_TASK_KEYS: tuple[str, ...] = ("answer", "intuitive", "explain", "expected")
 
+#: Parts of a *verdict* that are diagnostic rather than feedback. The machine's rule name is the
+#: answer to the round, and its switch point is the thing the learner is supposed to discover;
+#: sending either back with every probe handed the answer to anyone who opened the network tab.
+PRIVATE_SCORED_KEYS: tuple[str, ...] = (
+    "rule_name",
+    "switch_after_probe",
+    "probes_after_switch",
+    "noticed",
+    "probes_before_noticing",
+)
 
-def public_scored(scored: Mapping[str, Any] | None) -> dict[str, Any]:
+
+def public_scored(scored: Mapping[str, Any] | None, task: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The verdict on a trial as the page may see it. The stored record keeps everything.
 
     ``expected`` is the right answer to the item just answered. A learner who is told it has the
     answer to a measured item they got wrong, and the same pairs come back in the delayed check, so
-    the reply to a *measured* answer does not carry it. (Practice answers are feedback, and the
-    practice reply keeps it.)
+    the reply to a *measured* recall answer does not carry it. (Practice answers are feedback, and
+    the practice reply keeps it.) A task that asks for feedback explicitly — the quick sprint and
+    the trap questions, where the answer is a fact rather than the thing being remembered — says so
+    with ``feedback: "show"``.
     """
-    return {k: v for k, v in dict(scored or {}).items() if k not in ("expected",)}
+    out = {k: v for k, v in dict(scored or {}).items() if k not in PRIVATE_SCORED_KEYS}
+    show = bool(task and task.get("feedback") == "show") or bool(task and task.get("phase") == "practice")
+    if show:
+        return out
+    return {k: v for k, v in out.items() if k not in ("expected", "explain")}
 
 
 def public_task(task: Mapping[str, Any] | None) -> dict[str, Any] | None:
@@ -470,6 +488,28 @@ class Baseline:
             action = response.get("action") or task.get("action")
             if action:
                 task = {**task, "action": action}
+            # A timed lap ends from the clock the page reports, not from a guess: the answer that
+            # arrives at or past the lap's budget closes the lap. Recording the closing action on
+            # the trial is what lets the flow's next-task function see the lap as finished.
+            if _game_of(task) == "quick":
+                try:
+                    elapsed = int(response.get("elapsed_ms") or 0)
+                except (TypeError, ValueError):
+                    elapsed = 0
+                if elapsed >= int(task.get("lap_seconds") or 0) * 1000:
+                    # A tap that landed at or after the whistle is not an answer to that item, even
+                    # if it happened to be right: counting it would reward the slowest tap in the
+                    # lap. The trial still keeps what was given, so nothing is lost from the record.
+                    task["action"] = "timeout"
+                    scored = {
+                        "correct": None,
+                        "action": "timeout",
+                        "expected": task.get("answer"),
+                        "given": scored.get("given"),
+                        "points": 0,
+                        "streak": 0,
+                        "lap_over": True,
+                    }
             index = len(trials)
             if scored.get("action"):
                 task["action"] = scored["action"]
@@ -514,7 +554,14 @@ class Baseline:
                     log.exception("baseline: could not ingest a trial into the evidence log")
             s.flush()
         out = self.view(student_id, run_id)
-        out["scored"] = public_scored(scored)
+        # The last answer of the last game *is* the end of the sitting. The page used to show the
+        # snapshot and leave the run open, so the history said "in progress" forever, the return
+        # visit never offered "welcome back", and the mind snapshot was never sealed into a row.
+        # Sealing here makes finishing the games enough: no extra click is needed to store it.
+        if out["kind"] == "snapshot" and out["status"] == "in_progress":
+            self.finish(student_id, run_id)
+            out["status"] = "complete"
+        out["scored"] = public_scored(scored, task)
         out["duplicate"] = False
         return out
 
@@ -669,6 +716,8 @@ class Baseline:
         if game == "vault":
             return vault_score(task, response)
         if game == "shopkeeper":
+            if not isinstance(response.get("distractors") or {}, Mapping):
+                raise BaselineError("the distractor answers must be a map from question id to true or false")
             return shopkeeper_score(task, response)
         if game in ("codewords_cued", "codewords_next_day"):
             return recall_score(task, response)
@@ -702,9 +751,28 @@ class Baseline:
             if action == "start":
                 return {"correct": None, "action": "start"}
             return {"action": "attempt", **locked_box_score(task, response)}
-        if game in ("quick", "trap"):
-            return choice_score(task, response)
+        if game == "quick":
+            # The streak is read from this lap's own history, not from the page: the HUD can be
+            # wrong, the record cannot.
+            return quick_score(task, response, streak_before=self._quick_streak(trials, task))
+        if game == "trap":
+            out = choice_score(task, response)
+            out["explain"] = task.get("explain")
+            out["intuitive"] = task.get("intuitive")
+            return out
         raise BaselineError(f"no scorer for game {game!r}")  # pragma: no cover
+
+    @staticmethod
+    def _quick_streak(trials: Sequence[Trial], task: Mapping[str, Any]) -> int:
+        """How many quick taps in a row were right *before* this one, in this lap."""
+        stage = str(task.get("stage") or "")
+        streak = 0
+        for t in reversed([t for t in trials if t.game == "quick" and str(t.task.get("stage") or "") == stage]):
+            if t.correct is True:
+                streak += 1
+            else:
+                break
+        return streak
 
     def _event(self, run_id: str, task: Mapping[str, Any], scored: Mapping[str, Any], correct: Any) -> Any:
         from ..state import EvidenceEvent
@@ -736,6 +804,10 @@ class Baseline:
         model = self.state.get_snapshot(student_id).model if self.state is not None else {}
         with self._sess() as s:
             run = self._run(s, run_id)
+            if run.status == "complete":
+                # Pressing "Stop here" on a sitting that is already sealed must not write a second
+                # mind snapshot for the same trial log. The first one is that sitting's record.
+                return self.snapshot(student_id)
             trials = self.trials_of(run_id, session=s)
             report = flow.stage_report(
                 trials,
@@ -759,6 +831,161 @@ class Baseline:
             snapshot_id = row.id
         out = self.snapshot(student_id)
         out["snapshot_id"] = snapshot_id
+        return out
+
+    # ------------------------------------------------------------------ #
+    # what was stored, in the learner's words
+    # ------------------------------------------------------------------ #
+    #: What each stored game is called on the results panel. The same names the page uses.
+    GAME_TITLES: Mapping[str, str] = {
+        "codewords_study": "Word memory",
+        "codewords_cued": "Word recall",
+        "quick": "Quick taps",
+        "vault": "Vault lights",
+        "shopkeeper": "Shopkeeper",
+        "machine": "Crack the machine",
+        "locked_box": "The locked box",
+        "trap": "Two questions to think about",
+        "codewords_delayed": "Delayed recall",
+    }
+
+    def history(self, student_id: str, *, limit: int = 10) -> dict[str, Any]:
+        """Every sitting this learner has played, and the best of each game.
+
+        The trials have always been stored; what was missing was a way to *see* them after the
+        snapshot had scrolled away. This reads the same rows the snapshot is built from, so a score
+        here and a factor there can never disagree — there is one record, and this is a view of it.
+        """
+        with self._sess() as s:
+            runs = (
+                s.query(BaselineRun)
+                .filter(BaselineRun.student_id == student_id)
+                .order_by(BaselineRun.started_at.desc())
+                .limit(max(1, int(limit)))
+                .all()
+            )
+            run_ids = [r.id for r in runs]
+            rows = (
+                s.query(BaselineTrial)
+                .filter(BaselineTrial.run_id.in_(run_ids))
+                .order_by(BaselineTrial.created_at.asc())
+                .all()
+                if run_ids
+                else []
+            )
+            run_rows = [
+                {
+                    "run_id": r.id,
+                    "status": r.status,
+                    "started_at": r.started_at.isoformat() if r.started_at else None,
+                    "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                }
+                for r in runs
+            ]
+            open_run = any(r.status == "in_progress" for r in runs)
+            # Read what is needed inside the session: the encrypted columns are decrypted on load.
+            plain = [
+                {
+                    "run_id": row.run_id,
+                    "game": row.game,
+                    "phase": row.phase,
+                    "correct": row.correct,
+                    "task": dict(row.task or {}),
+                    "response": dict(row.response or {}),
+                    "score": dict(row.score or {}),
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in rows
+            ]
+        by_run: dict[str, list[dict[str, Any]]] = {}
+        for row in plain:
+            by_run.setdefault(row["run_id"], []).append(row)
+        for item in run_rows:
+            mine = by_run.get(item["run_id"], [])
+            item["trials"] = len(mine)
+            item["measured"] = len([r for r in mine if r["phase"] != "practice" and r["correct"] is not None])
+            item["games"] = sorted({str(r["game"]) for r in mine})
+        games = [
+            self._game_result(game, [r for r in plain if r["game"] == game])
+            for game in self.GAME_TITLES
+        ]
+        played = [g for g in games if g["plays"]]
+        return {
+            "student_id": student_id,
+            "has_open_run": open_run,
+            "runs": run_rows,
+            "games": played,
+            "totals": {
+                "sittings": len(runs),
+                "completed_sittings": len([r for r in runs if r.status == "complete"]),
+                "trials": len(plain),
+                "measured": len([r for r in plain if r["phase"] != "practice" and r["correct"] is not None]),
+            },
+        }
+
+    def _game_result(self, game: str, rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        """One line of the results panel: how often it was played and the best it ever went."""
+        measured = [r for r in rows if r["phase"] != "practice"]
+        answered = [r for r in measured if r["correct"] is not None]
+        out: dict[str, Any] = {
+            "game": game,
+            "title": self.GAME_TITLES.get(game, game),
+            "plays": len(measured),
+            "answered": len(answered),
+            "correct": len([r for r in answered if r["correct"]]),
+            "last_played_at": rows[-1]["created_at"] if rows else None,
+            "best": None,
+            "best_label": "",
+            "detail": {},
+        }
+        if game == "codewords_study":
+            out["best_label"] = "looking time recorded"
+            return out
+        if not measured:
+            return out
+        accuracy = (out["correct"] / len(answered)) if answered else None
+        if accuracy is not None:
+            out["detail"]["accuracy"] = round(accuracy, 3)
+        if game == "quick":
+            laps: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+            for r in measured:
+                laps.setdefault((str(r["run_id"]), str(r["task"].get("stage") or "")), []).append(r)
+            totals = []
+            for lap in laps.values():
+                totals.append(sum(int(r["score"].get("points") or 0) for r in lap))
+            out["best"] = max(totals) if totals else 0
+            out["best_label"] = f"{out['best']} points in one lap"
+            out["detail"]["laps"] = len(laps)
+            out["detail"]["best_streak"] = max([int(r["score"].get("streak") or 0) for r in measured] or [0])
+        elif game == "vault":
+            spans = [int(r["task"].get("length") or 0) for r in measured if r["correct"]]
+            out["best"] = max(spans) if spans else 0
+            out["best_label"] = f"remembered {out['best']} tiles in a row" if spans else "no sequence completed yet"
+            out["detail"]["best_span"] = out["best"]
+        elif game in ("codewords_cued", "codewords_delayed", "trap", "shopkeeper"):
+            # Best *sitting* accuracy, so one lucky answer does not read as a perfect memory.
+            per_run: dict[str, list[Mapping[str, Any]]] = {}
+            for r in answered:
+                per_run.setdefault(str(r["run_id"]), []).append(r)
+            best = max((len([x for x in v if x["correct"]]) / len(v) for v in per_run.values()), default=0.0)
+            out["best"] = round(best, 3)
+            out["best_label"] = f"{round(best * 100)}% right in a sitting"
+            if game == "codewords_delayed":
+                hits = [int(r["score"].get("hits") or 0) for r in measured if r["task"].get("kind") == "free"]
+                if hits:
+                    out["detail"]["recalled_of_8"] = max(hits)
+        elif game == "machine":
+            solved = [r for r in answered if r["correct"] and str(r["task"].get("action") or r["response"].get("action") or "") == "guess"]
+            out["best"] = len({(r["run_id"], r["task"].get("round")) for r in solved})
+            out["best_label"] = f"{out['best']} rule(s) cracked" if out["best"] else "no rule cracked yet"
+            out["detail"]["rounds_solved"] = out["best"]
+        elif game == "locked_box":
+            solved = any(r["correct"] for r in answered)
+            hints = len([r for r in rows if str(r["response"].get("action") or r["task"].get("action") or "") == "hint"])
+            attempts = len([r for r in rows if str(r["response"].get("action") or r["task"].get("action") or "attempt") == "attempt"])
+            out["best"] = 1 if solved else 0
+            out["best_label"] = "opened" if solved else ("walked away — also fine" if hints or attempts else "not opened")
+            out["detail"].update({"opened": solved, "attempts": attempts, "hints": hints})
         return out
 
     def snapshot(self, student_id: str, *, run_id: str | None = None) -> dict[str, Any]:
