@@ -260,6 +260,34 @@ fields do not trigger iOS's zoom-into-the-page, tables scroll inside their own b
 has been seen on real glass from inside the sandbox — at rehearsal, walk one question in portrait
 *and* landscape and tap **Check it** once; `docs/UNVERIFIED.md` lists exactly what to look at.
 
+## Plug Adapt into another app (integration endpoint)
+
+Any app on the network can use Adapt as its adaptation engine with **one HTTP call** — no
+WebSocket, no account, no SDK:
+
+```bash
+curl -X POST "http://<adapt-host>:8000/api/v1/integration/adapt" \
+  -H 'Content-Type: application/json' \
+  -d '{"learner": {"id": "genlink-42"},
+       "activity": [{"id": "a1", "correct": false, "response_ms": 1800, "confidence": "certain"}],
+       "content": {"concept": "fractions_add", "title": "Adding fractions",
+                   "explanation": "To add fractions, the parts must be the same size. ..."}}'
+```
+
+The caller sends **learner activity + content** and gets **adapted content** back: an ordered
+lesson (predict / worked example / checked explanation steps / confidence and matched-question
+checks / teach-back / reflection), where every block carries a `why` naming the numbers it came
+from, and `derived_profile` reports exactly what Adapt read from the activity. The endpoint is
+**stateless** (nothing is stored, the learner id is opaque and echoed), **deterministic** (same
+request → byte-identical lesson, safe to cache and retry) and **local-only** (the template
+adapter answers it; no model call, so a slow or out-of-quota Gemini cannot fail or delay it —
+measured ≈ 10 ms round trip). Different activity for the same content measurably produces a
+different lesson: a struggling learner gets 30-word steps at rung 1, a strong one gets 75-word
+steps, a prediction first and a teach-back at rung 5. Open on the LAN by design; export
+`ADAPT_INTEGRATION_TOKEN` to require a bearer token instead.
+[`docs/INTEGRATION.md`](docs/INTEGRATION.md) is the whole contract, with a captured request and
+response; `backend/tests/test_integration_endpoint.py` is the proof.
+
 ## What is implemented, and what it refuses to do
 
 * **Estimates, not labels.** BKT per topic with a learning-from-failure path, half-life
@@ -319,7 +347,8 @@ backend/src/adapt/
              content-addressed spec_id, plain-text limits, builtin_specs() seeded at startup)
   assessment/ bank (the item bank) · grading · numbas (import/export)
   services/  sessions · attempts · journey (the readable history) · adaptations (the gate)
-  api/       app + routes/ (auth, learning, adaptations, tutor, system) · ws.py · deps (rate, csrf)
+  api/       app + routes/ (auth, learning, adaptations, tutor, system, integration) · ws.py ·
+             deps (rate, csrf)
   crypto/    keys (one master key, HKDF subkeys) · fields (the encrypted column types)
   cli.py     demo · status · keys · export · import
 frontend/src/
@@ -339,7 +368,8 @@ docs/             AUDIT.md (what each pass ran, found and fixed — the change t
                   ENGINE.md (the interaction engine, end to end) · EFFICIENCY.md (what a model
                   call costs: merged prompts, cached heads, model tiers, request guards) ·
                   UNVERIFIED.md (what no one has checked, and how to check it) ·
-                  EVIDENCE.md · ACCESSIBILITY.md · DEMO.md · VOICE.md · PILOT.md
+                  EVIDENCE.md · ACCESSIBILITY.md · DEMO.md · VOICE.md · PILOT.md ·
+                  INTEGRATION.md (the one HTTP call another app plugs into)
 frontend/README.md  the web app: ports, dev origins, probes, and what the player guarantees
 ```
 

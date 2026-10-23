@@ -40,6 +40,7 @@ from .routes import (
     content_prepare,
     curriculum,
     evidence,
+    integration,
     journey,
     learning,
     lesson,
@@ -191,6 +192,10 @@ def create_app() -> FastAPI:
         tutor.router,
         baseline.router,
         evidence.router,
+        # The external integration door (POST /api/v1/integration/adapt): one
+        # stateless, model-free route other apps call to plug Adapt in as an
+        # engine. Self-contained module; see docs/INTEGRATION.md.
+        integration.router,
         system.router,
         ws_router,
     ):
