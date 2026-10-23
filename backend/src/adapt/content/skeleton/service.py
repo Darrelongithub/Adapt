@@ -394,7 +394,13 @@ def _default_model() -> Model | None:
     return call
 
 
-def _skeleton_prompts(*, topic: str, level: int, language: str) -> tuple[str, str]:
+def _skeleton_prompts(
+    *,
+    topic: str,
+    level: int,
+    language: str,
+    external_reference: Mapping[str, Any] | None = None,
+) -> tuple[str, str]:
     system = (
         "Create a compact, accurate concept skeleton for teaching. Return only JSON matching the "
         "provided response schema. Create four to ten concepts, each with a short key idea, why it "
@@ -406,8 +412,11 @@ def _skeleton_prompts(*, topic: str, level: int, language: str) -> tuple[str, st
         "Use only a supported subject_family value: maths, physics, statistics, science, sciences, "
         "language, languages, history, humanities, other, generic."
     )
+    payload: dict[str, Any] = {"topic": topic, "level": level, "language": language}
+    if external_reference:
+        payload["verified_reference"] = dict(external_reference)
     data = json.dumps(
-        {"topic": topic, "level": level, "language": language},
+        payload,
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -847,6 +856,59 @@ def _log_rejection(code: str, reason: str) -> None:
     log.warning("pack_rejected code=%s reason=%s", code[:48], reason[:120])
 
 
+def _fetch_slot2_material(
+    topic: str,
+    *,
+    level: int,
+    curriculum: str | None = None,
+    grade: str | None = None,
+    settings: Any = None,
+    education_transport: Any = None,
+) -> Any:
+    """Pull verified external educational facts via Slot 2 when configured."""
+    from ...config import get_settings
+    from ...connectors import ai2_education as EDU
+
+    active_settings = settings
+    sf = None
+    default_transport = education_transport
+    if active_settings is None:
+        try:
+            from ...services import current
+
+            svc = current()
+            active_settings = svc.settings
+            sf = svc.session_factory
+            if default_transport is None:
+                default_transport = getattr(svc.ai2, "education_transport", None)
+        except Exception:
+            active_settings = get_settings()
+    if not EDU.slot_enabled(active_settings):
+        return None
+    if sf is not None:
+        with sf() as s:
+            mat = EDU.fetch_educational_material(
+                topic,
+                level=level,
+                curriculum=curriculum,
+                grade=grade,
+                settings=active_settings,
+                cache_session=s,
+                transport=default_transport,
+            )
+            s.commit()
+            return mat if mat.has_content else None
+    mat = EDU.fetch_educational_material(
+        topic,
+        level=level,
+        curriculum=curriculum,
+        grade=grade,
+        settings=active_settings,
+        transport=default_transport,
+    )
+    return mat if mat.has_content else None
+
+
 def _build_model_pack(
     *,
     topic: str,
@@ -854,8 +916,14 @@ def _build_model_pack(
     level: int,
     language: str,
     model: Model,
+    external_reference: Mapping[str, Any] | None = None,
 ) -> Pack:
-    skeleton_system, skeleton_user = _skeleton_prompts(topic=topic, level=level, language=language)
+    skeleton_system, skeleton_user = _skeleton_prompts(
+        topic=topic,
+        level=level,
+        language=language,
+        external_reference=external_reference,
+    )
     skeleton: tuple[str, str, tuple[Any, ...], tuple[tuple[str, str], ...]] | None = None
     last_error: Exception | None = None
     for skeleton_attempt in range(2):
@@ -975,6 +1043,8 @@ def get_pack(
     curriculum: str | None = None,
     grade: str | None = None,
     objectives: Any = None,
+    settings: Any = None,
+    education_transport: Any = None,
 ) -> Pack:
     """A checked Pack, recording the Round 9 scope it was built for.
 
@@ -984,7 +1054,17 @@ def get_pack(
     downstream consumer can check a lesson against exactly this list.
     Unscoped calls return byte-identical packs to before Round 9.
     """
-    pack = _build_pack(topic, level=level, language=language, model=model, force_simple=force_simple)
+    pack = _build_pack(
+        topic,
+        level=level,
+        language=language,
+        model=model,
+        force_simple=force_simple,
+        curriculum=curriculum,
+        grade=grade,
+        settings=settings,
+        education_transport=education_transport,
+    )
     if curriculum or grade or objectives:
         from .objectives import with_curriculum
 
@@ -999,12 +1079,17 @@ def _build_pack(
     language: str,
     model: Model | None = None,
     force_simple: bool = False,
+    curriculum: str | None = None,
+    grade: str | None = None,
+    settings: Any = None,
+    education_transport: Any = None,
 ) -> Pack:
     """Return a checked Pack; authored content wins, and every failure falls back honestly.
 
     ``model`` follows the frozen callable interface:
     ``model(purpose, system, user, schema, max_tokens) -> dict``. ``model=None`` uses the configured
-    application model when available; otherwise a simple, topic-neutral Pack is returned.
+    application model when available; otherwise Slot 2's connected Education API (when enabled) or a
+    simple, topic-neutral Pack is returned.
     """
     if isinstance(level, bool) or not isinstance(level, int) or not 0 <= level <= 20:
         raise ValueError("level must be an integer from zero to twenty")
@@ -1023,6 +1108,7 @@ def _build_pack(
     if removed:
         log.info("topic_redaction removed=%d", removed)
 
+    slot2_material = None
     try:
         if not force_simple:
             authored = authored_pack(topic_text, level=level, language=lang)
@@ -1035,8 +1121,26 @@ def _build_pack(
                 subject_family=inferred_family,
                 language=lang,
             )
+        slot2_material = _fetch_slot2_material(
+            topic_text,
+            level=level,
+            curriculum=curriculum,
+            grade=grade,
+            settings=settings,
+            education_transport=education_transport,
+        )
         chosen_model = model if model is not None else _default_model()
         if chosen_model is None:
+            if slot2_material is not None:
+                from ...connectors import ai2_education as EDU
+
+                ext_pack = EDU.build_pack_from_material(
+                    slot2_material,
+                    topic_key=topic_key,
+                    subject_family=inferred_family,
+                )
+                if ext_pack is not None:
+                    return ext_pack
             return simple_pack(
                 topic_key=topic_key,
                 topic_title=inferred_title,
@@ -1049,6 +1153,9 @@ def _build_pack(
             level=level,
             language=lang,
             model=_bounded_model(chosen_model),
+            external_reference=(
+                slot2_material.grounding_dict() if slot2_material is not None else None
+            ),
         )
     except (
         PackError,
@@ -1063,6 +1170,16 @@ def _build_pack(
     ) as exc:
         code, reason = _safe_failure(exc)
         _log_rejection(code, reason)
+        if slot2_material is not None:
+            from ...connectors import ai2_education as EDU
+
+            ext_pack = EDU.build_pack_from_material(
+                slot2_material,
+                topic_key=topic_key,
+                subject_family=inferred_family,
+            )
+            if ext_pack is not None:
+                return ext_pack
         return simple_pack(
             topic_key=topic_key,
             topic_title=inferred_title,

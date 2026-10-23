@@ -505,31 +505,78 @@ def _learner_level(snapshot: Mapping[str, Any]) -> int:
         return 2
 
 
+def _slot3_llm(services: Any) -> Any:
+    """Resolve the LLM backing AI 3, honoring dedicated Slot 3 keys and test overrides."""
+    ai2_llm = getattr(services.ai2, "llm", None)
+    adapter_llm = getattr(getattr(services, "ai3_adapter", None), "llm", None)
+    if str(getattr(services.settings, "ai3_api_key", "") or "").strip() and adapter_llm is not None:
+        return adapter_llm
+    if ai2_llm is not None:
+        return ai2_llm
+    return adapter_llm
+
+
 def _configured_model() -> bool:
     services = current()
-    llm = getattr(services.ai2, "llm", None)
+    if str(getattr(services.settings, "ai3_api_url", "") or "").strip() and not services.settings.demo_mode:
+        return True
+    llm = _slot3_llm(services)
     return bool(
-        llm is not None and getattr(llm, "configured", bool(services.settings.gemini_api_key))
+        llm is not None
+        and getattr(
+            llm,
+            "configured",
+            bool(services.settings.ai3_api_key or services.settings.gemini_api_key),
+        )
     )
 
 
 def _model_callable(student_id: str):
-    """Synchronous frozen callable bridged to the existing async Gemini entry point."""
+    """Synchronous frozen callable bridged to Slot 3 (custom REST / OpenAI-compatible / Gemini)."""
 
     def call(
         purpose: str, system: str, user: str, schema: dict[str, Any], max_tokens: int
     ) -> dict[str, Any]:
         services = current()
-        base_llm = getattr(services.ai2, "llm", None)
+        response_spec = {"blocks": ("array", {"type": "OBJECT"})}
+
+        # When Slot 3 is pointed at an external HTTPS endpoint (custom or OpenAI-compatible),
+        # enforce learner consent before sending redacted content externally.
+        if (
+            str(getattr(services.settings, "ai3_api_url", "") or "").strip()
+            and not services.settings.demo_mode
+            and services.ai3_adapter is not None
+        ):
+            with services.db.session() as s_consent:
+                st = s_consent.get(Student, student_id)
+                if st is None or not st.consent_share_with_llm:
+                    raise RuntimeError("learner has not consented to external model calls")
+            payload_pre, _dropped_pre, _kinds_pre = redact_payload({"prompt": user}, max_chars=9000)
+            safe_pre = str(payload_pre.get("prompt") or "")
+            if "[…truncated]" in safe_pre or "[...truncated]" in safe_pre:
+                raise ValueError("redaction would truncate the bounded lesson prompt")
+            return services.ai3_adapter.call_frozen_writer(
+                system,
+                safe_pre,
+                response_spec,
+                purpose=purpose,
+                student_id=student_id,
+                max_tokens=max_tokens,
+            )
+
+        base_llm = _slot3_llm(services)
         if base_llm is None or not getattr(
-            base_llm, "configured", bool(services.settings.gemini_api_key)
+            base_llm,
+            "configured",
+            bool(services.settings.ai3_api_key or services.settings.gemini_api_key),
         ):
             raise RuntimeError("model is not configured")
         from ...ai.llm import GeminiLLM
 
+        effective_settings = getattr(base_llm, "settings", services.settings)
         client = (
             GeminiLLM(
-                services.settings,
+                effective_settings,
                 limiter=services.limiter,
                 # This synchronous lesson bridge creates a short-lived client to avoid
                 # sharing an async transport across event loops. Carry the same injected

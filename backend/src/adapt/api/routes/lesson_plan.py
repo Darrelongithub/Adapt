@@ -78,15 +78,16 @@ class ContrastBody(BaseModel):
     profiles: list[dict[str, Any]] = Field(default_factory=list)
 
 
-def _pack_for(s: Session, *, body_pack: dict[str, Any] | None, topic_id: str | None, learner_id: str) -> dict[str, Any] | None:
-    """The pack the lesson is built from: the body's, else the authored bank's.
-
-    The bank path is ``concept_versions_for`` — the same source the practice
-    queue teaches from — converted by the adapter's pack normalisation, so a
-    concept with material gets a real lesson before any generated pack exists,
-    and a concept without material gets the adapter's honest skeleton rather
-    than invented prose.
-    """
+def _pack_for(
+    s: Session,
+    *,
+    body_pack: dict[str, Any] | None,
+    topic_id: str | None,
+    learner_id: str,
+    concept: str = "",
+    title: str = "",
+) -> dict[str, Any] | None:
+    """The pack the lesson is built from: the body's, the authored bank's, or Slot 2's Education API."""
     if body_pack:
         return body_pack
     if topic_id:
@@ -95,6 +96,31 @@ def _pack_for(s: Session, *, body_pack: dict[str, Any] | None, topic_id: str | N
         versions = lessons_service.concept_versions_for(s, topic_id, learner_id=learner_id)
         if versions is not None:
             return versions
+    query = (title or concept or topic_id or "").strip()
+    svcs = current()
+    from ...connectors import ai2_education as EDU
+
+    if query and EDU.slot_enabled(svcs.settings):
+        mat = EDU.fetch_educational_material(
+            query,
+            settings=svcs.settings,
+            cache_session=s,
+            transport=getattr(svcs.ai2, "education_transport", None),
+        )
+        if mat.has_content:
+            return {
+                "concept": concept or mat.topic,
+                "title": mat.title,
+                "explanation": mat.summary or " ".join(f.statement for f in mat.facts[:4]),
+                "facts": [f.statement for f in mat.facts],
+                "worked_steps": list(mat.worked_steps),
+                "questions": [
+                    {"question": str(q.get("stem") or ""), "format": "short_text"}
+                    for q in mat.questions
+                    if q.get("stem")
+                ],
+                "source": "authored",
+            }
     return None
 
 
@@ -251,7 +277,14 @@ def _inputs(s: Session, student_id: str, body: PlanBody) -> dict[str, Any]:
         "levers": levers,
         "subject_map": subject_map,
         "ladder": body.ladder,
-        "content_pack": _pack_for(s, body_pack=body.content_pack, topic_id=body.topic_id, learner_id=student_id),
+        "content_pack": _pack_for(
+            s,
+            body_pack=body.content_pack,
+            topic_id=body.topic_id,
+            learner_id=student_id,
+            concept=body.concept,
+            title=body.title,
+        ),
         "recent_evidence": body.recent_evidence,
         "preferences": body.preferences,
         "constraints": body.constraints,
@@ -375,9 +408,25 @@ def build_lesson(
             constraints["max_explanation_chunks"] = policy.max_explanation_chunks
         adapted_inputs["constraints"] = constraints or None
 
+    svcs = current()
+    ai3_slot_active = bool(
+        not svcs.settings.demo_mode
+        and getattr(student, "consent_share_with_llm", False)
+        and svcs.ai3_adapter is not None
+        and (
+            bool(str(getattr(svcs.settings, "ai3_api_url", "") or "").strip())
+            or bool(str(getattr(svcs.settings, "ai3_api_key", "") or "").strip())
+        )
+    )
     try:
         if body.model_proposal is not None:
             plan = adapter.plan_from_model(body.model_proposal, **adapted_inputs)
+        elif ai3_slot_active and svcs.ai3_adapter is not None:
+            adapter_client = svcs.ai3_adapter
+            plan = adapter.adapt_with_model(
+                lambda **kw: adapter_client.propose_plan(student_id=student.id, **kw),
+                **adapted_inputs,
+            )
         else:
             plan = adapter.plan(**adapted_inputs)
     except AdaptationError as exc:
@@ -486,7 +535,14 @@ def contrast(
             status_code=422,
             detail={"error": "contrast_needs_two_profiles", "message": "the contrast demo takes exactly two profiles"},
         )
-    pack = _pack_for(s, body_pack=body.content_pack, topic_id=body.topic_id, learner_id=student.id)
+    pack = _pack_for(
+        s,
+        body_pack=body.content_pack,
+        topic_id=body.topic_id,
+        learner_id=student.id,
+        concept=body.concept,
+        title=body.title,
+    )
     try:
         contrast_result = adapter.contrast(content_pack=pack, concept=body.concept, title=body.title, profiles=body.profiles)
         frozen_pack = _legacy_frozen_pack(pack, concept_id=body.concept or str((pack or {}).get("concept") or "concept"), title=body.title)

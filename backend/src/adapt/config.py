@@ -173,6 +173,7 @@ class Settings(BaseSettings):
     # to a single model (a deployment with one allowed model, or a comparison run).
     gemini_model_ai1: str | None = None
     gemini_model_ai2: str | None = None
+    gemini_model_ai3: str | None = None
     # Per-task pins, most specific override: {"ai2_explain": "<model>"}. Accepted as JSON
     # or as `task=model,task=model`, because the docs tell an operator to write the
     # comma-separated form for lists and the JSON form would then be the odd one out.
@@ -261,6 +262,35 @@ class Settings(BaseSettings):
     connector_wellbeing_enabled: bool = False
     connector_timeout_s: float = 8.0
 
+    # -- Dedicated 3-Slot AI APIs (Psychology / Education / Adaptation) --
+    # Slot 1 (AI 1 — Psychology & Learning Science API):
+    # Pulls psychological/cognitive-science findings from a custom HTTPS site API
+    # (`ADAPT_AI1_API_URL` + `ADAPT_AI1_API_KEY`) and/or built-in PubMed / OpenAlex /
+    # Psychologie APIs (`ADAPT_AI1_PSYCHOLOGY_ENABLED`, `ADAPT_PUBMED_API_KEY`).
+    ai1_api_url: str | None = None
+    ai1_api_key: str | None = Field(default=None, repr=False, exclude=True)
+    ai1_api_header: str = "Authorization"
+    pubmed_api_key: str | None = Field(default=None, repr=False, exclude=True)
+    ai1_psychology_enabled: bool = False
+
+    # Slot 2 (AI 2 — Education Content API):
+    # Pulls real educational explanations, key facts, and misconceptions from a
+    # custom HTTPS site API (`ADAPT_AI2_API_URL` + `ADAPT_AI2_API_KEY`) and/or built-in
+    # Oak National Academy full lesson summaries, Wikipedia/Wikibooks extracts, and
+    # OpenLibrary (`ADAPT_AI2_EDUCATION_ENABLED`, `ADAPT_OAK_API_KEY`).
+    ai2_api_url: str | None = None
+    ai2_api_key: str | None = Field(default=None, repr=False, exclude=True)
+    ai2_api_header: str = "Authorization"
+    ai2_education_enabled: bool = False
+
+    # Slot 3 (AI 3 — Adaptation API):
+    # Adapts AI 1's learner state + AI 2's content pack into a learner-specific
+    # lesson plan via a custom HTTPS adaptation API or OpenAI-compatible endpoint
+    # (`ADAPT_AI3_API_URL` + `ADAPT_AI3_API_KEY`), or a dedicated AI 3 Gemini key/model.
+    ai3_api_url: str | None = None
+    ai3_api_key: str | None = Field(default=None, repr=False, exclude=True)
+    ai3_api_header: str = "Authorization"
+
     # -- Numbas ----------------------------------------------------------
     numbas_export_dir: Path | None = None
     numbas_bank_path: Path | None = None  # JSON/.numbas package(s) to import
@@ -308,9 +338,18 @@ class Settings(BaseSettings):
         "numbas_bank_path",
         "gemini_api_key",
         "youtube_api_key",
+        "oak_api_key",
+        "pubmed_api_key",
+        "ai1_api_key",
+        "ai2_api_key",
+        "ai3_api_key",
+        "ai1_api_url",
+        "ai2_api_url",
+        "ai3_api_url",
         "openalex_mailto",
         "gemini_model_ai1",
         "gemini_model_ai2",
+        "gemini_model_ai3",
         "mode",
         mode="before",
     )

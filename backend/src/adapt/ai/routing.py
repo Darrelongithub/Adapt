@@ -340,11 +340,15 @@ def pinned_models(settings: Any) -> dict[str, str]:
     """Operator overrides, most specific last: per-task, then per-role.
 
     ``ADAPT_GEMINI_TASK_MODELS='{"ai2_explain": "..."}'`` pins one task.
-    ``ADAPT_GEMINI_MODEL_AI1``/``_AI2`` pin every task a role performs, which is how a
-    deployment that wants one model for everything gets one without editing the table.
+    ``ADAPT_GEMINI_MODEL_AI1``/``_AI2``/``_AI3`` pin every task a role performs, which is how a
+    deployment that wants one dedicated model per AI role gets one without editing the table.
     """
     out: dict[str, str] = {}
-    for role, field in (("ai1", "gemini_model_ai1"), ("ai2", "gemini_model_ai2")):
+    for role, field in (
+        ("ai1", "gemini_model_ai1"),
+        ("ai2", "gemini_model_ai2"),
+        ("ai3", "gemini_model_ai3"),
+    ):
         value = str(getattr(settings, field, "") or "").strip()
         if value:
             out[role] = value

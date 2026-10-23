@@ -49,6 +49,35 @@ def _default_transport(method: str, url: str, headers: dict[str, str], params: d
             return response.status_code, None
 
 
+def _default_post_transport(
+    method: str, url: str, headers: dict[str, str], body: dict[str, Any], timeout: float
+) -> tuple[int, Any]:
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        response = client.request(
+            method,
+            url,
+            headers={"content-type": "application/json", **headers, "user-agent": USER_AGENT},
+            json=body,
+        )
+        try:
+            return response.status_code, response.json()
+        except ValueError:
+            return response.status_code, None
+
+
+def auth_headers(api_key: str | None, header_name: str = "Authorization") -> dict[str, str]:
+    """Build safe header-only credentials; keys never enter URLs or query strings."""
+    secret = str(api_key or "").strip()
+    if not secret:
+        return {}
+    name = str(header_name or "Authorization").strip() or "Authorization"
+    if name.lower() == "authorization":
+        if secret.lower().startswith(("bearer ", "basic ", "token ")):
+            return {"authorization": secret}
+        return {"authorization": f"Bearer {secret}"}
+    return {name: secret}
+
+
 def cache_key(connector: str, url: str, params: dict[str, Any]) -> str:
     raw = json.dumps({"c": connector, "u": url, "p": params}, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -120,4 +149,35 @@ def guarded_get_json(
             row.fetched_at = now
             row.expires_at = now + timedelta(hours=max(1.0, cache_ttl_hours))
             row.status = "ok"
+    return payload, "network"
+
+
+def guarded_post_json(
+    *,
+    connector: str,
+    allowed_host: str,
+    url: str,
+    body: dict[str, Any],
+    headers: dict[str, str] | None = None,
+    timeout_s: float = 15.0,
+    transport: Transport | None = None,
+) -> tuple[Any, str]:
+    """POST JSON to one allowlisted HTTPS host. Returns ``(payload|None, source)``.
+
+    Used exclusively by Slot 3's custom adaptation API when the operator plugs in
+    an HTTPS endpoint. Never follows redirects, enforces the exact ``allowed_host``,
+    and fails closed to ``(None, "unavailable")`` on any network or HTTP error.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname != allowed_host:
+        raise ConnectorError(f"connector {connector} may only call https://{allowed_host}")
+    call = transport or _default_post_transport
+    try:
+        status, payload = call("POST", url, dict(headers or {}), dict(body or {}), max(0.5, float(timeout_s)))
+    except Exception as exc:
+        log.debug("connector %s unreachable (%s)", connector, type(exc).__name__)
+        return None, "unavailable"
+    if status != 200 or payload is None:
+        log.debug("connector %s answered %s", connector, status)
+        return None, "unavailable"
     return payload, "network"

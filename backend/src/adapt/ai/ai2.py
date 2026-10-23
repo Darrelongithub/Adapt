@@ -35,6 +35,7 @@ from ..assessment import generated as GEN
 from ..assessment import selector as SEL
 from ..assessment.grading import grade as grade_item
 from ..config import Settings, get_settings
+from ..connectors import ai2_education as EDU
 from ..db.models import (
     Attempt,
     ChatMessage,
@@ -216,12 +217,14 @@ class EducationalIntelligence:
         llm: Any = None,
         resources: Any = None,
         state: Any = None,
+        education_transport: Any = None,
     ) -> None:
         self.sf = session_factory
         self.ai1 = ai1
         self.settings = settings or get_settings()
         self.llm = llm
         self.resources = resources
+        self.education_transport = education_transport
         #: The shared Learner State Store (round brief 2A). This is how AI 2 reads the learner's
         #: level: one immutable snapshot that says which ``model_version`` it came from, instead of
         #: assembling a private view of the database. ``None`` in tests that build AI 2 on its own.
@@ -284,6 +287,62 @@ class EducationalIntelligence:
             # wants "what did the tutor know when it taught this?" reads this rather than the
             # profile above, which is a live query and can move under it.
             snapshot = self.state.get_snapshot(student_id) if self.state is not None else None
+            materials_list: list[tuple[str, str, str, dict[str, Any]]] = [
+                (m.id, m.topic_id or "", m.body, {"title": m.title, "topic_title": titles.get(m.topic_id or "", "")})
+                for m in materials
+            ]
+            resources_list: list[dict[str, Any]] = [
+                {
+                    "provider": r.provider,
+                    "external_id": r.external_id,
+                    "kind": r.kind,
+                    "title": r.title,
+                    "url": r.url,
+                    "snippet": r.snippet,
+                    "abstract": r.snippet,
+                    "year": r.year,
+                    "license": r.license,
+                }
+                for r in resources
+            ]
+            external_material: dict[str, Any] | None = None
+            if topic and EDU.slot_enabled(self.settings):
+                ext = EDU.fetch_educational_material(
+                    topic.title,
+                    settings=self.settings,
+                    cache_session=s,
+                    transport=self.education_transport,
+                )
+                passage = ext.plain_passage()
+                if passage:
+                    materials_list.append(
+                        (
+                            f"edu:{topic.id}",
+                            topic.id,
+                            passage,
+                            {
+                                "title": ext.title,
+                                "topic_title": topic.title,
+                                "sources": list(ext.sources_used),
+                            },
+                        )
+                    )
+                    if ext.url or ext.attributions:
+                        resources_list.append(
+                            {
+                                "provider": (ext.sources_used[0] if ext.sources_used else "ai2"),
+                                "external_id": f"ai2:{topic.id}",
+                                "kind": "lesson",
+                                "title": ext.title,
+                                "url": ext.url or "",
+                                "snippet": ext.summary[:240],
+                                "abstract": ext.summary[:240],
+                                "year": None,
+                                "license": ext.attributions[0] if ext.attributions else "",
+                            }
+                        )
+                    external_material = ext.as_dict()
+                s.commit()
             return {
                 "profile": profile,
                 "profile_dict": profile.as_dict(),
@@ -293,25 +352,10 @@ class EducationalIntelligence:
                 "last_attempt_correct": last_attempt_correct,
                 "p_know": p_know,
                 "directives": directives,
-                "materials": [
-                    (m.id, m.topic_id or "", m.body, {"title": m.title, "topic_title": titles.get(m.topic_id or "", "")})
-                    for m in materials
-                ],
+                "materials": materials_list,
                 "items": items,
-                "resources": [
-                    {
-                        "provider": r.provider,
-                        "external_id": r.external_id,
-                        "kind": r.kind,
-                        "title": r.title,
-                        "url": r.url,
-                        "snippet": r.snippet,
-                        "abstract": r.snippet,
-                        "year": r.year,
-                        "license": r.license,
-                    }
-                    for r in resources
-                ],
+                "resources": resources_list,
+                "external_material": external_material,
                 "prereq_note": prereq_note,
                 "presentation": SEL.presentation_from_directives(directives),
             }

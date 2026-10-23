@@ -28,6 +28,7 @@ from ..subjects.service import Subjects
 from ..ai.scene_narrator import SceneNarrator
 from ..ai.llm import GeminiLLM
 from ..config import Settings, get_settings
+from ..connectors.ai3_adaptation import AI3AdaptationClient
 from ..db.engine import Database, get_db, set_db
 from ..db.models import Student
 from ..resources.service import ResourceService
@@ -56,7 +57,13 @@ class AppServices:
     limiter: Any
     #: The subject round (phase 3). Optional so a partially built container still works.
     subjects: Any = None
+    #: Dedicated Slot 3 lesson adaptation client (custom HTTPS endpoint / OpenAI-compatible / Gemini).
+    ai3_adapter: AI3AdaptationClient | None = None
     _reply_fn: Callable[..., Any] | None = field(default=None, repr=False)
+
+    @property
+    def session_factory(self) -> Callable[..., Any]:
+        return self.db.session
 
     # -- sessions ---------------------------------------------------------- #
     def session(self) -> Session:
@@ -220,10 +227,14 @@ class AppServices:
     async def aclose(self) -> None:
         if self.resources is not None:
             await self.resources.aclose()
-        if getattr(self.ai1, "llm", None) is not None:
-            closer = getattr(self.ai1.llm, "aclose", None)
-            if closer is not None:
-                await closer()
+        seen: set[int] = set()
+        for comp in (self.ai1, self.ai2, self.ai3, self.ai3_adapter):
+            client = getattr(comp, "llm", None) if comp is not None else None
+            if client is not None and id(client) not in seen:
+                seen.add(id(client))
+                closer = getattr(client, "aclose", None)
+                if closer is not None:
+                    await closer()
         self.db.dispose()
 
 
@@ -269,19 +280,38 @@ def build(
         model.consent_checker = learner_consented
     elif model is None and settings.allow_local_fallback:
         model = None  # the tutor will use the local path; analysis will phrase its hypotheses locally
+
+    def _slot_llm(slot_key: str | None, slot_url: str | None) -> Any:
+        if llm is not None or settings.demo_mode:
+            return model
+        if slot_key and not slot_url:
+            slot_client = GeminiLLM(
+                settings.model_copy(update={"gemini_api_key": slot_key}),
+                limiter=limiter,
+                consent_checker=learner_consented,
+            )
+            if isinstance(model, GeminiLLM):
+                slot_client.guard = model.guard
+            return slot_client
+        return model
+
+    ai1_model = _slot_llm(settings.ai1_api_key, settings.ai1_api_url)
+    ai2_model = _slot_llm(settings.ai2_api_key, settings.ai2_api_url)
+    ai3_model = _slot_llm(settings.ai3_api_key, settings.ai3_api_url)
+
     # The store is constructed first: it is the one thing every intelligence shares, and it
     # takes the session *factory* (a plain callable) so it owns its own sessions.
     state = LearnerState(database.sessionmaker, settings=settings)
-    ai1 = LearningIntelligence(database.session, settings=settings, llm=model, limiter=limiter)
+    ai1 = LearningIntelligence(database.session, settings=settings, llm=ai1_model, limiter=limiter)
     resources: ResourceService | None = None
     if with_resources:
         resources = ResourceService(settings=settings, session_factory=database.session, limiter=limiter)
     ai2 = EducationalIntelligence(
-        database.session, ai1=ai1, settings=settings, llm=model, resources=resources, state=state
+        database.session, ai1=ai1, settings=settings, llm=ai2_model, resources=resources, state=state
     )
-    # The scene narrator shares the tutor's client on purpose: one quota guard, one audit
-    # trail, one outage.
-    ai3 = SceneNarrator(llm=model, sf=database.session, settings=settings)
+    # The scene narrator and Slot 3 adapter run on AI 3's client.
+    ai3 = SceneNarrator(llm=ai3_model, sf=database.session, settings=settings)
+    ai3_adapter = AI3AdaptationClient(settings, llm=ai3_model)
     # The Orchestrator is the only place a turn is sequenced (brief 2A). It is built from the
     # services rather than the other way round: the intelligences never reach for the orchestrator.
     orchestrator = Orchestrator(state=state, settings=settings, ai1=ai1, ai2=ai2, ai3=ai3)
@@ -300,6 +330,7 @@ def build(
         ai1=ai1,
         ai2=ai2,
         ai3=ai3,
+        ai3_adapter=ai3_adapter,
         subjects=subjects,
         resources=resources,
         limiter=limiter,

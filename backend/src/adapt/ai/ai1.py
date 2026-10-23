@@ -36,6 +36,7 @@ from typing import Any, Sequence
 from sqlalchemy import func, select
 
 from ..config import Settings, get_settings
+from ..connectors import ai1_psychology as PSYCH
 from ..db.models import (
     ActiveAdaptation,
     AdaptationProposal,
@@ -204,6 +205,7 @@ class Analysis:
     bkt: dict[str, Any] = field(default_factory=dict)
     retention: dict[str, Any] = field(default_factory=dict)
     profile: dict[str, Any] = field(default_factory=dict)
+    psychology: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     provider: str = "local"
     llm: dict[str, Any] = field(default_factory=dict)
@@ -221,11 +223,13 @@ class LearningIntelligence:
         settings: Settings | None = None,
         llm: Any = None,
         limiter: Any = None,
+        psychology_transport: Any = None,
     ) -> None:
         self.sf = session_factory
         self.settings = settings or get_settings()
         self.llm = llm
         self.limiter = limiter
+        self.psychology_transport = psychology_transport
 
     # ------------------------------------------------------------------ #
     # guard: AI 1 cannot apply persistent changes
@@ -1015,16 +1019,58 @@ class LearningIntelligence:
             s.commit()
             return touched
 
+    def _fetch_psychology_for_drafts(self, drafts: Sequence[H.Draft]) -> dict[str, Any]:
+        """Pull empirical cognitive-science findings via Slot 1 when configured."""
+        if not drafts or not PSYCH.slot_enabled(self.settings):
+            return {}
+        by_strategy: dict[str, list[dict[str, str]]] = {}
+        sources_used: list[str] = []
+        with self.sf() as s:
+            for draft in drafts[:3]:
+                key = draft.strategy or draft.detector
+                if key in by_strategy:
+                    continue
+                bundle = PSYCH.fetch_psychology_facts(
+                    key,
+                    detector=draft.detector,
+                    settings=self.settings,
+                    cache_session=s,
+                    transport=self.psychology_transport,
+                    limit=3,
+                )
+                if not bundle.facts:
+                    continue
+                by_strategy[key] = bundle.for_prompt(limit=3)
+                for src in bundle.sources_used:
+                    if src not in sources_used:
+                        sources_used.append(src)
+                for fact in bundle.facts:
+                    if fact.citation and fact.citation not in draft.citations:
+                        draft.citations.append(fact.citation)
+            s.commit()
+        if not by_strategy:
+            return {}
+        return {
+            "enabled": True,
+            "sources_used": sources_used,
+            "by_strategy": by_strategy,
+        }
+
     def propose(
         self,
         student_id: str,
         drafts: Sequence[H.Draft],
         *,
         llm_text: dict[str, Any] | None = None,
+        psychology: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Create pending proposals. Never applies them."""
         if not drafts:
             return []
+        psych_map = (psychology or {}).get("by_strategy") if isinstance(psychology, dict) else None
+        if psych_map is None and PSYCH.slot_enabled(self.settings):
+            fetched = self._fetch_psychology_for_drafts(drafts)
+            psych_map = fetched.get("by_strategy") if isinstance(fetched, dict) else None
         with self.sf() as s:
             last = s.execute(
                 select(func.max(AdaptationProposal.created_at)).where(AdaptationProposal.student_id == student_id)
@@ -1047,7 +1093,12 @@ class LearningIntelligence:
                 strategy = ST.get(draft.strategy)
                 if not strategy.persistent:
                     continue  # in-the-moment help does not need approval, so must not be proposed
-                body = self._proposal_text(draft, strategy, llm_text)
+                strat_psych = (
+                    psych_map.get(draft.strategy) or psych_map.get(draft.detector)
+                    if isinstance(psych_map, dict)
+                    else None
+                )
+                body = self._proposal_text(draft, strategy, llm_text, psychology_facts=strat_psych)
                 payload = dict(strategy.payload_defaults)
                 if "target" in payload:
                     # The number has to come from the evidence, or the "change" the learner is
@@ -1111,13 +1162,32 @@ class LearningIntelligence:
         return {}
 
 
-    def _proposal_text(self, draft: H.Draft, strategy: ST.Strategy, llm_text: dict[str, Any] | None) -> dict[str, str]:
+    def _proposal_text(
+        self,
+        draft: H.Draft,
+        strategy: ST.Strategy,
+        llm_text: dict[str, Any] | None,
+        *,
+        psychology_facts: Sequence[dict[str, str]] | None = None,
+    ) -> dict[str, str]:
         """Local rendering by default; the LLM version is used only if it is valid."""
         script = _approval_ask(draft, strategy)
+        hypothesis_line = draft.mechanism
+        if psychology_facts:
+            lead_fact = psychology_facts[0]
+            finding = str(lead_fact.get("finding") or "").strip()
+            citation = str(lead_fact.get("citation") or "").strip()
+            candidate = (
+                f"{draft.mechanism} Empirical context ({citation}): {finding}"
+                if citation
+                else f"{draft.mechanism} Empirical context: {finding}"
+            )[:1100]
+            if finding and not H.check_language(candidate):
+                hypothesis_line = candidate
         local = {
             "facts_text": draft.statement,
             "pattern_text": _pattern_sentence(draft, strategy),
-            "hypothesis_text": draft.mechanism,
+            "hypothesis_text": hypothesis_line,
             "caveat_text": "Other explanations we cannot rule out: "
             + "; ".join(draft.alternatives if draft.alternatives else ["sampling noise"]),
             "change_text": f"{strategy.what} {strategy.caveat}".strip(),
@@ -1583,12 +1653,18 @@ class LearningIntelligence:
         self.rebuild_traces(student_id)
         evidence = self.collect_evidence(student_id, session_id=session_id)
         drafts = self.update_hypotheses(student_id, evidence)
+        psychology = self._fetch_psychology_for_drafts(drafts)
         graph, mastery, plan = self.plan(student_id)
         llm_meta: dict[str, Any] = {}
         llm_text: dict[str, Any] | None = None
         if use_llm and drafts and self.llm is not None and getattr(self.llm, "configured", False):
-            llm_text, llm_meta = await self._phrase_with_llm(student_id, drafts, evidence)
-        proposals = self.propose(student_id, drafts, llm_text=llm_text)
+            llm_text, llm_meta = await self._phrase_with_llm(
+                student_id,
+                drafts,
+                evidence,
+                psychology=psychology,
+            )
+        proposals = self.propose(student_id, drafts, llm_text=llm_text, psychology=psychology)
         evaluated = self.evaluate_pending_adaptations(student_id)
         with self.sf() as s:
             snapshot = self.snapshot(s, student_id)
@@ -1620,6 +1696,7 @@ class LearningIntelligence:
             bkt=(plan or {}).get("bkt", {}),
             retention=(plan or {}).get("retention", {}),
             profile=snapshot,
+            psychology=psychology,
             notes=(plan or {}).get("notes", []),
             llm=llm_meta,
             provider="gemini" if llm_text else "local",
@@ -1627,7 +1704,14 @@ class LearningIntelligence:
         )
         return result
 
-    def _llm_prompt(self, drafts: Sequence[H.Draft], evidence: list[dict[str, Any]], profile: dict[str, Any]) -> tuple[str, str]:
+    def _llm_prompt(
+        self,
+        drafts: Sequence[H.Draft],
+        evidence: list[dict[str, Any]],
+        profile: dict[str, Any],
+        *,
+        psychology: dict[str, Any] | None = None,
+    ) -> tuple[str, str]:
         """The user half of the proposal call. Returns ``("", user)``.
 
         The system half is now the static ``proposer`` block (system prompt + the five-part
@@ -1637,16 +1721,22 @@ class LearningIntelligence:
         """
         top = drafts[0]
         strategy = ST.get(top.strategy)
+        leading: dict[str, Any] = {
+            "statement": top.statement,
+            "mechanism": top.mechanism,
+            "citations": top.citations,
+            "alternative_explanations": top.alternatives,
+            "what_would_disprove_it": top.falsification,
+        }
+        psych_map = (psychology or {}).get("by_strategy") if isinstance(psychology, dict) else None
+        if isinstance(psych_map, dict):
+            findings = psych_map.get(top.strategy) or psych_map.get(top.detector)
+            if findings:
+                leading["psychology_findings"] = findings[:3]
         user = json.dumps(
             {
                 "observed_evidence": evidence[:4],
-                "leading_hypothesis": {
-                    "statement": top.statement,
-                    "mechanism": top.mechanism,
-                    "citations": top.citations,
-                    "alternative_explanations": top.alternatives,
-                    "what_would_disprove_it": top.falsification,
-                },
+                "leading_hypothesis": leading,
                 "proposed_change": {"strategy": strategy.id, "label": strategy.label, "what": strategy.what, "watch_metric": strategy.watch_metric, "tunable": strategy.payload_defaults},
                 "learner_profile_summary": to_llm_payload(
                     LearnerProfile(
@@ -1670,9 +1760,16 @@ class LearningIntelligence:
         )[:7000]
         return "", user
 
-    async def _phrase_with_llm(self, student_id: str, drafts: Sequence[H.Draft], evidence: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    async def _phrase_with_llm(
+        self,
+        student_id: str,
+        drafts: Sequence[H.Draft],
+        evidence: list[dict[str, Any]],
+        *,
+        psychology: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         profile = self.profile_dict(student_id)
-        system, user = self._llm_prompt(drafts, evidence, profile)
+        system, user = self._llm_prompt(drafts, evidence, profile, psychology=psychology)
         safe_user, dropped, redacted_kinds = redact_payload({"q": user}, max_chars=7000)
         res = await self.llm.complete(
             system=system,

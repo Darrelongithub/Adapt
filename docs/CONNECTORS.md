@@ -47,6 +47,18 @@ test plan, skeleton, lesson — may use an objective before the learner taps
 "Use this plan"; later rescans that differ arrive as proposals, not edits.
 Material the learner brings themselves outranks every external source.
 
+## Three dedicated AI API slots (`ai1`, `ai2`, `ai3`)
+
+Each of ADAPT's three AI roles has its own role-scoped API slot so each intelligence can pull or process external information for its exact responsibility without sharing keys or crossing boundaries:
+
+| Slot | Role | Built-in APIs | Custom Site API | Console configuration |
+| --- | --- | --- | --- | --- |
+| `ai1` | **Psychology & Learning-Science API** — retrieves empirical cognitive-science findings to ground hypotheses and learner strategy proposals | NCBI PubMed E-utilities (`eutils.ncbi.nlm.nih.gov`), OpenAlex (`api.openalex.org`), Psychologie et Sérénité (`psychologieetserenite.com`) | `ADAPT_AI1_API_URL` + `ADAPT_AI1_API_KEY` | `adapt config set-url --slot ai1` · `adapt config set-key --service ai1` (or `--service pubmed`) |
+| `ai2` | **Education Content API** — retrieves verified lesson explanations, key learning points, definitions, and common misconceptions to ground `ContentPack`s and tutoring | Oak National Academy lesson summaries (`open-api.thenational.academy`), Wikipedia & Wikibooks plain-text extracts (`en.wikipedia.org`, `en.wikibooks.org`), OpenLibrary (`openlibrary.org`) | `ADAPT_AI2_API_URL` + `ADAPT_AI2_API_KEY` | `adapt config set-url --slot ai2` · `adapt config set-key --service ai2` (or `--service oak`) |
+| `ai3` | **Lesson Adaptation API** — adapts AI 1's learner state + AI 2's verified educational pack into step-sized lessons validated whole by code | Dedicated Gemini key/model (`ADAPT_AI3_API_KEY`, `ADAPT_GEMINI_MODEL_AI3`) or OpenAI-compatible `/chat/completions` | `ADAPT_AI3_API_URL` + `ADAPT_AI3_API_KEY` | `adapt config set-url --slot ai3` · `adapt config set-key --service ai3` |
+
+All credentials and custom endpoint URLs are **console-only** (`var/config/secrets.json` at mode `0600` or `.env`): they are never accepted or displayed in the browser UI, and `adapt/security/secrecy.py` scrubs them from logs and HTTP/WebSocket responses. Use `adapt config status --check` or `adapt config test --slot all` (or `--slot ai1` / `ai2` / `ai3`) to verify live connectivity.
+
 ## Verification notes (2026-10-23)
 
 - **Oak** — verified against the published API docs: base
