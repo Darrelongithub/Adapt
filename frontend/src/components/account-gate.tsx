@@ -106,6 +106,7 @@ export function AccountGate() {
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <Btn kind="primary" onClick={() => { setStep("auth"); setError(null); }}>Save choice and continue</Btn>
+              <Btn kind="ghost" href="/demo">Try the three-game demo</Btn>
             </div>
           </>
         ) : (
