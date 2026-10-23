@@ -30,6 +30,7 @@ export const NAV_MORE: { href: string; label: string }[] = [
   { href: "/proposals", label: "Changes" },
   { href: "/baseline", label: "Mind check" },
   { href: "/evidence", label: "Evidence" },
+  { href: "/tools", label: "Study tools" },
   { href: "/voice", label: "Voice" },
 ];
 
@@ -48,6 +49,7 @@ const navTone: Record<string, "blue" | "sand" | "mint" | "peach" | "think"> = {
   "/proposals": "peach",
   "/baseline": "think",
   "/evidence": "mint",
+  "/tools": "mint",
   "/voice": "blue",
 };
 

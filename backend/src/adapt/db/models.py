@@ -28,6 +28,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -205,6 +206,24 @@ class StudentPreference(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (Index("ix_pref_student", "student_id"),)
+
+
+class StudyItem(Base):
+    """A learner-authored note or flashcard; never shared or used as evidence."""
+
+    __tablename__ = "study_items"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("sty"))
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # note|card
+    text: Mapped[str] = mapped_column(EncryptedText(context="study.text"))
+    answer: Mapped[str | None] = mapped_column(EncryptedText(context="study.answer"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('note', 'card')", name="ck_study_items_kind"),
+        Index("ix_study_items_student_created", "student_id", "created_at"),
+    )
 
 
 class AuthSession(Base):

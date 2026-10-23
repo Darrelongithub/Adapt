@@ -158,6 +158,7 @@ export const routeIcon: Record<string, IconName> = {
   "/evidence": "search",
   "/voice": "mic",
   "/settings": "sliders",
+  "/tools": "book",
   "/journey": "route",
   "/diagnose": "play",
   "/onboarding": "sliders",

@@ -1,0 +1,12 @@
+{
+  "check": "F04",
+  "outcome": "PASS",
+  "note_id": "sty_bdda873cbaf04cdcb268",
+  "card_id": "sty_00f4e3bb344d473ba426",
+  "note_saved_and_restored": true,
+  "card_saved_and_restored": true,
+  "exact_answer_revealed": true,
+  "both_present_in_export": true,
+  "note_deleted_and_absent_after_reload": true,
+  "blank_save_disabled": true
+}
