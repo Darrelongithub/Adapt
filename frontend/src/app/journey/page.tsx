@@ -36,7 +36,7 @@ type Chosen = {
 };
 type SubjectReply = { subject_id: string; plan: Chosen["plan"]; subject: Chosen };
 
-const SUGGESTIONS = ["Maths", "Discrete structures", "Geometry", "Kiswahili", "Law", "Chemistry", "Coding"];
+const SUGGESTIONS = ["Discrete structures", "Kiswahili", "Chemistry", "Biology"];
 
 const LEVELS = [
   { id: 1, label: "Beginner", hint: "Starting fresh" },
