@@ -16,6 +16,7 @@ describing it:
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import re
@@ -215,6 +216,11 @@ class LimitsMiddleware(BaseHTTPMiddleware):
         # "/quotas" report a bucket count that had nothing to do with the buckets refusing).
         if request.method in MUTATING and self.is_realtime(request.url.path):
             key = f"rt:{ip}"
+            if self.settings.demo_mode:
+                # The LAN proxy makes every phone appear to be the same IP.
+                token = request.cookies.get(self.settings.cookie_name)
+                if token:
+                    key = "rt:session:" + hashlib.sha256(token.encode()).hexdigest()
             allowed, reason, wait = realtime_guard(self.settings).begin(key)
             if not allowed:
                 broker = "already in flight" if reason == "in_flight" else "arrived too fast"

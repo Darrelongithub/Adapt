@@ -250,7 +250,7 @@ def build(
     """
     settings = settings or get_settings()
     database = db or get_db()
-    limiter = limiter if limiter is not None else build_limiter(multiplier=settings.rate_limit_multiplier)
+    limiter = limiter if limiter is not None else build_limiter(multiplier=settings.rate_limit_multiplier, demo_mode=settings.demo_mode)
     model = llm
     def learner_consented(student_id: str) -> bool:
         # This lookup is intentionally kept in the service container: it has the
@@ -260,7 +260,7 @@ def build(
             student = session.get(Student, student_id)
             return bool(student is not None and student.consent_share_with_llm)
 
-    if model is None and settings.gemini_api_key:
+    if model is None and settings.gemini_api_key and not settings.demo_mode:
         model = GeminiLLM(settings, limiter=limiter, consent_checker=learner_consented)
     elif isinstance(model, GeminiLLM) and model.consent_checker is None:
         # A caller may inject a transport-configured Gemini client in a console or

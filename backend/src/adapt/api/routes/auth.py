@@ -170,7 +170,7 @@ def create_student(body: RegisterBody, request: Request, response: Response, s: 
         display_name=body.display_name,
         email=None if guest else body.email,
         username=None if guest else (username or None),
-        password=body.password,
+        password=None if guest else body.password,
         age_band=body.age_band,
     )
     if body.consent_analytics is not None:
@@ -186,6 +186,33 @@ def create_student(body: RegisterBody, request: Request, response: Response, s: 
         detail={"guest": guest, "email_set": bool(body.email), "username_set": bool(username)},
     )
     return {**S.profile_summary(s, student.id), **login, "created": True, "onboarding_complete": student.onboarding_complete, "mode": get_settings().mode}
+
+
+class DemoSessionBody(BaseModel):
+    consent_analytics: bool
+    consent_share_with_llm: bool = False
+    display_name: str | None = Field(default=None, max_length=80)
+
+
+@router.post("/demo/session")
+def demo_session(
+    body: DemoSessionBody, request: Request, response: Response,
+    s: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Trusted-LAN demo entry: explicit consent, no credentials or password hashing."""
+    if not get_settings().demo_mode or get_settings().mode == "tunnel":
+        raise HTTPException(status_code=404, detail="LAN demo mode is not enabled")
+    if not body.consent_analytics:
+        raise HTTPException(status_code=422, detail="consent is required to analyse the demo games")
+    result = create_student(
+        RegisterBody(as_guest=True, display_name=body.display_name,
+                     consent_analytics=True, consent_share_with_llm=body.consent_share_with_llm),
+        request, response, s,
+    )
+    student = s.get(Student, result["student_id"])
+    student.onboarding_complete = True
+    s.flush()
+    return {**result, "onboarding_complete": True, "demo": True}
 
 
 @router.post("/login")
