@@ -1,0 +1,28 @@
+part 1: /dev/test-lab click-through of all 12 types…
+  answering pattern_pick {"answer_index":0}
+  answering drag_order {}
+  answering drag_match {"left":"Cat,Dog","pairs":"Cat:Meow,Dog:Woof"}
+  answering odd_one_out {"answer_index":3}
+  answering truth_table {"target_cells":"0,0,0,1"}
+  answering venn_region {"answer_region":"AB"}
+  answering geometry_angle {"answer_index":1}
+  answering geometry_congruent {"answer_index":1}
+  answering number_line {"value":50,"max":100}
+  answering fraction_bar {"answer_index":2}
+  answering cloze_word_bank {"answer_index":2}
+  answering quick_recall {"shown":"red,green,blue","answer_indices":"0,1,2"}
+part 1 ok: 12 types clicked through, all scored correct
+part 2: journey — geometry vs discrete maths…
+  answering geometry_angle {"angle":105,"kind":"pick","options":"15°,45°,90°,135°","answer_index":2}
+  answering geometry_congruent {"target_sides":"30,50,40","options":"20,25,30|30,40,50|30,50,80|10,20,30","answer_index":1}
+  answering geometry_angle {"angle":90,"kind":"right","options":"30°,60°,90°,120°","answer_index":2}
+  answering odd_one_out {"options":"square,rectangle,circle,parallelogram","answer_index":2,"why":"Only the circle has no straight sides."}
+  answering pattern_pick {"sequence":"triangle,square,pentagon","options":"hexagon,circle,triangle,line","answer_index":0}
+geometry run: geometry_angle, geometry_congruent, geometry_angle, odd_one_out, pattern_pick
+  answering truth_table {"expression":"A and B","columns":2,"rows":4,"target_cells":"0,1,1,0"}
+  answering venn_region {"sets":"A,B","question":"Where do A and B overlap?","answer_region":"AB"}
+  answering drag_order {"items":"Assume not p,Derive a contradiction,Conclude p,State the theorem","answer":"State the theorem,Assume not p,Der
+  answering pattern_pick {"sequence":"2,4,8,16","options":"20,24,32,30","answer_index":2}
+  answering drag_match {"left":"Tautology,Contradiction,Contingency","right":"Always true,Never true,Sometimes true","pairs":"Tautology:Always 
+discrete run: truth_table, venn_region, drag_order, pattern_pick, drag_match
+round6-items: all item types clicked through and scored; geometry ≠ discrete maths; evidence rows stored.

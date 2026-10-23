@@ -1,0 +1,9 @@
+
+Running 4 tests using 1 worker
+
+  ✓  1 [desktop] › snapshot-honesty.spec.ts:14:5 › stopping straight away records every game as not measured, and no number (2.5s)
+  ✓  2 [desktop] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached (1.9m)
+  ✓  3 [desktop] › subject-round.spec.ts:76:5 › the current subject plan is relevant, sealed, and hides its scoring fields (1.0s)
+  ✓  4 [desktop] › subject-round.spec.ts:85:5 › a whole current subject round stores one readable evidence row per item (10.3s)
+
+  4 passed (2.1m)

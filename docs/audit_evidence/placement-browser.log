@@ -1,0 +1,51 @@
+{
+  "total": 8,
+  "steps": [
+    {
+      "name": "placement question 1 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 2 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 3 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 4 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 5 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 6 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 7 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 8 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement finish and analysis",
+      "verdict": "PASS"
+    }
+  ],
+  "statuses": [
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200
+  ]
+}

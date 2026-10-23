@@ -432,6 +432,8 @@ class LearningIntelligence:
             sched = RetentionSchedule(student_id=student_id, topic_id=topic_id, half_life_hours=24.0)
             s.add(sched)
             s.flush()
+        previous_half_life = float(sched.half_life_hours or 24.0)
+        previous_due_at = sched.due_at
         lag = float(lag_hours) if lag_hours else 0.0
         recent_success = prior_correct_count / max(1, n_obs)
         if n_obs > 1:
@@ -458,16 +460,23 @@ class LearningIntelligence:
             sched.feature_weights = [round(float(w), 4) for w in model.weights]
             sched.last_lag_hours = row.lag_hours
         sched.reps += 1
-        if not correct:
+        if correct:
+            # A successful recall is not evidence that the memory got weaker. A small or early
+            # sample may leave the interval unchanged, but it cannot pull the next review forward.
+            sched.half_life_hours = max(previous_half_life, float(sched.half_life_hours))
+        else:
             sched.lapses += 1
             sched.half_life_hours = max(0.5, float(sched.half_life_hours) * 0.5)
-        sched.last_recall_at = utcnow()
+        now = utcnow()
+        sched.last_recall_at = now
         sched.last_result = correct
         target = self.settings.retention_target
-        sched.due_at = utcnow() + timedelta(hours=SP.lag_for_target(sched.half_life_hours, target))
-        sched.expected_recall_at_due = target
+        candidate_due = now + timedelta(hours=SP.lag_for_target(sched.half_life_hours, target))
+        sched.due_at = max(previous_due_at, candidate_due) if correct and previous_due_at else candidate_due
+        hours_to_due = max(0.0, (sched.due_at - now).total_seconds() / 3600.0)
+        sched.expected_recall_at_due = SP.expected_recall(sched.half_life_hours, hours_to_due)
         sched.strength = 1.0 / max(0.25, float(sched.half_life_hours))
-        sched.updated_at = utcnow()
+        sched.updated_at = now
         return sched
 
     def _review_history(self, s, *, student_id: str, topic_id: str) -> list[tuple[Any, float]]:

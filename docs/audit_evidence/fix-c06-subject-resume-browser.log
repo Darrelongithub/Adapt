@@ -1,0 +1,38 @@
+{
+  "check": "C06",
+  "outcome": "PASS",
+  "run_id": "trun_12757bf2f3544cb1bc2a",
+  "student_id": "stu_7533d7af1da74cbfb5ff",
+  "plan_post_count": 1,
+  "server_run_read_count": 2,
+  "fresh_profile_local_keys": [
+    [
+      "adapt:phrase-idx"
+    ],
+    [
+      "adapt:phrase-idx"
+    ],
+    [
+      "adapt:phrase-idx"
+    ]
+  ],
+  "resumed_at": {
+    "item_id": "item-1",
+    "item_type": "odd_one_out",
+    "fresh_profile": true
+  },
+  "verdicts": [
+    "Correct.",
+    "Correct.",
+    "Not this time. Next one.",
+    "Correct.",
+    "Not this time. Next one."
+  ],
+  "result_bars_before_fresh_restore": "patterns sequence\n1/1\nclassification\n1/1\nnumber sense\n0/1\nmemory\n1/1\nnumber fractions\n0/1",
+  "result_bars_after_fresh_restore": "patterns sequence\n1/1\nclassification\n1/1\nnumber sense\n0/1\nmemory\n1/1\nnumber fractions\n0/1",
+  "final_batch_response": {
+    "stored": 0,
+    "run_id": "trun_12757bf2f3544cb1bc2a"
+  },
+  "stored_row_count": 5
+}

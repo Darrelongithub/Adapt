@@ -94,7 +94,7 @@ def learner(client):
     """A fresh guest learner plus the CSRF header its session needs."""
     response = client.post(
         "/api/v1/students",
-        json={"display_name": "Rowan Test", "age_band": "16-18", "as_guest": True},
+        json={"display_name": "Rowan Test", "age_band": "16-18", "as_guest": True, "consent_analytics": True},
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -118,7 +118,7 @@ def registered_learner(client):
     email = f"rowan-{uuid.uuid4().hex[:8]}@example-invalid.test"
     response = client.post(
         "/api/v1/students",
-        json={"display_name": "Rowan Test", "email": email, "password": "correct horse battery"},
+        json={"display_name": "Rowan Test", "email": email, "password": "correct horse battery", "consent_analytics": True},
     )
     assert response.status_code == 200, response.text
     body = response.json()

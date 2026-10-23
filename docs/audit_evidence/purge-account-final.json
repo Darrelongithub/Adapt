@@ -1,0 +1,775 @@
+{
+  "student_id": "stu_b049fd57bde3437ca9ff",
+  "baseline": {
+    "run_id": "base_44ef49383d884f38bf48",
+    "student_id": "stu_b049fd57bde3437ca9ff",
+    "status": "in_progress",
+    "stage": "format",
+    "stage_title": "How you like to meet a new idea",
+    "kind": "format",
+    "task": null,
+    "progress": 0.0,
+    "note": "one question before anything else",
+    "format_pick": null,
+    "format_options": [
+      {
+        "value": "diagram",
+        "label": "a diagram",
+        "hint": "a picture or graph of the idea"
+      },
+      {
+        "value": "text",
+        "label": "a written explanation",
+        "hint": "a short paragraph that explains it"
+      },
+      {
+        "value": "worked_example",
+        "label": "a worked example",
+        "hint": "one worked through, step by step"
+      }
+    ],
+    "questions": [],
+    "answers": {},
+    "completion": {
+      "stages": [
+        {
+          "stage": "format",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "questions",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "codewords_study",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "codewords_cued",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "quick_a",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "vault",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "shopkeeper",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "quick_b",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "machine",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "locked_box",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "quick_c",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "trap",
+          "state": "not_started",
+          "trials": 0
+        },
+        {
+          "stage": "codewords_delayed",
+          "state": "not_started",
+          "trials": 0
+        }
+      ],
+      "complete": 0,
+      "total": 13,
+      "played": [],
+      "not_measured": [
+        "format",
+        "questions",
+        "codewords_study",
+        "codewords_cued",
+        "quick_a",
+        "vault",
+        "shopkeeper",
+        "quick_b",
+        "machine",
+        "locked_box",
+        "quick_c",
+        "trap",
+        "codewords_delayed"
+      ]
+    },
+    "measured_trials": 0,
+    "started_at": "2026-10-22T17:26:43.040400"
+  },
+  "subject": {
+    "subject_id": "subject_75c6d292beb64035a36b",
+    "plan": {
+      "tests": [
+        {
+          "id": "sci.cause_chains",
+          "title": "Cause chains",
+          "why": "Biology leans on this all the time (3 of 3)",
+          "level": 4
+        },
+        {
+          "id": "sci.prediction_models",
+          "title": "Prediction and models",
+          "why": "Biology leans on this often (2 of 3)",
+          "level": 3
+        },
+        {
+          "id": "sci.data_sense",
+          "title": "Data sense",
+          "why": "Biology leans on this often (2 of 3)",
+          "level": 3
+        },
+        {
+          "id": "sci.experimental_thinking",
+          "title": "Experimental thinking",
+          "why": "Biology leans on this often (2 of 3)",
+          "level": 3
+        }
+      ],
+      "source": "simple"
+    },
+    "subject": {
+      "id": "subject_75c6d292beb64035a36b",
+      "text": "Biology",
+      "title": "Biology",
+      "family": "sciences",
+      "topic_id": "top_d7b4c258d3c444a08d43",
+      "source": "simple",
+      "stage": "tests",
+      "active": true,
+      "plan": {
+        "tests": [
+          {
+            "id": "sci.cause_chains",
+            "title": "Cause chains",
+            "why": "Biology leans on this all the time (3 of 3)",
+            "level": 4
+          },
+          {
+            "id": "sci.prediction_models",
+            "title": "Prediction and models",
+            "why": "Biology leans on this often (2 of 3)",
+            "level": 3
+          },
+          {
+            "id": "sci.data_sense",
+            "title": "Data sense",
+            "why": "Biology leans on this often (2 of 3)",
+            "level": 3
+          },
+          {
+            "id": "sci.experimental_thinking",
+            "title": "Experimental thinking",
+            "why": "Biology leans on this often (2 of 3)",
+            "level": 3
+          }
+        ],
+        "source": "simple"
+      },
+      "progress": {
+        "done": 0,
+        "total": 4
+      },
+      "next": {
+        "label": "Start the subject checks",
+        "href": "/journey?step=subject"
+      },
+      "created_at": "2026-10-22T17:26:43.086430"
+    }
+  },
+  "evidence": {
+    "stored": 0,
+    "run_id": "purge-evidence"
+  },
+  "session": {
+    "session_id": "lrs_6fed7c8c430d47fbb9ff",
+    "mode": "practice",
+    "started_at": "2026-10-22T17:26:43.103368",
+    "event_types_accepted": [
+      "adaptation_effect",
+      "answer_submitted",
+      "example_opened",
+      "explanation_opened",
+      "feedback_shown",
+      "first_interaction",
+      "focus_change",
+      "hint_opened",
+      "pause",
+      "proposal_decided",
+      "proposal_shown",
+      "question_shown",
+      "resource_opened",
+      "response_change",
+      "resume",
+      "scene_explained",
+      "scene_finished",
+      "scene_frame",
+      "scene_opened",
+      "scene_prediction",
+      "scene_variables",
+      "session_end",
+      "session_start",
+      "teachback_ended",
+      "teachback_started",
+      "visual_opened",
+      "voice_turn"
+    ]
+  },
+  "event_ingest": {
+    "accepted": 1,
+    "rejected": 0,
+    "duplicate": 0,
+    "dropped_fields": 0,
+    "reasons": [],
+    "session_id": "lrs_6fed7c8c430d47fbb9ff",
+    "event_types": [
+      "adaptation_effect",
+      "answer_submitted",
+      "example_opened",
+      "explanation_opened",
+      "feedback_shown",
+      "first_interaction",
+      "focus_change",
+      "hint_opened",
+      "pause",
+      "proposal_decided",
+      "proposal_shown",
+      "question_shown",
+      "resource_opened",
+      "response_change",
+      "resume",
+      "scene_explained",
+      "scene_finished",
+      "scene_frame",
+      "scene_opened",
+      "scene_prediction",
+      "scene_variables",
+      "session_end",
+      "session_start",
+      "teachback_ended",
+      "teachback_started",
+      "visual_opened",
+      "voice_turn"
+    ]
+  },
+  "lesson_open": {
+    "run_id": "lesson_f18f0a9b1e6840c883cc",
+    "scene_id": "scene_be8fdc7fe7f5412786d7",
+    "spec_id": "scn_879e37655218ab4dc7c3",
+    "kind": "binary_search",
+    "title": "Binary search: one look at the middle, half the list gone",
+    "intent": "predict which half survives each comparison, and say why sorted order makes that safe",
+    "framing": {
+      "intro": "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
+      "outro": "If you can say, before the animation does, which half gets thrown away \u2014 you have the idea."
+    },
+    "citations": [
+      {
+        "ref": "CLRS 2.3.1",
+        "claim": "binary search on a sorted array runs in Theta(lg n) comparisons."
+      }
+    ],
+    "params": {
+      "values": [
+        2,
+        4,
+        13,
+        20,
+        27,
+        35,
+        37,
+        41,
+        44,
+        52,
+        55,
+        57
+      ],
+      "target": 37,
+      "seed": 7
+    },
+    "frames": [
+      {
+        "kind": "init",
+        "title": "12 sorted values, and one target",
+        "narration": "Looking for 37. The list is sorted, so the only thing we need to know at any moment is the range where it could still be: index 0 to 11.",
+        "state": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "lo": 0,
+          "hi": 11,
+          "mid": null,
+          "target": 37,
+          "compared": [],
+          "dropped": [],
+          "found": null,
+          "live": 12
+        },
+        "highlights": [
+          "range"
+        ],
+        "cause": null,
+        "prompt": {
+          "type": "comparison_count",
+          "question": "For 12 sorted values, how many comparisons does a search like this need, worst case?",
+          "choices": [
+            "about n/2",
+            "about log2(n)",
+            "all n of them"
+          ]
+        },
+        "i": 0
+      },
+      {
+        "kind": "probe",
+        "title": "arr[5] = 35, target 37",
+        "narration": "The live range is index 0 to 11. Its middle is 5, which holds 35. Because 35 is smaller than 37, the target can only be to the right.",
+        "state": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "lo": 0,
+          "hi": 11,
+          "mid": 5,
+          "target": 37,
+          "compared": [
+            5
+          ],
+          "dropped": [],
+          "found": null,
+          "live": 12
+        },
+        "highlights": [
+          "mid"
+        ],
+        "cause": "arr[5] < target",
+        "prompt": {
+          "type": "next_branch",
+          "question": "arr[5] is 35 and the target is 37. Which half survives this comparison?",
+          "choices": [
+            "keep the left half",
+            "keep the right half",
+            "stop: found it"
+          ]
+        },
+        "i": 1
+      },
+      {
+        "kind": "discard",
+        "title": "half the range removed",
+        "narration": "arr[5] = 35 < 37, so index 5 and everything left of it is out. The range goes from 12 places to 6.",
+        "state": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "lo": 6,
+          "hi": 11,
+          "mid": null,
+          "target": 37,
+          "compared": [
+            5
+          ],
+          "dropped": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "found": null,
+          "live": 6
+        },
+        "highlights": [
+          "dropped"
+        ],
+        "cause": "arr[5] = 35 < 37, so index 5 and everything left of it is out",
+        "prompt": {
+          "type": "next_probe_index",
+          "question": "With that half gone, which index gets looked at next?",
+          "choices": [
+            "index 8",
+            "index 5",
+            "index 9"
+          ]
+        },
+        "i": 2
+      },
+      {
+        "kind": "probe",
+        "title": "arr[8] = 44, target 37",
+        "narration": "The live range is index 6 to 11. Its middle is 8, which holds 44. Because 44 is larger than 37, the target can only be to the left.",
+        "state": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "lo": 6,
+          "hi": 11,
+          "mid": 8,
+          "target": 37,
+          "compared": [
+            5,
+            8
+          ],
+          "dropped": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "found": null,
+          "live": 6
+        },
+        "highlights": [
+          "mid"
+        ],
+        "cause": "arr[8] > target",
+        "prompt": {
+          "type": "next_branch",
+          "question": "arr[8] is 44 and the target is 37. Which half survives this comparison?",
+          "choices": [
+            "keep the left half",
+            "stop: found it",
+            "keep the right half"
+          ]
+        },
+        "i": 3
+      },
+      {
+        "kind": "discard",
+        "title": "half the range removed",
+        "narration": "arr[8] = 44 > 37, so index 8 and everything right of it is out. The range goes from 6 places to 2.",
+        "state": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "lo": 6,
+          "hi": 7,
+          "mid": null,
+          "target": 37,
+          "compared": [
+            5,
+            8
+          ],
+          "dropped": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            8,
+            9,
+            10,
+            11
+          ],
+          "found": null,
+          "live": 2
+        },
+        "highlights": [
+          "dropped"
+        ],
+        "cause": "arr[8] = 44 > 37, so index 8 and everything right of it is out",
+        "prompt": {
+          "type": "next_probe_index",
+          "question": "With that half gone, which index gets looked at next?",
+          "choices": [
+            "index 6",
+            "index 8",
+            "index 7"
+          ]
+        },
+        "i": 4
+      },
+      {
+        "kind": "probe",
+        "title": "arr[6] = 37",
+        "narration": "The middle of the live range is index 6, holding 37.",
+        "state": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "lo": 6,
+          "hi": 7,
+          "mid": 6,
+          "target": 37,
+          "compared": [
+            5,
+            8,
+            6
+          ],
+          "dropped": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            8,
+            9,
+            10,
+            11
+          ],
+          "found": null,
+          "live": 2
+        },
+        "highlights": [
+          "mid"
+        ],
+        "cause": "arr[6] == 37",
+        "prompt": {
+          "type": "next_branch",
+          "question": "arr[6] is 37. What happens now?",
+          "choices": [
+            "keep the left half",
+            "stop: found it",
+            "keep the right half"
+          ]
+        },
+        "i": 5
+      },
+      {
+        "kind": "found",
+        "title": "Found at index 6",
+        "narration": "37 is at index 6. Every comparison in this search removed half of what was left, which is why 12 sorted values take 3 comparisons instead of up to 12 looks.",
+        "state": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "lo": 6,
+          "hi": 7,
+          "mid": 6,
+          "target": 37,
+          "compared": [
+            5,
+            8,
+            6
+          ],
+          "dropped": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            8,
+            9,
+            10,
+            11
+          ],
+          "found": 6,
+          "live": 2
+        },
+        "highlights": [
+          "found"
+        ],
+        "cause": "arr[6] == 37",
+        "prompt": null,
+        "i": 6
+      },
+      {
+        "kind": "summary",
+        "title": "3 comparisons for 12 values",
+        "narration": "log2(12) is about 3.58, and this search used 3 comparisons. Halving is why sorted data is worth keeping.",
+        "state": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "lo": 6,
+          "hi": 7,
+          "mid": null,
+          "target": 37,
+          "compared": [
+            5,
+            8,
+            6
+          ],
+          "dropped": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            8,
+            9,
+            10,
+            11
+          ],
+          "found": 6,
+          "live": 2,
+          "steps": 3,
+          "log2": 3.585
+        },
+        "highlights": [],
+        "cause": null,
+        "prompt": null,
+        "i": 7
+      }
+    ],
+    "frame_index": 0,
+    "frame_count": 8,
+    "prediction_frames": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "resumed": false,
+    "origin": "builtin",
+    "renderer": {
+      "available": true,
+      "note": "rendered frame by frame from the simulation's trace"
+    },
+    "ok": true
+  },
+  "me_before_purge": {
+    "student_id": "stu_b049fd57bde3437ca9ff",
+    "display_name": "Audit Purge Final",
+    "role": "student",
+    "onboarding_complete": false,
+    "diagnostic_complete": false,
+    "baseline_started": true,
+    "voice_enabled": false,
+    "voice_gender": "female",
+    "language": "en",
+    "consent_analytics": true,
+    "consent_share_with_ai": true,
+    "sessions": 1,
+    "preferences": {
+      "preferred_format": "diagram"
+    },
+    "profile_taken_at": null
+  },
+  "valid_evidence": {
+    "status": 200,
+    "body": {
+      "stored": 1,
+      "run_id": "purge-evidence-valid"
+    }
+  },
+  "soft_delete": {
+    "status": 200,
+    "body": {
+      "deleted": true,
+      "hard_purge_available_via": "adapt db purge-student --student-id <id> --confirm",
+      "note": "learning history is removed from every query path immediately"
+    },
+    "me_after": 401
+  }
+}

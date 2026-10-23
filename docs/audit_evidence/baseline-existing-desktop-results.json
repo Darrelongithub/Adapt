@@ -1,0 +1,200 @@
+{
+  "config": {
+    "argv": [
+      "/usr/local/bin/node",
+      "/home/user/Adapt/e2e/games/node_modules/.bin/playwright",
+      "test",
+      "--project=desktop",
+      "baseline-games.spec.ts"
+    ],
+    "configFile": "/home/user/Adapt/e2e/games/playwright.config.ts",
+    "rootDir": "/home/user/Adapt/e2e/games",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          "/keyboard\\.spec/"
+        ],
+        "testMatch": [
+          "/.*\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      },
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          "/keyboard\\.spec/"
+        ],
+        "testMatch": [
+          "/.*\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      },
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "keyboard",
+        "name": "keyboard",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [],
+        "testMatch": [
+          "/keyboard\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "desktop",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "snapshotDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          {}
+        ],
+        "testMatch": {},
+        "timeout": 1200000,
+        "use": {
+          "baseURL": "http://127.0.0.1:3000",
+          "trace": "retain-on-failure",
+          "actionTimeout": 20000,
+          "screenshot": "off",
+          "launchOptions": {
+            "executablePath": "/opt/pw-browsers/chromium",
+            "args": [
+              "--no-sandbox",
+              "--no-zygote",
+              "--disable-gpu"
+            ]
+          },
+          "reducedMotion": "reduce",
+          "locale": "en-GB",
+          "viewport": {
+            "width": 1280,
+            "height": 900
+          }
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "desktop"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "baseline-games.spec.ts",
+      "file": "baseline-games.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the whole baseline: every game, the next-day check, and what the server recorded",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 128856,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:04:32.258Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8f36cc2efe03426522dc-0d0b65e2f0511eac2746",
+          "file": "baseline-games.spec.ts",
+          "line": 10,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-22T17:04:31.626Z",
+    "duration": 129651.229,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

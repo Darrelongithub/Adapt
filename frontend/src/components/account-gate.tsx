@@ -6,7 +6,7 @@ import { api, post, useApi, type Me } from "@/lib/api";
 import { PageShell } from "./shell/PageShell";
 import { LEARNER_LANDING } from "@/lib/landing";
 import { useFocusTrap } from "@/lib/a11y/useFocusTrap";
-import { Btn, Err, Field, Input, Notice, useSession } from "./ui";
+import { Btn, Err, Field, Input, useSession } from "./ui";
 
 /** This is the only signed-out UI. Protected pages are not mounted behind it. */
 export function AccountGate() {
@@ -16,7 +16,6 @@ export function AccountGate() {
   const [step, setStep] = useState<"consent" | "auth">("consent");
   const [consent, setConsent] = useState(false);
   const [research, setResearch] = useState(false);
-  const [declined, setDeclined] = useState(false);
   const [mode, setMode] = useState<"signin" | "create">("signin");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +28,7 @@ export function AccountGate() {
   const privacy = useApi<{ telemetry?: { note?: string } }>("privacy");
 
   async function enter(guest = false) {
-    if (busy || !consent) return;
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -82,7 +81,7 @@ export function AccountGate() {
             <ul className="mt-4 space-y-2 text-sm">
               <li className="flex items-start gap-2">
                 <span className="choice-icon" aria-hidden="true">✓</span>
-                <span><strong>Recorded:</strong> answers, question times, lesson steps.</span>
+                <span><strong>Needed for your account:</strong> scored answers and progress.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="choice-icon" aria-hidden="true">✕</span>
@@ -98,7 +97,7 @@ export function AccountGate() {
             <div className="space-y-4 mt-4">
               <label className="check-row">
                 <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
-                <span>I agree to this recording. <strong>Required.</strong></span>
+                <span>Also record question times and lesson-step analytics. <strong>Optional.</strong></span>
               </label>
               <label className="check-row">
                 <input type="checkbox" checked={research} onChange={e => setResearch(e.target.checked)} />
@@ -106,10 +105,8 @@ export function AccountGate() {
               </label>
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Btn kind="primary" disabled={!consent} onClick={() => { setStep("auth"); setError(null); }}>Agree and continue</Btn>
-              <Btn kind="ghost" onClick={() => setDeclined(true)}>Decline</Btn>
+              <Btn kind="primary" onClick={() => { setStep("auth"); setError(null); }}>Save choice and continue</Btn>
             </div>
-            {declined ? <div className="mt-4"><Notice tone="warn">Without that consent you cannot enter the app. Nothing has been created. You may reconsider or close this browser tab.</Notice></div> : null}
           </>
         ) : (
           <>

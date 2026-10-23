@@ -1,0 +1,9 @@
+
+[1mdesktop[0m
+page.waitForFunction: Timeout 30000ms exceeded.
+    at readRows (/home/user/Adapt/frontend/tests-e2e/journey.mjs:82:14)
+    at walk (/home/user/Adapt/frontend/tests-e2e/journey.mjs:109:22)
+    at async main (/home/user/Adapt/frontend/tests-e2e/journey.mjs:218:5) {
+  log: [],
+  name: 'TimeoutError'
+}

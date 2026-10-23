@@ -1,0 +1,65 @@
+
+[1mADAPT demo driver[0m
+API: http://127.0.0.1:8000
+
+[1mBackend[0m
+mode undefined · undefined learner(s) · local_only=undefined · v0.1.0
+
+[1mSigned in[0m
+stu_e15cb1098d7440e6b469 (guest-capable account, created=false)
+  onboarding_complete=false · session cookie + CSRF token issued
+
+[1mOnboarding[0m
+stored: goal=GCSE maths, higher tier, session_minutes=15, max_explanation_words=35, push_me=true
+  refused: learning_style (unknown preference key)
+  consent: analytics=true, share_summary_with_ai=false
+  note: No learning style question was asked. 'How you learn best' is measured from what happens during practice, and any lasting change needs your approval.
+
+[1mPlacement[0m
+8 questions · "This placement puts you on each topic with a confidence band — not to grade you."
+  session lrs_cf2f49be91274de19620 · accepts event types: 27
+  (the demo needs to be able to choose right *and* wrong answers; the question payload
+   carries no key, so it reads each one through the same reveal endpoint the UI's button uses)
+   1. numeric   [31mwrong[0m  p_know 0.20→0.08 (new)
+   2. teachback [31mwrong[0m  p_know 0.20→0.08 (new) teachback 1
+   3. numeric   [31mwrong[0m  p_know 0.20→0.08 (new)
+  …3 more, same shape…
+   8. numeric   [32mright[0m  p_know 0.20→0.32 (new)
+
+[1mPlacement done[0m
+4/8 correct across 8 topics · active 1s
+  next per the server: run AI 1 analysis to update mastery, hypotheses and any proposed adaptation
+
+[1mAnalysis[0m
+provider undefined · 8 traces, 1 evidence rows, 1 hypotheses, 1 proposals
+  notes: (none)
+  loop: test=what the learner just answered · observe=metrics derived from the event log · understand=hypotheses with status and disproof conditions · personalize=proposals awaiting a decision - not applied · learn=measured effect of what was approved before
+
+[1mA proposal is waiting[0m
+  ask: Want me to try that? You can say no, or change it — I will not change how you learn without asking.
+  observed: Your recent success rate is 50%; the range where corrections actually stick is around 0.78. One explanation that fits: the current difficulty is too h…
+  hypothesis: Items near the edge of current ability carry the most information per attempt.
+  alternatives: 1
+  would be judged on: accuracy your next 6-14 answers
+  citations: Vygotsky 1978; Kaplan 1974
+
+[1mNot answered[0m
+pass --decide accept|reject|modify|later to answer it and watch the gate (and the 409 on a second answer).
+  active adaptations: 0 — nothing is applied without your yes
+
+[1mPractice queue[0m
+  1. mcq A pizza is cut into 8 equal slices and 3 are eaten. What fra…  [p_know=0.01; prerequisite gap flagged first; expected success 25% vs target 78%; prerequisite of a flagged gap (expected success 25%)] u=2.79
+  2. numeric Work out 6 + 9 x 4.  [p_know=0.01; prerequisite gap flagged first; expected success 24% vs target 78%; prerequisite of a flagged gap (expected success 24%)] u=2.78
+  3. numeric What is the value of the digit 7 in 4.71? Give the place val…  [p_know=0.01; prerequisite gap flagged first; expected success 24% vs target 78%; prerequisite of a flagged gap (expected success 24%)] u=2.78
+  no answer key anywhere in the payload (checked by string scan)
+
+[1mHelp on request[0m
+  hint 1/?: The bottom number is the total number of equal parts.
+  example: 2 step(s) — 8 - 3 = 5 slices left
+  explanation: provider=undefined grounded=false sources=1 sent_to_model=false
+  next action: null
+  attempted after help: right · Correct. What you did is step general: the same move works on the next two.
+
+[31mdemo failed[0m Cannot read properties of undefined (reading 'unit')
+
+The demo asserts nothing about the app's cleverness; a failure here means a contract changed under it, which is exactly what it is for.

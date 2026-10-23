@@ -1,0 +1,14 @@
+
+> adapt-frontend@0.1.0 test:e2e:round4
+> node tests-e2e/round4.mjs
+
+locator.waitFor: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator('[data-account-gate]') to be visible
+
+    at frontDoor (/home/user/Adapt/frontend/tests-e2e/round4.mjs:79:42)
+    at async enter (/home/user/Adapt/frontend/tests-e2e/round4.mjs:87:3)
+    at async file:///home/user/Adapt/frontend/tests-e2e/round4.mjs:395:5 {
+  log: [ "  - waiting for locator('[data-account-gate]') to be visible" ],
+  name: 'TimeoutError'
+}

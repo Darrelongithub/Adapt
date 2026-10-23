@@ -1,0 +1,1444 @@
+{
+  "steps": [
+    {
+      "name": "interactive lesson opens real backend frames",
+      "expected": "multiple frames, renderer, no unresolved placeholders",
+      "actual": {
+        "scene": {
+          "id": "scene_be8fdc7fe7f5412786d7",
+          "spec_id": "scn_879e37655218ab4dc7c3",
+          "kind": "binary_search",
+          "title": "Binary search: one look at the middle, half the list gone",
+          "origin": "builtin",
+          "intent": "predict which half survives each comparison, and say why sorted order makes that safe",
+          "framing": {
+            "intro": "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
+            "outro": "If you can say, before the animation does, which half gets thrown away — you have the idea."
+          },
+          "concepts": [
+            "sorted order as a precondition",
+            "loop invariant on the range",
+            "logarithmic steps"
+          ],
+          "citations": [
+            {
+              "ref": "CLRS 2.3.1",
+              "claim": "binary search on a sorted array runs in Theta(lg n) comparisons."
+            }
+          ],
+          "params": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "target": 37,
+            "seed": 7
+          },
+          "frame_count": 8,
+          "prediction_count": 6,
+          "has_renderer": true,
+          "last_run": null
+        },
+        "frameCount": 8,
+        "renderer": {
+          "available": true,
+          "note": "rendered frame by frame from the simulation's trace"
+        },
+        "badFrames": []
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "prediction gate and backend grading work",
+      "expected": "next blocked before answer; graded answer unlocks next frame",
+      "actual": {
+        "promptIndex": 0,
+        "before": "0",
+        "blocked": "0",
+        "after": "1",
+        "choiceText": "about n/2"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "lesson player refresh resumes server frame",
+      "expected": "same frame and explicit saved-on-server notice",
+      "actual": {
+        "expected": "1",
+        "actual": "1",
+        "resumed": true,
+        "text": "Lessons Your subjects' lessons, and the scenes that teach them. back at frame 2 of 8 — that is where you stopped, saved on the server, not in this tab ✕ Binary search: one look at the middle, half the list gone BINARY_SEARCH play ← back next → end & review speed 0.5× 1× 1.5× 2× 01 12 sorted valu 02 arr[5] = 35, t 03 half the range 04 arr[8] = 44, t 05 half the range 06 arr[6] = 37 07 Found at index 08 3 comparisons frame 2 arr[5] = 35, target 37 binary_search 2 0 4 1 13 2 20 3 27 4 35 5 37 6 41 7 44 8 52 9 55 10 57 11 RANGE STILL LIVE lo 0 … hi 1112 of 12 places left TARGET AND PROBES 37compared arr[5] The live range is index 0 to 11. Its middle is 5, which holds 35. Because 35 is smaller than 37, the target can only be to the right. BECAUSE arr[5] < target Read aloud say what happens next arr[5] is 35 and the target is 37. Which half survives this comparison? keep the left half keep the"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "ending lesson produces evidence-based review",
+      "expected": "review appears with actual prediction totals",
+      "actual": {
+        "text": "Lessons Your subjects' lessons, and the scenes that teach them. back at frame 2 of 8 — that is where you stopped, saved on the server, not in this tab ✕ Binary search: one look at the middle, half the list gone BINARY_SEARCH play ← back next → end & review speed 0.5× 1× 1.5× 2× 01 12 sorted valu 02 arr[5] = 35, t 03 half the range 04 arr[8] = 44, t 05 half the range 06 arr[6] = 37 07 Found at index 08 3 comparisons frame 2 arr[5] = 35, target 37 binary_search 2 0 4 1 13 2 20 3 27 4 35 5 37 6 41 7 44 8 52 9 55 10 57 11 RANGE STILL LIVE lo 0 … hi 1112 of 12 places left TARGET AND PROBES 37compared arr[5] The live range is index 0 to 11. Its middle is 5, which holds 35. Because 35 is smaller than 37, the target can only be to the right. BECAUSE arr[5] < target Read aloud say what happens next arr[5] is 35 and the target is 37. Which half survives this comparison? keep the left half keep the right half stop: found it why this frame ask ⌘/ctrl + enter your system asks for reduced motion, so nothing starts moving on its own — play is a button, and the arrows still step. before you watch Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves. this run status active frames seen 1 / 8 predictions 0/1 right time 0s numbers changed 0 your numbers changing these makes a new scene, validated before it is stored, and starts a fresh run — the old one keeps its predictions instead of being rewritten. The list sorted, no repeats, 3 to 24 numbers. Left empty, the lesson generates one from the seed. List size how many values to search through Target the value to look for. Any number works, including one that is not in the list. why did you change it? kept with your copy; it is how a scene of yours can be recognised as yours run again with these what you just did you called 0 of 1 before the machine confirmed them (one third would be guessing) status finished frames 1 seen, furthest 2 of 8 time 0s your numbers 0 changes 5 frames asked and you moved past: next_branch, next_probe_index, next_branch, next_probe_index, next_branch f1 ✗ about n/2 not about log2(n) If you can say, before the animation does, which half gets thrown away — you have the idea. what this screen is allowed to know ← back to the list"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "console": [],
+  "api": {
+    "list": {
+      "status": 200,
+      "body": {
+        "scenes": [
+          {
+            "id": "scene_be8fdc7fe7f5412786d7",
+            "spec_id": "scn_879e37655218ab4dc7c3",
+            "kind": "binary_search",
+            "title": "Binary search: one look at the middle, half the list gone",
+            "origin": "builtin",
+            "intent": "predict which half survives each comparison, and say why sorted order makes that safe",
+            "framing": {
+              "intro": "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
+              "outro": "If you can say, before the animation does, which half gets thrown away — you have the idea."
+            },
+            "concepts": [
+              "sorted order as a precondition",
+              "loop invariant on the range",
+              "logarithmic steps"
+            ],
+            "citations": [
+              {
+                "ref": "CLRS 2.3.1",
+                "claim": "binary search on a sorted array runs in Theta(lg n) comparisons."
+              }
+            ],
+            "params": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "target": 37,
+              "seed": 7
+            },
+            "frame_count": 8,
+            "prediction_count": 6,
+            "has_renderer": true,
+            "last_run": null
+          },
+          {
+            "id": "scene_ed7a03aaa6b54b30a917",
+            "spec_id": "scn_e47cefe425cb60a36089",
+            "kind": "sorting",
+            "title": "Insertion sort: walking one card back into place",
+            "origin": "builtin",
+            "intent": "connect the number of comparisons to how unordered the input was",
+            "framing": {
+              "intro": "Watch the comparisons, not the swaps: a value moves only while the card to its left is bigger.",
+              "outro": "Nearly sorted input cost you almost nothing per card. That is why this sort survives in real libraries for small ranges."
+            },
+            "concepts": [
+              "sorted prefix as invariant",
+              "stability from a strict test",
+              "quadratic worst case"
+            ],
+            "citations": [
+              {
+                "ref": "Cormen et al. 2.1",
+                "claim": "insertion sort runs in Theta(n) on already sorted input and Theta(n^2) worst case."
+              }
+            ],
+            "params": {
+              "values": [
+                14,
+                44,
+                62,
+                89,
+                30,
+                42,
+                12,
+                20
+              ],
+              "seed": 11
+            },
+            "frame_count": 56,
+            "prediction_count": 7,
+            "has_renderer": true,
+            "last_run": null
+          },
+          {
+            "id": "scene_33bedc68ed0846d290c2",
+            "spec_id": "scn_b076a46ec04d3caef474",
+            "kind": "logic_gates",
+            "title": "Gates: two wires in, one rule out",
+            "origin": "builtin",
+            "intent": "predict any row of the truth table from the rule rather than from memory",
+            "framing": {
+              "intro": "Answer the prompt before the output frame appears. Being wrong here is the useful part.",
+              "outro": "NAND and NOR are functionally complete: you can build every other gate from one kind."
+            },
+            "concepts": [
+              "truth table as definition",
+              "functional completeness",
+              "inversion as composition"
+            ],
+            "citations": [
+              {
+                "ref": "Shannon 1938",
+                "claim": "switching circuits can be described and minimised with Boolean algebra."
+              }
+            ],
+            "params": {
+              "gate": "NAND",
+              "a": 1,
+              "b": 0,
+              "arity": 2,
+              "walk": true
+            },
+            "frame_count": 10,
+            "prediction_count": 7,
+            "has_renderer": true,
+            "last_run": null
+          },
+          {
+            "id": "scene_15c536bf3236443ab845",
+            "spec_id": "scn_e9f2b562d24b02cba20b",
+            "kind": "cpu_cycle",
+            "title": "The instruction cycle, register by register",
+            "origin": "builtin",
+            "intent": "name what each phase of the cycle moves, and why PC advances before execute",
+            "framing": {
+              "intro": "a straight line program: three fetch, decode, execute cycles, then a halt",
+              "outro": "Every phase in here is a register transfer. If you cannot say which register changed, that is the frame to replay."
+            },
+            "concepts": [
+              "stored program",
+              "fetch, decode, execute",
+              "conditional jump as a PC write"
+            ],
+            "citations": [
+              {
+                "ref": "Von Neumann et al. 1945",
+                "claim": "storing instructions and data in one memory makes a program self modifiable and the machine general."
+              }
+            ],
+            "params": {
+              "program": [
+                "LOAD 4",
+                "ADD 5",
+                "STORE 6",
+                "HLT"
+              ],
+              "data": [
+                7,
+                5,
+                0
+              ],
+              "cells": [
+                "LOAD 4",
+                "ADD 5",
+                "STORE 6",
+                "HLT",
+                7,
+                5,
+                0
+              ],
+              "data_at": 4,
+              "max_steps": 12
+            },
+            "frame_count": 14,
+            "prediction_count": 7,
+            "has_renderer": true,
+            "last_run": null
+          },
+          {
+            "id": "scene_942ce04fd5d448a08b4c",
+            "spec_id": "scn_c291248038becdada7d2",
+            "kind": "cpu_cycle",
+            "title": "A loop in the cycle: counting down to a jump",
+            "origin": "builtin",
+            "intent": "name what each phase of the cycle moves, and why PC advances before execute",
+            "framing": {
+              "intro": "a countdown loop: it ends only when the subtraction reaches zero and the JZ sends PC past the last instruction",
+              "outro": "Every phase in here is a register transfer. If you cannot say which register changed, that is the frame to replay."
+            },
+            "concepts": [
+              "stored program",
+              "fetch, decode, execute",
+              "conditional jump as a PC write"
+            ],
+            "citations": [
+              {
+                "ref": "Von Neumann et al. 1945",
+                "claim": "storing instructions and data in one memory makes a program self modifiable and the machine general."
+              }
+            ],
+            "params": {
+              "program": [
+                "LOAD 5",
+                "SUB 6",
+                "STORE 5",
+                "JZ 5",
+                "JMP 0"
+              ],
+              "data": [
+                3,
+                1
+              ],
+              "cells": [
+                "LOAD 5",
+                "SUB 6",
+                "STORE 5",
+                "JZ 5",
+                "JMP 0",
+                3,
+                1
+              ],
+              "data_at": 5,
+              "max_steps": 24
+            },
+            "frame_count": 44,
+            "prediction_count": 28,
+            "has_renderer": true,
+            "last_run": null
+          }
+        ],
+        "kinds": {
+          "binary_search": {
+            "title": "Binary search on a sorted list",
+            "summary": "Watch the search range halve at every comparison, and see why sorted order is what makes one look at the middle worth two looks at the ends.",
+            "params": {
+              "values": {
+                "type": "ints",
+                "min_items": 3,
+                "max_items": 24,
+                "min": 0,
+                "max": 9999,
+                "sorted": true,
+                "unique": true,
+                "default": null,
+                "label": "The list",
+                "help": "sorted, no repeats, 3 to 24 numbers. Left empty, the lesson generates one from the seed."
+              },
+              "n": {
+                "type": "int",
+                "min": 3,
+                "max": 24,
+                "default": 12,
+                "label": "List size",
+                "help": "how many values to search through"
+              },
+              "target": {
+                "type": "int",
+                "min": 0,
+                "max": 9999,
+                "default": null,
+                "label": "Target",
+                "help": "the value to look for. Any number works, including one that is not in the list."
+              },
+              "seed": {
+                "type": "int",
+                "min": 1,
+                "max": 10000000,
+                "default": 7,
+                "label": "Seed",
+                "help": "same seed, same list",
+                "ui": "hidden"
+              }
+            },
+            "max_frames": 200,
+            "prompts": [
+              "comparison_count",
+              "next_branch",
+              "next_probe_index"
+            ],
+            "answers_why": true
+          },
+          "cpu_cycle": {
+            "title": "The CPU instruction cycle: fetch, decode, execute",
+            "summary": "Step a program through a one accumulator machine and watch PC, MAR, MDR and IR take their turn in every instruction — one memory for code and data, and no way to stop but HLT.",
+            "params": {
+              "program": {
+                "type": "lines",
+                "min_items": 1,
+                "max_items": 8,
+                "default": null,
+                "label": "Program",
+                "help": "one instruction per line, up to 8: LOAD, STORE, ADD, SUB, JMP, JZ, HLT"
+              },
+              "data": {
+                "type": "ints",
+                "min_items": 1,
+                "max_items": 32,
+                "min": -999,
+                "max": 999,
+                "default": null,
+                "label": "Data cells",
+                "help": "the numbers the program reads and writes, in cells right after the program"
+              },
+              "max_steps": {
+                "type": "int",
+                "min": 1,
+                "max": 40,
+                "default": 12,
+                "label": "Stop after this many instructions",
+                "help": "a loop that never ends is cut off, and says so"
+              }
+            },
+            "max_frames": 240,
+            "prompts": [
+              "next_register",
+              "accumulator_after",
+              "memory_after",
+              "pc_after"
+            ],
+            "answers_why": true
+          },
+          "logic_gates": {
+            "title": "Logic gates: inputs, rule, output",
+            "summary": "Drive the inputs of one gate and watch the rule decide the output, with the whole truth table beside it so you can predict the next row before it is shown.",
+            "params": {
+              "gate": {
+                "type": "choice",
+                "values": [
+                  "AND",
+                  "BUFFER",
+                  "NAND",
+                  "NOR",
+                  "NOT",
+                  "OR",
+                  "XNOR",
+                  "XOR"
+                ],
+                "default": "NAND",
+                "label": "Gate",
+                "help": "which gate to drive"
+              },
+              "walk": {
+                "type": "bool",
+                "default": true,
+                "label": "Walk the whole truth table",
+                "help": "off: only the inputs you set. on: every row, in counting order."
+              },
+              "a": {
+                "type": "bool",
+                "default": 1,
+                "label": "Input A",
+                "help": "0 or 1"
+              },
+              "b": {
+                "type": "bool",
+                "default": 0,
+                "label": "Input B",
+                "help": "ignored by a single input gate"
+              }
+            },
+            "max_frames": 60,
+            "prompts": [
+              "output",
+              "next_row"
+            ],
+            "answers_why": true
+          },
+          "sorting": {
+            "title": "Insertion sort: build a sorted prefix one card at a time",
+            "summary": "Watch each value get walked back into the sorted part of the list by comparison, and count how many comparisons and shifts the whole sort really costs.",
+            "params": {
+              "values": {
+                "type": "ints",
+                "min_items": 2,
+                "max_items": 20,
+                "min": 0,
+                "max": 999,
+                "default": null,
+                "label": "The list",
+                "help": "any order, repeats allowed — 2 to 20 numbers"
+              },
+              "n": {
+                "type": "int",
+                "min": 2,
+                "max": 20,
+                "default": 8,
+                "label": "List size",
+                "help": "how many values to sort"
+              },
+              "seed": {
+                "type": "int",
+                "min": 1,
+                "max": 10000000,
+                "default": 11,
+                "label": "Seed",
+                "help": "same seed, same list",
+                "ui": "hidden"
+              }
+            },
+            "max_frames": 400,
+            "prompts": [
+              "where_it_lands"
+            ],
+            "answers_why": true
+          }
+        },
+        "counts": {
+          "scenes": 5,
+          "engine_kinds": 4
+        },
+        "note": "every scene here was validated before it was stored: the frames are computed by the backend simulation, and a scene carries nothing to execute"
+      }
+    },
+    "opened": {
+      "run_id": "lesson_2106d1bad53f4094ae45",
+      "scene_id": "scene_be8fdc7fe7f5412786d7",
+      "spec_id": "scn_879e37655218ab4dc7c3",
+      "kind": "binary_search",
+      "title": "Binary search: one look at the middle, half the list gone",
+      "intent": "predict which half survives each comparison, and say why sorted order makes that safe",
+      "framing": {
+        "intro": "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
+        "outro": "If you can say, before the animation does, which half gets thrown away — you have the idea."
+      },
+      "citations": [
+        {
+          "ref": "CLRS 2.3.1",
+          "claim": "binary search on a sorted array runs in Theta(lg n) comparisons."
+        }
+      ],
+      "params": {
+        "values": [
+          2,
+          4,
+          13,
+          20,
+          27,
+          35,
+          37,
+          41,
+          44,
+          52,
+          55,
+          57
+        ],
+        "target": 37,
+        "seed": 7
+      },
+      "frames": [
+        {
+          "kind": "init",
+          "title": "12 sorted values, and one target",
+          "narration": "Looking for 37. The list is sorted, so the only thing we need to know at any moment is the range where it could still be: index 0 to 11.",
+          "state": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "lo": 0,
+            "hi": 11,
+            "mid": null,
+            "target": 37,
+            "compared": [],
+            "dropped": [],
+            "found": null,
+            "live": 12
+          },
+          "highlights": [
+            "range"
+          ],
+          "cause": null,
+          "prompt": {
+            "type": "comparison_count",
+            "question": "For 12 sorted values, how many comparisons does a search like this need, worst case?",
+            "choices": [
+              "about n/2",
+              "about log2(n)",
+              "all n of them"
+            ]
+          },
+          "i": 0
+        },
+        {
+          "kind": "probe",
+          "title": "arr[5] = 35, target 37",
+          "narration": "The live range is index 0 to 11. Its middle is 5, which holds 35. Because 35 is smaller than 37, the target can only be to the right.",
+          "state": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "lo": 0,
+            "hi": 11,
+            "mid": 5,
+            "target": 37,
+            "compared": [
+              5
+            ],
+            "dropped": [],
+            "found": null,
+            "live": 12
+          },
+          "highlights": [
+            "mid"
+          ],
+          "cause": "arr[5] < target",
+          "prompt": {
+            "type": "next_branch",
+            "question": "arr[5] is 35 and the target is 37. Which half survives this comparison?",
+            "choices": [
+              "keep the left half",
+              "keep the right half",
+              "stop: found it"
+            ]
+          },
+          "i": 1
+        },
+        {
+          "kind": "discard",
+          "title": "half the range removed",
+          "narration": "arr[5] = 35 < 37, so index 5 and everything left of it is out. The range goes from 12 places to 6.",
+          "state": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "lo": 6,
+            "hi": 11,
+            "mid": null,
+            "target": 37,
+            "compared": [
+              5
+            ],
+            "dropped": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "found": null,
+            "live": 6
+          },
+          "highlights": [
+            "dropped"
+          ],
+          "cause": "arr[5] = 35 < 37, so index 5 and everything left of it is out",
+          "prompt": {
+            "type": "next_probe_index",
+            "question": "With that half gone, which index gets looked at next?",
+            "choices": [
+              "index 8",
+              "index 5",
+              "index 9"
+            ]
+          },
+          "i": 2
+        },
+        {
+          "kind": "probe",
+          "title": "arr[8] = 44, target 37",
+          "narration": "The live range is index 6 to 11. Its middle is 8, which holds 44. Because 44 is larger than 37, the target can only be to the left.",
+          "state": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "lo": 6,
+            "hi": 11,
+            "mid": 8,
+            "target": 37,
+            "compared": [
+              5,
+              8
+            ],
+            "dropped": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "found": null,
+            "live": 6
+          },
+          "highlights": [
+            "mid"
+          ],
+          "cause": "arr[8] > target",
+          "prompt": {
+            "type": "next_branch",
+            "question": "arr[8] is 44 and the target is 37. Which half survives this comparison?",
+            "choices": [
+              "keep the left half",
+              "stop: found it",
+              "keep the right half"
+            ]
+          },
+          "i": 3
+        },
+        {
+          "kind": "discard",
+          "title": "half the range removed",
+          "narration": "arr[8] = 44 > 37, so index 8 and everything right of it is out. The range goes from 6 places to 2.",
+          "state": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "lo": 6,
+            "hi": 7,
+            "mid": null,
+            "target": 37,
+            "compared": [
+              5,
+              8
+            ],
+            "dropped": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              8,
+              9,
+              10,
+              11
+            ],
+            "found": null,
+            "live": 2
+          },
+          "highlights": [
+            "dropped"
+          ],
+          "cause": "arr[8] = 44 > 37, so index 8 and everything right of it is out",
+          "prompt": {
+            "type": "next_probe_index",
+            "question": "With that half gone, which index gets looked at next?",
+            "choices": [
+              "index 6",
+              "index 8",
+              "index 7"
+            ]
+          },
+          "i": 4
+        },
+        {
+          "kind": "probe",
+          "title": "arr[6] = 37",
+          "narration": "The middle of the live range is index 6, holding 37.",
+          "state": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "lo": 6,
+            "hi": 7,
+            "mid": 6,
+            "target": 37,
+            "compared": [
+              5,
+              8,
+              6
+            ],
+            "dropped": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              8,
+              9,
+              10,
+              11
+            ],
+            "found": null,
+            "live": 2
+          },
+          "highlights": [
+            "mid"
+          ],
+          "cause": "arr[6] == 37",
+          "prompt": {
+            "type": "next_branch",
+            "question": "arr[6] is 37. What happens now?",
+            "choices": [
+              "keep the left half",
+              "stop: found it",
+              "keep the right half"
+            ]
+          },
+          "i": 5
+        },
+        {
+          "kind": "found",
+          "title": "Found at index 6",
+          "narration": "37 is at index 6. Every comparison in this search removed half of what was left, which is why 12 sorted values take 3 comparisons instead of up to 12 looks.",
+          "state": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "lo": 6,
+            "hi": 7,
+            "mid": 6,
+            "target": 37,
+            "compared": [
+              5,
+              8,
+              6
+            ],
+            "dropped": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              8,
+              9,
+              10,
+              11
+            ],
+            "found": 6,
+            "live": 2
+          },
+          "highlights": [
+            "found"
+          ],
+          "cause": "arr[6] == 37",
+          "prompt": null,
+          "i": 6
+        },
+        {
+          "kind": "summary",
+          "title": "3 comparisons for 12 values",
+          "narration": "log2(12) is about 3.58, and this search used 3 comparisons. Halving is why sorted data is worth keeping.",
+          "state": {
+            "values": [
+              2,
+              4,
+              13,
+              20,
+              27,
+              35,
+              37,
+              41,
+              44,
+              52,
+              55,
+              57
+            ],
+            "lo": 6,
+            "hi": 7,
+            "mid": null,
+            "target": 37,
+            "compared": [
+              5,
+              8,
+              6
+            ],
+            "dropped": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              8,
+              9,
+              10,
+              11
+            ],
+            "found": 6,
+            "live": 2,
+            "steps": 3,
+            "log2": 3.585
+          },
+          "highlights": [],
+          "cause": null,
+          "prompt": null,
+          "i": 7
+        }
+      ],
+      "frame_index": 0,
+      "frame_count": 8,
+      "prediction_frames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "resumed": false,
+      "origin": "builtin",
+      "renderer": {
+        "available": true,
+        "note": "rendered frame by frame from the simulation's trace"
+      },
+      "ok": true
+    },
+    "prediction": {
+      "promptIndex": 0,
+      "before": "0",
+      "blocked": "0",
+      "after": "1",
+      "choiceText": "about n/2",
+      "gradedText": "Lessons Your subjects' lessons, and the scenes that teach them. opened from the link you were given ✕ Binary search: one look at the middle, half the list gone BINARY_SEARCH play ← back next → end & review speed 0.5× 1× 1.5× 2× 01 12 sorted valu 02 arr[5] = 35, t 03 half the range 04 arr[8] = 44, t 05 half the range 06 arr[6] = 37 07 Found at index 08 3 comparisons frame 1 12 sorted values, and one target binary_search 2 0 4 1 13 2 20 3 27 4 35 5 37 6 41 7 44 8 52 9 55 10 57 11 RANGE STILL LIVE lo 0 … hi 1112 of 12 places left TARGET AND PROBES 37compared nothing yet Looking for 37. The list is sorted, so the only thing we need to know at any moment is the range where it could still be: index 0 to 11. Read aloud say what happens next For 12 sorted values, how many comparisons does a search like this need, worst case? about n/2 about log2(n) all n of them the machine does something else: about log2(n) Each comparison halves what is left, so the count grows with log2 of the list size. frame 1 · graded by the simulation on the backend, not by this page · 1 prediction so far, 0 right why this frame ask ⌘/ctrl + enter your system asks for reduced motion, so nothing starts moving on its own — play is a button, and the arrows still step. before you watch Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves. your numbers changing these makes a new scene, validated before it is stored, and starts a fresh run — the old one keeps its predictions instead of being rewritten. The list sorted, no repeats, 3 to 24 numbers. Left empty, the lesson generates one from the seed. List size how many values to search through Target the value to look for. Any number works, including one that is not in the list. why did you change it? kept with your copy; it is how a scene of yours can be recognised as yours run again with these what this screen is allowed to know ← back to the list"
+    },
+    "resume": {
+      "response": {
+        "run_id": "lesson_2106d1bad53f4094ae45",
+        "scene_id": "scene_be8fdc7fe7f5412786d7",
+        "spec_id": "scn_879e37655218ab4dc7c3",
+        "kind": "binary_search",
+        "title": "Binary search: one look at the middle, half the list gone",
+        "intent": "predict which half survives each comparison, and say why sorted order makes that safe",
+        "framing": {
+          "intro": "Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves.",
+          "outro": "If you can say, before the animation does, which half gets thrown away — you have the idea."
+        },
+        "citations": [
+          {
+            "ref": "CLRS 2.3.1",
+            "claim": "binary search on a sorted array runs in Theta(lg n) comparisons."
+          }
+        ],
+        "params": {
+          "values": [
+            2,
+            4,
+            13,
+            20,
+            27,
+            35,
+            37,
+            41,
+            44,
+            52,
+            55,
+            57
+          ],
+          "target": 37,
+          "seed": 7
+        },
+        "frames": [
+          {
+            "kind": "init",
+            "title": "12 sorted values, and one target",
+            "narration": "Looking for 37. The list is sorted, so the only thing we need to know at any moment is the range where it could still be: index 0 to 11.",
+            "state": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "lo": 0,
+              "hi": 11,
+              "mid": null,
+              "target": 37,
+              "compared": [],
+              "dropped": [],
+              "found": null,
+              "live": 12
+            },
+            "highlights": [
+              "range"
+            ],
+            "cause": null,
+            "prompt": {
+              "type": "comparison_count",
+              "question": "For 12 sorted values, how many comparisons does a search like this need, worst case?",
+              "choices": [
+                "about n/2",
+                "about log2(n)",
+                "all n of them"
+              ]
+            },
+            "i": 0
+          },
+          {
+            "kind": "probe",
+            "title": "arr[5] = 35, target 37",
+            "narration": "The live range is index 0 to 11. Its middle is 5, which holds 35. Because 35 is smaller than 37, the target can only be to the right.",
+            "state": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "lo": 0,
+              "hi": 11,
+              "mid": 5,
+              "target": 37,
+              "compared": [
+                5
+              ],
+              "dropped": [],
+              "found": null,
+              "live": 12
+            },
+            "highlights": [
+              "mid"
+            ],
+            "cause": "arr[5] < target",
+            "prompt": {
+              "type": "next_branch",
+              "question": "arr[5] is 35 and the target is 37. Which half survives this comparison?",
+              "choices": [
+                "keep the left half",
+                "keep the right half",
+                "stop: found it"
+              ]
+            },
+            "i": 1
+          },
+          {
+            "kind": "discard",
+            "title": "half the range removed",
+            "narration": "arr[5] = 35 < 37, so index 5 and everything left of it is out. The range goes from 12 places to 6.",
+            "state": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "lo": 6,
+              "hi": 11,
+              "mid": null,
+              "target": 37,
+              "compared": [
+                5
+              ],
+              "dropped": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "found": null,
+              "live": 6
+            },
+            "highlights": [
+              "dropped"
+            ],
+            "cause": "arr[5] = 35 < 37, so index 5 and everything left of it is out",
+            "prompt": {
+              "type": "next_probe_index",
+              "question": "With that half gone, which index gets looked at next?",
+              "choices": [
+                "index 8",
+                "index 5",
+                "index 9"
+              ]
+            },
+            "i": 2
+          },
+          {
+            "kind": "probe",
+            "title": "arr[8] = 44, target 37",
+            "narration": "The live range is index 6 to 11. Its middle is 8, which holds 44. Because 44 is larger than 37, the target can only be to the left.",
+            "state": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "lo": 6,
+              "hi": 11,
+              "mid": 8,
+              "target": 37,
+              "compared": [
+                5,
+                8
+              ],
+              "dropped": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "found": null,
+              "live": 6
+            },
+            "highlights": [
+              "mid"
+            ],
+            "cause": "arr[8] > target",
+            "prompt": {
+              "type": "next_branch",
+              "question": "arr[8] is 44 and the target is 37. Which half survives this comparison?",
+              "choices": [
+                "keep the left half",
+                "stop: found it",
+                "keep the right half"
+              ]
+            },
+            "i": 3
+          },
+          {
+            "kind": "discard",
+            "title": "half the range removed",
+            "narration": "arr[8] = 44 > 37, so index 8 and everything right of it is out. The range goes from 6 places to 2.",
+            "state": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "lo": 6,
+              "hi": 7,
+              "mid": null,
+              "target": 37,
+              "compared": [
+                5,
+                8
+              ],
+              "dropped": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                8,
+                9,
+                10,
+                11
+              ],
+              "found": null,
+              "live": 2
+            },
+            "highlights": [
+              "dropped"
+            ],
+            "cause": "arr[8] = 44 > 37, so index 8 and everything right of it is out",
+            "prompt": {
+              "type": "next_probe_index",
+              "question": "With that half gone, which index gets looked at next?",
+              "choices": [
+                "index 6",
+                "index 8",
+                "index 7"
+              ]
+            },
+            "i": 4
+          },
+          {
+            "kind": "probe",
+            "title": "arr[6] = 37",
+            "narration": "The middle of the live range is index 6, holding 37.",
+            "state": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "lo": 6,
+              "hi": 7,
+              "mid": 6,
+              "target": 37,
+              "compared": [
+                5,
+                8,
+                6
+              ],
+              "dropped": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                8,
+                9,
+                10,
+                11
+              ],
+              "found": null,
+              "live": 2
+            },
+            "highlights": [
+              "mid"
+            ],
+            "cause": "arr[6] == 37",
+            "prompt": {
+              "type": "next_branch",
+              "question": "arr[6] is 37. What happens now?",
+              "choices": [
+                "keep the left half",
+                "stop: found it",
+                "keep the right half"
+              ]
+            },
+            "i": 5
+          },
+          {
+            "kind": "found",
+            "title": "Found at index 6",
+            "narration": "37 is at index 6. Every comparison in this search removed half of what was left, which is why 12 sorted values take 3 comparisons instead of up to 12 looks.",
+            "state": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "lo": 6,
+              "hi": 7,
+              "mid": 6,
+              "target": 37,
+              "compared": [
+                5,
+                8,
+                6
+              ],
+              "dropped": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                8,
+                9,
+                10,
+                11
+              ],
+              "found": 6,
+              "live": 2
+            },
+            "highlights": [
+              "found"
+            ],
+            "cause": "arr[6] == 37",
+            "prompt": null,
+            "i": 6
+          },
+          {
+            "kind": "summary",
+            "title": "3 comparisons for 12 values",
+            "narration": "log2(12) is about 3.58, and this search used 3 comparisons. Halving is why sorted data is worth keeping.",
+            "state": {
+              "values": [
+                2,
+                4,
+                13,
+                20,
+                27,
+                35,
+                37,
+                41,
+                44,
+                52,
+                55,
+                57
+              ],
+              "lo": 6,
+              "hi": 7,
+              "mid": null,
+              "target": 37,
+              "compared": [
+                5,
+                8,
+                6
+              ],
+              "dropped": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                8,
+                9,
+                10,
+                11
+              ],
+              "found": 6,
+              "live": 2,
+              "steps": 3,
+              "log2": 3.585
+            },
+            "highlights": [],
+            "cause": null,
+            "prompt": null,
+            "i": 7
+          }
+        ],
+        "frame_index": 1,
+        "frame_count": 8,
+        "prediction_frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "resumed": true,
+        "origin": "builtin",
+        "renderer": {
+          "available": true,
+          "note": "rendered frame by frame from the simulation's trace"
+        },
+        "ok": true
+      },
+      "frame": "1",
+      "text": "Lessons Your subjects' lessons, and the scenes that teach them. back at frame 2 of 8 — that is where you stopped, saved on the server, not in this tab ✕ Binary search: one look at the middle, half the list gone BINARY_SEARCH play ← back next → end & review speed 0.5× 1× 1.5× 2× 01 12 sorted valu 02 arr[5] = 35, t 03 half the range 04 arr[8] = 44, t 05 half the range 06 arr[6] = 37 07 Found at index 08 3 comparisons frame 2 arr[5] = 35, target 37 binary_search 2 0 4 1 13 2 20 3 27 4 35 5 37 6 41 7 44 8 52 9 55 10 57 11 RANGE STILL LIVE lo 0 … hi 1112 of 12 places left TARGET AND PROBES 37compared arr[5] The live range is index 0 to 11. Its middle is 5, which holds 35. Because 35 is smaller than 37, the target can only be to the right. BECAUSE arr[5] < target Read aloud say what happens next arr[5] is 35 and the target is 37. Which half survives this comparison? keep the left half keep the right half stop: found it why this frame ask ⌘/ctrl + enter your system asks for reduced motion, so nothing starts moving on its own — play is a button, and the arrows still step. before you watch Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves. this run status active frames seen 1 / 8 predictions 0/1 right time 0s numbers changed 0 your numbers changing these makes a new scene, validated before it is stored, and starts a fresh run — the old one keeps its predictions instead of being rewritten. The list sorted, no repeats, 3 to 24 numbers. Left empty, the lesson generates one from the seed. List size how many values to search through Target the value to look for. Any number works, including one that is not in the list. why did you change it? kept with your copy; it is how a scene of yours can be recognised as yours r"
+    },
+    "reviewText": "Lessons Your subjects' lessons, and the scenes that teach them. back at frame 2 of 8 — that is where you stopped, saved on the server, not in this tab ✕ Binary search: one look at the middle, half the list gone BINARY_SEARCH play ← back next → end & review speed 0.5× 1× 1.5× 2× 01 12 sorted valu 02 arr[5] = 35, t 03 half the range 04 arr[8] = 44, t 05 half the range 06 arr[6] = 37 07 Found at index 08 3 comparisons frame 2 arr[5] = 35, target 37 binary_search 2 0 4 1 13 2 20 3 27 4 35 5 37 6 41 7 44 8 52 9 55 10 57 11 RANGE STILL LIVE lo 0 … hi 1112 of 12 places left TARGET AND PROBES 37compared arr[5] The live range is index 0 to 11. Its middle is 5, which holds 35. Because 35 is smaller than 37, the target can only be to the right. BECAUSE arr[5] < target Read aloud say what happens next arr[5] is 35 and the target is 37. Which half survives this comparison? keep the left half keep the right half stop: found it why this frame ask ⌘/ctrl + enter your system asks for reduced motion, so nothing starts moving on its own — play is a button, and the arrows still step. before you watch Pause any time and change the target: the search recomputes, and you can watch whether the number of comparisons moves. this run status active frames seen 1 / 8 predictions 0/1 right time 0s numbers changed 0 your numbers changing these makes a new scene, validated before it is stored, and starts a fresh run — the old one keeps its predictions instead of being rewritten. The list sorted, no repeats, 3 to 24 numbers. Left empty, the lesson generates one from the seed. List size how many values to search through Target the value to look for. Any number works, including one that is not in the list. why did you change it? kept with your copy; it is how a scene of yours can be recognised as yours run again with these what you just did you called 0 of 1 before the machine confirmed them (one third would be guessing) status finished frames 1 seen, furthest 2 of 8 time 0s your numbers 0 changes 5 frames asked and you moved past: next_branch, next_probe_index, next_branch, next_probe_index, next_branch f1 ✗ about n/2 not about log2(n) If you can say, before the animation does, which half gets thrown away — you have the idea. what this screen is allowed to know ← back to the list"
+  }
+}

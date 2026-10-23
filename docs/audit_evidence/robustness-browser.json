@@ -1,0 +1,706 @@
+{
+  "at": "2026-10-22T17:46:56.397Z",
+  "steps": [
+    {
+      "name": "slow attempt and double-submit",
+      "purpose": "one slow server response must produce one graded attempt without a duplicate or false receipt",
+      "expected": "one POST, pending state, then one Not yet receipt",
+      "actual": {
+        "attemptPosts": 1,
+        "during": {
+          "disabled": null,
+          "text": " the example is not on screen while you answer.\n\nName the green pigment in chloroplasts that traps light energy.\nYour answer\nwhy this question\nPicked because it should be stretching you for you right now.\nhow it is set up\nWorked example first\npractice · ~50s\n…\nA hint\nWorked example\nReveal it\nAsk\nPrevious\nNext question\nnothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice\nWhy this order\n\nselected for expected information gain, review due date and gap utility"
+        },
+        "receipt": "FORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Name the green pigment in chloroplasts that traps light energy. Your answer why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~50s Try again A hint Worked example Reveal it Not yet TEXT_MATCH Not yet. '0.999' does not satisfy what the question asks for. Try starting here: Chlorophyll traps the light energy that drives the reaction. no validated matched B question is available; no comparison was invented No method comparison was recorded. View your evidence band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Ask Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "offline answer submission",
+      "purpose": "a lost connection must not invent grading or discard the selected answer",
+      "expected": "visible failure, selection retained, no successful grading receipt",
+      "actual": {
+        "text": "Practice One question at a time, taught your way. 2 of 3 estimates Finish session practice Worked example first Worked example BEFORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Which two substances does a plant take in for photosynthesis? A Carbon dioxide and water B Oxygen and water C Glucose and oxygen D Carbon dioxide and glucose why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~70s Check it A hint Worked example Reveal it the backend is not reachable from the browser (Failed to fetch) Ask Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility",
+        "choiceText": "A\nCarbon dioxide and water",
+        "choiceChecked": "true",
+        "online": false,
+        "newAttemptPosts": 1,
+        "newAttemptResponses": 0,
+        "newAttemptFailures": 1,
+        "checkDisabled": false
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "online retry after offline failure",
+      "purpose": "the same answer can be submitted when connectivity returns",
+      "expected": "retry enabled and server receipt appears",
+      "actual": {
+        "retryDisabled": false,
+        "recovered": true,
+        "attemptPosts": 3
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "mobile drawer navigation",
+      "purpose": "all learner sections remain reachable on a phone",
+      "expected": "menu opens and Review link navigates",
+      "actual": {
+        "menuOpen": true,
+        "links": [
+          {
+            "text": "adapt",
+            "href": "/"
+          },
+          {
+            "text": "Home",
+            "href": "/"
+          },
+          {
+            "text": "Learn",
+            "href": "/learn"
+          },
+          {
+            "text": "Review",
+            "href": "/review"
+          },
+          {
+            "text": "Progress",
+            "href": "/progress"
+          },
+          {
+            "text": "Settings",
+            "href": "/settings"
+          }
+        ],
+        "url": "http://127.0.0.1:3000/review"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "registered mobile route stress",
+      "purpose": "dashboard and all navigation sections work at 390px without horizontal scroll or error boundary",
+      "expected": "11 routes render with no overflow/error",
+      "actual": [
+        {
+          "route": "/",
+          "path": "/",
+          "text": "Hi Audit Robust, ready to learn?Pick up where you left off.Continue: BiologyAdd a subject1Subjects1Active1Due0ChangesContinue learningAdd a subject0BiologyLearningContinue: Biology",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/learn",
+          "path": "/learn",
+          "text": "Practice\n\nOne question at a time, taught your way.\n\n1 of 3\n1 to review\nestimates\nFinish session\npractice\n\nWorked example first\n\nWorked example\nBEFORE THE QUESTION\nPhotosynthesis is how a plant makes its own food.\nthis is the definition to hold on to\nIt happens in the chloroplasts, which contain a green pigment called chlorophyll.\nthis sentence carries a fact the rest depends on\nThe plant takes in ",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/review",
+          "path": "/review",
+          "text": "Review queue\n\nscheduled at the point your own recall is projected to reach ~85%\n\nReload\n1 waiting\nHow plants make their food\ndue in 15 min\n\nprojected recall at this moment: 85% · recall halves after 1 h · 2 successful reviews, 1 lapse\n\nIt went\nI still know it\nShow me the check\ndo it properly instead\nReviews completed this session\nNothing reviewed yet.\nHow well your own predictions line up\n0 checks",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/progress",
+          "path": "/progress",
+          "text": "What the data says\n\n30-day window · 2 answers · 10 logged interactions\n\nReload\nRecompute estimates\nHow the app sees you\nTopic estimates\n1 topics with data\n\nPosition is the estimate. The width of the line through it is the uncertainty around that estimate — wider means less evidence pins it down. The size of the circle is how many answers it rests on. A bigger circle is not a better score, it is a ",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/settings",
+          "path": "/settings",
+          "text": "Settings, and what is kept\n\nEvery claim here is read from the server that enforces it.\n\nYour preferences\n22 preferences\nanything else\navoid\nfree text, read by the tutor as a request rather than a trait\nchallenge first\ndevice context\nencourage\nfree text, read by the tutor as a request rather than a trait\nfeedback style\ngoal\nmax explanation words\nthe full explanation stays one click away\nmotivation\n",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/lesson",
+          "path": "/lesson",
+          "text": "Lessons\n\nYour subjects' lessons, and the scenes that teach them.\n\nYour lessons\nBiology\n\nLearning.\n\nContinue: Biology",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/journey",
+          "path": "/journey",
+          "text": "Your path\n\nOne step at a time. You can pause or skip any step.\n\nA few questions\n\nYour choices shape the starting plan.\n\nOpen mind check\nChoose a subject\nSkip this step\nStep 01\nMind check\nStep 02\nChoose a subject\nStep 03\nFirst tailored lesson",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/proposals",
+          "path": "/proposals",
+          "text": "Changes waiting for you\n\nEach row separates what was observed from what we think it means. Nothing here has been applied. Saying no is recorded too, and stops us asking again tomorrow.\n\nReload\nCheck the effect\nNothing to approve right now\n\nNothing here takes effect until you decide.\n\nNo proposals right now. A pattern needs enough answers to be worth your time — if you have finished a session and n",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/baseline",
+          "path": "/baseline",
+          "text": "Step 1 of 13 · 0% through\n\nHow you like to meet a new idea\nStop here\nHow would you like to meet a new idea?\n\nOne preference, not a label. why we ask\n\na diagram\na picture or graph of the idea\na written explanation\na short paragraph that explains it\na worked example\none worked through, step by step\nwhy we ask\nSee the games\n\nStop anytime. Unplayed games stay unmeasured.",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/evidence",
+          "path": "/evidence",
+          "text": "Preference and performance\n\nWhat you asked for is a preference, not a measurement. Here is what your own answers suggest across all topics.\n\nBack to progress\nWhat you chose, next to what happened\n\nInsufficient evidence to compare your preference with performance. We need at least two methods with eight effective observations each.\n\nActual minus predicted success across all topics; associations, no",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        },
+        {
+          "route": "/voice",
+          "path": "/voice",
+          "text": "Talk to it\n\nGreeting, read-aloud, and listen-and-answer.\n\nSame tutor, same memory, different input. transcription accuracy and teaching accuracy are measured separately: a misheard word is a speech problem, not a tutoring problem, and the transcript is always editable\n\nNOT CONNECTED\nconnect\nTurn\n\nNothing said yet. Ask about the question you are stuck on. The tutor sees the same plan and the same e",
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "routeError": false
+        }
+      ],
+      "verdict": "PASS"
+    }
+  ],
+  "console": [
+    {
+      "page": "desktop",
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
+    },
+    {
+      "page": "desktop",
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
+    },
+    {
+      "page": "desktop",
+      "type": "warning",
+      "text": "The resource http://127.0.0.1:3000/_next/static/css/882611466ea8c5e5.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally."
+    }
+  ],
+  "api": {
+    "register": {
+      "status": 200,
+      "student_id": "stu_1a4445b829c94fa791a7"
+    },
+    "plan": {
+      "items": [
+        {
+          "item": {
+            "id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43",
+            "topic_title": null,
+            "kind": "text",
+            "stem": "Name the green pigment in chloroplasts that traps light energy.",
+            "prompt_context": null,
+            "visual_spec": null,
+            "choices": null,
+            "experience_mode": "read",
+            "difficulty": 0.3,
+            "est_seconds": 50,
+            "hint_count": 3,
+            "has_worked_example": true,
+            "numbas_ref": null,
+            "teachback": false
+          },
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "reason": "p_know=0.20; expected success 39% vs target 78%; hard for you right now, so the worked example is open",
+          "reason_plain": "Picked because it should be stretching you for you right now.",
+          "utility": 0.9634,
+          "presentation": {
+            "attach_worked_example": true,
+            "feedback_delay_s": 0,
+            "max_words": null,
+            "require_teachback": false,
+            "hints_allowed": null,
+            "experience_mode": "worked_example",
+            "method": "worked_example",
+            "method_label": "Worked example first",
+            "method_assignment": {
+              "method": "worked_example",
+              "method_label": "Worked example first",
+              "strategy": "worked_examples",
+              "surface": "a fully solved, step labelled example",
+              "arm": "example_first",
+              "design": "randomised",
+              "assigned_by": "rotation",
+              "exposure": 0,
+              "source_type": "controlled",
+              "weight": 1,
+              "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+            },
+            "teaching": {
+              "method": "worked_example",
+              "kind": "worked_example",
+              "steps": [
+                {
+                  "index": 1,
+                  "text": "Photosynthesis is how a plant makes its own food.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 2,
+                  "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 3,
+                  "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 4,
+                  "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 5,
+                  "text": "Oxygen is released as a waste product of the reaction.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 6,
+                  "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                }
+              ],
+              "from_source": true
+            },
+            "expected_success": 0.386
+          },
+          "decision_trace": {
+            "information_gain": 0.187,
+            "expected_success": 0.386,
+            "fit": 0.606,
+            "source": "bank",
+            "p_know": 0.2,
+            "method": "worked_example",
+            "method_design": "randomised",
+            "arm": "example_first",
+            "question_format": "typed_text",
+            "scaffolded": "below the success floor: the worked example is attached"
+          }
+        },
+        {
+          "item": {
+            "id": "itm_bio_photosynthesis_01",
+            "topic_id": "top_d7b4c258d3c444a08d43",
+            "topic_title": null,
+            "kind": "mcq",
+            "stem": "Which two substances does a plant take in for photosynthesis?",
+            "prompt_context": null,
+            "visual_spec": null,
+            "choices": [
+              {
+                "index": 0,
+                "text": "Carbon dioxide and water"
+              },
+              {
+                "index": 1,
+                "text": "Oxygen and water"
+              },
+              {
+                "index": 2,
+                "text": "Glucose and oxygen"
+              },
+              {
+                "index": 3,
+                "text": "Carbon dioxide and glucose"
+              }
+            ],
+            "experience_mode": "read",
+            "difficulty": 0.4,
+            "est_seconds": 70,
+            "hint_count": 3,
+            "has_worked_example": true,
+            "numbas_ref": null,
+            "teachback": false
+          },
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "reason": "p_know=0.20; expected success 36% vs target 78%; hard for you right now, so the worked example is open",
+          "reason_plain": "Picked because it should be stretching you for you right now.",
+          "utility": 0.9505,
+          "presentation": {
+            "attach_worked_example": true,
+            "feedback_delay_s": 0,
+            "max_words": null,
+            "require_teachback": false,
+            "hints_allowed": null,
+            "experience_mode": "worked_example",
+            "method": "worked_example",
+            "method_label": "Worked example first",
+            "method_assignment": {
+              "method": "worked_example",
+              "method_label": "Worked example first",
+              "strategy": "worked_examples",
+              "surface": "a fully solved, step labelled example",
+              "arm": "example_first",
+              "design": "randomised",
+              "assigned_by": "rotation",
+              "exposure": 0,
+              "source_type": "controlled",
+              "weight": 1,
+              "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+            },
+            "teaching": {
+              "method": "worked_example",
+              "kind": "worked_example",
+              "steps": [
+                {
+                  "index": 1,
+                  "text": "Photosynthesis is how a plant makes its own food.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 2,
+                  "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 3,
+                  "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 4,
+                  "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 5,
+                  "text": "Oxygen is released as a waste product of the reaction.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 6,
+                  "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                }
+              ],
+              "from_source": true
+            },
+            "expected_success": 0.363
+          },
+          "decision_trace": {
+            "information_gain": 0.187,
+            "expected_success": 0.363,
+            "fit": 0.583,
+            "source": "bank",
+            "p_know": 0.2,
+            "method": "worked_example",
+            "method_design": "randomised",
+            "arm": "example_first",
+            "question_format": "choice",
+            "scaffolded": "below the success floor: the worked example is attached"
+          }
+        },
+        {
+          "item": {
+            "id": "itm_bio_photosynthesis_02",
+            "topic_id": "top_d7b4c258d3c444a08d43",
+            "topic_title": null,
+            "kind": "teachback",
+            "stem": "Explain how a plant makes its food out loud in your own words, as if to someone meeting it for the first time.",
+            "prompt_context": null,
+            "visual_spec": null,
+            "choices": null,
+            "experience_mode": "teachback",
+            "difficulty": 0.45,
+            "est_seconds": 150,
+            "hint_count": 3,
+            "has_worked_example": true,
+            "numbas_ref": null,
+            "teachback": true
+          },
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "reason": "p_know=0.20; expected success 35% vs target 78%; hard for you right now, so the worked example is open",
+          "reason_plain": "Picked because it should be stretching you for you right now.",
+          "utility": 0.4299,
+          "presentation": {
+            "attach_worked_example": true,
+            "feedback_delay_s": 0,
+            "max_words": null,
+            "require_teachback": false,
+            "hints_allowed": null,
+            "experience_mode": "worked_example",
+            "method": "worked_example",
+            "method_label": "Worked example first",
+            "method_assignment": {
+              "method": "worked_example",
+              "method_label": "Worked example first",
+              "strategy": "worked_examples",
+              "surface": "a fully solved, step labelled example",
+              "arm": "example_first",
+              "design": "randomised",
+              "assigned_by": "rotation",
+              "exposure": 0,
+              "source_type": "controlled",
+              "weight": 1,
+              "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+            },
+            "teaching": {
+              "method": "worked_example",
+              "kind": "worked_example",
+              "steps": [
+                {
+                  "index": 1,
+                  "text": "Photosynthesis is how a plant makes its own food.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 2,
+                  "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 3,
+                  "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 4,
+                  "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 5,
+                  "text": "Oxygen is released as a waste product of the reaction.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 6,
+                  "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                }
+              ],
+              "from_source": true
+            },
+            "expected_success": 0.351
+          },
+          "decision_trace": {
+            "information_gain": 0.187,
+            "expected_success": 0.351,
+            "fit": 0.571,
+            "source": "bank",
+            "p_know": 0.2,
+            "method": "worked_example",
+            "method_design": "randomised",
+            "arm": "example_first",
+            "question_format": "explain",
+            "scaffolded": "below the success floor: the worked example is attached"
+          }
+        }
+      ],
+      "why": "selected for expected information gain, review due date and gap utility"
+    },
+    "slowDouble": {
+      "during": {
+        "disabled": null,
+        "text": " the example is not on screen while you answer.\n\nName the green pigment in chloroplasts that traps light energy.\nYour answer\nwhy this question\nPicked because it should be stretching you for you right now.\nhow it is set up\nWorked example first\npractice · ~50s\n…\nA hint\nWorked example\nReveal it\nAsk\nPrevious\nNext question\nnothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice\nWhy this order\n\nselected for expected information gain, review due date and gap utility"
+      },
+      "receipt": "Practice One question at a time, taught your way. 1 of 3 estimates Finish session practice Worked example first Worked example BEFORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Name the green pigment in chloroplasts that traps light energy. Your answer why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~50s Try again A hint Worked example Reveal it Not yet TEXT_MATCH Not yet. '0.999' does not satisfy what the question asks for. Try starting here: Chlorophyll traps the light energy that drives the reaction. no validated matched B question is available; no comparison was invented No method comparison was recorded. View your evidence band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Ask Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility",
+      "attemptPosts": 1
+    },
+    "offline": {
+      "text": "Practice One question at a time, taught your way. 2 of 3 estimates Finish session practice Worked example first Worked example BEFORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Which two substances does a plant take in for photosynthesis? A Carbon dioxide and water B Oxygen and water C Glucose and oxygen D Carbon dioxide and glucose why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~70s Check it A hint Worked example Reveal it the backend is not reachable from the browser (Failed to fetch) Ask Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility",
+      "choiceText": "A\nCarbon dioxide and water",
+      "choiceChecked": "true",
+      "online": false,
+      "newAttemptPosts": 1,
+      "newAttemptResponses": 0,
+      "newAttemptFailures": 1,
+      "checkDisabled": false
+    },
+    "recovery": {
+      "retryDisabled": false,
+      "text": "Practice One question at a time, taught your way. 2 of 3 estimates Finish session practice Worked example first Worked example BEFORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Which two substances does a plant take in for photosynthesis? A Carbon dioxide and water B Oxygen and water C Glucose and oxygen D Carbon dioxide and glucose why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~70s Try again A hint Worked example Reveal it That's it MCQ_INDEX Correct. What you did is step general: the same move works on the next two. band gapped[0.00, 0.58] 0.08 → 0.20 n=2 EARLY SIGNAL review 10/22/2026 Ask Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility",
+      "attemptPosts": 3,
+      "attemptResponses": 2,
+      "attemptFailures": 1
+    },
+    "mobileMenu": {
+      "menuOpen": true,
+      "links": [
+        {
+          "text": "adapt",
+          "href": "/"
+        },
+        {
+          "text": "Home",
+          "href": "/"
+        },
+        {
+          "text": "Learn",
+          "href": "/learn"
+        },
+        {
+          "text": "Review",
+          "href": "/review"
+        },
+        {
+          "text": "Progress",
+          "href": "/progress"
+        },
+        {
+          "text": "Settings",
+          "href": "/settings"
+        }
+      ],
+      "url": "http://127.0.0.1:3000/review"
+    },
+    "mobileRoutes": [
+      {
+        "route": "/",
+        "path": "/",
+        "text": "Hi Audit Robust, ready to learn?Pick up where you left off.Continue: BiologyAdd a subject1Subjects1Active1Due0ChangesContinue learningAdd a subject0BiologyLearningContinue: Biology",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/learn",
+        "path": "/learn",
+        "text": "Practice\n\nOne question at a time, taught your way.\n\n1 of 3\n1 to review\nestimates\nFinish session\npractice\n\nWorked example first\n\nWorked example\nBEFORE THE QUESTION\nPhotosynthesis is how a plant makes its own food.\nthis is the definition to hold on to\nIt happens in the chloroplasts, which contain a green pigment called chlorophyll.\nthis sentence carries a fact the rest depends on\nThe plant takes in ",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/review",
+        "path": "/review",
+        "text": "Review queue\n\nscheduled at the point your own recall is projected to reach ~85%\n\nReload\n1 waiting\nHow plants make their food\ndue in 15 min\n\nprojected recall at this moment: 85% · recall halves after 1 h · 2 successful reviews, 1 lapse\n\nIt went\nI still know it\nShow me the check\ndo it properly instead\nReviews completed this session\nNothing reviewed yet.\nHow well your own predictions line up\n0 checks",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/progress",
+        "path": "/progress",
+        "text": "What the data says\n\n30-day window · 2 answers · 10 logged interactions\n\nReload\nRecompute estimates\nHow the app sees you\nTopic estimates\n1 topics with data\n\nPosition is the estimate. The width of the line through it is the uncertainty around that estimate — wider means less evidence pins it down. The size of the circle is how many answers it rests on. A bigger circle is not a better score, it is a ",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/settings",
+        "path": "/settings",
+        "text": "Settings, and what is kept\n\nEvery claim here is read from the server that enforces it.\n\nYour preferences\n22 preferences\nanything else\navoid\nfree text, read by the tutor as a request rather than a trait\nchallenge first\ndevice context\nencourage\nfree text, read by the tutor as a request rather than a trait\nfeedback style\ngoal\nmax explanation words\nthe full explanation stays one click away\nmotivation\n",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/lesson",
+        "path": "/lesson",
+        "text": "Lessons\n\nYour subjects' lessons, and the scenes that teach them.\n\nYour lessons\nBiology\n\nLearning.\n\nContinue: Biology",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/journey",
+        "path": "/journey",
+        "text": "Your path\n\nOne step at a time. You can pause or skip any step.\n\nA few questions\n\nYour choices shape the starting plan.\n\nOpen mind check\nChoose a subject\nSkip this step\nStep 01\nMind check\nStep 02\nChoose a subject\nStep 03\nFirst tailored lesson",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/proposals",
+        "path": "/proposals",
+        "text": "Changes waiting for you\n\nEach row separates what was observed from what we think it means. Nothing here has been applied. Saying no is recorded too, and stops us asking again tomorrow.\n\nReload\nCheck the effect\nNothing to approve right now\n\nNothing here takes effect until you decide.\n\nNo proposals right now. A pattern needs enough answers to be worth your time — if you have finished a session and n",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/baseline",
+        "path": "/baseline",
+        "text": "Step 1 of 13 · 0% through\n\nHow you like to meet a new idea\nStop here\nHow would you like to meet a new idea?\n\nOne preference, not a label. why we ask\n\na diagram\na picture or graph of the idea\na written explanation\na short paragraph that explains it\na worked example\none worked through, step by step\nwhy we ask\nSee the games\n\nStop anytime. Unplayed games stay unmeasured.",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/evidence",
+        "path": "/evidence",
+        "text": "Preference and performance\n\nWhat you asked for is a preference, not a measurement. Here is what your own answers suggest across all topics.\n\nBack to progress\nWhat you chose, next to what happened\n\nInsufficient evidence to compare your preference with performance. We need at least two methods with eight effective observations each.\n\nActual minus predicted success across all topics; associations, no",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      },
+      {
+        "route": "/voice",
+        "path": "/voice",
+        "text": "Talk to it\n\nGreeting, read-aloud, and listen-and-answer.\n\nSame tutor, same memory, different input. transcription accuracy and teaching accuracy are measured separately: a misheard word is a speech problem, not a tutoring problem, and the transcript is always editable\n\nNOT CONNECTED\nconnect\nTurn\n\nNothing said yet. Ask about the question you are stuck on. The tutor sees the same plan and the same e",
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "routeError": false
+      }
+    ]
+  },
+  "requests": [
+    {
+      "kind": "attempt",
+      "url": "http://127.0.0.1:3000/api/v1/attempts",
+      "body": {
+        "session_id": "lrs_6bf0b5630e90497cbccd",
+        "item_id": "itm_bio_photosynthesis_00",
+        "answer": "0.999",
+        "attempt_no": 1
+      }
+    },
+    {
+      "kind": "attempt",
+      "url": "http://127.0.0.1:3000/api/v1/attempts",
+      "body": {
+        "session_id": "lrs_6bf0b5630e90497cbccd",
+        "item_id": "itm_bio_photosynthesis_01",
+        "answer": 0,
+        "attempt_no": 1
+      }
+    },
+    {
+      "kind": "attempt",
+      "url": "http://127.0.0.1:3000/api/v1/attempts",
+      "body": {
+        "session_id": "lrs_6bf0b5630e90497cbccd",
+        "item_id": "itm_bio_photosynthesis_01",
+        "answer": 0,
+        "attempt_no": 1
+      }
+    }
+  ]
+}

@@ -249,6 +249,7 @@ def privacy() -> dict[str, Any]:
             "revoke an applied change at any time",
             "delete your history",
             "see every event recorded about you",
+            "download a JSON copy of your learner records",
         ],
     }
 

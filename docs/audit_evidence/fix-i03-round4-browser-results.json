@@ -1,0 +1,1628 @@
+{
+  "auth": [
+    {
+      "mode": "guest",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "interactiveMs": 1035
+    },
+    {
+      "mode": "register",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "interactiveMs": 1176
+    },
+    {
+      "mode": "login",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "interactiveMs": 1280
+    },
+    {
+      "mode": "guest",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "interactiveMs": 1063
+    },
+    {
+      "mode": "register",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "interactiveMs": 1163
+    },
+    {
+      "mode": "login",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "interactiveMs": 1185
+    }
+  ],
+  "words": [
+    {
+      "screen": "consent-guest",
+      "before": false,
+      "bodyWords": 21,
+      "visibleWords": 50,
+      "aboveFoldWords": 50
+    },
+    {
+      "screen": "auth-guest",
+      "before": false,
+      "bodyWords": 15,
+      "visibleWords": 43,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "journey-guest",
+      "before": false,
+      "bodyWords": 24,
+      "visibleWords": 46,
+      "aboveFoldWords": 46
+    },
+    {
+      "screen": "desktop-guest-format",
+      "before": false,
+      "bodyWords": 11,
+      "visibleWords": 74,
+      "aboveFoldWords": 68
+    },
+    {
+      "screen": "desktop-guest-question-1",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 65,
+      "aboveFoldWords": 45
+    },
+    {
+      "screen": "desktop-guest-question-2",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 56,
+      "aboveFoldWords": 36
+    },
+    {
+      "screen": "desktop-guest-question-3",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 58,
+      "aboveFoldWords": 38
+    },
+    {
+      "screen": "desktop-guest-question-4",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 57,
+      "aboveFoldWords": 37
+    },
+    {
+      "screen": "desktop-guest-question-5",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 55,
+      "aboveFoldWords": 35
+    },
+    {
+      "screen": "desktop-guest-question-6",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 54,
+      "aboveFoldWords": 34
+    },
+    {
+      "screen": "desktop-guest-question-7",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 60,
+      "aboveFoldWords": 47
+    },
+    {
+      "screen": "desktop-guest-question-8",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 61,
+      "aboveFoldWords": 48
+    },
+    {
+      "screen": "desktop-guest-question-9",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 63,
+      "aboveFoldWords": 50
+    },
+    {
+      "screen": "desktop-guest-question-10",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 58,
+      "aboveFoldWords": 45
+    },
+    {
+      "screen": "desktop-guest-question-11",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 52,
+      "aboveFoldWords": 39
+    },
+    {
+      "screen": "desktop-guest-question-12",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 59,
+      "aboveFoldWords": 46
+    },
+    {
+      "screen": "desktop-guest-question-13",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 53,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "consent-register",
+      "before": false,
+      "bodyWords": 21,
+      "visibleWords": 50,
+      "aboveFoldWords": 50
+    },
+    {
+      "screen": "auth-register",
+      "before": false,
+      "bodyWords": 15,
+      "visibleWords": 49,
+      "aboveFoldWords": 47
+    },
+    {
+      "screen": "journey-register",
+      "before": false,
+      "bodyWords": 24,
+      "visibleWords": 46,
+      "aboveFoldWords": 46
+    },
+    {
+      "screen": "desktop-account-format",
+      "before": false,
+      "bodyWords": 11,
+      "visibleWords": 74,
+      "aboveFoldWords": 68
+    },
+    {
+      "screen": "desktop-account-question-1",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 65,
+      "aboveFoldWords": 45
+    },
+    {
+      "screen": "desktop-account-question-2",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 56,
+      "aboveFoldWords": 36
+    },
+    {
+      "screen": "desktop-account-question-3",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 58,
+      "aboveFoldWords": 38
+    },
+    {
+      "screen": "desktop-account-question-4",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 57,
+      "aboveFoldWords": 47
+    },
+    {
+      "screen": "desktop-account-question-5",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 55,
+      "aboveFoldWords": 45
+    },
+    {
+      "screen": "desktop-account-question-6",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 54,
+      "aboveFoldWords": 44
+    },
+    {
+      "screen": "desktop-account-question-7",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 60,
+      "aboveFoldWords": 50
+    },
+    {
+      "screen": "desktop-account-question-8",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 61,
+      "aboveFoldWords": 51
+    },
+    {
+      "screen": "desktop-account-question-9",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 63,
+      "aboveFoldWords": 53
+    },
+    {
+      "screen": "desktop-account-question-10",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 58,
+      "aboveFoldWords": 48
+    },
+    {
+      "screen": "desktop-account-question-11",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 52,
+      "aboveFoldWords": 42
+    },
+    {
+      "screen": "desktop-account-question-12",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 59,
+      "aboveFoldWords": 49
+    },
+    {
+      "screen": "desktop-account-question-13",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 53,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "consent-login",
+      "before": false,
+      "bodyWords": 21,
+      "visibleWords": 50,
+      "aboveFoldWords": 50
+    },
+    {
+      "screen": "auth-login",
+      "before": false,
+      "bodyWords": 15,
+      "visibleWords": 43,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "journey-login",
+      "before": false,
+      "bodyWords": 27,
+      "visibleWords": 43,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "consent-guest",
+      "before": false,
+      "bodyWords": 21,
+      "visibleWords": 50,
+      "aboveFoldWords": 50
+    },
+    {
+      "screen": "auth-guest",
+      "before": false,
+      "bodyWords": 15,
+      "visibleWords": 43,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "journey-guest",
+      "before": false,
+      "bodyWords": 24,
+      "visibleWords": 46,
+      "aboveFoldWords": 41
+    },
+    {
+      "screen": "mobile-guest-format",
+      "before": false,
+      "bodyWords": 11,
+      "visibleWords": 74,
+      "aboveFoldWords": 47
+    },
+    {
+      "screen": "mobile-guest-question-1",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 65,
+      "aboveFoldWords": 45
+    },
+    {
+      "screen": "mobile-guest-question-2",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 56,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "mobile-guest-question-3",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 58,
+      "aboveFoldWords": 38
+    },
+    {
+      "screen": "mobile-guest-question-4",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 57,
+      "aboveFoldWords": 30
+    },
+    {
+      "screen": "mobile-guest-question-5",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 55,
+      "aboveFoldWords": 49
+    },
+    {
+      "screen": "mobile-guest-question-6",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 54,
+      "aboveFoldWords": 48
+    },
+    {
+      "screen": "mobile-guest-question-7",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 60,
+      "aboveFoldWords": 60
+    },
+    {
+      "screen": "mobile-guest-question-8",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 61,
+      "aboveFoldWords": 61
+    },
+    {
+      "screen": "mobile-guest-question-9",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 63,
+      "aboveFoldWords": 57
+    },
+    {
+      "screen": "mobile-guest-question-10",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 58,
+      "aboveFoldWords": 52
+    },
+    {
+      "screen": "mobile-guest-question-11",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 52,
+      "aboveFoldWords": 52
+    },
+    {
+      "screen": "mobile-guest-question-12",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 59,
+      "aboveFoldWords": 59
+    },
+    {
+      "screen": "mobile-guest-question-13",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 53,
+      "aboveFoldWords": 53
+    },
+    {
+      "screen": "consent-register",
+      "before": false,
+      "bodyWords": 21,
+      "visibleWords": 50,
+      "aboveFoldWords": 50
+    },
+    {
+      "screen": "auth-register",
+      "before": false,
+      "bodyWords": 15,
+      "visibleWords": 49,
+      "aboveFoldWords": 41
+    },
+    {
+      "screen": "journey-register",
+      "before": false,
+      "bodyWords": 24,
+      "visibleWords": 46,
+      "aboveFoldWords": 41
+    },
+    {
+      "screen": "mobile-account-format",
+      "before": false,
+      "bodyWords": 11,
+      "visibleWords": 74,
+      "aboveFoldWords": 47
+    },
+    {
+      "screen": "mobile-account-question-1",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 65,
+      "aboveFoldWords": 45
+    },
+    {
+      "screen": "mobile-account-question-2",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 56,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "mobile-account-question-3",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 58,
+      "aboveFoldWords": 34
+    },
+    {
+      "screen": "mobile-account-question-4",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 57,
+      "aboveFoldWords": 30
+    },
+    {
+      "screen": "mobile-account-question-5",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 55,
+      "aboveFoldWords": 49
+    },
+    {
+      "screen": "mobile-account-question-6",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 54,
+      "aboveFoldWords": 48
+    },
+    {
+      "screen": "mobile-account-question-7",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 60,
+      "aboveFoldWords": 60
+    },
+    {
+      "screen": "mobile-account-question-8",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 61,
+      "aboveFoldWords": 61
+    },
+    {
+      "screen": "mobile-account-question-9",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 63,
+      "aboveFoldWords": 57
+    },
+    {
+      "screen": "mobile-account-question-10",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 58,
+      "aboveFoldWords": 52
+    },
+    {
+      "screen": "mobile-account-question-11",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 52,
+      "aboveFoldWords": 52
+    },
+    {
+      "screen": "mobile-account-question-12",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 59,
+      "aboveFoldWords": 59
+    },
+    {
+      "screen": "mobile-account-question-13",
+      "before": false,
+      "bodyWords": 19,
+      "visibleWords": 53,
+      "aboveFoldWords": 53
+    },
+    {
+      "screen": "consent-login",
+      "before": false,
+      "bodyWords": 21,
+      "visibleWords": 50,
+      "aboveFoldWords": 50
+    },
+    {
+      "screen": "auth-login",
+      "before": false,
+      "bodyWords": 15,
+      "visibleWords": 43,
+      "aboveFoldWords": 43
+    },
+    {
+      "screen": "journey-login",
+      "before": false,
+      "bodyWords": 27,
+      "visibleWords": 43,
+      "aboveFoldWords": 43
+    }
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [
+        {
+          "name": "study",
+          "box": {
+            "x": 825.4375,
+            "y": 126,
+            "right": 1151,
+            "bottom": 386,
+            "width": 325.5625,
+            "height": 260
+          }
+        }
+      ],
+      "lcp": null,
+      "bytes": 642805,
+      "overflow": false
+    },
+    {
+      "path": "/baseline",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [
+        {
+          "name": "brain",
+          "box": {
+            "x": 923.9375,
+            "y": 138,
+            "right": 1107,
+            "bottom": 306,
+            "width": 183.0625,
+            "height": 168
+          }
+        }
+      ],
+      "lcp": 64,
+      "bytes": 619189,
+      "overflow": false
+    },
+    {
+      "path": "/dev/animator",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 192,
+      "bytes": 548962,
+      "overflow": false
+    },
+    {
+      "path": "/dev/test-lab",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 84,
+      "bytes": 553475,
+      "overflow": false
+    },
+    {
+      "path": "/diagnose",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 284,
+      "bytes": 563024,
+      "overflow": false
+    },
+    {
+      "path": "/evidence",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 164,
+      "bytes": 617758,
+      "overflow": false
+    },
+    {
+      "path": "/first-lesson",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 192,
+      "bytes": 557524,
+      "overflow": false
+    },
+    {
+      "path": "/journey",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 168,
+      "bytes": 617465,
+      "overflow": false
+    },
+    {
+      "path": "/learn",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [
+        {
+          "name": "classroom",
+          "box": {
+            "x": 908.578125,
+            "y": 93,
+            "right": 1184,
+            "bottom": 269,
+            "width": 275.421875,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 172,
+      "bytes": 598148,
+      "overflow": false
+    },
+    {
+      "path": "/lesson",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [
+        {
+          "name": "desk-path",
+          "box": {
+            "x": 972.625,
+            "y": 93,
+            "right": 1184,
+            "bottom": 269,
+            "width": 211.375,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 256,
+      "bytes": 706348,
+      "overflow": false
+    },
+    {
+      "path": "/onboarding",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 188,
+      "bytes": 547937,
+      "overflow": false
+    },
+    {
+      "path": "/progress",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [
+        {
+          "name": "knowledge-tree",
+          "box": {
+            "x": 1005.25,
+            "y": 93,
+            "right": 1184,
+            "bottom": 269,
+            "width": 178.75,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 256,
+      "bytes": 654838,
+      "overflow": false
+    },
+    {
+      "path": "/proposals",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [
+        {
+          "name": "balance-scale",
+          "box": {
+            "x": 980.96875,
+            "y": 93,
+            "right": 1184,
+            "bottom": 269,
+            "width": 203.03125,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 256,
+      "bytes": 719440,
+      "overflow": false
+    },
+    {
+      "path": "/review",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [
+        {
+          "name": "road-ahead",
+          "box": {
+            "x": 872.515625,
+            "y": 93,
+            "right": 1184,
+            "bottom": 269,
+            "width": 311.484375,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 268,
+      "bytes": 620598,
+      "overflow": false
+    },
+    {
+      "path": "/settings",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [
+        {
+          "name": "gears",
+          "box": {
+            "x": 975.5625,
+            "y": 93,
+            "right": 1184,
+            "bottom": 269,
+            "width": 208.4375,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 212,
+      "bytes": 609107,
+      "overflow": false
+    },
+    {
+      "path": "/tools",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 260,
+      "bytes": 669391,
+      "overflow": false
+    },
+    {
+      "path": "/voice",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "failures": [],
+      "patternCount": 2,
+      "art": [],
+      "lcp": 240,
+      "bytes": 670321,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "study",
+          "box": {
+            "x": 687.84375,
+            "y": 126,
+            "right": 959,
+            "bottom": 386,
+            "width": 271.15625,
+            "height": 260
+          }
+        }
+      ],
+      "lcp": 216,
+      "bytes": 629364,
+      "overflow": false
+    },
+    {
+      "path": "/baseline",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "brain",
+          "box": {
+            "x": 734.984375,
+            "y": 134.953125,
+            "right": 918.046875,
+            "bottom": 302.953125,
+            "width": 183.0625,
+            "height": 168
+          }
+        }
+      ],
+      "lcp": 464,
+      "bytes": 607593,
+      "overflow": false
+    },
+    {
+      "path": "/dev/animator",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 152,
+      "bytes": 523995,
+      "overflow": false
+    },
+    {
+      "path": "/dev/test-lab",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 76,
+      "bytes": 528508,
+      "overflow": false
+    },
+    {
+      "path": "/diagnose",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 192,
+      "bytes": 540493,
+      "overflow": false
+    },
+    {
+      "path": "/evidence",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 168,
+      "bytes": 592791,
+      "overflow": false
+    },
+    {
+      "path": "/first-lesson",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 48,
+      "bytes": 532557,
+      "overflow": false
+    },
+    {
+      "path": "/journey",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 168,
+      "bytes": 592498,
+      "overflow": false
+    },
+    {
+      "path": "/learn",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "classroom",
+          "box": {
+            "x": 716.578125,
+            "y": 93,
+            "right": 992,
+            "bottom": 269,
+            "width": 275.421875,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 164,
+      "bytes": 532576,
+      "overflow": false
+    },
+    {
+      "path": "/lesson",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "desk-path",
+          "box": {
+            "x": 780.625,
+            "y": 93,
+            "right": 992,
+            "bottom": 269,
+            "width": 211.375,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 180,
+      "bytes": 604607,
+      "overflow": false
+    },
+    {
+      "path": "/onboarding",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 64,
+      "bytes": 522970,
+      "overflow": false
+    },
+    {
+      "path": "/progress",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "knowledge-tree",
+          "box": {
+            "x": 813.25,
+            "y": 93,
+            "right": 992,
+            "bottom": 269,
+            "width": 178.75,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 204,
+      "bytes": 629871,
+      "overflow": false
+    },
+    {
+      "path": "/proposals",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "balance-scale",
+          "box": {
+            "x": 788.96875,
+            "y": 93,
+            "right": 992,
+            "bottom": 269,
+            "width": 203.03125,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 264,
+      "bytes": 694473,
+      "overflow": false
+    },
+    {
+      "path": "/review",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "road-ahead",
+          "box": {
+            "x": 680.515625,
+            "y": 93,
+            "right": 992,
+            "bottom": 269,
+            "width": 311.484375,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 188,
+      "bytes": 595631,
+      "overflow": false
+    },
+    {
+      "path": "/settings",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "gears",
+          "box": {
+            "x": 783.5625,
+            "y": 93,
+            "right": 992,
+            "bottom": 269,
+            "width": 208.4375,
+            "height": 176
+          }
+        }
+      ],
+      "lcp": 224,
+      "bytes": 584140,
+      "overflow": false
+    },
+    {
+      "path": "/tools",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 56,
+      "bytes": 644424,
+      "overflow": false
+    },
+    {
+      "path": "/voice",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 164,
+      "bytes": 645354,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "study",
+          "box": {
+            "x": 41,
+            "y": 110,
+            "right": 349,
+            "bottom": 270,
+            "width": 308,
+            "height": 160
+          }
+        }
+      ],
+      "lcp": 192,
+      "bytes": 629364,
+      "overflow": false
+    },
+    {
+      "path": "/baseline",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "brain",
+          "box": {
+            "x": 149.234375,
+            "y": 110,
+            "right": 240.765625,
+            "bottom": 194,
+            "width": 91.53125,
+            "height": 84
+          }
+        }
+      ],
+      "lcp": 120,
+      "bytes": 607593,
+      "overflow": false
+    },
+    {
+      "path": "/dev/animator",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 120,
+      "bytes": 523995,
+      "overflow": false
+    },
+    {
+      "path": "/dev/test-lab",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 100,
+      "bytes": 528508,
+      "overflow": false
+    },
+    {
+      "path": "/diagnose",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 168,
+      "bytes": 539653,
+      "overflow": false
+    },
+    {
+      "path": "/evidence",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 116,
+      "bytes": 592791,
+      "overflow": false
+    },
+    {
+      "path": "/first-lesson",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 116,
+      "bytes": 532557,
+      "overflow": false
+    },
+    {
+      "path": "/journey",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 100,
+      "bytes": 592498,
+      "overflow": false
+    },
+    {
+      "path": "/learn",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "classroom",
+          "box": {
+            "x": 16,
+            "y": 85,
+            "right": 178.75,
+            "bottom": 189,
+            "width": 162.75,
+            "height": 104
+          }
+        }
+      ],
+      "lcp": 44,
+      "bytes": 532576,
+      "overflow": false
+    },
+    {
+      "path": "/lesson",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "desk-path",
+          "box": {
+            "x": 16,
+            "y": 85,
+            "right": 140.890625,
+            "bottom": 189,
+            "width": 124.890625,
+            "height": 104
+          }
+        }
+      ],
+      "lcp": 68,
+      "bytes": 681381,
+      "overflow": false
+    },
+    {
+      "path": "/onboarding",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 100,
+      "bytes": 522970,
+      "overflow": false
+    },
+    {
+      "path": "/progress",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "knowledge-tree",
+          "box": {
+            "x": 16,
+            "y": 85,
+            "right": 121.625,
+            "bottom": 189,
+            "width": 105.625,
+            "height": 104
+          }
+        }
+      ],
+      "lcp": 164,
+      "bytes": 629871,
+      "overflow": false
+    },
+    {
+      "path": "/proposals",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "balance-scale",
+          "box": {
+            "x": 16,
+            "y": 85,
+            "right": 135.96875,
+            "bottom": 189,
+            "width": 119.96875,
+            "height": 104
+          }
+        }
+      ],
+      "lcp": 168,
+      "bytes": 644622,
+      "overflow": false
+    },
+    {
+      "path": "/review",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "road-ahead",
+          "box": {
+            "x": 16,
+            "y": 85,
+            "right": 200.0625,
+            "bottom": 189,
+            "width": 184.0625,
+            "height": 104
+          }
+        }
+      ],
+      "lcp": 152,
+      "bytes": 586092,
+      "overflow": false
+    },
+    {
+      "path": "/settings",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [
+        {
+          "name": "gears",
+          "box": {
+            "x": 16,
+            "y": 85,
+            "right": 139.15625,
+            "bottom": 189,
+            "width": 123.15625,
+            "height": 104
+          }
+        }
+      ],
+      "lcp": 108,
+      "bytes": 584140,
+      "overflow": false
+    },
+    {
+      "path": "/tools",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 144,
+      "bytes": 644424,
+      "overflow": false
+    },
+    {
+      "path": "/voice",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "failures": [],
+      "patternCount": 0,
+      "art": [],
+      "lcp": 116,
+      "bytes": 645354,
+      "overflow": false
+    }
+  ],
+  "journeys": [
+    {
+      "label": "desktop-guest",
+      "preferences": "13 answered via UI",
+      "games": "stopped early; unplayed not measured",
+      "optionalStages": "skipped through the UI where offered; other stages advanced with server receipts",
+      "lesson": "wrong choice + two reteaches",
+      "practice": "mounted"
+    },
+    {
+      "label": "desktop-account",
+      "preferences": "13 answered via UI",
+      "games": "stopped early; unplayed not measured",
+      "optionalStages": "skipped through the UI where offered; other stages advanced with server receipts",
+      "lesson": "wrong choice + two reteaches",
+      "practice": "mounted"
+    },
+    {
+      "label": "mobile-guest",
+      "preferences": "13 answered via UI",
+      "games": "stopped early; unplayed not measured",
+      "optionalStages": "skipped through the UI where offered; other stages advanced with server receipts",
+      "lesson": "wrong choice + two reteaches",
+      "practice": "mounted"
+    },
+    {
+      "label": "mobile-account",
+      "preferences": "13 answered via UI",
+      "games": "stopped early; unplayed not measured",
+      "optionalStages": "skipped through the UI where offered; other stages advanced with server receipts",
+      "lesson": "wrong choice + two reteaches",
+      "practice": "mounted"
+    }
+  ],
+  "returningJourneys": [
+    {
+      "label": "desktop",
+      "resumedStage": "practice",
+      "lesson": "wrong + two reteaches via keyboard"
+    },
+    {
+      "label": "mobile",
+      "resumedStage": "practice",
+      "lesson": "wrong + two reteaches via keyboard"
+    }
+  ],
+  "errors": [],
+  "budgets": {
+    "artGzipBytes": 581152,
+    "maxArtGzipBytes": 150000,
+    "localLcpMs": 2500,
+    "maxEncodedResourceBytes": 2000000
+  },
+  "meta": {
+    "verifiedAt": "2026-10-23T04:54:17.173Z",
+    "chromium": "153.0.8010.0",
+    "environment": "production build; local unthrottled; local API",
+    "baseCommit": "7045ede73f85349c55f5a7ef1ab54a5c3ea723ad"
+  },
+  "artObservations": [
+    {
+      "label": "1024 consent",
+      "failures": [
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches DIV: 01 · Before you beginWelcome to ADAPT.Practice that asks bef",
+        "flower touches LI: ✓Needed for your account: scored answers and progress.",
+        "flower touches LI: ✕Never recorded: keystrokes, screenshots, other tabs.",
+        "flower touches LABEL: Also record question times and lesson-step analytics. Option",
+        "flower touches INPUT: ",
+        "flower touches LABEL: Research interest (optional; not saved yet).",
+        "flower touches INPUT: ",
+        "flower touches BUTTON: Save choice and continue"
+      ],
+      "verdict": "NOT RUN — visual remediation out of scope"
+    },
+    {
+      "label": "1024 auth",
+      "failures": [
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches a text node",
+        "flower touches DIV: 02 · Your place to learnWelcome to ADAPT.Sign in, create an ",
+        "flower touches BUTTON: Sign in",
+        "flower touches LABEL: UsernameAn older account may use email.",
+        "flower touches INPUT: ",
+        "flower touches LABEL: Password",
+        "flower touches INPUT: ",
+        "flower touches BUTTON: Sign in",
+        "flower touches P: Guest progress stays in this session.",
+        "flower touches BUTTON: Review consent"
+      ],
+      "verdict": "NOT RUN — visual remediation out of scope"
+    }
+  ],
+  "artZoneVerdict": "NOT RUN — visual remediation out of scope; overlap observations preserved",
+  "artBudgetVerdict": "NOT RUN — visual remediation out of scope"
+}

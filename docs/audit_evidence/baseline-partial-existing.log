@@ -1,0 +1,36 @@
+
+Running 2 tests using 1 worker
+
+  ✓  1 [desktop] › snapshot-honesty.spec.ts:14:5 › stopping straight away records every game as not measured, and no number (2.5s)
+  ✘  2 [desktop] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached (1.9m)
+
+
+  1) [desktop] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached 
+
+    Error: expect(received).toMatch(expected)
+
+    Expected pattern: /locked_box/
+    Received string:  "What we measured, and what we did not 4 of 8 things were measurable from this sitting. Everything else says “not measured” on purpose: a game you did not play is unknown, not a zero. What you already know NOT MEASURED Not enough data yet — the subject round would fill this in. How much you hold at once 8-9 n=30 You currently hold about 8–9 steps at once, so lessons will use smaller steps and check between them. keep explanation blocks to about 8 ideas before a check prefer a worked example split into short steps over one long paragraph How fast you work 0.1-0.2 n=8 Most quick answers take you about 0.1 seconds, so the app will pace new material at that speed and not chase a fastest time. size checks to about this pace rather than to a clock keep block length as it is Staying on it 0-0.6 n=8 Your accuracy dropped toward the end of the session, so the app will shorten blocks and add a check-in. shorten blocks and add a check-in keep answers as they are Remembering over time 0.9-1 n=8 You recalled 100% of the pairs straight away, so review will be scheduled around the default spacing. seed your review spacing from this, with a range keep recall practice as it is Working out a rule NOT MEASURED Not enough data yet — finishing a machine round would fill this in. Knowing what you know NOT MEASURED Not enough data yet — a few more answers with a coin wager would fill this in. Pushing through, and asking for help NOT MEASURED Not enough data yet — trying the locked box would fill this in. What we will do differently step size MEASURED large holds about 8–9 steps at once (n=30) lead format prior YOU TOLD US diagram you chose diagram for a new topic (stated, not measured) pace MEASURED steady median 92ms per quick tap, drift -73% across the session (n=8) review halflife prior MEASURED 90 recalled 100% of new pairs straight away (n=8) hint policy DEFAULT on request default: hints are there when asked for confidence prompting DEFAULT off no calibration evidence yet tone YOU TOLD US straight you chose how you want to hear that you got something wrong (stated) language YOU TOLD US en you chose the language for explanations (stated) timers visible YOU TOLD US true you said timers help (stated) attention note MEASURED 50% right early, 0% right late, traps not reached attention and self-control across the session reasoning note MEASURED not measured yet (0 of 3 needed) how you tested the machine's rule Steps that did not happen Recorded as not measured, not as zero: Reasoning, Logic, Quick thinking, Careful thinking, Delayed recall. Come back later The codeword check is meant for another day. You can ask for it now: it measures a shorter gap than the one it is designed for, and the check says so when you answer. Show the codeword check where this comes from"
+
+      38 |   const text = (await page.locator(".baseline-snapshot").innerText()).replace(/\s+/g, " ");
+      39 |   expect(text).toMatch(/steps that did not happen/i);
+    > 40 |   expect(text).toMatch(/locked_box/); // the stage keys of what was not reached
+         |                ^
+      41 |   expect(text).toMatch(/n=\d+/); // the games that were played report their n
+      42 |   expect(ledger.cued.length).toBeGreaterThan(0);
+      43 |   await shot(page, "desktop", "snapshot-stopped-part-way");
+        at /home/user/Adapt/e2e/games/snapshot-honesty.spec.ts:40:16
+
+    Error Context: test-results/snapshot-honesty-stopping--bff39--names-what-was-not-reached-desktop/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/snapshot-honesty-stopping--bff39--names-what-was-not-reached-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/snapshot-honesty-stopping--bff39--names-what-was-not-reached-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [desktop] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached 
+  1 passed (2.0m)

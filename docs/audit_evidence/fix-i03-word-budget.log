@@ -1,0 +1,8 @@
+Word-count regression (round 3, Track R):
+
+  ok  Onboarding                    17/40 words  (3/3 sentences tracked)
+  ok  Journey                       31/40 words  (5/5 sentences tracked)
+  ok  First lesson                  35/40 words  (7/7 sentences tracked)
+  ok  Baseline                      29/40 words  (5/5 sentences tracked)
+
+Word-count regression: all first-run screens under the 40-word budget.

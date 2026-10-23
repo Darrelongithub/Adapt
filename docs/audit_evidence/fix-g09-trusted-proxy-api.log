@@ -1,0 +1,43 @@
+{
+  "check": "G09",
+  "trusted_proxies": "unset",
+  "first_50_statuses": {
+    "401": 50
+  },
+  "elapsed_s": 0.176,
+  "request_51": {
+    "status": 429,
+    "body": {
+      "detail": {
+        "error": "too_many_attempts",
+        "scope": "auth_fail",
+        "retry_after_s": 2,
+        "note": "too many failed attempts at signing in for now. A forgotten password is reset by whoever runs this instance"
+      }
+    }
+  },
+  "other_account_same_connection": {
+    "status": 429,
+    "body": {
+      "detail": {
+        "error": "too_many_attempts",
+        "scope": "auth_fail",
+        "retry_after_s": 2,
+        "note": "too many failed attempts at signing in for now. A forgotten password is reset by whoever runs this instance"
+      }
+    }
+  },
+  "other_account_with_spoofed_forwarding": {
+    "status": 429,
+    "body": {
+      "detail": {
+        "error": "too_many_attempts",
+        "scope": "auth_fail",
+        "retry_after_s": 2,
+        "note": "too many failed attempts at signing in for now. A forgotten password is reset by whoever runs this instance"
+      }
+    },
+    "x_forwarded_for": "198.51.100.203"
+  },
+  "outcome": "PASS"
+}

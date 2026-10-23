@@ -1,0 +1,1464 @@
+{
+  "at": "2026-10-22T17:23:01.455Z",
+  "steps": [
+    {
+      "name": "cross-tenant object access is refused",
+      "expected": "other learner gets 404 for subject/run/events and cannot append",
+      "actual": {
+        "idor": {
+          "subject": {
+            "status": 404,
+            "body": {
+              "detail": {
+                "error": "unknown_subject",
+                "message": "no such subject"
+              }
+            },
+            "headers": {
+              "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+              "server": "uvicorn",
+              "content-type": "application/json",
+              "vary": "Origin",
+              "x-elapsed-ms": "2",
+              "content-length": "66",
+              "x-content-type-options": "nosniff",
+              "x-frame-options": "DENY",
+              "referrer-policy": "no-referrer",
+              "cross-origin-opener-policy": "same-origin",
+              "cross-origin-resource-policy": "same-origin",
+              "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+              "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+              "cache-control": "no-store",
+              "x-request-id": "a31b552ffc38",
+              "connection": "keep-alive",
+              "keep-alive": "timeout=5"
+            }
+          },
+          "baseline": {
+            "status": 404,
+            "body": {
+              "detail": {
+                "error": "unknown_run",
+                "message": "no such baseline run"
+              }
+            },
+            "headers": {
+              "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+              "server": "uvicorn",
+              "content-type": "application/json",
+              "vary": "Origin",
+              "x-elapsed-ms": "4",
+              "content-length": "67",
+              "x-content-type-options": "nosniff",
+              "x-frame-options": "DENY",
+              "referrer-policy": "no-referrer",
+              "cross-origin-opener-policy": "same-origin",
+              "cross-origin-resource-policy": "same-origin",
+              "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+              "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+              "cache-control": "no-store",
+              "x-request-id": "468bc464d7e7",
+              "connection": "keep-alive",
+              "keep-alive": "timeout=5"
+            }
+          },
+          "events": {
+            "status": 404,
+            "body": {
+              "detail": "unknown session"
+            },
+            "headers": {
+              "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+              "server": "uvicorn",
+              "content-type": "application/json",
+              "vary": "Origin",
+              "x-elapsed-ms": "3",
+              "content-length": "28",
+              "x-content-type-options": "nosniff",
+              "x-frame-options": "DENY",
+              "referrer-policy": "no-referrer",
+              "cross-origin-opener-policy": "same-origin",
+              "cross-origin-resource-policy": "same-origin",
+              "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+              "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+              "cache-control": "no-store",
+              "x-request-id": "9887bb93fbd7",
+              "connection": "keep-alive",
+              "keep-alive": "timeout=5"
+            }
+          },
+          "writeEvents": {
+            "status": 200,
+            "body": {
+              "accepted": 0,
+              "rejected": 1,
+              "duplicate": 0,
+              "dropped_fields": 0,
+              "reasons": [
+                "unknown session for this student"
+              ],
+              "session_id": "lrs_2134f2d2bfc9481eb117",
+              "event_types": [
+                "adaptation_effect",
+                "answer_submitted",
+                "example_opened",
+                "explanation_opened",
+                "feedback_shown",
+                "first_interaction",
+                "focus_change",
+                "hint_opened",
+                "pause",
+                "proposal_decided",
+                "proposal_shown",
+                "question_shown",
+                "resource_opened",
+                "response_change",
+                "resume",
+                "scene_explained",
+                "scene_finished",
+                "scene_frame",
+                "scene_opened",
+                "scene_prediction",
+                "scene_variables",
+                "session_end",
+                "session_start",
+                "teachback_ended",
+                "teachback_started",
+                "visual_opened",
+                "voice_turn"
+              ]
+            },
+            "headers": {
+              "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+              "server": "uvicorn",
+              "content-type": "application/json",
+              "vary": "Origin",
+              "x-elapsed-ms": "3",
+              "content-length": "610",
+              "x-content-type-options": "nosniff",
+              "x-frame-options": "DENY",
+              "referrer-policy": "no-referrer",
+              "cross-origin-opener-policy": "same-origin",
+              "cross-origin-resource-policy": "same-origin",
+              "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+              "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+              "cache-control": "no-store",
+              "x-request-id": "742e000c65e4",
+              "connection": "keep-alive",
+              "keep-alive": "timeout=5"
+            }
+          }
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "CSRF is required on preference mutation",
+      "expected": "403 and preference not stored",
+      "actual": {
+        "csrf": {
+          "status": 403,
+          "body": {
+            "detail": "csrf token missing or wrong"
+          },
+          "headers": {
+            "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+            "server": "uvicorn",
+            "content-type": "application/json",
+            "vary": "Origin",
+            "x-elapsed-ms": "3",
+            "content-length": "40",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "referrer-policy": "no-referrer",
+            "cross-origin-opener-policy": "same-origin",
+            "cross-origin-resource-policy": "same-origin",
+            "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+            "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+            "cache-control": "no-store",
+            "x-request-id": "b3830cd0f5ca",
+            "connection": "keep-alive",
+            "keep-alive": "timeout=5"
+          }
+        },
+        "prefs": {}
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "telemetry allowlist blocks surveillance fields and unknown events",
+      "expected": "forbidden key not stored; unknown event rejected",
+      "actual": {
+        "valid": {
+          "accepted": 1,
+          "rejected": 0,
+          "duplicate": 0,
+          "dropped_fields": 0,
+          "reasons": [],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "forbidden": {
+          "accepted": 1,
+          "rejected": 0,
+          "duplicate": 0,
+          "dropped_fields": 1,
+          "reasons": [
+            "dropped forbidden telemetry field 'keystrokes'"
+          ],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "unknown": {
+          "accepted": 0,
+          "rejected": 1,
+          "duplicate": 0,
+          "dropped_fields": 0,
+          "reasons": [
+            "rejected: unknown event type 'keystroke_log'"
+          ],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "events": {
+          "events": [
+            {
+              "seq": 1,
+              "ts": "2026-10-22T17:23:01.776668",
+              "type": "session_start",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "mode": "practice"
+              }
+            },
+            {
+              "seq": 2,
+              "ts": "2026-10-22T17:23:01.847803",
+              "type": "question_shown",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "stem_words": 8
+              }
+            },
+            {
+              "seq": 3,
+              "ts": "2026-10-22T17:23:01.858850",
+              "type": "question_shown",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "stem_words": 8
+              }
+            }
+          ]
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "analytics off stops server telemetry writes",
+      "expected": "event rejected and absent after consent off",
+      "actual": {
+        "off": {
+          "student_id": "stu_54f424bd011e464d855f",
+          "preferences": {},
+          "ignored_keys": [],
+          "rejected_reasons": {},
+          "consent": {
+            "analytics": false,
+            "share_summary_with_ai": false
+          },
+          "note": "No learning style question was asked. 'How you learn best' is measured from what happens during practice, and any lasting change needs your approval."
+        },
+        "response": {
+          "accepted": 1,
+          "rejected": 0,
+          "duplicate": 0,
+          "dropped_fields": 0,
+          "reasons": [],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "stored": [
+          {
+            "seq": 4,
+            "ts": "2026-10-22T17:23:01.893688",
+            "type": "pause",
+            "item_id": null,
+            "topic_id": null,
+            "ms_since_question": null,
+            "payload": {
+              "reason": "consent off test"
+            }
+          }
+        ]
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "name": "stored display-name XSS is inert",
+      "expected": "no handler element and no script execution",
+      "actual": {
+        "executed": false,
+        "onerrorElements": 0,
+        "text": "Hi <img src=x onerror=\"window.__auditXss=1\">, ready to learn?Pick up where you left off.Continue: BiologyAdd a subject1Subjects1Active0Due0ChangesContinue learningAdd a subject0BiologyStarting checksContinue: Biology"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "prompt-injection text stays data in simple mode",
+      "expected": "local reply, nothing sent to model, no attacker-commanded PWNED",
+      "actual": {
+        "injection": {
+          "status": 200,
+          "body": {
+            "answer": "Let's take one concrete case.\n\nThere is no note in your material about this exact question, so here is the question's own working, checked against its answer key:\n\nKey idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen.\n\nWhy it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant.\n\n1. Chlorophyll traps the light energy that drives the reaction.\n\nTry one: recall the key fact without looking, say it out loud, then check what you said.",
+            "sections": [
+              {
+                "label": "framing",
+                "text": "Let's take one concrete case."
+              },
+              {
+                "label": "where this came from",
+                "text": "There is no note in your material about this exact question, so here is the question's own working, checked against its answer key:"
+              },
+              {
+                "label": "key idea",
+                "text": "Key idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen."
+              },
+              {
+                "label": "why it works",
+                "text": "Why it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant."
+              },
+              {
+                "label": "worked example",
+                "text": "1. Chlorophyll traps the light energy that drives the reaction."
+              },
+              {
+                "label": "your turn",
+                "text": "Try one: recall the key fact without looking, say it out loud, then check what you said."
+              }
+            ],
+            "next_action": null,
+            "adaptations_applied": [],
+            "sources": [],
+            "steps": [
+              {
+                "index": 1,
+                "text": "Let's take one concrete case. There is no note in your material about this exact question, so here is the question's own working, checked against its answer key:\n\nKey idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen. Why it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant. 1. Chlorophyll traps the light energy that drives the reaction. Try one: recall the key fact without looking, say it out loud, then check what you said.",
+                "words": 87,
+                "check": {
+                  "question": "Without scrolling back: what does this step say about Chlorophyll?",
+                  "kind": "recall",
+                  "expect_any": [
+                    "Chlorophyll",
+                    "Photosynthesis",
+                    "question's"
+                  ],
+                  "hint": "One sentence is enough. The step is about Chlorophyll."
+                }
+              }
+            ],
+            "teachback_prompt": null,
+            "resource_hint": null,
+            "level": "new",
+            "message_id": "msg_50e56e87b78b43cd84f4",
+            "intent": null,
+            "meta": {
+              "grounded": false,
+              "note": "answered from this question's own working — there is no note in your material about it",
+              "topic_id": "top_d7b4c258d3c444a08d43"
+            },
+            "served_by": "your own material",
+            "privacy": {
+              "sent_to_model": false,
+              "redacted_fields": 0,
+              "what_was_sent": "a pseudonymised summary: topic mastery, hypotheses, approved adaptations, the question text"
+            }
+          },
+          "headers": {
+            "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+            "server": "uvicorn",
+            "content-type": "application/json",
+            "vary": "Origin",
+            "x-elapsed-ms": "39",
+            "content-length": "2622",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "referrer-policy": "no-referrer",
+            "cross-origin-opener-policy": "same-origin",
+            "cross-origin-resource-policy": "same-origin",
+            "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+            "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+            "cache-control": "no-store",
+            "x-request-id": "2e7293cdc785",
+            "connection": "keep-alive",
+            "keep-alive": "timeout=5"
+          }
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "model-provider prompt-injection resistance",
+      "expected": "real configured model follows policy under attack",
+      "actual": {
+        "mode": "simple; no model key"
+      },
+      "verdict": "NOT RUN (no key)"
+    },
+    {
+      "name": "SQL-injection login does not bypass authentication",
+      "expected": "401, no session",
+      "actual": {
+        "sql": {
+          "status": 401,
+          "body": {
+            "detail": "wrong username or password"
+          },
+          "headers": {
+            "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+            "server": "uvicorn",
+            "content-type": "application/json",
+            "vary": "Origin",
+            "x-elapsed-ms": "2",
+            "content-length": "39",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "referrer-policy": "no-referrer",
+            "cross-origin-opener-policy": "same-origin",
+            "cross-origin-resource-policy": "same-origin",
+            "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+            "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+            "cache-control": "no-store",
+            "x-request-id": "1faf3b45a965",
+            "connection": "keep-alive",
+            "keep-alive": "timeout=5"
+          }
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "learner data export",
+      "expected": "downloadable learner data export exists",
+      "actual": {
+        "status": 404,
+        "body": {
+          "detail": "Not Found"
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "0",
+          "content-length": "22",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "a6bc2864b52f",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "verdict": "NOT BUILT"
+    },
+    {
+      "name": "soft delete revokes learner access immediately",
+      "expected": "deleted true, old session and new login refused",
+      "actual": {
+        "del": {
+          "deleted": true,
+          "hard_purge_available_via": "adapt db purge-student --student-id <id> --confirm",
+          "note": "learning history is removed from every query path immediately"
+        },
+        "meAfter": 401,
+        "loginAfter": 401
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "api": {
+    "idor": {
+      "subject": {
+        "status": 404,
+        "body": {
+          "detail": {
+            "error": "unknown_subject",
+            "message": "no such subject"
+          }
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "2",
+          "content-length": "66",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "a31b552ffc38",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "baseline": {
+        "status": 404,
+        "body": {
+          "detail": {
+            "error": "unknown_run",
+            "message": "no such baseline run"
+          }
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "4",
+          "content-length": "67",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "468bc464d7e7",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "events": {
+        "status": 404,
+        "body": {
+          "detail": "unknown session"
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "3",
+          "content-length": "28",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "9887bb93fbd7",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "writeEvents": {
+        "status": 200,
+        "body": {
+          "accepted": 0,
+          "rejected": 1,
+          "duplicate": 0,
+          "dropped_fields": 0,
+          "reasons": [
+            "unknown session for this student"
+          ],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "3",
+          "content-length": "610",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "742e000c65e4",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      }
+    },
+    "csrf": {
+      "response": {
+        "status": 403,
+        "body": {
+          "detail": "csrf token missing or wrong"
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "3",
+          "content-length": "40",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "b3830cd0f5ca",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "prefs": {
+        "status": 200,
+        "body": {
+          "preferences": {},
+          "allowed_keys": [
+            "anything_else",
+            "avoid",
+            "challenge_first",
+            "device_context",
+            "encourage",
+            "feedback_style",
+            "goal",
+            "language",
+            "max_explanation_words",
+            "motivation",
+            "preferred_format",
+            "push_me",
+            "quiet_hours",
+            "quit_trigger",
+            "session_minutes",
+            "study_days",
+            "study_when",
+            "timers_help",
+            "want_review_reminders",
+            "want_voice",
+            "weekly_minutes",
+            "when_stuck"
+          ]
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "2",
+          "content-length": "361",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "67efe4f13889",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      }
+    },
+    "telemetry": {
+      "valid": {
+        "status": 200,
+        "body": {
+          "accepted": 1,
+          "rejected": 0,
+          "duplicate": 0,
+          "dropped_fields": 0,
+          "reasons": [],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "6",
+          "content-length": "576",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "3aafaf01e6f1",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "forbidden": {
+        "status": 200,
+        "body": {
+          "accepted": 1,
+          "rejected": 0,
+          "duplicate": 0,
+          "dropped_fields": 1,
+          "reasons": [
+            "dropped forbidden telemetry field 'keystrokes'"
+          ],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "6",
+          "content-length": "624",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "04d6c94f9cf6",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "unknown": {
+        "status": 200,
+        "body": {
+          "accepted": 0,
+          "rejected": 1,
+          "duplicate": 0,
+          "dropped_fields": 0,
+          "reasons": [
+            "rejected: unknown event type 'keystroke_log'"
+          ],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "4",
+          "content-length": "622",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "1000eb0bd266",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "events1": {
+        "status": 200,
+        "body": {
+          "events": [
+            {
+              "seq": 1,
+              "ts": "2026-10-22T17:23:01.776668",
+              "type": "session_start",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "mode": "practice"
+              }
+            },
+            {
+              "seq": 2,
+              "ts": "2026-10-22T17:23:01.847803",
+              "type": "question_shown",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "stem_words": 8
+              }
+            },
+            {
+              "seq": 3,
+              "ts": "2026-10-22T17:23:01.858850",
+              "type": "question_shown",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "stem_words": 8
+              }
+            }
+          ]
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "5",
+          "content-length": "467",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "244ee69e89ae",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      }
+    },
+    "consentOff": {
+      "off": {
+        "status": 200,
+        "body": {
+          "student_id": "stu_54f424bd011e464d855f",
+          "preferences": {},
+          "ignored_keys": [],
+          "rejected_reasons": {},
+          "consent": {
+            "analytics": false,
+            "share_summary_with_ai": false
+          },
+          "note": "No learning style question was asked. 'How you learn best' is measured from what happens during practice, and any lasting change needs your approval."
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "3",
+          "content-length": "317",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "41bfbadd99a7",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "offEvent": {
+        "status": 200,
+        "body": {
+          "accepted": 1,
+          "rejected": 0,
+          "duplicate": 0,
+          "dropped_fields": 0,
+          "reasons": [],
+          "session_id": "lrs_2134f2d2bfc9481eb117",
+          "event_types": [
+            "adaptation_effect",
+            "answer_submitted",
+            "example_opened",
+            "explanation_opened",
+            "feedback_shown",
+            "first_interaction",
+            "focus_change",
+            "hint_opened",
+            "pause",
+            "proposal_decided",
+            "proposal_shown",
+            "question_shown",
+            "resource_opened",
+            "response_change",
+            "resume",
+            "scene_explained",
+            "scene_finished",
+            "scene_frame",
+            "scene_opened",
+            "scene_prediction",
+            "scene_variables",
+            "session_end",
+            "session_start",
+            "teachback_ended",
+            "teachback_started",
+            "visual_opened",
+            "voice_turn"
+          ]
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "6",
+          "content-length": "576",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "8378d9d04f6b",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "eventsOff": {
+        "status": 200,
+        "body": {
+          "events": [
+            {
+              "seq": 1,
+              "ts": "2026-10-22T17:23:01.776668",
+              "type": "session_start",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "mode": "practice"
+              }
+            },
+            {
+              "seq": 2,
+              "ts": "2026-10-22T17:23:01.847803",
+              "type": "question_shown",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "stem_words": 8
+              }
+            },
+            {
+              "seq": 3,
+              "ts": "2026-10-22T17:23:01.858850",
+              "type": "question_shown",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "stem_words": 8
+              }
+            },
+            {
+              "seq": 4,
+              "ts": "2026-10-22T17:23:01.893688",
+              "type": "pause",
+              "item_id": null,
+              "topic_id": null,
+              "ms_since_question": null,
+              "payload": {
+                "reason": "consent off test"
+              }
+            }
+          ]
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:01 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "3",
+          "content-length": "622",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "78d160e05d6d",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      }
+    },
+    "xss": {
+      "executed": false,
+      "onerrorElements": 0,
+      "text": "Hi <img src=x onerror=\"window.__auditXss=1\">, ready to learn?Pick up where you left off.Continue: BiologyAdd a subject1Subjects1Active0Due0ChangesContinue learningAdd a subject0BiologyStarting checksContinue: Biology"
+    },
+    "promptInjection": {
+      "status": 200,
+      "body": {
+        "answer": "Let's take one concrete case.\n\nThere is no note in your material about this exact question, so here is the question's own working, checked against its answer key:\n\nKey idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen.\n\nWhy it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant.\n\n1. Chlorophyll traps the light energy that drives the reaction.\n\nTry one: recall the key fact without looking, say it out loud, then check what you said.",
+        "sections": [
+          {
+            "label": "framing",
+            "text": "Let's take one concrete case."
+          },
+          {
+            "label": "where this came from",
+            "text": "There is no note in your material about this exact question, so here is the question's own working, checked against its answer key:"
+          },
+          {
+            "label": "key idea",
+            "text": "Key idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen."
+          },
+          {
+            "label": "why it works",
+            "text": "Why it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant."
+          },
+          {
+            "label": "worked example",
+            "text": "1. Chlorophyll traps the light energy that drives the reaction."
+          },
+          {
+            "label": "your turn",
+            "text": "Try one: recall the key fact without looking, say it out loud, then check what you said."
+          }
+        ],
+        "next_action": null,
+        "adaptations_applied": [],
+        "sources": [],
+        "steps": [
+          {
+            "index": 1,
+            "text": "Let's take one concrete case. There is no note in your material about this exact question, so here is the question's own working, checked against its answer key:\n\nKey idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen. Why it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant. 1. Chlorophyll traps the light energy that drives the reaction. Try one: recall the key fact without looking, say it out loud, then check what you said.",
+            "words": 87,
+            "check": {
+              "question": "Without scrolling back: what does this step say about Chlorophyll?",
+              "kind": "recall",
+              "expect_any": [
+                "Chlorophyll",
+                "Photosynthesis",
+                "question's"
+              ],
+              "hint": "One sentence is enough. The step is about Chlorophyll."
+            }
+          }
+        ],
+        "teachback_prompt": null,
+        "resource_hint": null,
+        "level": "new",
+        "message_id": "msg_50e56e87b78b43cd84f4",
+        "intent": null,
+        "meta": {
+          "grounded": false,
+          "note": "answered from this question's own working — there is no note in your material about it",
+          "topic_id": "top_d7b4c258d3c444a08d43"
+        },
+        "served_by": "your own material",
+        "privacy": {
+          "sent_to_model": false,
+          "redacted_fields": 0,
+          "what_was_sent": "a pseudonymised summary: topic mastery, hypotheses, approved adaptations, the question text"
+        }
+      },
+      "headers": {
+        "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+        "server": "uvicorn",
+        "content-type": "application/json",
+        "vary": "Origin",
+        "x-elapsed-ms": "39",
+        "content-length": "2622",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "referrer-policy": "no-referrer",
+        "cross-origin-opener-policy": "same-origin",
+        "cross-origin-resource-policy": "same-origin",
+        "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+        "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+        "cache-control": "no-store",
+        "x-request-id": "2e7293cdc785",
+        "connection": "keep-alive",
+        "keep-alive": "timeout=5"
+      }
+    },
+    "sqlInjection": {
+      "status": 401,
+      "body": {
+        "detail": "wrong username or password"
+      },
+      "headers": {
+        "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+        "server": "uvicorn",
+        "content-type": "application/json",
+        "vary": "Origin",
+        "x-elapsed-ms": "2",
+        "content-length": "39",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "referrer-policy": "no-referrer",
+        "cross-origin-opener-policy": "same-origin",
+        "cross-origin-resource-policy": "same-origin",
+        "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+        "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+        "cache-control": "no-store",
+        "x-request-id": "1faf3b45a965",
+        "connection": "keep-alive",
+        "keep-alive": "timeout=5"
+      }
+    },
+    "export": {
+      "status": 404,
+      "body": {
+        "detail": "Not Found"
+      },
+      "headers": {
+        "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+        "server": "uvicorn",
+        "content-type": "application/json",
+        "vary": "Origin",
+        "x-elapsed-ms": "0",
+        "content-length": "22",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "referrer-policy": "no-referrer",
+        "cross-origin-opener-policy": "same-origin",
+        "cross-origin-resource-policy": "same-origin",
+        "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+        "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+        "cache-control": "no-store",
+        "x-request-id": "a6bc2864b52f",
+        "connection": "keep-alive",
+        "keep-alive": "timeout=5"
+      }
+    },
+    "delete": {
+      "del": {
+        "status": 200,
+        "body": {
+          "deleted": true,
+          "hard_purge_available_via": "adapt db purge-student --student-id <id> --confirm",
+          "note": "learning history is removed from every query path immediately"
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "set-cookie": "adapt_session=\"\"; expires=Thu, 22 Oct 2026 17:23:03 GMT; Max-Age=0; Path=/; SameSite=lax\nadapt_csrf=\"\"; expires=Thu, 22 Oct 2026 17:23:03 GMT; Max-Age=0; Path=/; SameSite=lax",
+          "vary": "Origin",
+          "x-elapsed-ms": "6",
+          "content-length": "167",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "396587a013ba",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "meAfter": {
+        "status": 401,
+        "body": {
+          "detail": "not signed in"
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "1",
+          "content-length": "26",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "b3166834c96b",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      },
+      "loginAfter": {
+        "status": 401,
+        "body": {
+          "detail": "wrong username or password"
+        },
+        "headers": {
+          "date": "Thu, 22 Oct 2026 17:23:02 GMT",
+          "server": "uvicorn",
+          "content-type": "application/json",
+          "vary": "Origin",
+          "x-elapsed-ms": "2",
+          "content-length": "39",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "referrer-policy": "no-referrer",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "permissions-policy": "camera=(), geolocation=(), microphone=(self)",
+          "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+          "cache-control": "no-store",
+          "x-request-id": "a79aafffe679",
+          "connection": "keep-alive",
+          "keep-alive": "timeout=5"
+        }
+      }
+    }
+  },
+  "ids": {
+    "a": "stu_54f424bd011e464d855f",
+    "b": "stu_0d910cb62d6e4609a3f0",
+    "subject": "subject_777ba09b1f9f4be99457",
+    "baseline": "base_1aff5aab29544235884e",
+    "session": "lrs_2134f2d2bfc9481eb117",
+    "delete": "stu_bb7e018cafd64e13a4db",
+    "deleteSession": "lrs_b497e16d3a934271ab83"
+  },
+  "console": []
+}

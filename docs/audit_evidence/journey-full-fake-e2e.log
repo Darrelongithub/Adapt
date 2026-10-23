@@ -1,0 +1,66 @@
+
+> adapt-e2e-journey@0.1.0 test
+> playwright test
+
+
+Running 2 tests using 1 worker
+
+  ✘  1 [desktop] › journey-full.spec.ts:45:5 › the full journey with the three lesson moments (33.9s)
+  ✘  2 [mobile] › journey-full.spec.ts:45:5 › the full journey with the three lesson moments (32.4s)
+
+
+  1) [desktop] › journey-full.spec.ts:45:5 › the full journey with the three lesson moments ────────
+
+    TimeoutError: locator.scrollIntoViewIfNeeded: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid=\'journey-card\'][data-stage=\'subject\']')
+
+
+      62 |     // the stage list's own row (the current-step card carries data-stage too)
+      63 |     const row = page.locator(`[data-testid='journey-card'][data-stage='${stage}']`);
+    > 64 |     await row.scrollIntoViewIfNeeded();
+         |               ^
+      65 |     await row.locator("button", { hasText: /^skip this step$/i }).first().click();
+      66 |     await expect
+      67 |       .poll(async () => stageStatus(context, stage), { timeout: 30_000 })
+        at /home/user/Adapt/e2e/journey-full/journey-full.spec.ts:64:15
+
+    Error Context: test-results/journey-full-the-full-journey-with-the-three-lesson-moments-desktop/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/journey-full-the-full-journey-with-the-three-lesson-moments-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/journey-full-the-full-journey-with-the-three-lesson-moments-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [mobile] › journey-full.spec.ts:45:5 › the full journey with the three lesson moments ─────────
+
+    TimeoutError: locator.scrollIntoViewIfNeeded: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid=\'journey-card\'][data-stage=\'subject\']')
+
+
+      62 |     // the stage list's own row (the current-step card carries data-stage too)
+      63 |     const row = page.locator(`[data-testid='journey-card'][data-stage='${stage}']`);
+    > 64 |     await row.scrollIntoViewIfNeeded();
+         |               ^
+      65 |     await row.locator("button", { hasText: /^skip this step$/i }).first().click();
+      66 |     await expect
+      67 |       .poll(async () => stageStatus(context, stage), { timeout: 30_000 })
+        at /home/user/Adapt/e2e/journey-full/journey-full.spec.ts:64:15
+
+    Error Context: test-results/journey-full-the-full-journey-with-the-three-lesson-moments-mobile/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/journey-full-the-full-journey-with-the-three-lesson-moments-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/journey-full-the-full-journey-with-the-three-lesson-moments-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [desktop] › journey-full.spec.ts:45:5 › the full journey with the three lesson moments ─────────
+    [mobile] › journey-full.spec.ts:45:5 › the full journey with the three lesson moments ──────────

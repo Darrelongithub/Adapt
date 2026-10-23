@@ -16,6 +16,7 @@ describing it:
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import time
@@ -177,7 +178,7 @@ class LimitsMiddleware(BaseHTTPMiddleware):
                 {"detail": f"request too large (limit {self.settings.max_body_bytes} bytes)"},
                 status_code=413,
             )
-        ip = client_ip(request)
+        ip = client_ip(request, settings=self.settings)
         ok, retry = self.limiter.allow("ip", ip)
         if not ok:
             wait = round(retry, 2)
@@ -269,11 +270,34 @@ class BodySizeGuard:
         return b"".join(chunks)
 
 
-def client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+def _ip_text(value: object) -> str:
+    text = str(value or "").strip()
+    try:
+        return str(ipaddress.ip_address(text))
+    except ValueError:
+        return text
+
+
+def client_ip(request: Request, *, settings: Settings | None = None) -> str:
+    """Direct peer by default; forwarded addresses only across a trusted proxy chain."""
+    peer = _ip_text(request.client.host if request.client else "unknown")
+    st = settings or get_settings()
+    trusted = {_ip_text(value) for value in st.trusted_proxies}
+    if peer not in trusted:
+        return peer
+    forwarded = request.headers.get("x-forwarded-for", "")
+    chain = []
+    for part in forwarded.split(","):
+        try:
+            chain.append(str(ipaddress.ip_address(part.strip())))
+        except ValueError:
+            continue
+    # A proxy appends the address it observed. Walk back through trusted proxies so a
+    # caller-supplied leftmost value cannot become the identity used by auth buckets.
+    for address in reversed(chain):
+        if address not in trusted:
+            return address
+    return chain[0] if chain else peer
 
 
 def origin_ok(request: Request, settings: Settings) -> bool:

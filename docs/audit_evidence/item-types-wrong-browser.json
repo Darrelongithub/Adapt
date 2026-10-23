@@ -1,0 +1,158 @@
+{
+  "at": "2026-10-22T17:10:00.576Z",
+  "items": [
+    {
+      "type": "pattern_pick",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "drag_order",
+      "verdict": "Correct.",
+      "wrongScoredWrong": false
+    },
+    {
+      "type": "drag_match",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "odd_one_out",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "truth_table",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "venn_region",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "geometry_angle",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "geometry_congruent",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "number_line",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "fraction_bar",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "cloze_word_bank",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    },
+    {
+      "type": "quick_recall",
+      "verdict": "Not this time. Next one.",
+      "wrongScoredWrong": true
+    }
+  ],
+  "console": [
+    {
+      "type": "warning",
+      "text": "The resource http://127.0.0.1:3000/_next/static/css/882611466ea8c5e5.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally."
+    }
+  ],
+  "final": [
+    {
+      "type": "pattern_pick",
+      "correct": "false",
+      "text": "pattern_pick: wrong · 630 ms · 1 hints"
+    },
+    {
+      "type": "drag_order",
+      "correct": "true",
+      "text": "drag_order: correct · 376 ms · 1 hints"
+    },
+    {
+      "type": "drag_match",
+      "correct": "false",
+      "text": "drag_match: wrong · 1159 ms · 1 hints"
+    },
+    {
+      "type": "odd_one_out",
+      "correct": "false",
+      "text": "odd_one_out: wrong · 248 ms · 1 hints"
+    },
+    {
+      "type": "truth_table",
+      "correct": "false",
+      "text": "truth_table: wrong · 289 ms · 1 hints"
+    },
+    {
+      "type": "venn_region",
+      "correct": "false",
+      "text": "venn_region: wrong · 257 ms · 1 hints"
+    },
+    {
+      "type": "geometry_angle",
+      "correct": "false",
+      "text": "geometry_angle: wrong · 278 ms · 1 hints"
+    },
+    {
+      "type": "geometry_congruent",
+      "correct": "false",
+      "text": "geometry_congruent: wrong · 247 ms · 1 hints"
+    },
+    {
+      "type": "number_line",
+      "correct": "false",
+      "text": "number_line: wrong · 256 ms · 1 hints"
+    },
+    {
+      "type": "fraction_bar",
+      "correct": "false",
+      "text": "fraction_bar: wrong · 250 ms · 1 hints"
+    },
+    {
+      "type": "cloze_word_bank",
+      "correct": "false",
+      "text": "cloze_word_bank: wrong · 260 ms · 1 hints"
+    },
+    {
+      "type": "quick_recall",
+      "correct": "false",
+      "text": "quick_recall: wrong · 2159 ms · 1 hints"
+    }
+  ],
+  "account": {
+    "status": 200,
+    "body": {
+      "student_id": "stu_6e7103ee82774682b0d3",
+      "display_name": "Guest learner",
+      "role": "student",
+      "onboarding_complete": false,
+      "diagnostic_complete": false,
+      "baseline_started": false,
+      "voice_enabled": false,
+      "voice_gender": "female",
+      "language": "en",
+      "consent_analytics": true,
+      "consent_share_with_ai": false,
+      "sessions": 0,
+      "preferences": {},
+      "profile_taken_at": null,
+      "csrf_token": "LV-c5BXDvnH0cK7p8X9A7m-_rhJlsvuk",
+      "expires_at": "2026-10-23T05:10:00.589547",
+      "mode": "local",
+      "created": true
+    }
+  },
+  "allWrong": false,
+  "allHintsAndTiming": true
+}

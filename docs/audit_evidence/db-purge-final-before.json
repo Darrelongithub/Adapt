@@ -1,0 +1,77 @@
+{
+  "student_id": "stu_b049fd57bde3437ca9ff",
+  "db_file": "/tmp/audit-data/adapt.db",
+  "tables": {
+    "auth_sessions": {
+      "count": 2,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "baseline_runs": {
+      "count": 1,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "learner_events": {
+      "count": 3,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "learner_subjects": {
+      "count": 1,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "learning_sessions": {
+      "count": 1,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "lesson_plans": {
+      "count": 1,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "lesson_runs": {
+      "count": 1,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "session_states": {
+      "count": 1,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "student_preferences": {
+      "count": 1,
+      "columns": [
+        "student_id"
+      ]
+    },
+    "students": {
+      "count": 1,
+      "columns": [
+        "id"
+      ]
+    },
+    "subject_test_evidence": {
+      "count": 1,
+      "columns": [
+        "student_id"
+      ]
+    }
+  },
+  "student": {
+    "id": "stu_b049fd57bde3437ca9ff",
+    "deleted_at": "2026-10-22 17:27:42.194525",
+    "username": "b'AGC1\\x8f\\xd7\\x82\\xbb\\x17\\xe8\\x13O\\x9a\\xee\\xee-\\x08\\xb3\\xc6\\xb2-\\xb5\\xa72\\xe0\\xe6\\x18HL\\xfd\\x06\\xeb\\xebsBN\\x1f\\xc1\\xf8.d\\x07MI\\xe9\\x1d\\\\\\x18\\xa1'"
+  }
+}

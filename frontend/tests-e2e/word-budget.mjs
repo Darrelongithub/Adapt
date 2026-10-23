@@ -47,14 +47,15 @@ const SCREENS = [
     budget: 40,
     body: [
       "Your path",
-      "One step at a time",
-      "Each step below runs in turn. You can stop after any step.",
-      "Sign in or continue as a guest to start.",
-      "still checking who you are — nothing here has been lost",
+      "One step at a time. You can pause or skip any step.",
+      "What do you want to learn?",
+      "Pick a subject to build your starting checks.",
+      "Opening your path…",
     ],
   },
   {
     file: "first-lesson/page.tsx",
+    also: ["../components/lesson/LessonRenderer.tsx"],
     label: "First lesson",
     budget: 40,
     body: [
@@ -64,7 +65,7 @@ const SCREENS = [
       "for example: photosynthesis",
       "Write my lesson",
       "Right. Practice keeps it in rotation.",
-      "The lesson marked that one as wrong — see the explanation above.",
+      "Not quite — the explanation below starts with your choice.",
     ],
   },
   {
@@ -92,18 +93,17 @@ for (const screen of SCREENS) {
   const path = join(ROOT, screen.file);
   let source = "";
   try {
-    source = await readFile(path, "utf8");
+    source = (await Promise.all([path, ...(screen.also ?? []).map((extra) => join(ROOT, extra))].map((file) => readFile(file, "utf8")))).join("\n");
   } catch (err) {
-    console.log(`  --  ${screen.label.padEnd(28)} (file missing)`);
+    failed += 1;
+    console.log(`FAIL  ${screen.label.padEnd(28)} (file missing)`);
     continue;
   }
-  // The body sentences that *appear* in the screen source.  Missing
-  // sentences are not counted as a fail — the budget is what is on
-  // screen, and a copy edit is expected to keep the budget literal in
-  // sync.
+  // A removed or renamed tracked sentence is a stale harness, not a smaller screen.
   const present = screen.body.filter((text) => source.includes(text));
   const presentWords = present.reduce((sum, t) => sum + countWords(t), 0);
-  const ok = presentWords <= screen.budget;
+  const missing = screen.body.length - present.length;
+  const ok = presentWords <= screen.budget && missing === 0;
   if (!ok) failed += 1;
   const status = ok ? "  ok" : "FAIL";
   console.log(`${status}  ${screen.label.padEnd(28)} ${String(presentWords).padStart(3)}/${screen.budget} words  (${present.length}/${screen.body.length} sentences tracked)`);
@@ -117,7 +117,7 @@ for (const screen of SCREENS) {
 
 console.log("");
 if (failed) {
-  console.error(`Word-count regression: ${failed} screen(s) over the 40-word budget.`);
+  console.error(`Word-count regression: ${failed} screen(s) over budget or missing tracked copy.`);
   process.exit(1);
 }
 console.log("Word-count regression: all first-run screens under the 40-word budget.");

@@ -1,0 +1,20 @@
+{
+  "purged": "stu_b049fd57bde3437ca9ff",
+  "rows_deleted": {
+    "learner_events": 3,
+    "attempts": 0,
+    "chat_messages": 0,
+    "voice_turns": 0,
+    "evidence": 0,
+    "hypotheses": 0,
+    "adaptation_proposals": 0,
+    "approved_adaptations": 0,
+    "profile_snapshots": 0,
+    "retention_checks": 0,
+    "retention_schedules": 0,
+    "strategy_stats": 0,
+    "student_preferences": 1,
+    "learning_sessions": 1,
+    "students": 1
+  }
+}
