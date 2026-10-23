@@ -22,7 +22,9 @@ _PROVIDER_RE = re.compile(
     r"faster[-_ ]whisper(?:[-/][a-z0-9_.-]+)*|open[ _]*library|openalex|arxiv|youtube|"
     r"kokoro(?:[-/][a-z0-9_.-]+)*|gemini(?:[-/][a-z0-9_.-]+)*)\b"
 )
-_KEY_NAME_RE = re.compile(r"(?i)\b(?:ADAPT_)?(?:GEMINI|YOUTUBE)_API_KEY\b")
+_KEY_NAME_RE = re.compile(
+    r"(?i)\b(?:ADAPT_)?(?:GEMINI|YOUTUBE|OAK|PUBMED|AI1|AI2|AI3)_API_(?:KEY|URL)\b"
+)
 _SECRET_ASSIGNMENT_RE = re.compile(
     r"(?i)\b(?:api[-_ ]?key|x-goog-api-key|authorization|access[-_ ]?token)"
     r"\s*[:=]\s*(?:bearer\s+)?[^\s&,'\"<>]+"
@@ -81,9 +83,18 @@ _DROP_KEYS = frozenset(
         "xgoogapikey",
         "geminiapikey",
         "youtubeapikey",
+        "oakapikey",
+        "pubmedapikey",
+        "ai1apikey",
+        "ai2apikey",
+        "ai3apikey",
+        "ai1apiurl",
+        "ai2apiurl",
+        "ai3apiurl",
         "authorization",
         "ai1provider",
         "ai2provider",
+        "ai3provider",
         "models",
         "modelid",
         "modelname",
@@ -95,8 +106,10 @@ _DROP_KEYS = frozenset(
         "modelrevision",
         "modelai1",
         "modelai2",
+        "modelai3",
         "ai1model",
         "ai2model",
+        "ai3model",
         "whispermodel",
         "whispermodelsize",
         "sttmodel",
@@ -145,8 +158,16 @@ def _configured_terms(settings: Any | None) -> tuple[str, ...]:
         "gemini_api_key",
         "youtube_api_key",
         "oak_api_key",
+        "pubmed_api_key",
+        "ai1_api_key",
+        "ai2_api_key",
+        "ai3_api_key",
+        "ai1_api_url",
+        "ai2_api_url",
+        "ai3_api_url",
         "gemini_model_ai1",
         "gemini_model_ai2",
+        "gemini_model_ai3",
         "gemini_model_light",
         "gemini_model_standard",
         "gemini_model_deep",

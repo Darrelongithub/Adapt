@@ -1150,14 +1150,18 @@ def token_cmd(student_id: str = typer.Option(..., "--for"), hours: int = typer.O
         typer.echo(f"expires: {issued.session.expires_at.isoformat()}")
         typer.echo('use:  curl -H "Cookie: adapt_session=<token>" -H "X-CSRF-Token: <csrf>" ...')
 
+_SUPPORTED_KEY_SERVICES = ("gemini", "ai1", "ai2", "ai3", "oak", "pubmed", "youtube")
+_SUPPORTED_SLOTS = ("ai1", "ai2", "ai3")
+
+
 @config_app.command("set-key")
 def config_set_key(
     service: str = typer.Option(
         "gemini",
         "--service",
         help=(
-            "Credential to store. Enter it at the hidden prompt, never as an argument; "
-            "shell history records arguments."
+            "Credential to store (ai1, ai2, ai3, gemini, oak, pubmed, youtube). "
+            "Enter it at the hidden prompt, never as an argument; shell history records arguments."
         ),
         case_sensitive=False,
     ),
@@ -1167,8 +1171,12 @@ def config_set_key(
 
     st = _settings()
     chosen = service.strip().lower()
-    if chosen not in {"gemini", "youtube", "oak"}:
-        typer.secho("Unsupported service. Choose gemini, youtube or oak.", fg=typer.colors.RED, err=True)
+    if chosen not in _SUPPORTED_KEY_SERVICES:
+        typer.secho(
+            f"Unsupported service. Choose one of: {', '.join(_SUPPORTED_KEY_SERVICES)}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(code=2)
     secret = typer.prompt("API key (input is hidden)", hide_input=True, confirmation_prompt=True)
     try:
@@ -1180,17 +1188,91 @@ def config_set_key(
     typer.echo("Restart the application process to load the new configuration.")
 
 
+@config_app.command("set-url")
+def config_set_url(
+    slot: str = typer.Option(
+        ...,
+        "--slot",
+        help="Target AI slot: ai1 (Psychology), ai2 (Education), or ai3 (Adaptation).",
+        case_sensitive=False,
+    ),
+    url: str | None = typer.Option(
+        None,
+        "--url",
+        help="HTTPS endpoint URL for the slot (prompted interactively when omitted).",
+    ),
+    header: str | None = typer.Option(
+        None,
+        "--header",
+        help="HTTP header used to send the slot API key (default: Authorization, e.g. X-API-Key).",
+    ),
+) -> None:
+    """Configure an external HTTPS site API endpoint for Slot 1 (ai1), Slot 2 (ai2), or Slot 3 (ai3)."""
+    from .config_secrets import ConfigSecretError, set_url
+
+    st = _settings()
+    chosen = slot.strip().lower()
+    if chosen not in _SUPPORTED_SLOTS:
+        typer.secho(
+            f"Unsupported slot. Choose one of: {', '.join(_SUPPORTED_SLOTS)}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    endpoint = url if url is not None else typer.prompt(f"HTTPS API URL for {chosen}")
+    try:
+        set_url(st.data_dir, chosen, endpoint, header=header)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"Stored the {chosen} API endpoint in the owner-only console settings file.")
+    typer.echo("Restart the application process to load the new configuration.")
+
+
+@config_app.command("remove-url")
+def config_remove_url(
+    slot: str = typer.Option(
+        ...,
+        "--slot",
+        help="Target AI slot whose custom URL should be removed (ai1, ai2, ai3).",
+        case_sensitive=False,
+    ),
+) -> None:
+    """Remove a custom HTTPS site API URL from console settings."""
+    from .config_secrets import ConfigSecretError, remove_url
+
+    chosen = slot.strip().lower()
+    if chosen not in _SUPPORTED_SLOTS:
+        typer.secho(
+            f"Unsupported slot. Choose one of: {', '.join(_SUPPORTED_SLOTS)}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if not typer.confirm(f"Remove the stored {chosen} endpoint URL?", default=False):
+        typer.echo("No changes made.")
+        return
+    try:
+        remove_url(_settings().data_dir, chosen)
+    except ConfigSecretError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"Removed the stored {chosen} endpoint URL. An environment override may still be active.")
+
+
 @config_app.command("status")
 def config_status(
     check: bool = typer.Option(
-        False, "--check", help="Probe each enabled connector once (one small request each)."
+        False, "--check", help="Probe each enabled slot and connector once (one small request each)."
     ),
 ) -> None:
-    """Show credential state and, when set, at most the final four characters."""
-    from .config_secrets import ConfigSecretError, status_rows
+    """Show credential and 3-slot API state (when set, at most the final four characters)."""
+    from .config_secrets import ConfigSecretError, settings_with_managed_values, status_rows
+    from .connectors.slots import check_slot, slot_status_rows
 
+    base_settings = _settings()
     try:
-        for row in status_rows(_settings()):
+        for row in status_rows(base_settings):
             if row["configured"]:
                 # Where the value came from matters: an exported variable or a .env entry
                 # overrides the console file, so "I just stored a new key" can otherwise be
@@ -1201,18 +1283,31 @@ def config_status(
                 typer.echo(
                     f"{row['service']}: not configured (set it with `adapt config set-key`)"
                 )
+        effective_settings = settings_with_managed_values(base_settings)
     except ConfigSecretError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from None
+
+    for srow in slot_status_rows(effective_settings):
+        state_word = "enabled" if srow["enabled"] else "off"
+        url_word = "custom-url" if srow["custom_url_set"] else "builtin-routes"
+        providers = ", ".join(srow["providers"])
+        probe = ""
+        if check and srow["enabled"]:
+            verdict = check_slot(srow["slot"], effective_settings)
+            probe = f" · health: {'ok' if verdict.get('ok') else 'not answered'}"
+        typer.echo(
+            f"slot {srow['slot']} ({srow['function']}): {state_word} · {url_word} · [{providers}]{probe}"
+        )
+
     # Round 9 connectors: state only (never a key, never learner data), and
     # an opt-in one-call health probe per connector with --check.
     from .connectors.registry import connector_status, health_check
 
-    settings = _settings()
-    for row in connector_status(settings):
+    for row in connector_status(effective_settings):
         probe = ""
         if check and row["enabled"]:
-            verdict = health_check(settings, row["id"])
+            verdict = health_check(effective_settings, row["id"])
             probe = f" · health: {'ok' if verdict.get('ok') else 'not answered'}"
         typer.echo(
             f"connector {row['id']}: {row['state']} · {row['note']} · {row['licence']}{probe}"
@@ -1232,17 +1327,24 @@ _CONNECTION_FAILURES = {
 
 
 def _without_secret(text: str, settings: Any, limit: int = 600) -> str:
-    """One line, bounded, with the configured key removed if it somehow appears.
-
-    The limit is generous on purpose. A retired model ID is reported by the provider in
-    one long sentence that names the model to use instead, and clipping it at 200
-    characters cut that recommendation off mid-word -- the one part of the message an
-    operator can act on.
-    """
-    secret = str(getattr(settings, "gemini_api_key", "") or "")
-    if secret:
-        text = text.replace(secret, "[key]")
-    return " ".join(str(text or "").split())[:limit]
+    """One line, bounded, with any configured key or URL removed if it appears."""
+    out = str(text or "")
+    for attr in (
+        "gemini_api_key",
+        "ai1_api_key",
+        "ai2_api_key",
+        "ai3_api_key",
+        "oak_api_key",
+        "pubmed_api_key",
+        "youtube_api_key",
+        "ai1_api_url",
+        "ai2_api_url",
+        "ai3_api_url",
+    ):
+        val = str(getattr(settings, attr, "") or "").strip()
+        if val:
+            out = out.replace(val, "[redacted]")
+    return " ".join(out.split())[:limit]
 
 
 def _connection_failure_reason(
@@ -1303,33 +1405,56 @@ def _connection_failure_reason(
 
 
 @config_app.command("test")
-def config_test() -> None:
-    """One minimal connection check, with the reason printed when it fails.
-
-    If the configured model ID is unknown to the provider, the client retries on another
-    configured class and then on a model discovered from the key's own ``/models`` list
-    (see ``GeminiLLM._model_chain``), so a retired ID recovers without a configuration
-    change and is distinguishable from a bad key or a blocked network. On success this
-    names the model that answered -- which is the difference between "it works" and
-    "it works, but only because your configured ID was gone".
-    """
+def config_test(
+    slot: str = typer.Option(
+        "gemini",
+        "--slot",
+        help="Target to test: gemini (default LLM probe), ai1, ai2, ai3, or all.",
+        case_sensitive=False,
+    ),
+) -> None:
+    """One minimal connection check for Gemini or any of the 3 dedicated AI API slots."""
     from .config_secrets import ConfigSecretError, settings_with_managed_values
+    from .connectors.slots import check_slot
     from .security.secrecy import install_log_redaction
+
+    chosen_slot = slot.strip().lower()
+    if chosen_slot not in {"gemini", "ai1", "ai2", "ai3", "all"}:
+        typer.secho(
+            "Unsupported slot. Choose one of: gemini, ai1, ai2, ai3, all.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     st = _settings()
     try:
         st = settings_with_managed_values(st)
     except ConfigSecretError:
-        # The message stays generic on purpose: this is the credential path, and the
-        # exception text can carry a value from the settings file.
         typer.echo("Connection test failed. Check the console settings file.")
         raise typer.Exit(code=1) from None
+
+    install_log_redaction(st)
+
+    if chosen_slot in {"ai1", "ai2", "ai3", "all"}:
+        targets = ("ai1", "ai2", "ai3") if chosen_slot == "all" else (chosen_slot,)
+        any_failed = False
+        for target in targets:
+            verdict = check_slot(target, st)
+            detail = _without_secret(str(verdict.get("detail") or ""), st)
+            if verdict.get("ok"):
+                typer.echo(f"[{target}] Connection test passed: {detail}")
+            else:
+                typer.echo(f"[{target}] Connection test failed: {detail}")
+                any_failed = True
+        if any_failed:
+            raise typer.Exit(code=1)
+        return
+
     if not st.gemini_api_key:
         typer.echo("Connection test failed. No credential is configured.")
         raise typer.Exit(code=1)
 
-    # Do not retain upstream exception text in logs while testing a live credential.
-    install_log_redaction(st)
     from .ai.llm import GeminiLLM
 
     # No retry/backoff loop and no pacing delay, and the probe carries no learner text:
@@ -1485,15 +1610,22 @@ def config_models() -> None:
 @config_app.command("rotate")
 def config_rotate(
     service: str = typer.Option(
-        "gemini", "--service", help="Credential to rotate.", case_sensitive=False
+        "gemini",
+        "--service",
+        help="Credential to rotate (ai1, ai2, ai3, gemini, oak, pubmed, youtube).",
+        case_sensitive=False,
     ),
 ) -> None:
     """Replace a credential using a hidden prompt; the new value is never a shell argument."""
     from .config_secrets import ConfigSecretError, set_key
 
     chosen = service.strip().lower()
-    if chosen not in {"gemini", "youtube", "oak"}:
-        typer.secho("Unsupported service. Choose gemini, youtube or oak.", fg=typer.colors.RED, err=True)
+    if chosen not in _SUPPORTED_KEY_SERVICES:
+        typer.secho(
+            f"Unsupported service. Choose one of: {', '.join(_SUPPORTED_KEY_SERVICES)}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(code=2)
     secret = typer.prompt(
         "Replacement API key (input is hidden)",
@@ -1512,15 +1644,22 @@ def config_rotate(
 @config_app.command("remove")
 def config_remove(
     service: str = typer.Option(
-        "gemini", "--service", help="Credential to remove.", case_sensitive=False
+        "gemini",
+        "--service",
+        help="Credential to remove (ai1, ai2, ai3, gemini, oak, pubmed, youtube).",
+        case_sensitive=False,
     ),
 ) -> None:
     """Remove a stored credential without printing it."""
     from .config_secrets import ConfigSecretError, remove_key
 
     chosen = service.strip().lower()
-    if chosen not in {"gemini", "youtube", "oak"}:
-        typer.secho("Unsupported service. Choose gemini, youtube or oak.", fg=typer.colors.RED, err=True)
+    if chosen not in _SUPPORTED_KEY_SERVICES:
+        typer.secho(
+            f"Unsupported service. Choose one of: {', '.join(_SUPPORTED_KEY_SERVICES)}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(code=2)
     if not typer.confirm(f"Remove the stored {chosen} credential?", default=False):
         typer.echo("No changes made.")

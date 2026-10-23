@@ -22,22 +22,43 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from urllib.parse import urlparse
+
 SECRET_FIELDS: dict[str, tuple[str, str]] = {
     "gemini": ("ADAPT_GEMINI_API_KEY", "gemini_api_key"),
-    "youtube": ("ADAPT_YOUTUBE_API_KEY", "youtube_api_key"),
-    # Round 9: the Oak curriculum-outline key travels the same console-only
-    # path — owner-only file, hidden prompt, never an HTTP surface.
+    "ai1": ("ADAPT_AI1_API_KEY", "ai1_api_key"),
+    "ai2": ("ADAPT_AI2_API_KEY", "ai2_api_key"),
+    "ai3": ("ADAPT_AI3_API_KEY", "ai3_api_key"),
     "oak": ("ADAPT_OAK_API_KEY", "oak_api_key"),
+    "pubmed": ("ADAPT_PUBMED_API_KEY", "pubmed_api_key"),
+    "youtube": ("ADAPT_YOUTUBE_API_KEY", "youtube_api_key"),
+}
+URL_FIELDS: dict[str, tuple[str, str]] = {
+    "ai1": ("ADAPT_AI1_API_URL", "ai1_api_url"),
+    "ai2": ("ADAPT_AI2_API_URL", "ai2_api_url"),
+    "ai3": ("ADAPT_AI3_API_URL", "ai3_api_url"),
+}
+HEADER_FIELDS: dict[str, tuple[str, str]] = {
+    "ai1": ("ADAPT_AI1_API_HEADER", "ai1_api_header"),
+    "ai2": ("ADAPT_AI2_API_HEADER", "ai2_api_header"),
+    "ai3": ("ADAPT_AI3_API_HEADER", "ai3_api_header"),
 }
 BUDGET_FIELDS: dict[str, str] = {
     "ADAPT_GEMINI_DAILY_CALL_BUDGET": "gemini_daily_call_budget",
     "ADAPT_GEMINI_DAILY_TOKEN_BUDGET": "gemini_daily_token_budget",
 }
+_URL_ENV_NAMES = frozenset(env_name for env_name, _field in URL_FIELDS.values())
+_HEADER_ENV_NAMES = frozenset(env_name for env_name, _field in HEADER_FIELDS.values())
 MANAGED_KEYS = frozenset(
-    [env_name for env_name, _field in SECRET_FIELDS.values()] + list(BUDGET_FIELDS)
+    [env_name for env_name, _field in SECRET_FIELDS.values()]
+    + list(_URL_ENV_NAMES)
+    + list(_HEADER_ENV_NAMES)
+    + list(BUDGET_FIELDS)
 )
 _SERVICE_NAMES = frozenset(SECRET_FIELDS)
+_SLOT_NAMES = frozenset(URL_FIELDS)
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_SAFE_HEADER_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,63}$")
 
 
 class ConfigSecretError(ValueError):
@@ -140,6 +161,21 @@ def _validate_value(name: str, value: str) -> str:
         if number < 0 or number > 1_000_000_000:
             raise ConfigSecretError("budget is outside the supported range")
         return str(number)
+    if name in _URL_ENV_NAMES:
+        cleaned = text.strip()
+        if not cleaned or len(cleaned) > 1024 or any(ch.isspace() for ch in cleaned):
+            raise ConfigSecretError("endpoint URL must be a single valid https URL")
+        parsed = urlparse(cleaned)
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise ConfigSecretError("endpoint URL must use https:// and include a hostname")
+        if parsed.username or parsed.password:
+            raise ConfigSecretError("endpoint URL must not embed credentials; store keys with set-key")
+        return cleaned
+    if name in _HEADER_ENV_NAMES:
+        cleaned = text.strip()
+        if not _SAFE_HEADER_NAME.fullmatch(cleaned):
+            raise ConfigSecretError("header name must be a valid HTTP header token")
+        return cleaned
     if not text.strip():
         raise ConfigSecretError("key cannot be empty")
     if len(text) > 4096:
@@ -218,6 +254,35 @@ def remove_key(data_dir: str | os.PathLike[str], service: str) -> Path:
     return write_managed_values(config_file(data_dir), {env_name: None})
 
 
+def set_url(
+    data_dir: str | os.PathLike[str],
+    slot: str,
+    url: str,
+    *,
+    header: str | None = None,
+) -> Path:
+    """Store a custom HTTPS site API URL (and optional auth header name) for ai1, ai2, or ai3."""
+    chosen = slot.lower().strip()
+    if chosen not in _SLOT_NAMES:
+        raise ConfigSecretError("unsupported slot; choose ai1, ai2, or ai3")
+    url_env, _url_field = URL_FIELDS[chosen]
+    updates: dict[str, Any] = {url_env: _validate_value(url_env, url)}
+    if header is not None and str(header).strip():
+        hdr_env, _hdr_field = HEADER_FIELDS[chosen]
+        updates[hdr_env] = _validate_value(hdr_env, header)
+    return write_managed_values(config_file(data_dir), updates)
+
+
+def remove_url(data_dir: str | os.PathLike[str], slot: str) -> Path:
+    """Remove a stored custom site API URL and header override for ai1, ai2, or ai3."""
+    chosen = slot.lower().strip()
+    if chosen not in _SLOT_NAMES:
+        raise ConfigSecretError("unsupported slot; choose ai1, ai2, or ai3")
+    url_env, _url_field = URL_FIELDS[chosen]
+    hdr_env, _hdr_field = HEADER_FIELDS[chosen]
+    return write_managed_values(config_file(data_dir), {url_env: None, hdr_env: None})
+
+
 def set_budgets(data_dir: str | os.PathLike[str], *, calls: int, tokens: int) -> Path:
     return write_managed_values(
         config_file(data_dir),
@@ -235,11 +300,19 @@ def masked_last_four(value: str | None) -> str | None:
     return "****" + value[-4:] if len(value) > 4 else "****"
 
 
+_ALL_MANAGED_PAIRS: tuple[tuple[str, str], ...] = (
+    *SECRET_FIELDS.values(),
+    *URL_FIELDS.values(),
+    *HEADER_FIELDS.values(),
+    *BUDGET_FIELDS.items(),
+)
+
+
 def effective_values(settings: Any, path: str | os.PathLike[str] | None = None) -> dict[str, str]:
     """Resolve process env > managed file > existing settings/env-file values."""
     values = read_managed_values(path or config_file(settings.data_dir))
     out: dict[str, str] = {}
-    for env_name, field_name in [*SECRET_FIELDS.values(), *BUDGET_FIELDS.items()]:
+    for env_name, field_name in _ALL_MANAGED_PAIRS:
         explicit = os.environ.get(env_name)
         if explicit is not None and str(explicit).strip():
             out[env_name] = _validate_value(env_name, str(explicit))
@@ -261,7 +334,7 @@ def settings_with_managed_values(settings: Any, path: str | os.PathLike[str] | N
     """
     effective = effective_values(settings, path)
     updates: dict[str, Any] = {}
-    for env_name, field_name in [*SECRET_FIELDS.values(), *BUDGET_FIELDS.items()]:
+    for env_name, field_name in _ALL_MANAGED_PAIRS:
         if env_name not in effective:
             continue
         value: Any = effective[env_name]
@@ -284,7 +357,7 @@ def value_sources(settings: Any, path: str | os.PathLike[str] | None = None) -> 
     """
     values = read_managed_values(path or config_file(settings.data_dir))
     out: dict[str, str] = {}
-    for env_name, field_name in [*SECRET_FIELDS.values(), *BUDGET_FIELDS.items()]:
+    for env_name, field_name in _ALL_MANAGED_PAIRS:
         explicit = os.environ.get(env_name)
         if explicit is not None and str(explicit).strip():
             out[env_name] = "the environment"
