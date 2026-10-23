@@ -28,7 +28,7 @@ from typing import Any, Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..db.models import LearnerEvent, LearningSession, utcnow
+from ..db.models import LearnerEvent, LearningSession, Student, utcnow
 from ..learning import telemetry as T
 
 log = logging.getLogger("adapt.telemetry")
@@ -82,6 +82,9 @@ def append_event(
     The complaint list is what the API shows the student/developer: a dropped
     field is a design signal, not something to swallow.
     """
+    student = s.get(Student, student_id)
+    if student is not None and not bool(student.consent_analytics):
+        return None, ["rejected: analytics consent is off"]
     clean = T.sanitize_event(type, payload or {})
     if not clean.ok:
         return None, [f"rejected: {r}" for r in (clean.rejected or [f"unknown type {type}"])]
