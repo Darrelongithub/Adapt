@@ -1302,6 +1302,16 @@ export const contentPack = {
 
 const rows: Row[] = [
   { method: "GET", match: /^\/api\/v1\/subjects\/[^/]+$/, body: { id: "subj_mock_maths", title: "GCSE Maths", topic_id: "top_fractions" } },
+  /* Round 9: the wizard's syllabus gate and the check-in, in the shapes the real
+     routes return (backend/tests/test_round9.py pins them). */
+  { method: "POST", match: /^\/api\/v1\/subjects\/choose$/, body: { subject_id: "subj_mock_maths", plan: { tests: [{ id: "t_mock_1", title: "Number sense", why: "a first look", level: 1 }], source: "simple" }, subject: { id: "subj_mock_maths", title: "GCSE Maths", family: "maths", source: "simple", plan: { tests: [{ id: "t_mock_1", title: "Number sense", why: "a first look", level: 1 }], source: "simple" }, curriculum_spec: { curriculum: "kenya_cbc", grade: "Grade 8" }, progress: { done: 0, total: 1 } } } },
+  { method: "POST", match: /^\/api\/v1\/curriculum\/scan$/, body: { subject: "GCSE Maths", subject_id: "subj_mock_maths", curriculum: "kenya_cbc", grade: "Grade 8", objectives: [{ id: "obj_mock_1", title: "Fractions, decimals and percentages", strand: "Numbers", origin: "syllabus" }, { id: "obj_mock_2", title: "Lines and angles", strand: "Geometry", origin: "syllabus" }], source: "kicd_map", source_label: "From the syllabus list saved in the app", attribution: "Kenya Institute of Curriculum Development (KICD) curriculum designs — strand titles compiled 2026-10-23", licence: "KICD curriculum titles (official Kenya curriculum designs)", checked: true, from_cache: false, notes: [], approved_version: null, proposal_pending: false } },
+  { method: "POST", match: /^\/api\/v1\/curriculum\/approve$/, body: { guideline: { id: "gdl_mock_1", version: 1, status: "approved", objectives: [{ id: "obj_mock_1", title: "Fractions, decimals and percentages", strand: "Numbers", origin: "syllabus" }], source_label: "From the syllabus list saved in the app", attribution: "Kenya Institute of Curriculum Development (KICD) curriculum designs — strand titles compiled 2026-10-23" } } },
+  { method: "POST", match: /^\/api\/v1\/curriculum\/reject-proposal$/, body: { rejected: true } },
+  { method: "GET", match: /^\/api\/v1\/check-in\/prompt/, body: { show: true } },
+  { method: "POST", match: /^\/api\/v1\/check-in$/, body: { id: "chk_mock_1", context: "home", tiles: { effort: 8, emotion: "frustration", help: "win" }, note: "", estimate: { primary_emotion: "frustration", intensity: 0.85, cognitive_load: "high", engagement: "medium", frustration: "high", motivation: "medium", recommended_action: "break", summary: "You said that felt heavy (effort 8 of 9), mostly frustration." }, metrics: { n_recent: 0, accuracy: null }, source: "simple", next_lesson: { changed: true, reason: "Made shorter because you said it felt heavy.", break_suggested: true, length: "short", challenge_delta: -1 } } },
+  { method: "GET", match: /^\/api\/v1\/check-in$/, body: { check_ins: [], count: 0 } },
+  { method: "DELETE", match: /^\/api\/v1\/check-in(\/[^/]+)?$/, body: { deleted: 1 } },
   /* Home / Learn / Journey read this one; without it the preview shows an error card instead of the screen. */
   { method: "GET", match: /^\/api\/v1\/learning\/overview/, body: {
     active_subject_id: "subj_mock_maths",
@@ -1315,6 +1325,7 @@ const rows: Row[] = [
   /* Phase 5's contrast screen renders two plans side by side. The fixtures keep the same shape the
      adapter returns: ordered blocks each carrying a chunk_id and a why with its n, a why-panel, and
      provenance. The two profiles must differ in a way the page can *read off* the plans. */
+  { method: "POST", match: /^\/api\/v1\/lesson-plan\/practice\/score$/, status: 200, body: { correct: true, expected: "18 litres", correct_option: null, misconception: null, feedback: "Yes, that's right." } },
   { method: "POST", match: /^\/api\/v1\/lesson-plan\/contrast$/, body: {
     concept: "adding fractions",
     title: "Adding fractions",

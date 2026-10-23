@@ -256,6 +256,11 @@ def student_event_counts(s: Session, student_id: str, *, since: datetime | None 
 
 def privacy_summary() -> dict[str, Any]:
     """What we do and do not record -- rendered verbatim in the UI."""
+    # The check-in's stored fields and their consent sentences live with the
+    # check-in code (single source); a test diffs them against this list so
+    # the consent copy cannot drift from what is really stored.
+    from ..ai.monitor.checkin import RECORDED_FIELDS
+
     return {
         "recorded": [
             "the order of events (question shown, first interaction, answer changed, hint opened, submitted)",
@@ -263,6 +268,8 @@ def privacy_summary() -> dict[str, Any]:
             "first vs final answer and how many times it changed",
             "pauses / focus changes / interruptions, as counts and durations",
             "which later items the same topic appeared in, and the result",
+            *[phrase for _field, phrase in RECORDED_FIELDS],
+            "the syllabus objectives you approved for each subject, and the syllabus list they came from",
         ],
         "never_recorded": [
             "keystrokes, key timing, or per character edit content",

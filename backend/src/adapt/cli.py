@@ -112,6 +112,8 @@ def purge_student(
     from sqlalchemy import select
 
     from .db.engine import get_db
+    from .ai.monitor.models import LearnerCheckIn
+    from .curriculum.models import ApprovedGuideline, ScanCacheEntry
     from .db.models import (
         ActiveAdaptation,
         AdaptationProposal,
@@ -135,6 +137,8 @@ def purge_student(
     with db.session() as s:
         ids = [row[0] for row in s.execute(select(LearningSession.id).where(LearningSession.student_id == student_id)).all()]
         for model, attr in (
+            (LearnerCheckIn, "student_id"),
+            (ApprovedGuideline, "student_id"),
             (LearnerEvent, "student_id"),
             (Attempt, "student_id"),
             (ChatMessage, "student_id"),
@@ -155,6 +159,12 @@ def purge_student(
             n = s.execute(LearningSession.__table__.delete().where(LearningSession.id.in_(ids))).rowcount or 0
             deleted["learning_sessions"] = int(n)
         s.execute(Student.__table__.delete().where(Student.id == student_id))
+        # The learner's last scan candidates are keyed by their ids (payloads
+        # encrypted); shared syllabus scans carry no learner reference and stay.
+        n = s.execute(
+            ScanCacheEntry.__table__.delete().where(ScanCacheEntry.key.like(f"last:{student_id}:%"))
+        ).rowcount or 0
+        deleted["scan_cache"] = int(n)
         deleted["students"] = 1
         s.commit()
     _echo({"purged": student_id, "rows_deleted": deleted})
@@ -1154,8 +1164,8 @@ def config_set_key(
 
     st = _settings()
     chosen = service.strip().lower()
-    if chosen not in {"gemini", "youtube"}:
-        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+    if chosen not in {"gemini", "youtube", "oak"}:
+        typer.secho("Unsupported service. Choose gemini, youtube or oak.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     secret = typer.prompt("API key (input is hidden)", hide_input=True, confirmation_prompt=True)
     try:
@@ -1168,7 +1178,11 @@ def config_set_key(
 
 
 @config_app.command("status")
-def config_status() -> None:
+def config_status(
+    check: bool = typer.Option(
+        False, "--check", help="Probe each enabled connector once (one small request each)."
+    ),
+) -> None:
     """Show credential state and, when set, at most the final four characters."""
     from .config_secrets import ConfigSecretError, status_rows
 
@@ -1187,6 +1201,19 @@ def config_status() -> None:
     except ConfigSecretError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from None
+    # Round 9 connectors: state only (never a key, never learner data), and
+    # an opt-in one-call health probe per connector with --check.
+    from .connectors.registry import connector_status, health_check
+
+    settings = _settings()
+    for row in connector_status(settings):
+        probe = ""
+        if check and row["enabled"]:
+            verdict = health_check(settings, row["id"])
+            probe = f" · health: {'ok' if verdict.get('ok') else 'not answered'}"
+        typer.echo(
+            f"connector {row['id']}: {row['state']} · {row['note']} · {row['licence']}{probe}"
+        )
 
 
 #: Coarse causes for a failed one-call probe, keyed by the client's own status.
@@ -1462,8 +1489,8 @@ def config_rotate(
     from .config_secrets import ConfigSecretError, set_key
 
     chosen = service.strip().lower()
-    if chosen not in {"gemini", "youtube"}:
-        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+    if chosen not in {"gemini", "youtube", "oak"}:
+        typer.secho("Unsupported service. Choose gemini, youtube or oak.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     secret = typer.prompt(
         "Replacement API key (input is hidden)",
@@ -1489,8 +1516,8 @@ def config_remove(
     from .config_secrets import ConfigSecretError, remove_key
 
     chosen = service.strip().lower()
-    if chosen not in {"gemini", "youtube"}:
-        typer.secho("Unsupported service. Choose gemini or youtube.", fg=typer.colors.RED, err=True)
+    if chosen not in {"gemini", "youtube", "oak"}:
+        typer.secho("Unsupported service. Choose gemini, youtube or oak.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     if not typer.confirm(f"Remove the stored {chosen} credential?", default=False):
         typer.echo("No changes made.")

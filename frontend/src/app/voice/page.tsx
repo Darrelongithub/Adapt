@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Btn, Card, Check, Err, Field, Notice, Select, Tag, Textarea, useSession } from "@/components/ui";
+import { Btn, Card, Check, Err, Field, Notice, PageHeader, Select, Tag, Textarea, useSession } from "@/components/ui";
 import { post, useApi } from "@/lib/api";
 import { createDeduper, debounce, type Deduper } from "@/lib/debounce";
 import { useVoice } from "@/components/voice/context";
@@ -309,27 +309,27 @@ export default function VoicePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="t-h1">Talk to it</h1>
-          <p className="t-small">Greeting, read-aloud, and listen-and-answer.</p>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Same tutor, same memory, different input. {c?.note ?? "transcription accuracy and teaching accuracy are measured separately."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Tag tone={open ? "good" : "line"}>{open ? state : "not connected"}</Tag>
-          {open ? (
-            <Btn kind="ghost" onClick={close}>
-              hang up
-            </Btn>
-          ) : (
-            <Btn kind="primary" onClick={start} disabled={!voiceOn} title={!voiceOn ? "Turn voice on before connecting" : undefined}>
-              connect
-            </Btn>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Talk to it"
+        subtitle="Greeting, read-aloud, and listen-and-answer."
+        actions={(
+          <>
+            <Tag tone={open ? "good" : "line"}>{open ? state : "not connected"}</Tag>
+            {open ? (
+              <Btn kind="ghost" onClick={close}>
+                hang up
+              </Btn>
+            ) : (
+              <Btn kind="primary" onClick={start} disabled={!voiceOn} title={!voiceOn ? "Turn voice on before connecting" : undefined}>
+                connect
+              </Btn>
+            )}
+          </>
+        )}
+      />
+      <p className="text-sm text-[var(--muted)]">
+        Same tutor, same memory, different input. {c?.note ?? "transcription accuracy and teaching accuracy are measured separately."}
+      </p>
 
       {error ? <Err error={error} status={null} /> : null}
       {notice ? (

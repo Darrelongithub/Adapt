@@ -136,6 +136,8 @@ def data_protection() -> dict[str, Any]:
             "learning suggestions and the evidence behind them",
             "tutor conversations and recorded voice transcripts",
             "saved progress summaries",
+            "how a sitting felt, when you choose to check in (including the short note you write)",
+            "the syllabus objectives you approved",
             "your name and email",
         ],
         "not_protected": [
@@ -249,6 +251,8 @@ def privacy() -> dict[str, Any]:
             "revoke an applied change at any time",
             "delete your history",
             "see every event recorded about you",
+            "see and delete anything you said at a check-in",
+            "review and change the syllabus objectives you approved, at any time",
         ],
     }
 

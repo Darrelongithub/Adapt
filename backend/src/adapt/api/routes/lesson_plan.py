@@ -27,13 +27,19 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..deps import db_session, rate, student_from_request
 from ...ai.adapter import AdaptationError, adapter
+from ...ai.adaptation_policy import Policy, adaptation_policy, plan_words, verify_adapted
+from ...ai.monitor import service as monitor
+from ...content.skeleton import objectives as OBJ
+from ...curriculum import service as gate
 from ...db.models import Student
 from ...lesson import templates as TPL
 from ...services import current
+from ...subjects.models import LearnerSubject
 
 log = logging.getLogger("adapt.lesson_plan")
 
@@ -55,6 +61,13 @@ class PlanBody(BaseModel):
     preferences: dict[str, Any] | None = None
     constraints: dict[str, Any] | None = None
     session_id: str | None = Field(default=None, max_length=120)
+    #: Round 9: when the lesson belongs to a learner-chosen subject, the
+    #: approved guideline binds (gate + objective fidelity + check-in
+    #: shaping). Authored bank topics without a subject keep prior behaviour.
+    subject_id: str | None = Field(default=None, max_length=120)
+    objective_ids: list[str] | None = Field(default=None, max_length=30)
+    #: The learner tapped "undo" on a shaped lesson: build it unshaped.
+    undo_adaptation: bool = False
 
 
 class ContrastBody(BaseModel):
@@ -283,26 +296,182 @@ def _record(student_id: str, plan: dict[str, Any], *, session_id: str | None) ->
         return None
 
 
+def _current_rung(body: PlanBody, inputs: dict[str, Any]) -> int:
+    """The rung the adapter will pitch at, mirrored so the policy can move it."""
+    for source in (body.ladder or {},):
+        for key in ("rung", "ladder_rung", "steady_rung"):
+            value = source.get(key)
+            if isinstance(value, int):
+                return max(1, min(5, value))
+    return 2  # the adapter's cold-start rung
+
+
 @router.post("")
 def build_lesson(
     body: PlanBody,
     s: Session = Depends(db_session),
     student: Student = Depends(rate("mutation")),
 ) -> dict[str, Any]:
-    """One adapted lesson for this learner, with its reasons attached."""
+    """One adapted lesson for this learner, with its reasons attached.
+
+    Round 9, when ``subject_id`` names a learner-chosen subject: the
+    syllabus approval gate binds (no approved guideline, no lesson), the
+    lesson may only cite objectives its skeleton/guideline lists, and the
+    latest check-in shapes the lesson through the deterministic policy —
+    verified afterwards, with the unshaped lesson as the fallback and an
+    undo (``undo_adaptation``) always one request away.
+    """
     inputs = _inputs(s, student.id, body)
     # Version 0 is a real answer — the cold start — so it is recorded as 0,
     # not disguised as "unknown".
     inputs["model_version"] = current().state.latest_version(student.id)
+
+    pack_like = inputs.get("content_pack")
+    skeleton_ids = OBJ.skeleton_objective_ids(pack_like if isinstance(pack_like, dict) else None)
+    guideline = None
+    guideline_ids: list[str] = []
+    if body.subject_id:
+        row = s.execute(
+            select(LearnerSubject).where(LearnerSubject.id == body.subject_id, LearnerSubject.student_id == student.id)
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"error": "unknown_subject", "message": "no such subject"})
+        guideline = gate.approved(s, student_id=student.id, subject_id=row.id)
+        if guideline is None:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "syllabus_not_approved", "message": gate.gate_message(row.title)},
+            )
+        guideline_ids = [str(o.get("id")) for o in (guideline.objectives or []) if isinstance(o, dict) and o.get("id")]
+
+    # The skeleton's own objective list binds when it declares one; the
+    # approved guideline binds otherwise. Objectives outside the binding
+    # list are dropped and reported — never carried into the lesson.
+    allowed_ids = skeleton_ids if skeleton_ids else guideline_ids
+    requested = list(body.objective_ids) if body.objective_ids is not None else list(guideline_ids)
+    lesson_objective_ids = [o for o in requested if o in set(allowed_ids)] if allowed_ids else []
+    dropped_objectives = [o for o in requested if o not in set(lesson_objective_ids)]
+
+    policy = Policy()
+    if not body.undo_adaptation:
+        latest = monitor.latest(s, student.id)
+        if latest is not None:
+            accuracy = (latest.metrics or {}).get("accuracy")
+            policy = adaptation_policy(
+                dict(latest.estimate or {}),
+                current_difficulty=_current_rung(body, inputs),
+                expected_success=float(accuracy) if isinstance(accuracy, (int, float)) else None,
+            )
+
+    adapted_inputs = dict(inputs)
+    if policy.changed:
+        levers = dict(inputs.get("levers") or {})
+        if policy.step_size == "small":
+            levers["step_size"] = {"value": "small", "why": policy.reason, "source": "check-in"}
+        adapted_inputs["levers"] = levers or None
+        adapted_inputs["ladder"] = {**(body.ladder or {}), "rung": policy.difficulty}
+        constraints = dict(inputs.get("constraints") or {})
+        if policy.max_explanation_chunks is not None:
+            constraints["max_explanation_chunks"] = policy.max_explanation_chunks
+        adapted_inputs["constraints"] = constraints or None
+
     try:
         if body.model_proposal is not None:
-            plan = adapter.plan_from_model(body.model_proposal, **inputs)
+            plan = adapter.plan_from_model(body.model_proposal, **adapted_inputs)
         else:
-            plan = adapter.plan(**inputs)
+            plan = adapter.plan(**adapted_inputs)
     except AdaptationError as exc:
         raise HTTPException(status_code=422, detail={"error": "adaptation_refused", "message": str(exc)}) from exc
+
+    if allowed_ids or body.subject_id:
+        plan["objective_ids"] = lesson_objective_ids
+    violations = verify_adapted(
+        plan,
+        policy,
+        skeleton_objective_ids=allowed_ids if (skeleton_ids or guideline is not None) else None,
+    )
+    applied = policy.changed and not violations
+    if violations:
+        # Code decides: a shaped lesson that broke its own constraints is
+        # replaced by the regular deterministic lesson, reasons attached.
+        plan = adapter.plan(**inputs)
+        if allowed_ids or body.subject_id:
+            plan["objective_ids"] = lesson_objective_ids
+        plan["fallbacks"] = list(plan.get("fallbacks") or []) + [
+            f"a lesson shaped for how you felt did not pass its checks ({'; '.join(violations)}), so the regular lesson was used"
+        ]
+        if isinstance(plan.get("why_panel"), dict):
+            plan["why_panel"]["fallbacks"] = plan["fallbacks"]
+
+    if isinstance(pack_like, dict) and pack_like.get("concepts"):
+        plan["common_misconceptions"] = OBJ.common_misconceptions(pack_like)
+        plan["suggested_practice"] = OBJ.suggested_practice(pack_like)
+
     plan_id = _record(student.id, plan, session_id=body.session_id)
-    return {"plan": plan, "plan_id": plan_id, "recorded": plan_id is not None}
+    return {
+        "plan": plan,
+        "plan_id": plan_id,
+        "recorded": plan_id is not None,
+        "adaptation": {
+            "applied": applied,
+            "reason": policy.reason if applied else "",
+            "break_suggested": bool(policy.break_suggested and applied),
+            "difficulty": policy.difficulty if applied else plan.get("ladder_rung"),
+            "words": plan_words(plan),
+            "dropped_objective_ids": dropped_objectives,
+            "undone": bool(body.undo_adaptation),
+        },
+        "guideline": (
+            {"version": int(guideline.version), "source_label": guideline.source_label, "attribution": guideline.attribution}
+            if guideline is not None
+            else None
+        ),
+    }
+
+
+class PracticeScoreBody(BaseModel):
+    topic: str = Field(min_length=1, max_length=240)
+    item_id: str = Field(min_length=1, max_length=96)
+    answer: str = Field(min_length=1, max_length=240)
+    level: int = Field(default=0, ge=0, le=20)
+    language: str = Field(default="en", min_length=2, max_length=32)
+
+
+@router.post("/practice/score")
+def practice_score(
+    body: PracticeScoreBody,
+    s: Session = Depends(db_session),
+    student: Student = Depends(rate("mutation")),
+) -> dict[str, Any]:
+    """Score one suggested-practice answer against the server-side pack.
+
+    The pack is resolved here (cache, then authored) — never trusted from
+    the client — so the key the answer is judged against is the key code
+    validated when the pack was built.
+    """
+    from ...content.skeleton.authored import authored_pack
+    from ...content.skeleton.cache import cache_identity, get_cached
+    from ...content.skeleton.service import canonical_topic_key
+
+    pack = None
+    identity = cache_identity(canonical_topic_key(body.topic), level=body.level, language=body.language)
+    cached = get_cached(s, identity)
+    if cached is not None:
+        pack = cached[0]
+    if pack is None:
+        pack = authored_pack(body.topic, level=body.level, language=body.language)
+    if pack is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "practice_unavailable", "message": "practice for that topic is not ready yet"},
+        )
+    verdict = OBJ.score_practice(pack, body.item_id, body.answer)
+    if verdict is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "unknown_practice_item", "message": "no such practice question"},
+        )
+    return verdict
 
 
 @router.post("/contrast")

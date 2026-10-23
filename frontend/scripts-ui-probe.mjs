@@ -564,9 +564,12 @@ async function main() {
     ssr.window.close();
     const page = await open("/", "home");
     const dismissWelcome = async p => {
-      const skip = p.doc.querySelector(".opening-skip");
-      if (skip) await p.click(skip);
-      await waitFor(() => !p.doc.querySelector(".opening-overlay"), { label: "welcome dismissal" });
+      // The opening is a timed overlay now: any key or pointer press starts
+      // its fade. There is no separate skip control to look for.
+      if (p.doc.querySelector(".opening-overlay")) {
+        p.dom.window.dispatchEvent(new p.dom.window.KeyboardEvent("keydown", { bubbles: true }));
+      }
+      await waitFor(() => !p.doc.querySelector(".opening-overlay"), { timeout: 15_000, label: "welcome dismissal" });
     };
     const accept = async p => {
       await waitFor(() => p.find('[data-account-gate] input[type="checkbox"]').length === 2, { label: "consent gate" });
@@ -574,9 +577,19 @@ async function main() {
       await p.click("Agree and continue", "button");
     };
     await dismissWelcome(page);
-    await waitFor(() => !!page.doc.querySelector("[data-account-gate]"), { label: "mandatory account card" });
-    check("home", "welcome is neutral rather than a time-of-day greeting", /Welcome/.test(page.text()) && !/Good morning|Good afternoon|Good evening/.test(page.text()));
-    check("home", "navigation and learning pages are not mounted before entry", page.find(".sidebar").length === 0 && page.find("[data-dashboard]").length === 0 && !page.requests.some(r => /baseline|dashboard|practice/.test(r)));
+    // Current first entry is guest-first: SessionGate creates the guest
+    // learner when /me refuses, then the dashboard renders. The consent
+    // gate is the signed-out surface after an explicit sign-out (below).
+    await waitFor(() => !!page.doc.querySelector("[data-dashboard]"), { timeout: 20_000, label: "guest dashboard" });
+    await waitFor(() => page.find(".stat-value").length === 4, { label: "dashboard stat tiles" });
+    check("home", "first entry creates one guest session and opens the dashboard", page.requests.filter(r => r === "POST /api/v1/students").length === 1 && !page.doc.querySelector("[data-account-gate]"), page.requests.join(" ; "));
+    check("home", "welcome is neutral rather than a time-of-day greeting", /Hi Guest learner, ready to learn/.test(page.text()) && !/Good morning|Good afternoon|Good evening/.test(page.text()));
+    check("home", "the Round 9 check-in is collapsed and on demand on Home", !!page.doc.querySelector('[data-testid="check-in-open"]') && !page.doc.querySelector('[data-testid="check-in-form"]'));
+    const guestMe = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    check("home", "the bootstrapped guest has analytics consent only, with no model sharing or baseline started for them", guestMe.body.display_name === "Guest learner" && guestMe.body.consent_analytics === true && guestMe.body.consent_share_with_ai === false && guestMe.body.baseline_started === false, JSON.stringify(guestMe.body).slice(0, 200));
+    await page.click("Sign out", "button");
+    await waitFor(() => !!page.doc.querySelector("[data-account-gate]"), { timeout: 20_000, label: "mandatory account card after sign-out" });
+    check("home", "navigation and learning pages are not mounted behind the signed-out gate", page.find(".sidebar").length === 0 && page.find("[data-dashboard]").length === 0);
     const boxes = page.find('[data-account-gate] input[type="checkbox"]');
     check("home", "both consent boxes are unchecked and entry is disabled", boxes.length === 2 && boxes.every(box => !box.checked) && page.byText("Agree and continue", "button")?.disabled);
     const gate = page.doc.querySelector("[data-account-gate]");
@@ -590,45 +603,46 @@ async function main() {
     page.doc.querySelector("[data-account-gate]").dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await page.click(page.doc.querySelector(".access-screen"));
     check("home", "Escape and outside clicks cannot dismiss the card", !!page.doc.querySelector("[data-account-gate]"));
+    const studentsBeforeDecline = page.requests.filter(r => r === "POST /api/v1/students").length;
     await page.click("Decline", "button");
-    check("home", "decline keeps the app locked without creating an account", /cannot enter the app/.test(page.text()) && !page.requests.some(r => r === "POST /api/v1/students"));
+    check("home", "decline keeps the app locked without creating another account", /cannot enter the app/.test(page.text()) && page.requests.filter(r => r === "POST /api/v1/students").length === studentsBeforeDecline);
     await accept(page);
     await page.click("Create account", '[role="tab"]');
     page.type(page.find('input[autocomplete="username"]')[0], learner.username);
     page.type(page.find('input[type="password"]')[0], learner.password);
     await page.click(page.doc.querySelector('button[type="submit"]'));
-    await waitFor(() => page.doc.location.pathname === "/baseline" && page.find('[role="radio"]').length > 0, { timeout: 20000, label: "first account enters baseline" });
-    check("home", "first-time registration enters baseline and removes the consent card", !page.doc.querySelector("[data-account-gate]") && page.requests.filter(r => r === "POST /api/v1/students").length === 1);
+    await waitFor(() => page.doc.location.pathname === "/journey" && !!page.doc.querySelector('[data-testid="journey-card"]'), { timeout: 20000, label: "first account enters the path" });
+    check("home", "registration lands on the path and removes the consent card", !page.doc.querySelector("[data-account-gate]") && page.requests.filter(r => r === "POST /api/v1/students").length === studentsBeforeDecline + 1);
     const me = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    check("home", "consent was saved at creation; model sharing was not silently enabled", me.body.consent_analytics === true && me.body.consent_share_with_ai === false && me.body.baseline_started === true);
+    check("home", "consent was saved at creation; model sharing was not silently enabled and no baseline was started", me.body.consent_analytics === true && me.body.consent_share_with_ai === false && me.body.baseline_started === false, JSON.stringify(me.body).slice(0, 200));
     csrf = /adapt_csrf=([^;]+)/.exec(page.doc.cookie ?? "")?.[1] ?? "";
-    const baselineStarts = page.requests.filter(r => r === "POST /api/v1/baseline").length;
-    await page.click("sign out", "button");
+    await page.click("Sign out", "button");
     await accept(page);
     page.type(page.find('input[autocomplete="username"]')[0], learner.username);
     page.type(page.find('input[type="password"]')[0], learner.password);
     await page.click(page.doc.querySelector('button[type="submit"]'));
-    await waitFor(() => !!page.doc.querySelector("[data-dashboard]") && page.doc.location.pathname === "/", { timeout: 20000, label: "returning sign-in opens dashboard" });
-    await waitFor(() => page.find(".stat-value").length === 4 && page.find(".stat-value").every(n => n.textContent !== "—"), { label: "dashboard data" });
-    check("home", "returning sign-in goes to dashboard without starting another baseline", page.requests.filter(r => r === "POST /api/v1/baseline").length === baselineStarts);
-    check("home", "unfinished baseline is a real resume link on the dashboard", !!page.doc.querySelector('a[href^="/baseline?run="]'));
-    check("home", "dashboard has real empty states and no consent form", /No answers yet/.test(page.text()) && /Not measured yet/.test(page.text()) && !page.doc.querySelector("[data-account-gate]"));
-    check("home", "no uncaught entry or navigation errors", page.appErrors().length === 0, page.appErrors().join(" | "));
+    await waitFor(() => page.doc.location.pathname === "/journey" && !!page.doc.querySelector('[data-testid="journey-card"]'), { timeout: 20000, label: "returning sign-in opens the path" });
+    const dashboard = await open("/", "home");
+    await dismissWelcome(dashboard);
+    await waitFor(() => !!dashboard.doc.querySelector("[data-dashboard]"), { timeout: 20000, label: "returning dashboard" });
+    await waitFor(() => dashboard.find(".stat-value").length === 4 && dashboard.find(".stat-value").every(n => n.textContent !== "—"), { label: "dashboard data" });
+    check("home", "returning sign-in can open the dashboard without minting another learner", !dashboard.requests.some(r => r === "POST /api/v1/students"));
+    check("home", "dashboard has a real empty state and no consent form", /Nothing chosen yet/.test(dashboard.text()) && /Choose your first subject/.test(dashboard.text()) && !dashboard.doc.querySelector("[data-account-gate]"));
+    check("home", "no uncaught entry or navigation errors", page.appErrors().length === 0 && dashboard.appErrors().length === 0, [...page.appErrors(), ...dashboard.appErrors()].join(" | "));
+    closePage(dashboard);
     closePage(page);
 
-    // An unauthenticated deep link is gated too, and guest is a real first-use session.
-    const guest = await open("/subject", "home", undefined, "");
-    await waitFor(() => !!guest.doc.querySelector("[data-account-gate]"), { label: "deep link gate" });
-    check("home", "a direct subject URL cannot bypass the consent/login gate", guest.find(".sidebar").length === 0 && !guest.requests.some(r => /subjects\//.test(r)));
+    // A fresh deep link gets the same guest-first session, and the subject
+    // wizard is the real first-use surface it lands on.
+    const guest = await open("/journey?step=subject", "home", undefined, "");
+    await waitFor(() => !!guest.doc.querySelector('input[aria-label="What do you want to learn?"]'), { timeout: 20_000, label: "deep-link subject chooser" });
+    check("home", "a direct subject URL bootstraps one guest and reaches the subject chooser", guest.requests.filter(r => r === "POST /api/v1/students").length === 1 && !guest.doc.querySelector("[data-account-gate]"), guest.requests.join(" ; "));
+    await guest.click("Sign out", "button");
+    await waitFor(() => !!guest.doc.querySelector("[data-account-gate]"), { timeout: 20_000, label: "deep-link signed-out gate" });
     await accept(guest);
     await guest.click("Continue as guest", "button");
-    await waitFor(() => guest.doc.location.pathname === "/baseline" && guest.find('[role="radio"]').length > 0, { timeout: 20000, label: "guest baseline" });
-    check("home", "first guest goes straight to baseline, not back to consent", !guest.doc.querySelector("[data-account-gate]"));
-    await guest.click("Stop here", "button");
-    await waitFor(() => !!guest.byText("Go to your dashboard", "a"), { timeout: 15000, label: "baseline completion" });
-    await guest.click("Go to your dashboard", "a");
-    await waitFor(() => !!guest.doc.querySelector("[data-dashboard]"), { label: "guest dashboard" });
-    check("home", "guest can use the dashboard after the first assessment", guest.find(".sidebar").length === 1 && !guest.doc.querySelector("[data-account-gate]"));
+    await waitFor(() => guest.doc.location.pathname === "/journey" && (!!guest.doc.querySelector('[data-testid="journey-card"]') || !!guest.doc.querySelector('input[aria-label="What do you want to learn?"]')), { timeout: 20000, label: "explicit guest return" });
+    check("home", "an explicit guest after sign-out returns to learning, not back at consent", !guest.doc.querySelector("[data-account-gate]"));
     closePage(guest);
 
   }
@@ -735,83 +749,65 @@ async function main() {
      * endpoint afterwards, and the stage list has to come back different. A harness that
      * only checked React state would pass on a page that never wrote anything. */
     const page = await open("/journey", "journey");
-    await waitFor(() => /One path, eight steps/.test(page.text()), { timeout: 15_000, label: "the path to render" });
-    check("journey", "the path renders as a list of stages, not an error", page.find("[data-testid='journey-stages']").length === 1, page.text().slice(0, 160));
-    const bar = page.find("[role='progressbar']");
-    check("journey", "the progress bar states its count in words as well as in width", bar.length === 1 && /steps/.test(bar[0]?.getAttribute("aria-valuetext") ?? ""), bar[0]?.getAttribute("aria-valuetext") ?? "(no bar)");
-    // The list is drawn from an empty `<ol>` while the state is in flight, so "the rows exist"
-    // has to be waited for -- reading it a beat early reported "no stages" about a path that
-    // had all eight a moment later.
-    await waitFor(() => page.find("li[data-stage]").length === 8, { timeout: 15_000, label: "the eight steps to come back from the server" }).catch(() => {});
-    const rows = page.find("li[data-stage]");
-    const ids = rows.map((el) => el.getAttribute("data-stage")).filter(Boolean);
-    check(
-      "journey",
-      "and it names all eight frozen stages in order",
-      ["account", "preferences", "games", "subject", "subject_round", "snapshot", "first_lesson", "practice"].every((id, i) => ids[i] === id),
-      ids.join(" > ") || "(none)",
-    );
-    // The learner this scenario runs as has done nothing, so the first step is the questions.
-    const current = rows.find((el) => el.getAttribute("aria-current") === "step");
-    check("journey", "the step it marks is the first one still to do", (current?.getAttribute("data-stage") ?? "") === "preferences", current?.getAttribute("data-stage") ?? "(none marked)");
+    await waitFor(() => !!page.doc.querySelector('[data-testid="journey-card"]'), { timeout: 15_000, label: "the current path step to render" });
+    check("journey", "the path renders its current step, not an error", /Your path/.test(page.text()) && /A few questions/.test(page.text()), page.text().slice(0, 160));
+    // The redesigned page shows one current-step card plus a three-part
+    // overview; the frozen eight-stage order is asserted from the server
+    // state below rather than from a stage list that no longer renders.
+    const card = page.doc.querySelector('[data-testid="journey-card"]');
+    check("journey", "the step it shows is the first one still to do", (card?.getAttribute("data-stage") ?? "") === "preferences", card?.getAttribute("data-stage") ?? "(none shown)");
+    check("journey", "the overview names the mind check, subject choice and first lesson", /Mind check/.test(page.text()) && /Choose a subject/.test(page.text()) && /First tailored lesson/.test(page.text()));
     const server = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
     check(
       "journey",
       "and that is what the server says, not what the page decided",
-      server.status === 200 && server.body?.stage === "preferences" && Array.isArray(server.body?.stages) && server.body.stages.length === 8,
+      server.status === 200 && server.body?.stage === "preferences" && Array.isArray(server.body?.stages) && ["account", "preferences", "games", "subject", "subject_round", "snapshot", "first_lesson", "practice"].every((id, i) => server.body.stages[i]?.id === id),
       JSON.stringify(server.body).slice(0, 200),
     );
-    // Pressing "skip" on the games has to reach the server, and the server's answer is what
-    // the page redraws with — the whole point of a resumable path.
-    const skippable = rows.filter((li) => li.querySelector("button")).map((li) => li.getAttribute("data-stage"));
-    const skip = page.find("li[data-stage='games']")[0]?.querySelector("button") ?? null;
-    check(
-      "journey",
-      "every step but the first and last offers a skip",
-      !skippable.includes("account") && !skippable.includes("practice") && skippable.length === 6 && !!skip,
-      `skippable: ${skippable.join(",")}`,
-    );
+    // Pressing "Skip this step" on the current card has to reach the
+    // server, and the server's answer is what the page redraws with —
+    // the whole point of a resumable path.
+    const skip = page.byText("Skip this step", "button");
+    check("journey", "the current step offers a skip", !!skip);
     if (skip) {
       const before = page.requests.length;
       await page.click(skip);
-      await sleep(400);
+      await waitFor(() => page.requests.slice(before).some((r) => /POST \/api\/v1\/journey\/advance/.test(r)), { timeout: 8_000, label: "the skip to be posted" }).catch(() => {});
       const posted = page.requests.slice(before).find((r) => /POST \/api\/v1\/journey\/advance/.test(r));
       check("journey", "pressing skip posts the learner's own answer to the server", !!posted, page.requests.slice(before).join(" ; ") || "no request at all");
       const after = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-      const games = (after.body?.stages ?? []).find((r) => r.id === "games");
-      check("journey", "and the skip is stored as skipped, not as a zero", games?.status === "skipped", JSON.stringify(after.body?.stages ?? null).slice(0, 200));
-      check("journey", "a skipped step is reported as not measured", (after.body?.not_measured ?? []).includes("games"), JSON.stringify(after.body?.not_measured ?? null));
-      check("journey", "and the path moves on to the next step", after.body?.stage === "preferences", String(after.body?.stage));
-      await waitFor(() => page.find("li[data-stage='games']")[0]?.getAttribute("data-status") === "skipped", {
+      const preferences = (after.body?.stages ?? []).find((r) => r.id === "preferences");
+      check("journey", "and the skip is stored as skipped, not as a zero", preferences?.status === "skipped", JSON.stringify(after.body?.stages ?? null).slice(0, 200));
+      check("journey", "a skipped step is reported as not measured", (after.body?.not_measured ?? []).includes("preferences"), JSON.stringify(after.body?.not_measured ?? null));
+      check("journey", "and the path moves on to the next step", after.body?.stage === "games", String(after.body?.stage));
+      await waitFor(() => page.doc.querySelector('[data-testid="journey-card"]')?.getAttribute("data-stage") === "games", {
         timeout: 8_000,
         label: "the page to redraw with the server's answer",
       }).catch(() => {});
-      const drawn = page.find("li[data-stage='games']")[0];
+      const drawn = page.doc.querySelector('[data-testid="journey-card"]');
       check(
         "journey",
         "the page redraws with the server's answer rather than its own guess",
-        drawn?.getAttribute("data-status") === "skipped" && /skipped — not measured/.test(drawn?.textContent ?? ""),
-        (drawn?.textContent ?? "(no row)").replace(/\s+/g, " ").trim(),
+        drawn?.getAttribute("data-stage") === "games" && /Short mind games/.test(drawn?.textContent ?? ""),
+        (drawn?.textContent ?? "(no card)").replace(/\s+/g, " ").trim(),
       );
       // The gate: close that browser and come back. A second page, its own cookie jar seeded
       // from this account, has to find the same step -- the point of recording the skip on the
       // server rather than in the tab.
       const resumed = await open("/journey", "journey", undefined, jar.getCookieStringSync(BASE));
-      await waitFor(() => resumed.find("li[data-stage]").length === 8, { timeout: 15_000, label: "the resumed path" }).catch(() => {});
-      const resumedGames = resumed.find("li[data-stage='games']")[0];
-      const resumedCurrent = resumed.find("li[data-stage][aria-current='step']")[0];
+      await waitFor(() => resumed.doc.querySelector('[data-testid="journey-card"]')?.getAttribute("data-stage") === "games", { timeout: 15_000, label: "the resumed path" }).catch(() => {});
+      const resumedCard = resumed.doc.querySelector('[data-testid="journey-card"]');
       check(
         "journey",
         "a learner who closes the browser and comes back resumes on the stored step",
-        resumedGames?.getAttribute("data-status") === "skipped" && (resumedCurrent?.getAttribute("data-stage") ?? "") === "preferences",
-        `games=${resumedGames?.getAttribute("data-status")} current=${resumedCurrent?.getAttribute("data-stage") ?? "(none)"}`,
+        resumedCard?.getAttribute("data-stage") === "games" && /Short mind games/.test(resumedCard?.textContent ?? ""),
+        `current=${resumedCard?.getAttribute("data-stage") ?? "(none)"}`,
       );
-      check("journey", "and the returning page says what was not measured", /What you skipped/.test(visibleText(resumed)) && /Mind games/.test(visibleText(resumed)), visibleText(resumed).slice(-220));
       closePage(resumed);
     }
-    // The eight unaided questions stay reachable from the path (brief §5), even though they
-    // are measurement rather than one of the eight stages.
-    check("journey", "placement is reachable from the path", !!page.byText("answer the placement questions", "a"), page.text().slice(-200));
+    // The mind check stays reachable from the current-step card, even
+    // after the questions step itself has been skipped.
+    check("journey", "the mind check is reachable from the path", !!page.byText("Open mind check", "a"), page.text().slice(-200));
     // Mobile: the shell has to work at a phone width. jsdom has no layout, so what can be
     // checked here is that the page does not depend on a fixed desktop width to be usable —
     // the real viewport check lives in tests-e2e/journey.mjs, which needs a browser.

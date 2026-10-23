@@ -25,11 +25,34 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import LessonRenderer, { type LessonValue } from "@/components/lesson/LessonRenderer";
 import { SceneStage, type SceneSpec } from "@/components/animator";
 import { useOptionalVoice } from "@/components/voice/context";
+import { CheckInCard } from "@/components/check-in";
 import { api, get, post } from "@/lib/api";
 import { useJourney } from "@/lib/journey";
 
 type Concept = { id: string; name: string };
-type PlanReply = { plan: LessonValue; job_id?: string | null };
+type AdaptationNote = {
+  applied: boolean;
+  reason: string;
+  break_suggested: boolean;
+  difficulty: number;
+  undone: boolean;
+};
+type MisconceptionRow = { wrong_belief: string; correction: string; concept: string };
+type PracticeRow = {
+  item_id: string;
+  stem: string;
+  kind: string;
+  options: { id: string; text: string }[];
+};
+type PracticeVerdict = { correct: boolean; expected: string; feedback: string };
+type PlanReply = {
+  plan: LessonValue;
+  job_id?: string | null;
+  adaptation?: AdaptationNote;
+  common_misconceptions?: MisconceptionRow[];
+  suggested_practice?: PracticeRow[];
+  guideline?: { version: number; source_label: string; attribution: string } | null;
+};
 type ExplanationReply = { explanation: LessonValue; job_id?: string | null };
 type Moment = { key: number; value: LessonValue; jobId?: string | null; heading: string };
 type CheckBody = { question?: string; item_id?: string; options?: { id: string; text: string }[] };
@@ -71,6 +94,15 @@ function FirstLesson() {
   const [seq, setSeq] = useState(1);
   const [scene, setScene] = useState<SceneSpec | null>(null);
   const [lessonFinished, setLessonFinished] = useState(false);
+  const [subjectId, setSubjectId] = useState<string | null>(null);
+  const [curriculumScope, setCurriculumScope] = useState<{ curriculum?: string | null; grade?: string | null }>({});
+  const [adaptation, setAdaptation] = useState<AdaptationNote | null>(null);
+  const [guidelineNote, setGuidelineNote] = useState<PlanReply["guideline"]>(null);
+  const [misconceptions, setMisconceptions] = useState<MisconceptionRow[]>([]);
+  const [practice, setPractice] = useState<PracticeRow[]>([]);
+  const [practiceDrafts, setPracticeDrafts] = useState<Record<string, string>>({});
+  const [practiceVerdicts, setPracticeVerdicts] = useState<Record<string, PracticeVerdict>>({});
+  const [gateBlocked, setGateBlocked] = useState(false);
   const journey = useJourney(true);
   const voice = useOptionalVoice();
 
@@ -82,12 +114,14 @@ function FirstLesson() {
     const params = new URLSearchParams(window.location.search);
     const wanted = (params.get("topic") ?? "").trim();
     const subjectId = (params.get("subject") ?? "").trim();
+    if (subjectId) setSubjectId(subjectId);
     if (wanted) {
       setTopicDraft(wanted);
       setTopic(wanted);
     } else if (subjectId) {
-      void get<{ title: string }>(`subjects/${encodeURIComponent(subjectId)}`).then((result) => {
+      void get<{ title: string; curriculum_spec?: { curriculum?: string | null; grade?: string | null } | null }>(`subjects/${encodeURIComponent(subjectId)}`).then((result) => {
         const title = result.data?.title?.trim();
+        if (result.data?.curriculum_spec) setCurriculumScope(result.data.curriculum_spec);
         if (title) { setTopicDraft(title); setTopic(title); }
       });
     }
@@ -109,7 +143,11 @@ function FirstLesson() {
     // prepare job has built and validated one. The status surface is honest — it answers
     // "ready" or "fallback", never a pack payload.
     try {
-      const started = await post<{ job_id: string }>("content/prepare", { topic: wanted });
+      const started = await post<{ job_id: string }>("content/prepare", {
+        topic: wanted,
+        ...(curriculumScope.curriculum ? { curriculum: curriculumScope.curriculum } : {}),
+        ...(curriculumScope.grade ? { grade: curriculumScope.grade } : {}),
+      });
       for (let attempt = 0; attempt < 90; attempt += 1) {
         const status = await get<{ state: string; pack_source: string | null }>(
           `content/prepare/${encodeURIComponent(started.job_id)}`,
@@ -146,32 +184,60 @@ function FirstLesson() {
     setConcepts(listed.concepts);
     setTopicMatch(Boolean(listed.topic_match));
     setSource(listed.source ?? null);
-  }, []);
+  }, [curriculumScope]);
 
   useEffect(() => {
     if (topic) void loadConcepts(topic);
   }, [topic, loadConcepts]);
 
-  async function writeLesson(wantedConcept: string) {
+  async function writeLesson(wantedConcept: string, undoAdaptation = false) {
     if (!topic) return;
     setBusy(true);
     setNotice(null);
+    setGateBlocked(false);
     let out: PlanReply;
     try {
-      out = await post<PlanReply>("lesson/plan", { topic, concept_id: wantedConcept });
+      out = await post<PlanReply>("lesson/plan", {
+        topic,
+        concept_id: wantedConcept,
+        ...(subjectId ? { subject_id: subjectId } : {}),
+        undo_adaptation: undoAdaptation,
+      });
     } catch (err) {
       setBusy(false);
-      setNotice((err as Error).message || "The lesson could not be written just now.");
+      const e = err as { shown?: string; detail?: { error?: string } };
+      if (e.detail?.error === "syllabus_not_approved") setGateBlocked(true);
+      setNotice(e.shown ?? (err as Error).message ?? "The lesson could not be written just now.");
       return;
     }
     setBusy(false);
     setConceptId(wantedConcept);
     setMoments([{ key: 0, value: out.plan, jobId: out.job_id ?? null, heading: "Your lesson" }]);
+    setAdaptation(out.adaptation ?? null);
+    setGuidelineNote(out.guideline ?? null);
+    setMisconceptions(out.common_misconceptions ?? []);
+    setPractice(out.suggested_practice ?? []);
+    setPracticeDrafts({});
+    setPracticeVerdicts({});
     setVerdictByItem({});
     setSelectedByItem({});
     setMisconceptionByItem({});
     setPending(null);
     setSeq(1);
+  }
+
+  async function scorePractice(row: PracticeRow, answer: string) {
+    if (!topic || !answer.trim() || practiceVerdicts[row.item_id]) return;
+    try {
+      const verdict = await post<PracticeVerdict>("lesson-plan/practice/score", {
+        topic,
+        item_id: row.item_id,
+        answer: answer.trim(),
+      });
+      setPracticeVerdicts((rows) => ({ ...rows, [row.item_id]: verdict }));
+    } catch (err) {
+      setNotice((err as { shown?: string }).shown ?? "That practice answer could not be checked just now.");
+    }
   }
 
   async function explainWrong(itemId: string, answer: string, misconceptionId?: string) {
@@ -275,7 +341,12 @@ function FirstLesson() {
 
       {notice ? (
         <p data-testid="fl-notice" role="status" className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">
-          {notice}
+          {notice}{" "}
+          {gateBlocked ? (
+            <a className="link-inline" href="/journey?step=subject">
+              Choose what to cover
+            </a>
+          ) : null}
         </p>
       ) : null}
 
@@ -351,6 +422,33 @@ function FirstLesson() {
         </div>
       ) : null}
 
+      {adaptation?.applied ? (
+        <section
+          className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-4"
+          aria-label="How this lesson was shaped"
+          data-testid="fl-adaptation"
+        >
+          <p className="text-sm">
+            {adaptation.reason}
+            {adaptation.break_suggested ? " A pause might help too — nothing is paused for you." : ""}
+          </p>
+          <button
+            type="button"
+            className="btn-ctl btn-secondary"
+            style={{ marginTop: "var(--s2)" }}
+            disabled={busy || pending !== null || !conceptId}
+            onClick={() => conceptId && void writeLesson(conceptId, true)}
+          >
+            Use the regular lesson instead
+          </button>
+        </section>
+      ) : null}
+      {guidelineNote ? (
+        <p className="text-sm text-[var(--muted)]">
+          Following your approved list{guidelineNote.attribution ? ` · Source: ${guidelineNote.attribution}` : ""}.
+        </p>
+      ) : null}
+
       {moments.map((moment, momentIndex) => (
         <section
           key={moment.key}
@@ -378,6 +476,80 @@ function FirstLesson() {
         </section>
       ))}
 
+      {misconceptions.length ? (
+        <section className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-4" aria-label="Easy traps in this lesson">
+          <h2 className="m-0 text-base font-semibold">Easy traps to watch for</h2>
+          <ul className="mt-2 list-disc space-y-2 pl-5 text-sm">
+            {misconceptions.map((row, i) => (
+              <li key={i}>
+                <span>{row.wrong_belief}</span>
+                {row.correction ? <span className="text-[var(--muted)]"> — {row.correction}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {practice.length ? (
+        <section className="rounded-[2px] border border-[var(--line)] bg-[var(--panel)] p-4" aria-label="A little practice from this lesson" data-testid="fl-practice">
+          <h2 className="m-0 text-base font-semibold">A little practice</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">Trying again from memory is what makes this stick.</p>
+          <ol className="mt-3 space-y-4 pl-5">
+            {practice.map((row) => {
+              const verdict = practiceVerdicts[row.item_id];
+              return (
+                <li key={row.item_id} className="space-y-2">
+                  <p className="m-0 text-sm">{row.stem}</p>
+                  {verdict ? (
+                    <p className="m-0 text-sm" role="status">
+                      {verdict.correct
+                        ? "Correct."
+                        : verdict.expected
+                          ? `Not quite. The answer is ${verdict.expected}.`
+                          : "Not quite."}{" "}
+                      {verdict.feedback}
+                    </p>
+                  ) : row.options.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {row.options.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className="btn-ctl btn-secondary"
+                          disabled={busy || pending !== null}
+                          onClick={() => void scorePractice(row, option.text)}
+                        >
+                          {option.text}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        value={practiceDrafts[row.item_id] ?? ""}
+                        onChange={(event) =>
+                          setPracticeDrafts((drafts) => ({ ...drafts, [row.item_id]: event.target.value }))
+                        }
+                        className="min-w-52 rounded-[2px] border border-[var(--line)] bg-[var(--card)] px-2 py-1 text-sm"
+                        aria-label="Your answer"
+                      />
+                      <button
+                        type="button"
+                        className="btn-ctl btn-secondary"
+                        disabled={!practiceDrafts[row.item_id]?.trim()}
+                        onClick={() => void scorePractice(row, practiceDrafts[row.item_id] ?? "")}
+                      >
+                        Check
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ) : null}
+
       {conceptId && moments.length > 0 ? (
         <div>
           <button
@@ -398,6 +570,14 @@ function FirstLesson() {
           </button>
           {lessonFinished ? <a className="link-inline" href="/learn">Continue learning</a> : null}
         </div>
+      ) : null}
+      {moments.length > 0 ? (
+        <CheckInCard
+          context="after_lesson"
+          subjectId={subjectId}
+          autoPrompt={lessonFinished}
+          title="How did that lesson feel?"
+        />
       ) : null}
     </section>
   );

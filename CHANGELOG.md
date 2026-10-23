@@ -1,5 +1,54 @@
 # Changelog
 
+## Round 9 — check-ins, approved syllabuses, and sized lessons
+
+- **Ten-second check-in** (after a test or lesson, or on demand from Home;
+  auto-offered at most once per browser sitting): Paas 1–9 effort, one
+  achievement-emotion tile, an optional "what would help" tile and an
+  optional one-line note. Code computes the behavioural metrics and the
+  deterministic estimate; a configured model may only answer inside the
+  same validated enums, and malformed fields are replaced and recorded.
+  The note is stored encrypted, never sent to a model, and never treated
+  as an instruction. Check-ins are listed and deletable in Settings, and
+  the consent/"what we recorded" copy is generated from the same field
+  list the storage uses. Framework and non-claims: `docs/FRAMEWORK.md`.
+- **Curriculum scan with an approval gate.** The subject wizard gains
+  optional curriculum chips (Kenya CBC, KCSE, IGCSE, University,
+  Self-study) and a grade/year field, then a checklist step: scanned
+  objectives (local KICD-derived syllabus map → Oak → Wikimedia outlines →
+  model merge → labelled simple fallback) with honest origin labels and
+  attribution, untick/reorder/add-your-own, and "Use this plan" before any
+  test plan, skeleton or lesson runs. The approved list is versioned and
+  encrypted; rescans arrive as proposals. "Skip" still needs approval and
+  is labelled "Not checked against a syllabus".
+- **Deterministic adaptation.** `adaptation_policy` (code, not a model)
+  sizes the next lesson from the latest check-in: heavy/frustrated →
+  shorter, smaller steps, easier by one, break suggested never forced;
+  engaged and succeeding above the 70–85% band → stretch by one. Both
+  lesson routes verify the result and fall back unshaped on any violation;
+  the first-lesson screen shows the reason and an Undo. Lesson objectives
+  are a subset of the skeleton's, lessons gain checked common
+  misconceptions and practice scored server-side by the item registry.
+- **Connectors registry** (`docs/CONNECTORS.md`): enabled flag or
+  console-only key, timeout, encrypted cache, attribution, and a health
+  probe in `adapt config status --check`. Everything is off by default
+  (Oak activates only when a key exists); OpenStax is recorded as skipped
+  (no documented outline API). The wellbeing connector is optional
+  reading links only — never tests, scores or labels.
+- Storage stays in the existing encrypted local store (migration `R9`);
+  models still come only from the existing routing table. Acceptance
+  coverage: `backend/tests/test_round9.py` (deterministic no-key paths,
+  injection-safe notes, exact approved-objective flow, frustrated vs
+  engaged lesson shaping on both lesson routes, storage/consent diff,
+  connector defaults and CLI status).
+- Verified: backend 1462 passed / 2 skipped; frontend contract lint
+  (137 backend routes against 129 frontend calls), 50 lib + 15 engine +
+  server/env/dev node tests, style grep, and a production build. The
+  Playwright click-through was updated for the new checklist step but
+  could not be run in this sandbox (no Chromium installed). Release zip:
+  `/home/user/adapt-round9.zip` (8.3 MB; no `node_modules`, `.next`,
+  `var/`, root-level zips, or the older `docs/screens/` archive).
+
 ## Round 6 — "make it alive, make the tests real, make it consistent"
 
 ### Design (Tracks A/C/D)

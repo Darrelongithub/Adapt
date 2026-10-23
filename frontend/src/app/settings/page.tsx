@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Btn, Card, Check, Err, Field, humanize, Input, Notice, PageHeader, Select, Tag, useSession } from "@/components/ui";
 import { PageArt } from "@/components/shell/PageArt";
+import { MyCheckIns } from "@/components/check-in";
 import { del, post, useApi } from "@/lib/api";
 import type { Status } from "@/lib/types";
 
@@ -388,6 +389,8 @@ export default function Settings() {
           </ul>
         </div>
       </Card>
+
+      {me ? <MyCheckIns /> : null}
 
       <Card title="Everything this system has done to your account" tone="plain" right={<span>{entries.length} rows</span>}>
         {audit.error ? <Err error={audit.error} status={audit.status} /> : null}

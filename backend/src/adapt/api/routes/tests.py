@@ -36,6 +36,9 @@ class PlanBody(BaseModel):
     level: int = Field(default=2, ge=1, le=3)  # 1 beginner · 2 some knowledge · 3 confident
     style: str = Field(default="see", max_length=16)  # see|try|hear|read
     goal: str = Field(default="skills", max_length=16)  # exam|skills|curiosity
+    #: Round 9 scope; the approved guideline's own values win when one exists.
+    curriculum: str | None = Field(default=None, max_length=32)
+    grade: str | None = Field(default=None, max_length=64)
 
 
 class EvidenceRow(BaseModel):
@@ -67,16 +70,48 @@ def plan(
     s: Session = Depends(db_session),
     student: Student = Depends(rate("mutation")),
 ) -> dict[str, Any]:
-    """A validated interactive test plan. ``source`` is model or simple — never a provider name."""
+    """A validated interactive test plan. ``source`` is model or simple — never a provider name.
+
+    Round 9 approval gate: for a subject this learner has *chosen* (a
+    ``LearnerSubject`` row — found by id, or by the same words, so
+    dropping the id is not a way around the gate), the plan may only run
+    once the learner approved the syllabus checklist, and it then uses
+    exactly the approved objective ids. A subject the learner has not
+    chosen yet keeps the older stateless behaviour.
+    """
+    from ...curriculum import service as gate
+    from ...curriculum.scanner import normalise_curriculum
+    from ...subjects.resolve import normalise
+
     family = None
     subject_text = body.subject.strip()
+    row = None
     if body.subject_id:
         row = s.execute(
             select(LearnerSubject).where(LearnerSubject.id == body.subject_id, LearnerSubject.student_id == student.id)
         ).scalar_one_or_none()
-        if row is not None:
-            family = row.family if row.family in FAMILIES else None
-            subject_text = row.text
+    if row is None:
+        key = normalise(subject_text)
+        if key:
+            row = s.execute(
+                select(LearnerSubject).where(LearnerSubject.student_id == student.id, LearnerSubject.normalised_text == key)
+            ).scalar_one_or_none()
+    objectives = None
+    curriculum = normalise_curriculum(body.curriculum)
+    grade = body.grade
+    guideline = None
+    if row is not None:
+        family = row.family if row.family in FAMILIES else None
+        subject_text = row.text
+        guideline = gate.approved(s, student_id=student.id, subject_id=row.id)
+        if guideline is None:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "syllabus_not_approved", "message": gate.gate_message(row.title)},
+            )
+        objectives = [dict(o) for o in (guideline.objectives or []) if isinstance(o, dict)]
+        curriculum = curriculum or guideline.curriculum
+        grade = grade or guideline.grade
     plan_payload = build_plan(
         subject=subject_text,
         family=family,
@@ -85,7 +120,16 @@ def plan(
         goal=body.goal,
         llm=_llm(),
         student_id=student.id,
+        objectives=objectives,
+        curriculum=curriculum,
+        grade=grade,
     )
+    if guideline is not None:
+        plan_payload["guideline"] = {
+            "version": int(guideline.version),
+            "source_label": guideline.source_label,
+            "attribution": guideline.attribution,
+        }
     return plan_payload
 
 

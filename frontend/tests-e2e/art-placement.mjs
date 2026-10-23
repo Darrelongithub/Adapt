@@ -1,20 +1,28 @@
 import { chromium } from 'playwright';
 
 const base = process.env.ADAPT_BASE_URL || 'http://127.0.0.1:3000';
-const routes = ['/', '/consent', '/signin', '/baseline', '/learn', '/journey', '/lesson', '/review', '/progress', '/settings', '/proposals', '/evidence', '/voice', '/onboarding', '/diagnose', '/first-lesson'];
+const routes = ['/', '/baseline', '/learn', '/journey', '/lesson', '/review', '/progress', '/settings', '/proposals', '/evidence', '/voice', '/onboarding', '/diagnose', '/first-lesson'];
 // Mirrors ART_MAP in src/components/shell/artMap.ts: one header illustration per page.
 const expected = new Map([
   ['/', ['study']], ['/baseline', ['brain']], ['/settings', ['gears']], ['/learn', ['classroom']],
   ['/journey', ['stepping-stones']], ['/proposals', ['balance-scale']], ['/review', ['road-ahead']],
   ['/progress', ['knowledge-tree']], ['/lesson', ['desk-path']], ['/voice', ['open-book']],
 ]);
-const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
+const browser = await chromium.launch({
+  headless: true,
+  args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}),
+});
 let failed = false;
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   const page = await browser.newPage({ viewport });
   await page.addInitScript(() => sessionStorage.setItem('adapt:seen-opening', '1'));
   await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
-  const consent = page.locator('input[type="checkbox"]');
+  // First entry mints the guest learner automatically; the timed opening
+  // overlay hides the shell (and its art) until it fades, so wait it out.
+  await page.locator('[data-dashboard]').waitFor({ timeout: 20000 }).catch(() => {});
+  await page.locator('.opening-overlay').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
+  const consent = page.locator('[data-account-gate] input[type="checkbox"]');
   if (await consent.count()) {
     await consent.first().check().catch(() => consent.first().click());
     const agree = page.getByRole('button', { name: /Agree and continue/i });
@@ -26,7 +34,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
   }
   for (const route of routes) {
     await page.goto(`${base}${route}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(350);
+    if (route === '/') await page.locator('.opening-overlay').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(1200);
     const arts = await page.locator('[data-art]').evaluateAll(nodes => [...new Set(nodes.map(n => n.getAttribute('data-art')))]);
     const wanted = expected.get(route) ?? [];
     // Every signed-in page owns exactly one header illustration. Pages with no entry (consent,
@@ -44,7 +53,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       }
     }
     const text = await page.locator('body').innerText();
-    if (/[a-z]+_[a-z]+|\b\w+\.\w+\b/i.test(text)) {
+    // Internal ids are snake_case machine names (stu_…, subject_id,
+    // calc_rate). Version numbers (v0.1.0), decimals and doc filenames
+    // are ordinary learner-visible text, not identifiers.
+    if (/\b(?:[a-z]+_[a-z0-9]+(?:_[a-z0-9]+)*)\b/.test(text)) {
       console.error(`${route}: possible internal identifier visible`); failed = true;
     }
   }

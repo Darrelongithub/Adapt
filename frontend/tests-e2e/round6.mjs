@@ -139,13 +139,20 @@ async function crawl(browser, mode, signIn) {
       current.route = route;
       const before = crashes.length;
       await page.goto(`${BASE}${route}`, { waitUntil: "networkidle", timeout: 30000 }).catch((e) => recordHere("goto", e.message));
+      // Home's opening overlay is timed (~6s) and hides the shell while it
+      // is up; judge the page underneath, not the welcome card.
+      if (route === "/") await page.locator(".opening-overlay").waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(450);
       const body = await page.evaluate(() => document.body?.innerText?.trim() ?? "").catch(() => "");
       if (!body) recordHere("blank-body", "empty body text");
       if (await page.locator("[data-route-error]").count()) recordHere("error-screen", "route error boundary shown");
       const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
-      if (mode === "signed-out" && (route === "/" || route === "/journey") ) {
-        if (!/Welcome to ADAPT|Before you begin|Agree/i.test(text)) recordHere("gate-missing", "no account gate on protected route");
+      if (mode === "signed-out" && (route === "/" || route === "/journey")) {
+        // First entry is guest-first now: SessionGate mints the guest
+        // learner when /me refuses, so a fresh browser reaches the
+        // dashboard/path as "Guest learner". The consent account gate
+        // remains the surface after an explicit sign-out.
+        if (!/Guest learner|Your path|Welcome to ADAPT|Before you begin|Agree/i.test(text)) recordHere("entry-missing", "neither the guest entry nor the account gate appeared");
       }
       checks.push({ mode, viewport: viewport.name, route, ok: crashes.length === before });
     }

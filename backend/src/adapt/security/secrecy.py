@@ -144,6 +144,7 @@ def _configured_terms(settings: Any | None) -> tuple[str, ...]:
     for attr in (
         "gemini_api_key",
         "youtube_api_key",
+        "oak_api_key",
         "gemini_model_ai1",
         "gemini_model_ai2",
         "gemini_model_light",

@@ -35,6 +35,11 @@ class _StrictBody(BaseModel):
 class PlanBody(_StrictBody):
     topic: str = Field(min_length=2, max_length=96)
     concept_id: str = Field(min_length=1, max_length=96)
+    # Round 9: when the lesson belongs to a learner-chosen subject, the
+    # approved syllabus gate binds and the latest check-in shapes the
+    # lesson (deterministically; `undo_adaptation` builds it unshaped).
+    subject_id: str | None = Field(default=None, max_length=120)
+    undo_adaptation: bool = False
 
 
 class WrongBody(_StrictBody):
@@ -837,6 +842,48 @@ def list_frozen_concepts(
     return {"topic": topic, "source": source, "topic_match": topic_match, "concepts": concepts}
 
 
+def _round9_policy(session: Session, student_id: str, snapshot: Mapping[str, Any], *, undo: bool):
+    """The deterministic check-in shaping for this lesson, or no change."""
+    from ...ai.adaptation_policy import Policy, adaptation_policy
+    from ...ai.monitor import service as monitor
+
+    base = max(1, _learner_level(snapshot))
+    if undo:
+        return Policy(difficulty=base)
+    latest = monitor.latest(session, student_id)
+    if latest is None:
+        return Policy(difficulty=base)
+    accuracy = (latest.metrics or {}).get("accuracy")
+    return adaptation_policy(
+        dict(latest.estimate or {}),
+        current_difficulty=base,
+        expected_success=float(accuracy) if isinstance(accuracy, (int, float)) else None,
+    )
+
+
+def _trim_frozen_lesson(plan: LessonPlan, *, max_teaching_blocks: int) -> LessonPlan:
+    """Keep the first teaching blocks, each still followed by its check."""
+    from dataclasses import replace
+
+    teaching = {"text", "explain", "visual", "worked_example"}
+    kept = []
+    taught = 0
+    for block in plan.blocks:
+        if block.type in teaching:
+            if taught >= max_teaching_blocks:
+                break
+            taught += 1
+            kept.append(block)
+        elif block.type in {"check", "predict"}:
+            if kept and kept[-1].type in teaching:
+                kept.append(block)
+                if taught >= max_teaching_blocks:
+                    break
+        elif not kept:
+            kept.append(block)
+    return replace(plan, blocks=tuple(kept or plan.blocks[:1]))
+
+
 @router.post("/plan")
 def build_frozen_lesson(
     body: PlanBody,
@@ -845,6 +892,25 @@ def build_frozen_lesson(
     student: Student = Depends(rate("mutation")),
 ) -> dict[str, Any]:
     """Return a deterministic lesson immediately; only a fully checked model plan upgrades it."""
+    guideline = None
+    if body.subject_id:
+        from ...curriculum import service as gate
+        from ...subjects.models import LearnerSubject
+
+        row = session.execute(
+            select(LearnerSubject).where(
+                LearnerSubject.id == body.subject_id,
+                LearnerSubject.student_id == student.id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"error": "unknown_subject", "message": "no such subject"})
+        guideline = gate.approved(session, student_id=student.id, subject_id=row.id)
+        if guideline is None:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "syllabus_not_approved", "message": gate.gate_message(row.title)},
+            )
     seed_snapshot = _snapshot(
         session, student.id, {}, None, topic_key=body.topic, concept_id=body.concept_id
     )
@@ -864,10 +930,31 @@ def build_frozen_lesson(
     snapshot = _snapshot(
         session, student.id, pack, None, topic_key=body.topic, concept_id=body.concept_id
     )
+    policy = _round9_policy(session, student.id, snapshot, undo=body.undo_adaptation)
+    if policy.changed:
+        # The writer reads step size / word cap / rung from the snapshot,
+        # so shaping is the same levers the profile already uses -- set by
+        # the code rule from the validated check-in, never by a model.
+        snapshot = dict(snapshot)
+        levers = dict(snapshot.get("levers") or {})
+        if policy.step_size == "small":
+            levers["step_size"] = {"value": "small", "why": policy.reason, "source": "check-in"}
+        snapshot["levers"] = levers
+        snapshot["learner_rung"] = policy.difficulty
+        if policy.max_total_words is not None:
+            snapshot["max_words_per_block"] = 30
     simple = adapter.write_frozen_lesson(pack, body.concept_id, snapshot, model=None)
+    if policy.changed and policy.length == "short":
+        # The frozen writer teaches from two checked sentences; a short
+        # lesson keeps the first (the key idea) with its check and leaves
+        # the rest for next time.
+        simple = _trim_frozen_lesson(simple, max_teaching_blocks=1)
     explanation_id = _new_explanation_id(simple)
     plan_id = _record(student.id, simple, session_id=None, explanation_id=explanation_id)
-    job_id = _schedule_upgrade(
+    # A shaped lesson is not upgraded behind the learner's back: the
+    # background writer cannot be held to the short cap, so the checked
+    # deterministic lesson they were shown the reason for is the lesson.
+    job_id = None if policy.changed else _schedule_upgrade(
         background,
         student_id=student.id,
         pack=pack,
@@ -882,11 +969,28 @@ def build_frozen_lesson(
         session_id=None,
         explanation_id=explanation_id,
     )
+    from ...content.skeleton import objectives as OBJ
+
+    pack_map = _as_mapping(pack)
     return {
         "plan": simple.as_dict(),
         "plan_id": plan_id,
         "job_id": job_id,
         "upgrade_state": "running" if job_id else "not_available",
+        "adaptation": {
+            "applied": bool(policy.changed),
+            "reason": policy.reason if policy.changed else "",
+            "break_suggested": bool(policy.break_suggested and policy.changed),
+            "difficulty": policy.difficulty,
+            "undone": bool(body.undo_adaptation),
+        },
+        "common_misconceptions": OBJ.common_misconceptions(pack_map) if pack_map.get("concepts") else [],
+        "suggested_practice": OBJ.suggested_practice(pack_map) if pack_map.get("concepts") else [],
+        "guideline": (
+            {"version": int(guideline.version), "source_label": guideline.source_label, "attribution": guideline.attribution}
+            if guideline is not None
+            else None
+        ),
     }
 
 

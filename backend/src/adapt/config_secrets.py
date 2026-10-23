@@ -25,6 +25,9 @@ from typing import Any
 SECRET_FIELDS: dict[str, tuple[str, str]] = {
     "gemini": ("ADAPT_GEMINI_API_KEY", "gemini_api_key"),
     "youtube": ("ADAPT_YOUTUBE_API_KEY", "youtube_api_key"),
+    # Round 9: the Oak curriculum-outline key travels the same console-only
+    # path — owner-only file, hidden prompt, never an HTTP surface.
+    "oak": ("ADAPT_OAK_API_KEY", "oak_api_key"),
 }
 BUDGET_FIELDS: dict[str, str] = {
     "ADAPT_GEMINI_DAILY_CALL_BUDGET": "gemini_daily_call_budget",
