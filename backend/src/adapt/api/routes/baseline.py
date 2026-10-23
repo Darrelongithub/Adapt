@@ -100,6 +100,17 @@ def next_day(
     return svcs.baseline.next_day(student.id, run_id=run_id, finished=finished)
 
 
+@router.get("/history")
+def history(student: Student = Depends(student_from_request)) -> dict[str, Any]:
+    """Every sitting this learner has played, and the best of each game.
+
+    The games were always stored in ``baseline_trials``; this is the view that lets a learner see
+    them again after the snapshot has scrolled away. Declared before ``/{run_id}`` so a literal
+    path is not read as a run id.
+    """
+    return current().baseline.history(student.id)
+
+
 @router.get("/{run_id}")
 def view(run_id: str, student: Student = Depends(student_from_request)) -> dict[str, Any]:
     _owned(run_id, student.id)
@@ -129,8 +140,12 @@ def answer_questions(run_id: str, body: QuestionsBody, student: Student = Depend
 
 
 @router.post("/{run_id}/trial")
-def submit_trial(run_id: str, body: TrialBody, student: Student = Depends(rate("mutation"))) -> dict[str, Any]:
-    """Answer the task on offer. The reply contains the score and the next task."""
+def submit_trial(run_id: str, body: TrialBody, student: Student = Depends(rate("baseline_trial"))) -> dict[str, Any]:
+    """Answer the task on offer. The reply contains the score and the next task.
+
+    Trials have their own bucket, because the quick game is a tap every second or two and the
+    general mutation ceiling is sized for form posts, not for a lap.
+    """
     _owned(run_id, student.id)
     try:
         return current().baseline.submit(

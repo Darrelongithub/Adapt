@@ -120,10 +120,29 @@ export async function api<T = Record<string, unknown>>(path: string, opts: Optio
     body = JSON.stringify(opts.json);
   }
   let res: Response;
+  // A request that never answers must not disable the page forever. The games lock their controls
+  // while a submission is in flight, so a hung fetch used to look exactly like "it won't let me
+  // click" — the learner had no way back except a reload.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25_000);
   try {
-    res = await fetch(url + qs(opts.query), { method, headers, body, credentials: "same-origin" });
+    res = await fetch(url + qs(opts.query), {
+      method,
+      headers,
+      body,
+      credentials: "same-origin",
+      signal: controller.signal,
+    });
   } catch (err) {
-    throw new ApiError(0, `the backend is not reachable from the browser (${(err as Error).message})`);
+    const aborted = (err as Error)?.name === "AbortError";
+    throw new ApiError(
+      0,
+      aborted
+        ? "the backend did not answer in 25 seconds, so the request was stopped — nothing was recorded; try again"
+        : `the backend is not reachable from the browser (${(err as Error).message})`,
+    );
+  } finally {
+    clearTimeout(timer);
   }
   const text = await res.text();
   let payload: unknown = null;

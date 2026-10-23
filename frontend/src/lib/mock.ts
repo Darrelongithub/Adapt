@@ -1116,7 +1116,7 @@ const baselineStudyPairs = [
 const baselineSteps: { stage: string; stage_title: string; task: unknown }[] = [
   { stage: "codewords_study", stage_title: "Spy codewords: study", task: { id: "codewords_study", game: "codewords_study", phase: "show", pairs: baselineStudyPairs, study_ms: 45000, prompt: "Learn these eight pairs. You will be asked for them again later.", max_latency_ms: 75000 } },
   { stage: "codewords_cued", stage_title: "Spy codewords: straight after", task: { id: "codewords_cued_2", game: "codewords_cued", phase: "measure", prompt: "Which place went with Pirel?", cue: "Pirel", answer: "a stone tower", practice: false, max_latency_ms: 30000 } },
-  { stage: "quick_a", stage_title: "Quick taps", task: { id: "quick_a_0", game: "quick", phase: "measure", prompt: "tap the bigger number", options: ["7", "3"], answer: "7", max_latency_ms: 15000, stage: "quick_a" } },
+  { stage: "quick_a", stage_title: "Quick taps", task: { id: "quick_a_0", game: "quick", phase: "measure", prompt: "tap the bigger number", options: ["7", "3"], answer: "7", max_latency_ms: 12000, stage: "quick_a", lap: 1, lap_title: "lap 1 of 3", level: 1, level_name: "warming up", lap_seconds: 30, max_trials: 72, base_points: 10, feedback: "show" } },
   { stage: "vault", stage_title: "Vault lights", task: { id: "vault_forward_3_1", game: "vault", phase: "measure", direction: "forward", length: 3, sequence: [6, 8, 0], answer_direction: "forward", prompt: "3 tiles. Tap them in the same order.", practice: false, max_latency_ms: 30000 } },
   { stage: "shopkeeper", stage_title: "Vault lights: shopkeeper", task: { id: "vault_shop_1", game: "shopkeeper", phase: "measure", items: ["a brass key", "a coil of rope", "a tin cup"], distractors: [ { id: "d1_0", text: "The month after March is April.", answer: true }, { id: "d1_1", text: "A week has nine days.", answer: false }, { id: "d1_2", text: "Half of 20 is 10.", answer: true } ], prompt: "Hold these three items. Answer the quick questions. Then type the items back.", practice: false, max_latency_ms: 60000 } },
   { stage: "machine", stage_title: "Crack the machine", task: { id: "machine_r1_step1", game: "machine", round: 1, phase: "measure", prompt: "Test another input, or guess the rule.", max_probes: 5, max_wrong_guesses: 2, probes_used: 0, wrong_guesses: 0, max_latency_ms: 120000 } },
@@ -1171,6 +1171,20 @@ const baselineSnapshotBody = {
   preferences: { preferred_format: "diagram", goal: "just curious" },
   preference_vs_performance: null,
   completion: { stages: [], complete: 6, total: 14, played: ["codewords_study", "codewords_cued", "quick_a", "vault", "shopkeeper", "machine", "locked_box", "trap"], not_measured: ["prior_knowledge", "reasoning_style", "persistence_help_seeking"] },
+};
+
+const baselineHistoryBody = {
+  student_id: learner.student_id,
+  // Mock mode is for reviewing the flow, so it always has somewhere to go. The round-7
+  // "welcome back" screen needs a sealed run and no open one; the real API decides that.
+  has_open_run: true,
+  runs: [{ run_id: "base_mock_0001", status: "in_progress", started_at: "2026-10-12T09:00:00", finished_at: null, trials: 18, measured: 15, games: ["codewords_study", "codewords_cued", "quick_a"] }],
+  games: [
+    { game: "codewords_study", title: "Word memory", plays: 1, answered: 0, correct: 0, last_played_at: "2026-10-12T09:02:00", best: null, best_label: "looking time recorded", detail: {} },
+    { game: "codewords_cued", title: "Word recall", plays: 8, answered: 8, correct: 5, last_played_at: "2026-10-12T09:04:00", best: 0.625, best_label: "63% right in a sitting", detail: { accuracy: 0.625 } },
+    { game: "quick", title: "Quick taps", plays: 9, answered: 9, correct: 7, last_played_at: "2026-10-12T09:05:00", best: 96, best_label: "96 points in one lap", detail: { accuracy: 0.78, laps: 1, best_streak: 4 } },
+  ],
+  totals: { sittings: 1, completed_sittings: 0, trials: 18, measured: 15 },
 };
 
 const baselineNextDayBody = {
@@ -1370,6 +1384,9 @@ const rows: Row[] = [
   { method: "POST", match: /^\/api\/v1\/baseline$/, body: () => baselineView("format") },
   { method: "GET", match: /^\/api\/v1\/baseline\/snapshot/, body: baselineSnapshotBody },
   { method: "GET", match: /^\/api\/v1\/baseline\/next-day/, body: baselineNextDayBody },
+  /* Before the run-id row: `/baseline/history` is a literal path, and the run-id pattern would
+     read it as a run called "history". */
+  { method: "GET", match: /^\/api\/v1\/baseline\/history/, body: baselineHistoryBody },
   { method: "GET", match: /^\/api\/v1\/baseline\/[^/]+$/, body: () => baselineView("next") },
   { method: "POST", match: /^\/api\/v1\/baseline\/[^/]+\/format$/, body: () => baselineView("questions") },
   { method: "POST", match: /^\/api\/v1\/baseline\/[^/]+\/questions$/, body: () => baselineView("next") },
