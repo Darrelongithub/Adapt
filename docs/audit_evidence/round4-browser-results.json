@@ -1,0 +1,16 @@
+{
+  "auth": [],
+  "words": [],
+  "routes": [],
+  "journeys": [],
+  "returningJourneys": [],
+  "errors": [],
+  "budgets": {},
+  "meta": {
+    "verifiedAt": "2026-10-22T17:50:56.253Z",
+    "chromium": "153.0.8010.0",
+    "environment": "production build; local unthrottled; local API",
+    "baseCommit": "7045ede73f85349c55f5a7ef1ab54a5c3ea723ad"
+  },
+  "failure": "locator.waitFor: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator('[data-account-gate]') to be visible\n\n    at frontDoor (/home/user/Adapt/frontend/tests-e2e/round4.mjs:79:42)\n    at async enter (/home/user/Adapt/frontend/tests-e2e/round4.mjs:87:3)\n    at async file:///home/user/Adapt/frontend/tests-e2e/round4.mjs:395:5"
+}

@@ -28,7 +28,7 @@ export type StageId = (typeof STAGE_IDS)[number];
 export type StageStatus = "todo" | "done" | "skipped";
 
 /** `evidence` is the server's extra key: `recorded` (a row proves it) or `stated` (the learner said so). */
-export type StageRow = { id: StageId; status: StageStatus; evidence?: "recorded" | "stated" | "none" };
+export type StageRow = { id: StageId; status: StageStatus; evidence?: "recorded" | "stated" | "none"; note?: string | null };
 
 export type JourneyState = {
   student_id?: string;

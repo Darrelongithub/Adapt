@@ -1,0 +1,70 @@
+{
+  "check": "E02",
+  "outcome": "PASS",
+  "geometry_suggestion_offered": false,
+  "suggestions": [
+    "Discrete structures",
+    "Kiswahili",
+    "Chemistry",
+    "Biology"
+  ],
+  "lessons": [
+    {
+      "topic": "Discrete structures",
+      "concept": {
+        "id": "dm_sets",
+        "name": "Sets, membership and the operations on them"
+      },
+      "topic_match": true,
+      "source": "authored",
+      "block_types": [
+        "text",
+        "check"
+      ],
+      "text_sample": "[{\"type\":\"text\",\"body\":\"A set is a collection of distinct objects; union takes everything in either, intersection only what is in both, and complement is everything outside.\",\"fact_ids\":[\"dm_sets:fact:1\"],\"why\":{\"evidence_ids\":[],\"n\":0},\"length\":24},{\"type\":\"check\",\"body\":{\"question\":\"A = {1, 2, 3} and B = {3, 4}. What is the intersection of A and B?\",\"item_id\":\"pk_dm_sets_r3\",\"options\":[{\"id\":\"pk_dm_sets_r3:option:0\",\"text\":\"{3}\"},{\"id\":\"pk_dm_sets_r3:option:1\",\"text\":\"{1, 2, 3, 4}\"},{\"id\":\"pk_"
+    },
+    {
+      "topic": "Kiswahili",
+      "concept": {
+        "id": "sw_neno",
+        "name": "Maneno na maana yake (words and what they mean)"
+      },
+      "topic_match": true,
+      "source": "authored",
+      "block_types": [
+        "text",
+        "check"
+      ],
+      "text_sample": "[{\"type\":\"text\",\"body\":\"Knowing which class of word you are looking at is what makes agreement possible.\",\"fact_ids\":[\"sw_neno:fact:1\",\"sw_neno:fact:2\"],\"why\":{\"evidence_ids\":[],\"n\":0},\"length\":14},{\"type\":\"check\",\"body\":{\"question\":\"What is the main idea?\"},\"fact_ids\":[\"sw_neno:fact:1\",\"sw_neno:fact:2\"],\"why\":{\"evidence_ids\":[],\"n\":0},\"length\":5}]"
+    },
+    {
+      "topic": "Chemistry",
+      "concept": {
+        "id": "chem_particle",
+        "name": "Atoms, molecules and ions"
+      },
+      "topic_match": true,
+      "source": "authored",
+      "block_types": [
+        "text",
+        "check"
+      ],
+      "text_sample": "[{\"type\":\"text\",\"body\":\"The particles matter is made of: an atom is the smallest piece of an element, a molecule is atoms bonded together, and an ion is a particle with a charge.\",\"fact_ids\":[\"chem_particle:fact:1\"],\"why\":{\"evidence_ids\":[],\"n\":0},\"length\":30},{\"type\":\"check\",\"body\":{\"question\":\"What is the chemical formula for one molecule of water?\",\"item_id\":\"pk_chem_particle_r3\",\"options\":[{\"id\":\"pk_chem_particle_r3:option:0\",\"text\":\"H2O\"},{\"id\":\"pk_chem_particle_r3:option:1\",\"text\":\"CO2\"},{"
+    },
+    {
+      "topic": "Biology",
+      "concept": {
+        "id": "bio_cell",
+        "name": "The cell as the unit of life"
+      },
+      "topic_match": true,
+      "source": "authored",
+      "block_types": [
+        "text",
+        "check",
+        "text"
+      ],
+      "text_sample": "[{\"type\":\"text\",\"body\":\"Every living thing is made of cells; a cell is the smallest unit that is alive, and its parts have distinct jobs.\",\"fact_ids\":[\"fact_bio_cell_overview\",\"fact_bio_cell_r1\",\"fact_bio_cell_r2\"],\"why\":{\"evidence_ids\":[],\"n\":0},\"length\":22},{\"type\":\"check\",\"body\":{\"question\":\"What is the main idea?\"},\"fact_ids\":[\"fact_bio_cell_overview\",\"fact_bio_cell_r1\",\"fact_bio_cell_r2\"],\"why\":{\"evidence_ids\":[],\"n\":0},\"length\":5},{\"type\":\"text\",\"body\":\"The key fact is that the cell is the"
+    }
+  ]
+}

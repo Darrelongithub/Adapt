@@ -1,0 +1,42 @@
+{
+  "check": "C09",
+  "requests": {
+    "fabricated_type": {
+      "status": 422,
+      "body": {
+        "detail": {
+          "error": "invalid_grading_seal",
+          "message": "invalid grading token"
+        }
+      },
+      "stored_rows": []
+    },
+    "forged_verdict_and_metadata": {
+      "status": 200,
+      "submitted": {
+        "item_type": "made_up_type",
+        "skill": "fabricated.skill",
+        "correct": true,
+        "answer": "definitely-not-an-option"
+      },
+      "read_back": [
+        {
+          "id": "tevi_73d47659f2754fc7a867",
+          "run_id": "trun_f61d54a2168d438d96e7",
+          "subject_id": null,
+          "item_id": "item-0",
+          "item_type": "geometry_angle",
+          "skill": "geometry.spatial",
+          "difficulty": 3,
+          "answer": "definitely-not-an-option",
+          "correct": false,
+          "ms": 100,
+          "hints_used": 0,
+          "observed_at": "2026-10-23T04:22:17.312096"
+        }
+      ]
+    }
+  },
+  "student_id": "stu_3611eb52a0314a709864",
+  "outcome": "PASS"
+}

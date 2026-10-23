@@ -37,7 +37,9 @@ test("stopping part-way keeps what was measured, with its n, and names what was 
   await expect(page.locator(".baseline-snapshot")).toBeVisible();
   const text = (await page.locator(".baseline-snapshot").innerText()).replace(/\s+/g, " ");
   expect(text).toMatch(/steps that did not happen/i);
-  expect(text).toMatch(/locked_box/); // the stage keys of what was not reached
+  expect(text).toMatch(/locked box/i); // learner-facing name of the step that was not reached
+  expect(text).not.toMatch(/locked_box/); // internal stage keys are not learner-facing copy
+  expect(text).toMatch(/not measured/i); // an unreached step is not a zero measurement
   expect(text).toMatch(/n=\d+/); // the games that were played report their n
   expect(ledger.cued.length).toBeGreaterThan(0);
   await shot(page, "desktop", "snapshot-stopped-part-way");

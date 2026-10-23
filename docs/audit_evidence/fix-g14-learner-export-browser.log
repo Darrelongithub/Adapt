@@ -1,0 +1,26 @@
+{
+  "check": "G14",
+  "outcome": "PASS",
+  "filename": "adapt-export-stu_0755a872d4c44e86834e.json",
+  "student_id": "stu_0755a872d4c44e86834e",
+  "attempt_id": "att_4cdf54597196495cab96",
+  "session_id": "lrs_9187b65f78904a75ac09",
+  "exported_counts": {
+    "learning_sessions": 1,
+    "attempts": 1,
+    "learner_events": 3,
+    "journey_stages": 1,
+    "student_preferences": 0,
+    "auth_sessions": 1
+  },
+  "reflection_exported": true,
+  "forbidden_keys_absent": [
+    "password_hash",
+    "csrf_token",
+    "token_hash",
+    "grading_seal",
+    "email_index"
+  ],
+  "cookie_values_absent": true,
+  "unauthenticated_status": 401
+}

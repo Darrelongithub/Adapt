@@ -436,6 +436,41 @@ async function createLearner(body) {
   return res;
 }
 
+/** Gives a scenario an active subject through the real server-graded subject run.
+ *  Wrong answers are still completed evidence; no answer key or mock grading is used. */
+async function preparePracticeSubject(cookie, csrfToken) {
+  const headers = { cookie, "x-csrf-token": csrfToken };
+  const chosenResponse = await api("/api/v1/subjects/choose", { method: "POST", body: { text: "Fractions" }, headers });
+  if (chosenResponse.status !== 200) throw new Error(`subject fixture choose failed: ${chosenResponse.status} ${JSON.stringify(chosenResponse.body)}`);
+  const subject = chosenResponse.body.subject ?? chosenResponse.body;
+  const planResponse = await api("/api/v1/tests/plan", {
+    method: "POST",
+    body: { subject: subject.title, subject_id: subject.id, level: 2, style: "see", goal: "skills" },
+    headers,
+  });
+  if (planResponse.status !== 200 || !Array.isArray(planResponse.body.items) || planResponse.body.items.length < 4) {
+    throw new Error(`subject fixture plan failed: ${planResponse.status} ${JSON.stringify(planResponse.body).slice(0, 240)}`);
+  }
+  const runId = planResponse.body.run_id;
+  const rows = [];
+  for (const item of planResponse.body.items) {
+    const answer = "probe completed answer";
+    const grade = await api("/api/v1/tests/grade", {
+      method: "POST",
+      body: { run_id: runId, item_id: item.id, grading_seal: item.grading_seal, answer, ms: 25, hints_used: 0 },
+      headers,
+    });
+    if (grade.status !== 200 || typeof grade.body.correct !== "boolean") throw new Error(`subject fixture grade failed: ${grade.status} ${JSON.stringify(grade.body)}`);
+    rows.push({ item_id: item.id, item_type: item.item_type, skill: item.skill, difficulty: item.difficulty, answer, correct: grade.body.correct, ms: 25, hints_used: 0, parameters: item.parameters, grading_seal: item.grading_seal });
+  }
+  const evidence = await api("/api/v1/tests/evidence", { method: "POST", body: { run_id: runId, subject_id: subject.id, rows }, headers });
+  if (evidence.status !== 200) throw new Error(`subject fixture evidence failed: ${evidence.status} ${JSON.stringify(evidence.body)}`);
+  const activated = await api(`/api/v1/subjects/${encodeURIComponent(subject.id)}/activate`, { method: "POST", body: {}, headers });
+  const completed = await api(`/api/v1/subjects/${encodeURIComponent(subject.id)}/tests/complete`, { method: "POST", body: { completed_ids: planResponse.body.items.map((item) => item.id) }, headers });
+  if (activated.status !== 200 || completed.status !== 200 || completed.body.stage === "tests") throw new Error(`subject fixture completion failed: ${activated.status} ${completed.status} ${JSON.stringify(completed.body)}`);
+  return subject.id;
+}
+
 /* ------------------------------------------------------------------- probe ---- */
 
 /** Every request the harness makes, tallied so a run can say whether it was paced by the app's
@@ -574,24 +609,18 @@ async function main() {
     const accept = async p => {
       await waitFor(() => p.find('[data-account-gate] input[type="checkbox"]').length === 2, { label: "consent gate" });
       p.checkInput(p.find('[data-account-gate] input[type="checkbox"]')[0]);
-      await p.click("Agree and continue", "button");
+      await p.click("Save choice and continue", "button");
+      await waitFor(() => p.doc.querySelector('[data-auth-step="auth"]'), { label: "account choices" });
     };
     await dismissWelcome(page);
-    // Current first entry is guest-first: SessionGate creates the guest
-    // learner when /me refuses, then the dashboard renders. The consent
-    // gate is the signed-out surface after an explicit sign-out (below).
-    await waitFor(() => !!page.doc.querySelector("[data-dashboard]"), { timeout: 20_000, label: "guest dashboard" });
-    await waitFor(() => page.find(".stat-value").length === 4, { label: "dashboard stat tiles" });
-    check("home", "first entry creates one guest session and opens the dashboard", page.requests.filter(r => r === "POST /api/v1/students").length === 1 && !page.doc.querySelector("[data-account-gate]"), page.requests.join(" ; "));
-    check("home", "welcome is neutral rather than a time-of-day greeting", /Hi Guest learner, ready to learn/.test(page.text()) && !/Good morning|Good afternoon|Good evening/.test(page.text()));
-    check("home", "the Round 9 check-in is collapsed and on demand on Home", !!page.doc.querySelector('[data-testid="check-in-open"]') && !page.doc.querySelector('[data-testid="check-in-form"]'));
-    const guestMe = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    check("home", "the bootstrapped guest has analytics consent only, with no model sharing or baseline started for them", guestMe.body.display_name === "Guest learner" && guestMe.body.consent_analytics === true && guestMe.body.consent_share_with_ai === false && guestMe.body.baseline_started === false, JSON.stringify(guestMe.body).slice(0, 200));
-    await page.click("Sign out", "button");
-    await waitFor(() => !!page.doc.querySelector("[data-account-gate]"), { timeout: 20_000, label: "mandatory account card after sign-out" });
-    check("home", "navigation and learning pages are not mounted behind the signed-out gate", page.find(".sidebar").length === 0 && page.find("[data-dashboard]").length === 0);
+    // First entry is consent-first on the merged main branch: no learner
+    // is created before the account choices, and protected pages stay
+    // unmounted behind the mandatory card.
+    await waitFor(() => !!page.doc.querySelector("[data-account-gate]"), { label: "mandatory account card" });
+    check("home", "welcome is neutral rather than a time-of-day greeting", /Welcome/.test(page.text()) && !/Good morning|Good afternoon|Good evening/.test(page.text()));
+    check("home", "navigation and learning pages are not mounted before entry", page.find(".sidebar").length === 0 && page.find("[data-dashboard]").length === 0 && !page.requests.some(r => /baseline|dashboard|practice/.test(r)));
     const boxes = page.find('[data-account-gate] input[type="checkbox"]');
-    check("home", "both consent boxes are unchecked and entry is disabled", boxes.length === 2 && boxes.every(box => !box.checked) && page.byText("Agree and continue", "button")?.disabled);
+    check("home", "optional choices start unchecked and the explicit continue control is enabled", boxes.length === 2 && boxes.every(box => !box.checked) && page.byText("Save choice and continue", "button")?.disabled === false);
     const gate = page.doc.querySelector("[data-account-gate]");
     const enabled = [...gate.querySelectorAll("button, input, select, textarea, a[href]")].filter(el => !el.disabled);
     const tab = (node, shiftKey = false) => node.dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true }));
@@ -603,46 +632,50 @@ async function main() {
     page.doc.querySelector("[data-account-gate]").dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await page.click(page.doc.querySelector(".access-screen"));
     check("home", "Escape and outside clicks cannot dismiss the card", !!page.doc.querySelector("[data-account-gate]"));
-    const studentsBeforeDecline = page.requests.filter(r => r === "POST /api/v1/students").length;
-    await page.click("Decline", "button");
-    check("home", "decline keeps the app locked without creating another account", /cannot enter the app/.test(page.text()) && page.requests.filter(r => r === "POST /api/v1/students").length === studentsBeforeDecline);
+    await page.click("Save choice and continue", "button");
+    await waitFor(() => page.doc.querySelector('[data-auth-step="auth"]'), { label: "entry without optional analytics" });
+    check("home", "continuing without optional analytics opens account choices without creating an account", !page.requests.some(r => r === "POST /api/v1/students"));
+    await page.click("Review consent", "button");
     await accept(page);
     await page.click("Create account", '[role="tab"]');
     page.type(page.find('input[autocomplete="username"]')[0], learner.username);
     page.type(page.find('input[type="password"]')[0], learner.password);
     await page.click(page.doc.querySelector('button[type="submit"]'));
-    await waitFor(() => page.doc.location.pathname === "/journey" && !!page.doc.querySelector('[data-testid="journey-card"]'), { timeout: 20000, label: "first account enters the path" });
-    check("home", "registration lands on the path and removes the consent card", !page.doc.querySelector("[data-account-gate]") && page.requests.filter(r => r === "POST /api/v1/students").length === studentsBeforeDecline + 1);
-    const me = await api("/api/v1/me", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    check("home", "consent was saved at creation; model sharing was not silently enabled and no baseline was started", me.body.consent_analytics === true && me.body.consent_share_with_ai === false && me.body.baseline_started === false, JSON.stringify(me.body).slice(0, 200));
+    await waitFor(() => page.doc.location.pathname === "/journey" && page.doc.querySelector('[data-testid="journey-card"]'), { timeout: 20000, label: "first account enters journey" });
+    check("home", "first-time registration enters the journey and removes the access card", !page.doc.querySelector("[data-account-gate]") && page.requests.filter(r => r === "POST /api/v1/students").length === 1);
+    const cookie = jar.getCookieStringSync(BASE);
+    const me = await api("/api/v1/me", { headers: { cookie } });
+    const journeyState = await api("/api/v1/journey/state", { headers: { cookie } });
+    check("home", "optional analytics was saved at creation; model sharing was not silently enabled and no baseline was started", me.body.consent_analytics === true && me.body.consent_share_with_ai === false && me.body.baseline_started === false && journeyState.body.stage === "preferences", JSON.stringify({ status: me.status, analytics: me.body.consent_analytics, share: me.body.consent_share_with_ai, baseline_started: me.body.baseline_started, stage: journeyState.body.stage }));
     csrf = /adapt_csrf=([^;]+)/.exec(page.doc.cookie ?? "")?.[1] ?? "";
+    const baselineStarts = page.requests.filter(r => r === "POST /api/v1/baseline").length;
     await page.click("Sign out", "button");
     await accept(page);
     page.type(page.find('input[autocomplete="username"]')[0], learner.username);
     page.type(page.find('input[type="password"]')[0], learner.password);
     await page.click(page.doc.querySelector('button[type="submit"]'));
-    await waitFor(() => page.doc.location.pathname === "/journey" && !!page.doc.querySelector('[data-testid="journey-card"]'), { timeout: 20000, label: "returning sign-in opens the path" });
-    const dashboard = await open("/", "home");
-    await dismissWelcome(dashboard);
-    await waitFor(() => !!dashboard.doc.querySelector("[data-dashboard]"), { timeout: 20000, label: "returning dashboard" });
-    await waitFor(() => dashboard.find(".stat-value").length === 4 && dashboard.find(".stat-value").every(n => n.textContent !== "—"), { label: "dashboard data" });
-    check("home", "returning sign-in can open the dashboard without minting another learner", !dashboard.requests.some(r => r === "POST /api/v1/students"));
-    check("home", "dashboard has a real empty state and no consent form", /Nothing chosen yet/.test(dashboard.text()) && /Choose your first subject/.test(dashboard.text()) && !dashboard.doc.querySelector("[data-account-gate]"));
-    check("home", "no uncaught entry or navigation errors", page.appErrors().length === 0 && dashboard.appErrors().length === 0, [...page.appErrors(), ...dashboard.appErrors()].join(" | "));
-    closePage(dashboard);
+    await waitFor(() => page.doc.querySelector('[data-testid="journey-card"]') && page.doc.location.pathname === "/journey", { timeout: 20000, label: "returning sign-in opens journey" });
+    csrf = /adapt_csrf=([^;]+)/.exec(page.doc.cookie ?? "")?.[1] ?? csrf;
+    check("home", "returning sign-in resumes the journey without starting another baseline", page.requests.filter(r => r === "POST /api/v1/baseline").length === baselineStarts);
+    check("home", "the journey exposes its current stage and no access form", !!page.doc.querySelector('[data-testid="journey-card"]') && !page.doc.querySelector("[data-account-gate]"));
+    check("home", "no uncaught entry or navigation errors", page.appErrors().length === 0, page.appErrors().join(" | "));
     closePage(page);
 
-    // A fresh deep link gets the same guest-first session, and the subject
-    // wizard is the real first-use surface it lands on.
-    const guest = await open("/journey?step=subject", "home", undefined, "");
-    await waitFor(() => !!guest.doc.querySelector('input[aria-label="What do you want to learn?"]'), { timeout: 20_000, label: "deep-link subject chooser" });
-    check("home", "a direct subject URL bootstraps one guest and reaches the subject chooser", guest.requests.filter(r => r === "POST /api/v1/students").length === 1 && !guest.doc.querySelector("[data-account-gate]"), guest.requests.join(" ; "));
-    await guest.click("Sign out", "button");
-    await waitFor(() => !!guest.doc.querySelector("[data-account-gate]"), { timeout: 20_000, label: "deep-link signed-out gate" });
+    // An unauthenticated deep link is gated too, and guest is a real first-use session.
+    const guest = await open("/journey", "home", undefined, "");
+    await waitFor(() => !!guest.doc.querySelector("[data-account-gate]"), { label: "deep link gate" });
+    check("home", "a direct journey URL cannot bypass the access gate", guest.find(".sidebar").length === 0 && !guest.requests.some(r => /GET \/api\/v1\/journey\/state/.test(r)));
     await accept(guest);
     await guest.click("Continue as guest", "button");
-    await waitFor(() => guest.doc.location.pathname === "/journey" && (!!guest.doc.querySelector('[data-testid="journey-card"]') || !!guest.doc.querySelector('input[aria-label="What do you want to learn?"]')), { timeout: 20000, label: "explicit guest return" });
-    check("home", "an explicit guest after sign-out returns to learning, not back at consent", !guest.doc.querySelector("[data-account-gate]"));
+    await waitFor(() => guest.doc.location.pathname === "/journey" && guest.doc.querySelector('[data-testid="journey-card"]'), { timeout: 20000, label: "guest journey" });
+    check("home", "first guest goes straight to the journey, not back to access", !guest.doc.querySelector("[data-account-gate]"));
+    await guest.click("Home", "a");
+    await waitFor(() => !!guest.doc.querySelector("[data-dashboard]"), { label: "guest dashboard" });
+    await waitFor(() => guest.find(".stat-value").length === 4, { label: "guest dashboard stat tiles" });
+    check("home", "guest can reach the dashboard without being forced through an assessment", guest.find(".sidebar").length === 1 && !guest.doc.querySelector("[data-account-gate]"));
+    check("home", "the Round 9 check-in is collapsed and on demand on Home", !!guest.doc.querySelector('[data-testid="check-in-open"]') && !guest.doc.querySelector('[data-testid="check-in-form"]'));
+    await waitFor(() => /Nothing chosen yet/.test(guest.text()), { label: "guest dashboard empty state" }).catch(() => {});
+    check("home", "dashboard has a real empty state and no consent form", /Nothing chosen yet/.test(guest.text()) && /Choose your first subject/.test(guest.text()) && !guest.doc.querySelector("[data-account-gate]"), guest.text().slice(0, 220));
     closePage(guest);
 
   }
@@ -744,74 +777,28 @@ async function main() {
   /* -------------------------------------------------------------- journey ---- */
   if (run("journey")) {
     console.log("\n\x1b[1mjourney\x1b[0m");
-    /* The path is the screen this phase exists for, and the thing worth proving in a DOM is
-     * that its state is the *server's*: a skip pressed here has to be readable from the
-     * endpoint afterwards, and the stage list has to come back different. A harness that
-     * only checked React state would pass on a page that never wrote anything. */
     const page = await open("/journey", "journey");
-    await waitFor(() => !!page.doc.querySelector('[data-testid="journey-card"]'), { timeout: 15_000, label: "the current path step to render" });
-    check("journey", "the path renders its current step, not an error", /Your path/.test(page.text()) && /A few questions/.test(page.text()), page.text().slice(0, 160));
-    // The redesigned page shows one current-step card plus a three-part
-    // overview; the frozen eight-stage order is asserted from the server
-    // state below rather than from a stage list that no longer renders.
-    const card = page.doc.querySelector('[data-testid="journey-card"]');
-    check("journey", "the step it shows is the first one still to do", (card?.getAttribute("data-stage") ?? "") === "preferences", card?.getAttribute("data-stage") ?? "(none shown)");
-    check("journey", "the overview names the mind check, subject choice and first lesson", /Mind check/.test(page.text()) && /Choose a subject/.test(page.text()) && /First tailored lesson/.test(page.text()));
-    const server = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    check(
-      "journey",
-      "and that is what the server says, not what the page decided",
-      server.status === 200 && server.body?.stage === "preferences" && Array.isArray(server.body?.stages) && ["account", "preferences", "games", "subject", "subject_round", "snapshot", "first_lesson", "practice"].every((id, i) => server.body.stages[i]?.id === id),
-      JSON.stringify(server.body).slice(0, 200),
-    );
-    // Pressing "Skip this step" on the current card has to reach the
-    // server, and the server's answer is what the page redraws with —
-    // the whole point of a resumable path.
-    const skip = page.byText("Skip this step", "button");
-    check("journey", "the current step offers a skip", !!skip);
-    if (skip) {
-      const before = page.requests.length;
-      await page.click(skip);
-      await waitFor(() => page.requests.slice(before).some((r) => /POST \/api\/v1\/journey\/advance/.test(r)), { timeout: 8_000, label: "the skip to be posted" }).catch(() => {});
-      const posted = page.requests.slice(before).find((r) => /POST \/api\/v1\/journey\/advance/.test(r));
-      check("journey", "pressing skip posts the learner's own answer to the server", !!posted, page.requests.slice(before).join(" ; ") || "no request at all");
-      const after = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-      const preferences = (after.body?.stages ?? []).find((r) => r.id === "preferences");
-      check("journey", "and the skip is stored as skipped, not as a zero", preferences?.status === "skipped", JSON.stringify(after.body?.stages ?? null).slice(0, 200));
-      check("journey", "a skipped step is reported as not measured", (after.body?.not_measured ?? []).includes("preferences"), JSON.stringify(after.body?.not_measured ?? null));
-      check("journey", "and the path moves on to the next step", after.body?.stage === "games", String(after.body?.stage));
-      await waitFor(() => page.doc.querySelector('[data-testid="journey-card"]')?.getAttribute("data-stage") === "games", {
-        timeout: 8_000,
-        label: "the page to redraw with the server's answer",
-      }).catch(() => {});
-      const drawn = page.doc.querySelector('[data-testid="journey-card"]');
-      check(
-        "journey",
-        "the page redraws with the server's answer rather than its own guess",
-        drawn?.getAttribute("data-stage") === "games" && /Short mind games/.test(drawn?.textContent ?? ""),
-        (drawn?.textContent ?? "(no card)").replace(/\s+/g, " ").trim(),
-      );
-      // The gate: close that browser and come back. A second page, its own cookie jar seeded
-      // from this account, has to find the same step -- the point of recording the skip on the
-      // server rather than in the tab.
-      const resumed = await open("/journey", "journey", undefined, jar.getCookieStringSync(BASE));
-      await waitFor(() => resumed.doc.querySelector('[data-testid="journey-card"]')?.getAttribute("data-stage") === "games", { timeout: 15_000, label: "the resumed path" }).catch(() => {});
-      const resumedCard = resumed.doc.querySelector('[data-testid="journey-card"]');
-      check(
-        "journey",
-        "a learner who closes the browser and comes back resumes on the stored step",
-        resumedCard?.getAttribute("data-stage") === "games" && /Short mind games/.test(resumedCard?.textContent ?? ""),
-        `current=${resumedCard?.getAttribute("data-stage") ?? "(none)"}`,
-      );
-      closePage(resumed);
-    }
-    // The mind check stays reachable from the current-step card, even
-    // after the questions step itself has been skipped.
-    check("journey", "the mind check is reachable from the path", !!page.byText("Open mind check", "a"), page.text().slice(-200));
-    // Mobile: the shell has to work at a phone width. jsdom has no layout, so what can be
-    // checked here is that the page does not depend on a fixed desktop width to be usable —
-    // the real viewport check lives in tests-e2e/journey.mjs, which needs a browser.
-    check("journey", "the path is not laid out for one viewport only", page.find(".sidebar").length === 1 && page.find(".topbar").length === 1, "the drawer and its control are both in the document");
+    const card = () => page.doc.querySelector('[data-testid="journey-card"]');
+    await waitFor(() => card()?.getAttribute("data-stage") === "preferences", { timeout: 15_000, label: "the current journey card" });
+    const overview = page.find('[aria-label="Path overview"] h3').map((n) => n.textContent?.trim());
+    check("journey", "the current three-step overview and initial stage render", overview.join(" > ") === "Mind check > Choose a subject > First tailored lesson" && /A few questions/.test(page.text()), overview.join(" > "));
+    check("journey", "the current stage offers a real mind-check link and one skip", card()?.querySelector('a[href="/baseline"]')?.textContent?.includes("Open mind check") && page.find("button").filter((b) => /Skip this step/.test(b.textContent ?? "")).length === 1, JSON.stringify({ link: card()?.querySelector('a[href="/baseline"]')?.outerHTML ?? null, skips: page.find("button").filter((b) => /Skip this step/.test(b.textContent ?? "")).length }));
+    const before = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    check("journey", "the initial stage and frozen stage order come from the server", before.status === 200 && before.body?.stage === "preferences" && Array.isArray(before.body?.stages) && ["account", "preferences", "games", "subject", "subject_round", "snapshot", "first_lesson", "practice"].every((id, i) => before.body.stages[i]?.id === id), JSON.stringify({ status: before.status, stage: before.body?.stage, stages: before.body?.stages?.map((s) => s.id) }));
+    const requestStart = page.requests.length;
+    await page.click("Skip this step", "button");
+    await waitFor(() => card()?.getAttribute("data-stage") === "games", { timeout: 15_000, label: "the skipped stage to advance" });
+    check("journey", "skip posts journey advancement instead of changing only React state", page.requests.slice(requestStart).some((r) => r === "POST /api/v1/journey/advance"), page.requests.slice(requestStart).join(" ; "));
+    const after = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
+    const preferences = (after.body?.stages ?? []).find((r) => r.id === "preferences");
+    check("journey", "the skip is stored as skipped and advances to games", after.body?.stage === "games" && preferences?.status === "skipped", JSON.stringify({ stage: after.body?.stage, preferences }));
+    check("journey", "the skipped stage is reported as not measured", (after.body?.not_measured ?? []).includes("preferences"), JSON.stringify(after.body?.not_measured ?? null));
+    check("journey", "the page redraws with the server-owned games stage", card()?.getAttribute("data-stage") === "games" && /Short mind games/.test(page.text()), page.text().slice(0, 220));
+    const resumed = await open("/journey", "journey", undefined, jar.getCookieStringSync(BASE));
+    await waitFor(() => resumed.doc.querySelector('[data-testid="journey-card"]')?.getAttribute("data-stage") === "games", { timeout: 15_000, label: "the resumed journey" });
+    check("journey", "a fresh page resumes the stored games stage", /Short mind games/.test(resumed.text()) && !!resumed.doc.querySelector('[data-testid="journey-card"]'));
+    closePage(resumed);
+    check("journey", "the path keeps the responsive shell controls in the document", page.find(".sidebar").length === 1 && page.find(".topbar").length === 1, "the drawer and its control are both in the document");
     closePage(page);
   }
 
@@ -1004,13 +991,11 @@ async function main() {
     const me2 = await api("/api/v1/me", { headers: { cookie } });
     check("diagnose", "finishing placement marks the learner as placed, and that survives a reload", me2.status === 200 && me2.body.diagnostic_complete === true, JSON.stringify(me2.body).slice(0, 200));
     const landing = await open("/", "diagnose");
-    await waitFor(() => !/Checking the session/.test(landing.text()), { timeout: 10_000, label: "the landing page to read the session" });
-    // Home is status plus one primary action now, so the claim is asserted on the control
-    // itself: it offers to continue practising, and it no longer offers to place them again.
+    await waitFor(() => !landing.doc.querySelector(".opening-overlay") && !!landing.byText(/choose a subject/i, "a"), { timeout: 20_000, label: "the loaded landing page" });
     check(
       "diagnose",
-      "the landing page then offers practice instead of placing them again",
-      !!landing.byText(/continue practising/i) && !landing.byText(/start learning/i) && landing.find('a[href="/diagnose"]').length === 0,
+      "the landing page offers the next subject step instead of placing the learner again",
+      !!landing.byText(/choose a subject/i, "a") && landing.find('a[href="/diagnose"]').length === 0,
       landing.text().slice(0, 260),
     );
     closePage(landing);
@@ -1025,8 +1010,12 @@ async function main() {
     console.log("\n\x1b[1mlearn\x1b[0m");
     const cookie = jar.getCookieStringSync(BASE);
     const page = await open("/learn", "learn");
+    await waitFor(() => !!page.doc.querySelector("[data-learn-empty]"), { timeout: 20_000, label: "the no-subject practice state" });
+    check("learn", "practice without a subject offers an honest subject-choice state", !!page.doc.querySelector("[data-learn-empty]") && !!page.byText("Choose", "button") && !page.requests.some((r) => /GET \/api\/v1\/practice/.test(r)), page.text().slice(0, 220));
+    await preparePracticeSubject(cookie, csrf);
+    await page.reload();
     await waitFor(() => answerControl(page) || /placement|nothing due|no items|Start/i.test(page.text()), { timeout: 20_000, label: "practice to load" });
-    check("learn", "the plan asks for items, for active adaptations and for the review queue", ["practice", "adaptations/active", "review/due"].every((p) => page.requests.some((r) => r.includes(p))), page.requests.join(" ; ").slice(0, 220));
+    check("learn", "the plan asks for items, for active adaptations and for the review queue", ["practice", "adaptations/active", "review/due"].every((p) => page.requests.some((r) => r.includes(p))), page.requests.join(" ; ").slice(-400));
     check("learn", "practice is reachable and serves a question (or says honestly there is none)", !!answerControl(page) || /placement|nothing due|no items/i.test(page.text()), page.text().slice(0, 200));
     if (answerControl(page)) {
       check("learn", "no raw template placeholders reach the screen", !/\{[a-z]+\}/.test(page.text()), page.text().slice(0, 200));
@@ -1282,6 +1271,7 @@ async function main() {
       const pending = await api("/api/v1/adaptations/pending", { headers: { cookie } });
       proposals = pending.body.proposals ?? [];
     }
+    await preparePracticeSubject(cookie, hdr["x-csrf-token"]);
     return { email, cookie, hdr, sid, proposals };
   };
 
@@ -1374,7 +1364,10 @@ async function main() {
       const prefsAtAcceptTime = await prefsOf(accept.cookie);
       const ok = await page2.click("Yes, try it", "button");
       check("proposals", "the accept control is pressable", !ok.disabled, "the button was disabled");
-      await waitFor(() => /On\./i.test(page2.text()), { timeout: 15_000, label: "the confirmation" });
+      await waitFor(async () => {
+        const current = await activeOf(accept.cookie);
+        return current.active?.length > 0 && /On right now/i.test(page2.text()) && !/Nothing is applied/i.test(page2.text());
+      }, { timeout: 20_000, label: "the durable active-change confirmation" });
       const active = await activeOf(accept.cookie);
       const row = (active.active ?? [])[0];
       check("proposals", "saying yes is what turns an adaptation on", !!row, JSON.stringify(active).slice(0, 200));
@@ -1516,7 +1509,9 @@ async function main() {
     // section *and* the sidebar must offer every other one in plain words.
     const here = page.find('.sidebar-item[aria-current="page"]');
     check("progress", "the sidebar names the section it is standing on", here.length === 1 && /Progress/i.test(here[0]?.textContent ?? ""), here.map((el) => el.textContent?.trim()).join(" | ") || "(nothing marked)");
-    check("progress", "and offers every other section in plain words", ["Your path", "Practise", "Lessons", "Changes", "Review", "Progress", "Mind check", "Voice", "Settings"].every((l) => !!page.byText(l, ".sidebar-item")), page.find(".sidebar-item").map((el) => el.textContent?.trim()).join(" | ") || "(no sidebar)");
+    await page.click("More", "button");
+    await waitFor(() => !!page.doc.querySelector('[data-testid="sidebar-more-items"]'), { label: "the More navigation group" });
+    check("progress", "and offers every other section in plain words", ["Home", "Learn", "Review", "Progress", "Settings", "Your path", "Lessons", "Changes", "Mind check", "Evidence", "Study tools", "Voice"].every((l) => !!page.byText(l, ".sidebar-item")), page.find(".sidebar-item").map((el) => el.textContent?.trim()).join(" | ") || "(no sidebar)");
 
     /* ---- the same chart on mock data, where the numbers are known exactly ----
      * Live, this learner may have no mastery rows at all, and every check above is gated on
@@ -1739,43 +1734,19 @@ async function main() {
     console.log("\x1b[1mlesson\x1b[0m");
     const cookie = jar.getCookieStringSync(BASE);
     const page = await open(MOCK ? "/lesson?mock=1" : "/lesson", "lesson");
-    // the header is server-rendered, so waiting on it would race the fetch: wait for a card
-    const cardsOf = () => page.find("section").map((el) => el.textContent ?? "");
-    await waitFor(() => cardsOf().some((t) => /moments where you say what happens next/.test(t)), {
-      timeout: 15_000,
-      label: "a scene card with its prediction count",
-    });
-
+    await waitFor(() => /Your lessons|What do you want to learn\?/.test(page.text()), { timeout: 15_000, label: "the learner lesson page" });
+    const initialText = page.text();
+    check("lesson", "the initial page offers learner lessons without a demo scene wall", /Your lessons|What do you want to learn\?/.test(initialText) && !/Lesson scenes/.test(initialText), initialText.slice(0, 220));
     const list = await api("/api/v1/lessons", { cookie });
-    check("lesson", "the list the page shows is the list the API has", list.status === 200 && list.body.scenes.length > 0, JSON.stringify(list.body).slice(0, 120));
-    if (MOCK) {
-      // the point of ?mock=1 is a design review with no backend in the room, so the tell is what
-      // the browser did *not* do: one /api/v1 call means a component stopped consulting the mock
-      const apiCalls = page.requests.filter((r) => /\/api\/v1\//.test(r));
-      check(
-        "lesson",
-        "?mock=1 serves the lesson list without asking the backend for anything",
-        apiCalls.length === 0,
-        apiCalls.slice(0, 3).join(" | ") || "no /api/v1 requests from the lesson page",
-      );
-    }
+    check("lesson", "the scene catalogue answers with real scenes", list.status === 200 && list.body.scenes.length > 0, JSON.stringify(list.body).slice(0, 120));
     const first = list.body.scenes.find((s) => s.kind === "binary_search") ?? list.body.scenes[0];
-    const cardText = cardsOf().find((t) => t.includes(first.title.slice(0, 24)));
-    check("lesson", "a scene card says how many moments ask you to predict", /moments where you say what happens next/.test(cardText ?? ""), (cardText ?? "no card").slice(0, 160));
-    check("lesson", "the frame count on the card is the backend's, not a guess", (cardText ?? "").includes(`${first.frame_count} frames`), `${first.frame_count} vs ${(cardText ?? "").slice(0, 80)}`);
-    const unrendered = list.body.scenes.filter((s) => !s.has_renderer);
-    const cards = cardsOf();
-    check(
-      "lesson",
-      "a scene with no renderer in this build announces it on its own card",
-      unrendered.every((s) => cards.some((t) => t.includes(s.title.slice(0, 20)) && /no renderer/i.test(t))),
-      `${unrendered.length} unrenderable scene(s) in this database`,
-    );
-
-    await page.click("open", "button");
-    // the player, not the list: "say what happens next" is on the cards too, so a copy
-    // match would let every check below run against the screen the click left behind
-    await waitFor(() => page.byText("next →", "button"), { timeout: 15_000, label: "the player to replace the list" });
+    page.path = `/lesson?${MOCK ? "mock=1&" : ""}scene=${encodeURIComponent(first.id)}`;
+    await page.reload();
+    await waitFor(() => page.byText("next →", "button"), { timeout: 15_000, label: "the deep-linked player" });
+    if (MOCK) {
+      const apiCalls = page.requests.filter((r) => /\/api\/v1\//.test(r));
+      check("lesson", "?mock=1 opens the player without backend requests", apiCalls.length === 0, apiCalls.slice(0, 3).join(" | ") || "no /api/v1 requests from the lesson page");
+    }
     if (!MOCK) {
       const opened = page.requests.filter((r) => r.startsWith("POST /api/v1/lessons/open"));
       check("lesson", "opening a scene asks for a run once", opened.length === 1, page.requests.join(" | ").slice(0, 200));
@@ -1841,49 +1812,28 @@ async function main() {
     }
 
     if (MOCK) {
-      // the mock has no run store and no session, so nothing can come back after a reload. the
-      // honest claim is that the page still works and says nothing was saved.
       await page.reload();
-      await waitFor(() => cardsOf().length > 0, { timeout: 15_000, label: "the mock list to come back" });
-      const cards = cardsOf().join(" ");
-      check(
-        "lesson",
-        "mock mode saves nothing and does not pretend otherwise",
-        !/your variables|you stopped at frame/.test(cards),
-        "the mock list gained a derived or resumed row it cannot have stored",
-      );
+      await waitFor(() => page.byText("next →", "button"), { timeout: 15_000, label: "the mock player to reload" });
+      check("lesson", "mock mode reopens the player without claiming a saved resume", !/you stopped at frame|back at frame/.test(page.text()) && /frame \d+/.test(page.text()), page.text().slice(0, 180));
     } else {
-      // position is a row, not a component: reload and the card offers the same place back
       await page.click(page.byText("next →", "button"));
       await page.click(page.byText("next →", "button"));
+      const runsBeforeReload = await api("/api/v1/lessons/runs", { cookie });
+      const resumedRun = (runsBeforeReload.body.runs ?? [])[0] ?? {};
+      const resumedDetails = await api(`/api/v1/lessons/run/${encodeURIComponent(resumedRun.run_id)}`, { cookie });
+      const resumedSceneId = resumedDetails.body.scene?.id;
+      const claimed = Number(resumedRun.frame_index) + 1;
+      check("lesson", "the derived run has an owned scene and server frame to resume", resumedDetails.status === 200 && !!resumedSceneId && resumedSceneId !== first.id && Number.isFinite(claimed), JSON.stringify({ list: resumedRun, detailStatus: resumedDetails.status, scene_id: resumedSceneId }).slice(0, 240));
+      page.path = `/lesson?scene=${encodeURIComponent(resumedSceneId)}`;
       await page.reload();
-      await waitFor(() => cardsOf().some((t) => /your variables/.test(t)), { timeout: 15_000, label: "the derived scene in the list" });
-      const resumeLine = cardsOf().find((t) => /you stopped at frame/.test(t));
-      check("lesson", "a reload offers the frame you stopped on, from the database", /you stopped at frame \d+ of \d+/.test(resumeLine ?? ""), (resumeLine ?? "no resume line").slice(0, 160));
-      const myCard = cardsOf().find((t) => /\(your variables\)/.test(t));
-      check("lesson", "the scene you made is in your list, marked as yours", /your variables/.test(myCard ?? "") && /learner/.test(myCard ?? ""), (myCard ?? "no derived card").slice(0, 160));
-      await page.click(page.byText("resume", "button"));
-      await waitFor(() => /back at frame/.test(page.text()), { label: "the resume notice" });
-      check("lesson", "resuming says where it came from, in one sentence the learner can check", /back at frame \d+ of \d+/.test(page.text()) && /saved on the server/.test(page.text()), page.text().match(/back at frame[^.]*\./)?.[0] ?? "");
-
-      // and the end: a review that refuses to call itself a grade
+      await waitFor(() => /back at frame/.test(page.text()), { timeout: 15_000, label: "the deep-linked resume notice" });
+      check("lesson", "resuming names the exact frame stored on the server", page.text().includes(`back at frame ${claimed} of`) && /saved on the server/.test(page.text()), page.text().match(/back at frame[^.]*\./)?.[0] ?? "");
       await page.click("end & review", "button");
       await waitFor(() => /what you just did/.test(page.text()), { label: "the review" });
       check("lesson", "the review counts predictions before the answer, not accuracy as mastery", /before the machine confirmed them|no predictions, so there is nothing to compare/.test(page.text()), page.text().match(/you called[^.]*\./)?.[0] ?? "");
       const ev = await api("/api/v1/lessons/evidence", { cookie });
       check("lesson", "the run is in the learner's evidence, described in the API's own words", ev.status === 200 && ev.body.summary.runs >= 2, JSON.stringify(ev.body.summary).slice(0, 160));
       check("lesson", "and it is still not a mastery number", /not a mastery number/.test(JSON.stringify(ev.body)), "");
-      // what the card claimed and what the run row holds must be the same number, or the
-      // "saved on the server" sentence on screen is decoration
-      const runs = await api("/api/v1/lessons/runs", { cookie });
-      const newest = (runs.body.runs ?? [])[0] ?? {};
-      const claimed = Number((resumeLine ?? "").match(/you stopped at frame (\d+)/)?.[1] ?? NaN);
-      check(
-        "lesson",
-        "the frame the card offered is the frame the run row holds",
-        Number.isFinite(claimed) && newest.frame_index === claimed - 1,
-        `card said frame ${claimed}, run row says ${JSON.stringify(newest.frame_index)} (status ${newest.status})`,
-      );
       const progressWrites = page.requests.filter((r) => r.endsWith("/progress"));
       check("lesson", "a frame the player moved was written back, and a frame the gate held was not", progressWrites.length >= 1, progressWrites.join(" | ").slice(0, 160));
     }
@@ -1893,96 +1843,45 @@ async function main() {
     closePage(page);
   }
 
-  /* ---------------------------------------------------------------- subject ----
-   * §6's screen, driven against its `?mock=1` fixtures: the subjects router is wired into
-   * the app by the integrator (see docs/AUDIT.md), so until that merge the
-   * live API cannot answer these calls and asserting against it would test the wiring, not
-   * the screen. What is under test here is the screen itself: that the reason travels with
-   * the skill set, that "calculus" and "government" produce visibly different rounds, that
-   * skipped skills render as "not measured yet" with no number attached, and that a whole
-   * round can be clicked through to a subject map whose ladder positions are per sub-area.
-   * The backend half of every one of these claims is asserted in
-   * backend/tests/test_subjects.py against the real service and the real router. */
+  /* ---------------------------------------------------------------- subject ---- */
   if (run("subject")) {
     console.log("\n\x1b[1msubject\x1b[0m");
-    const page = await open("/subject?mock=1", "subject");
-    const input = await waitFor(() => page.find('input[aria-label="Topic"]')[0], { label: "the topic box" }).catch(() => null);
-    check("subject", "the screen opens on a topic box, not a dashboard", !!input, page.text().slice(0, 160));
-    if (input) {
-      page.type(input, "calculus");
-      await page.click("Find my subject");
-      await waitFor(() => /What we will check for Calculus/.test(page.text()), { label: "the calculus plan" }).catch(() => {});
-      const planText = page.text();
-      check("subject", "the plan says why these skills, in so many words", /Why these\?/.test(planText) && /leans hardest on symbol fluency/i.test(planText), planText.slice(0, 200));
-      check("subject", "calculus chooses symbol fluency, graph sense and checking, plus a cross-check", /Symbol fluency/.test(planText) && /Graph sense/.test(planText) && /cross-check/i.test(planText), planText.slice(0, 200));
-      check("subject", "the skills the round skips are already listed as not measured, before anything is answered", /not measured yet/i.test(planText) && /Number sense/.test(planText), planText.slice(0, 220));
-      check("subject", "nothing unmeasured is wearing a number", !/Number sense[^.]*\d+\s?%/.test(planText), planText.slice(0, 220));
-
-      // The other half of §6's gate, on a second page so the first round stays open:
-      // government must not look like calculus with the title changed.
-      const gov = await open("/subject?mock=1", "subject");
-      const govInput = await waitFor(() => gov.find('input[aria-label="Topic"]')[0], { label: "the government topic box" }).catch(() => null);
-      if (govInput) {
-        gov.type(govInput, "government and civics");
-        await gov.click("Find my subject");
-        await waitFor(() => /What we will check for Government/.test(gov.text()), { label: "the government plan" }).catch(() => {});
-        const govText = gov.text();
-        check("subject", "government chooses a visibly different set: sources, argument, the other side", /Source analysis/.test(govText) && /Supporting a claim with evidence/.test(govText) && /Seeing the other side/.test(govText), govText.slice(0, 200));
-        check("subject", "and does not borrow calculus's skills or its reason", !/Symbol fluency/.test(govText) && !/leans hardest on symbol fluency/i.test(govText), govText.slice(0, 200));
-      }
-      closePage(gov);
-
-      /* The round itself: skills, ladder, the pop-up lesson, then the map. The loop
-       * answers whatever is on offer — a choice when there is one, the lesson's
-       * continue button when there is not — and stops at the map or not at all. */
-      await page.click("Start the round");
-      let steps = 0;
-      let sawLadder = false;
-      let sawLesson = false;
-      for (; steps < 60; steps += 1) {
-        await sleep(120);
-        const now = page.text();
-        // The done stage's card is also titled "Your subject map"; the map itself is
-        // the one with a topic after the dash and another round on offer.
-        if (/Your subject map —/.test(now) && page.byText("Measure another topic", "button")) break;
-        if (/ladder item/i.test(now)) sawLadder = true;
-        if (/Pop-up lesson/i.test(now) || /about 90 seconds/i.test(now)) sawLesson = true;
-        const finish = page.byText("See my subject map", "button");
-        if (finish) {
-          await page.click(finish);
-          continue;
-        }
-        const read = page.byText("I have read it", "button");
-        if (read) {
-          await page.click(read);
-          continue;
-        }
-        const radio = page.find('[role="radio"]')[0];
-        if (radio) {
-          radio.click();
-          await sleep(30);
-          // Exact text, not a substring: the first option is labelled "The first
-          // answer", and a substring match presses that instead of the submit
-          // button forever — a stall that looks exactly like a dead control.
-          const answer = page.find("button").find((b) => (b.textContent ?? "").trim() === "Answer");
-          if (answer) await page.click(answer);
-          continue;
-        }
-        const done = page.byText("Finish early", "button");
-        if (done) await page.click(done);
-      }
-      const map = page.text();
-      check("subject", "the round can be clicked through to its end", /Your subject map/.test(map), `stopped after ${steps} answers: ${map.slice(0, 180)}`);
-      check("subject", "the ladder was one of the stages on the way", sawLadder, map.slice(0, 120));
-      check("subject", "and the pop-up lesson was served inside the round", sawLesson, map.slice(0, 120));
-      check("subject", "the map repeats the reason next to the skills it measured", /Why these skills\?/.test(map) && /leans hardest on/i.test(map), map.slice(0, 200));
-      check("subject", "skipped skills are on the map as not measured yet, not as failures", /not measured yet/i.test(map) && /not measured is not the same/i.test(map), map.slice(0, 220));
-      check("subject", "the ladder reports a position per sub-area, with unreached ones unmeasured rather than at rung 0", /Where the ladder settled/.test(map) && /sub-areas placed/.test(map), map.slice(0, 200));
-      check("subject", "every measured skill carries its answer count", /from \d+ answers?/.test(map), map.slice(0, 220));
-      check("subject", "no way of teaching is turned into a label for the learner", !/learning style|visual learner|auditory learner|kinesthetic/i.test(map), map.slice(0, 200));
-      check("subject", "no raw object reached the screen", !/[{[]\s*"\w+":/.test(map), map.slice(0, 160));
-      check("subject", "no uncaught error during the whole round", page.appErrors().length === 0, page.appErrors().slice(0, 2).join(" | ").slice(0, 200));
+    const own = new CookieJar();
+    const made = await createLearner({ display_name: "Probe Subject", as_guest: true });
+    if (made.status !== 200) throw new Error(`subject learner creation failed: ${made.status} ${JSON.stringify(made.body)}`);
+    for (const raw of made.headers.getSetCookie?.() ?? []) { try { own.setCookieSync(raw, BASE); } catch { /* not storable */ } }
+    const cookie = own.getCookieStringSync(BASE);
+    const page = await open("/journey?step=subject", "subject", undefined, cookie);
+    const input = await waitFor(() => page.find('input[aria-label="What do you want to learn?"]')[0], { timeout: 15_000, label: "the current subject chooser" });
+    check("subject", "the current journey opens with a real subject chooser", !!input && !!page.byText(/See the starting checks/i, "button"), page.text().slice(0, 200));
+    page.type(input, "calculus");
+    await page.click(page.byText(/See the starting checks/i, "button"));
+    const start = await waitFor(() => page.byText(/Start the checks/i, "button"), { timeout: 15_000, label: "the subject setup" });
+    check("subject", "choosing a subject reaches its authored setup", /Calculus/i.test(page.text()) && !!start, page.text().slice(0, 220));
+    for (const label of ["Confident", "Try it", "Exam"]) {
+      const choice = page.find(".tile-btn").find((el) => (el.textContent ?? "").includes(label));
+      check("subject", `setup offers ${label}`, !!choice);
+      if (choice) await page.click(choice);
     }
+    const planStart = page.requests.length;
+    await waitFor(() => { const b = page.byText(/Start the checks/i, "button"); return b && !b.disabled; }, { label: "the enabled plan action" });
+    await page.click(page.byText(/Start the checks/i, "button"));
+    await waitFor(() => !!page.doc.querySelector(".test-item"), { timeout: 20_000, label: "the sealed subject plan" });
+    check("subject", "starting checks requests exactly one plan", page.requests.slice(planStart).filter((r) => r === "POST /api/v1/tests/plan").length === 1, page.requests.slice(planStart).join(" ; "));
+    const overview = await waitFor(async () => {
+      const out = await api("/api/v1/learning/overview", { headers: { cookie } });
+      const active = (out.body.subjects ?? []).find((s) => s.id === out.body.active_subject_id);
+      return /Calculus/i.test(active?.title ?? "") ? active : null;
+    }, { timeout: 15_000, label: "the chosen subject to become active" });
+    const saved = await api(`/api/v1/tests/run?subject_id=${encodeURIComponent(overview.id)}`, { headers: { cookie } });
+    const items = saved.body.items ?? [];
+    check("subject", "the owned saved run contains a sealed four-item plan", saved.status === 200 && items.length >= 4 && !!saved.body.run_id && items.every((item) => item.grading_seal && !("answer" in item) && !("correct" in item)), JSON.stringify({ status: saved.status, run_id: saved.body.run_id, count: items.length }));
+    const firstId = page.doc.querySelector(".test-item")?.getAttribute("data-item-id");
+    check("subject", "the screen shows the saved run's current item", firstId === items[0]?.id, `${firstId} vs ${items[0]?.id}`);
+    await page.reload();
+    await waitFor(() => page.doc.querySelector(".test-item")?.getAttribute("data-item-id") === firstId, { timeout: 20_000, label: "the saved subject run to resume" });
+    check("subject", "reload resumes the same run without requesting a replacement plan", page.requests.filter((r) => r === "POST /api/v1/tests/plan").length === 1 && !!page.doc.querySelector(".test-item"), page.requests.filter((r) => /tests\/(plan|run)/.test(r)).join(" ; "));
+    check("subject", "no uncaught error occurs in the current subject flow", page.appErrors().length === 0, page.appErrors().join(" | ").slice(0, 200));
     closePage(page);
   }
 
@@ -2045,14 +1944,14 @@ async function main() {
     });
     const wallText = throttled.text();
     check("failures", "a throttled session read is a retry, not a sign-out wall",
-      !/Not signed in|sign in or start as a guest/i.test(wallText) && /checking who you are/i.test(wallText),
+      !/Not signed in|sign in or start as a guest/i.test(wallText) && /checking who you are|session could not be checked/i.test(wallText),
       `page said: ${wallText.slice(0, 180)}`);
     check("failures", "and the retry is something the learner can press",
       [...throttled.find("button")].some((b) => /retry|try again/i.test((b.textContent ?? "").trim())),
       [...throttled.find("button")].map((b) => (b.textContent ?? "").trim()).join(" / ").slice(0, 160));
     let recovered = false;
     try {
-      await waitFor(() => !/Still checking who you are/i.test(throttled.text()), {
+      await waitFor(() => !/Still checking who you are|checking who you are|session could not be checked/i.test(throttled.text()) && !throttled.doc.querySelector("[data-account-gate]") && /Practice|What do you want to learn/.test(throttled.text()), {
         timeout: 15_000, label: "the screen to find the learner again on its own",
       });
       recovered = true;
@@ -2179,36 +2078,23 @@ async function main() {
       }
     }
 
-    // The screen that reaches all of the above. Mock mode, because a rendered pack needs a topic
-    // with an authored kit and the fixtures are the recorded shapes.
+    // The deleted /subject pack panel is not restored. The current learner-facing
+    // content path is the first lesson, so prove its choice reaches the real grader.
     {
-      const page = await open("/subject?mock=1", "content");
-      await waitFor(() => /What we'd teach/.test(page.text()), { label: "the pack panel" });
-      const before = page.text();
-      check("content", "the subject screen offers the pack before it is asked for", !!page.byText("Show what we'd teach", "button"), page.text().slice(0, 140));
-      const packBox = page.find('input[aria-label="Pack topic"]')[0];
-      page.type(packBox, "calculus");
-      await sleep(120);
-      await page.click("Show what we'd teach", "button");
-      await waitFor(() => /Worked example/.test(page.text()), { label: "the variants" });
-      const text = page.text();
-      check("content", "the three variants arrive on the screen", /Written/.test(text) && /Visual/.test(text) && /Worked example/.test(text), text.slice(0, 200));
-      check("content", "the matched pair is on the screen with both legs", /Matched pair/.test(text) && /Leg A/.test(text) && /Leg B/.test(text), "");
-      check("content", "the pair says it is not matched on difficulty", /NOT matched on difficulty/.test(text), "");
-      check("content", "the hint ladder and the self-check arrive too", /Hints, in order/.test(text) && /Self-check/.test(text), "");
-      check("content", "no answer key is on the screen before answering", !/answer_spec/.test(text) && !/"correct_index"/.test(text), text.slice(0, 160));
-      // Answering is the point: the option is sent as text, and the verdict comes back graded.
-      const first = page.find("button").find((b) => /^\d+(\.\d+)?\s*(km\/h)?$/.test((b.textContent ?? "").trim()) || /^(8|9|4|5)$/.test((b.textContent ?? "").trim()));
-      if (first) {
-        await page.click(first);
-        await waitFor(() => /Right\.|Not yet\./.test(page.text()), { label: "the verdict" });
-        const after = page.text();
-        check("content", "answering a leg produces a verdict from the server", /Right\.|Not yet\./.test(after), after.slice(0, 200));
-        check("content", "the explanation only arrives once the learner has answered", /15 \/ 3 = 5/.test(before) === false, "");
-      } else {
-        check("content", "answering a leg produces a verdict from the server", false, "no option button was found");
-      }
-      closePage({ jar: page.jar });
+      const page = await open("/first-lesson", "content", undefined, jar.getCookieStringSync(BASE));
+      const topic = await waitFor(() => page.doc.querySelector('[data-testid="fl-topic"]'), { timeout: 15_000, label: "the current first-lesson writer" });
+      page.type(topic, "photosynthesis");
+      await page.click("Write my lesson", "button");
+      const concept = await waitFor(() => page.find('[data-testid="fl-concept"]').find((el) => /makes its own food/.test(el.textContent ?? "")), { timeout: 15_000, label: "the authored question concept" });
+      await page.click(concept);
+      const option = await waitFor(() => page.doc.querySelector('[data-testid="fl-option"]'), { timeout: 15_000, label: "the lesson question" }).catch((error) => { throw new Error(`${error.message} | ${visibleText(page).slice(-500)} | ${page.requests.slice(-12).join(" ; ")} | ${page.appErrors().join(" | ").slice(0, 300)}`); });
+      check("content", "the current lesson serves authored choices without showing the checked answer first", page.find('[data-testid="fl-option"]').length >= 2 && !/Checked answer:/.test(page.text()), page.text().slice(0, 220));
+      const before = page.requests.length;
+      await page.click(option);
+      await waitFor(() => /Not quite|Correct/.test(page.text()) && page.requests.slice(before).some((r) => r === "POST /api/v1/lesson/grade"), { timeout: 15_000, label: "the lesson grade" });
+      check("content", "answering the current lesson produces a server grade and visible verdict", page.requests.slice(before).filter((r) => r === "POST /api/v1/lesson/grade").length === 1 && /Not quite|Correct/.test(page.text()), page.requests.slice(before).join(" ; "));
+      check("content", "the lesson does not expose a raw grading object", !/answer_spec|correct_index|grading_seal/.test(page.text()), page.text().slice(-180));
+      closePage(page);
     }
     closePage({ jar });
   }
@@ -2218,16 +2104,27 @@ async function main() {
     const page = await open("/baseline", "baseline");
     await waitFor(() => /How would you like to meet a new idea/.test(page.text()), { label: "the format pick" });
     check("baseline", "opens on the format pick, not a game", page.find('[role="gridcell"]').length === 0, page.text().slice(0, 140));
-    const radios = page.find('[role="radio"]');
-    check("baseline", "the format pick is a radio group with the three stated options", radios.length === 3, `${radios.length} roles`);
+    const radios = page.find('[data-testid="format-option"]');
+    check("baseline", "the format pick is a labelled group with three pressed-state options", radios.length === 3 && radios.every((el) => el.getAttribute("aria-pressed") !== null) && !!page.doc.querySelector('[role="group"][aria-label="format preference"]'), `${radios.length} options`);
     check("baseline", "a preference screen asks for no coin wager", page.find(".baseline-coins").length === 0, String(page.find(".baseline-coins").length));
     check("baseline", "stopping is on screen from the first step", !!page.byText("Stop here", "button"), page.text().slice(0, 200));
 
-    await page.click("a written explanation", '[role="radio"]');
+    await page.click("a written explanation", '[data-testid="format-option"]');
     await waitFor(() => /How you work/.test(page.text()), { label: "the questions screen" });
     const qtext = page.text();
-    check("baseline", "the questions arrive in one sitting, not one per screen", /What are you learning this for\?/.test(qtext) && /How many days a week can you study\?/.test(qtext), qtext.slice(0, 160));
-    check("baseline", "every question says why it is asked", (qtext.match(/asked because it /g) ?? []).length >= 10, String((qtext.match(/asked because it /g) ?? []).length));
+    check("baseline", "the questions arrive one at a time with their own progress", /Question 1 of \d+/.test(qtext) && page.find('[data-testid="r3-question-prompt"]').length === 1 && !!page.doc.querySelector('[aria-label="questions progress"]'), qtext.slice(0, 180));
+    const seenQuestions = new Set();
+    let whyCount = 0;
+    for (let n = 0; n < 30; n += 1) {
+      const prompt = page.doc.querySelector('[data-testid="r3-question-prompt"]')?.textContent ?? "";
+      if (!prompt || seenQuestions.has(prompt)) break;
+      seenQuestions.add(prompt);
+      if (page.find("summary").some((el) => /why we ask/.test(el.textContent ?? "")) && /Asked because it /i.test(page.text())) whyCount += 1;
+      const next = page.byText(/^Next$/, "button");
+      if (!next) break;
+      await page.click(next);
+    }
+    check("baseline", "every question says why it is asked", seenQuestions.size >= 10 && whyCount === seenQuestions.size, `${whyCount}/${seenQuestions.size} questions with a reason`);
     check("baseline", "the questions are skippable", !!page.byText("Skip the questions", "button"), "");
 
     await page.click("Skip the questions", "button");
@@ -2319,49 +2216,16 @@ async function main() {
     // mock.ts), so this walks two steps of it rather than one static view.
     const mocked = await open("/baseline?mock=1", "baseline");
     await waitFor(() => /How would you like to meet a new idea/.test(mocked.text()), { label: "the mocked format pick" });
-    check("baseline", "?mock=1 opens the baseline without a backend", mocked.find('[role="radio"]').length === 3, mocked.text().slice(0, 140));
-    await mocked.click("a written explanation", '[role="radio"]');
+    check("baseline", "?mock=1 opens the baseline without a backend", mocked.find('[data-testid="format-option"]').length === 3, mocked.text().slice(0, 140));
+    await mocked.click("a written explanation", '[data-testid="format-option"]');
     await waitFor(() => /How you work/.test(mocked.text()), { label: "the mocked questions" });
     check("baseline", "the mock answers with the questions screen, not an error frame", /What are you learning this for\?/.test(mocked.text()), mocked.text().slice(0, 160));
     check("baseline", "and no uncaught error on the mocked walk", mocked.appErrors().length === 0, mocked.appErrors().join(" | ").slice(0, 160));
     closePage(mocked);
   }
 
-  /* ------------------------------------------------------- subject-outline ---- */
-  if (run("subject-outline")) {
-    console.log("\n\x1b[1msubject outline\x1b[0m");
-    const page = await open("/subject", "subject-outline");
-    await waitFor(() => !!page.doc.querySelector('input[aria-label="Subject"]'), { label: "subject form" });
-    page.type(page.doc.querySelector('input[aria-label="Subject"]'), "Mathematics");
-    page.type(page.doc.querySelector('input[aria-label="Specific topic"]'), "calculus");
-    await page.click("Preview outline", "button");
-    await waitFor(() => page.find('fieldset input[type="checkbox"]').length > 0, { timeout: 15000, label: "reviewable outline" });
-    check("subject-outline", "subject and optional topic lead to an outline before starting", !page.requests.some(r => r === "POST /api/v1/subjects/round"));
-    const checks = page.find('fieldset input[type="checkbox"]');
-    for (const box of checks) if (box.checked) await page.click(box);
-    check("subject-outline", "an empty selection cannot start a round", page.byText("Confirm outline and start", "button")?.disabled);
-    await page.click(checks[0]);
-    const selected = checks[0].value;
-    const comment = "This looks right; start with the first check.";
-    page.type(page.find("textarea")[0], comment);
-    await page.click("Confirm outline and start", "button");
-    await waitFor(() => /Your outline comments/.test(page.text()), { timeout: 15000, label: "confirmed round" });
-    const dash = await api("/api/v1/dashboard", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    const saved = dash.body.learning_activity.tests.find(row => row.href.startsWith("/subject?"));
-    check("subject-outline", "confirmed round appears in the learner's unfinished assessments", !!saved);
-    const id = new URL(saved.href, BASE).searchParams.get("run");
-    const record = await api(`/api/v1/subjects/round/${id}`, { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    check("subject-outline", "only the checked skill is included in the saved plan", record.body.plan.tested.length === 1 && record.body.plan.tested[0].id === selected);
-    check("subject-outline", "comments are saved on the server, not just in a textbox", record.body.plan.learner_review.comments === comment);
-    await page.click(page.doc.querySelector('.sidebar-item[href="/"]'));
-    await waitFor(() => !!page.doc.querySelector(`a[href="${saved.href}"]`), { label: "home resume link" });
-    const starts = page.requests.filter(r => r === "POST /api/v1/subjects/round").length;
-    await page.click(page.doc.querySelector(`a[href="${saved.href}"]`));
-    await waitFor(() => /Your outline comments/.test(page.text()) && page.text().includes(comment), { label: "resume reviewed outline" });
-    check("subject-outline", "resume keeps the saved outline without creating another round", page.requests.filter(r => r === "POST /api/v1/subjects/round").length === starts);
-    check("subject-outline", "no uncaught subject navigation errors", page.appErrors().length === 0, page.appErrors().join(" | "));
-    closePage(page);
-  }
+  /* The deleted /subject outline route is covered in its current form by the
+   * server-backed subject scenario above and tests-e2e/subject-resume.mjs. */
 
   /* ------------------------------------------------------------ navigation ---- */
   if (run("navigation")) {
@@ -2377,28 +2241,35 @@ async function main() {
       const fetch = win.fetch;
       win.fetch = async (input, init) => {
         const url = new URL(typeof input === "string" ? input : input.url ?? String(input), BASE);
-        if (delaySubject && url.pathname === "/subject") await subjectGate;
+        if (delaySubject && url.pathname === "/lesson") await subjectGate;
         return fetch(input, init);
       };
     });
     try {
-      await waitFor(() => page.find('[role="radio"]').length > 0 || /How you work/.test(page.text()),
+      await waitFor(() => page.find('[data-testid="format-option"]').length > 0 || /How you work|What we measured|What we noticed/.test(page.text()),
         { timeout: 15000, label: "baseline data" });
-      if (page.find('[role="radio"]').length) {
-        await page.click("a written explanation", '[role="radio"]');
+      if (page.find('[data-testid="format-option"]').length) {
+        await page.click("a written explanation", '[data-testid="format-option"]');
         await waitFor(() => /How you work/.test(page.text()), { label: "baseline questions saved" });
       }
+      const baselineResume = /What we measured|What we noticed/.test(page.text()) ? /What we measured|What we noticed/ : /How you work/;
       const sidebar = page.doc.querySelector("#adapt-sidebar");
       const document = page.doc;
       const sessionReads = () => page.requests.filter(r => r === "GET /api/v1/me").length;
       const readsBefore = sessionReads();
       const go = async path => {
-        await page.click(page.doc.querySelector(`.sidebar-item[href="${path}"]`));
+        let link = page.doc.querySelector(`.sidebar-item[href="${path}"]`);
+        if (!link) {
+          await page.click("More", "button");
+          await waitFor(() => page.doc.querySelector(`.sidebar-item[href="${path}"]`), { label: `More link to ${path}` });
+          link = page.doc.querySelector(`.sidebar-item[href="${path}"]`);
+        }
+        await page.click(link);
         await waitFor(() => page.doc.location.pathname === path &&
           page.doc.querySelector('.sidebar-item[aria-current="page"]')?.getAttribute("href") === path,
           { timeout: 15000, label: `client navigation to ${path}` });
       };
-      await page.click(page.doc.querySelector('.sidebar-item[href="/subject"]'));
+      await page.click(page.doc.querySelector('.sidebar-item[href="/lesson"]'));
       await waitFor(() => page.find(".navigation-pending").length || /Opening page/.test(page.text()),
         { label: "immediate route loading feedback" });
       check("navigation", "a cold sidebar click immediately shows loading feedback", true);
@@ -2411,13 +2282,15 @@ async function main() {
       check("navigation", "latest click wins over a slower previous navigation", page.doc.location.pathname === "/settings");
       check("navigation", "Settings reuses the shell session instead of refetching me", sessionReads() === readsBefore,
         `${readsBefore} → ${sessionReads()}`);
-      check("navigation", "page 11 is labelled consistently with the sidebar", /§ 11 · Settings/.test(page.text()));
-      await go("/subject");
-      await waitFor(() => /Pick a subject/.test(page.text()), { label: "subject screen" });
+      check("navigation", "Settings is labelled consistently with the sidebar", /Settings/.test(page.doc.querySelector('.sidebar-item[aria-current="page"]')?.textContent ?? "") && /Settings/.test(page.text()));
+      await page.click("More", "button");
+      await waitFor(() => !!page.doc.querySelector('[data-testid="sidebar-more-items"]'), { label: "More navigation" });
+      await go("/lesson");
+      await waitFor(() => /Your lessons|What do you want to learn/.test(page.text()), { label: "lesson screen" });
       await go("/settings");
       await go("/baseline");
-      await waitFor(() => /How you work/.test(page.text()), { label: "baseline resumes saved progress" });
-      check("navigation", "returning to 06 resumes the saved baseline step", /How you work/.test(page.text()));
+      await waitFor(() => baselineResume.test(page.text()), { label: "baseline resumes saved progress" });
+      check("navigation", "returning to 06 resumes the saved baseline step", baselineResume.test(page.text()));
       check("navigation", "switches preserve the document and shared sidebar", page.doc === document && page.doc.querySelector("#adapt-sidebar") === sidebar);
       check("navigation", "one main landmark and one skip-link target", page.find("main").length === 1 && page.find("#main-content").length === 1);
       check("navigation", "no stuck pending marker", page.find(".navigation-pending").length === 0);

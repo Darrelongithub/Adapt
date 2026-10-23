@@ -1,0 +1,290 @@
+
+> adapt-frontend@0.1.0 test:lib
+> node --test src/lib/*.test.mjs
+
+TAP version 13
+# Subtest: prose beats the machine code
+ok 1 - prose beats the machine code
+  ---
+  duration_ms: 1.750575
+  type: 'test'
+  ...
+# Subtest: a pacing refusal carries the wait
+ok 2 - a pacing refusal carries the wait
+  ---
+  duration_ms: 0.223477
+  type: 'test'
+  ...
+# Subtest: an unstructured error keeps its own message, and never comes back empty
+ok 3 - an unstructured error keeps its own message, and never comes back empty
+  ---
+  duration_ms: 0.133972
+  type: 'test'
+  ...
+# Subtest: a repeat inside the window is refused, and a fresh key is not
+ok 4 - a repeat inside the window is refused, and a fresh key is not
+  ---
+  duration_ms: 0.882439
+  type: 'test'
+  ...
+# Subtest: the window closes and the learner is allowed to repeat themselves
+ok 5 - the window closes and the learner is allowed to repeat themselves
+  ---
+  duration_ms: 0.198092
+  type: 'test'
+  ...
+# Subtest: forget() reopens a key -- a cleared box is not a repeat
+ok 6 - forget() reopens a key -- a cleared box is not a repeat
+  ---
+  duration_ms: 0.11282
+  type: 'test'
+  ...
+# Subtest: in-flight returns one answer and refuses the second caller
+ok 7 - in-flight returns one answer and refuses the second caller
+  ---
+  duration_ms: 0.202203
+  type: 'test'
+  ...
+# Subtest: share() gives a second click the first request's answer
+ok 8 - share() gives a second click the first request's answer
+  ---
+  duration_ms: 0.328615
+  type: 'test'
+  ...
+# Subtest: a rejected request still releases its slot
+ok 9 - a rejected request still releases its slot
+  ---
+  duration_ms: 0.382842
+  type: 'test'
+  ...
+# Subtest: debounce waits for the last call and cancel() drops it
+ok 10 - debounce waits for the last call and cancel() drops it
+  ---
+  duration_ms: 80.94956
+  type: 'test'
+  ...
+# Subtest: throttle runs on the leading edge and reports what it dropped
+ok 11 - throttle runs on the leading edge and reports what it dropped
+  ---
+  duration_ms: 0.295906
+  type: 'test'
+  ...
+# Subtest: the voice screen and the flow layer actually use the guards
+ok 12 - the voice screen and the flow layer actually use the guards
+  ---
+  duration_ms: 0.804918
+  type: 'test'
+  ...
+# Subtest: failed receipt links directly to its resumable recovery
+ok 13 - failed receipt links directly to its resumable recovery
+  ---
+  duration_ms: 8.172521
+  type: 'test'
+  ...
+# Subtest: missing checked content is a notice, not a made-up recovery
+ok 14 - missing checked content is a notice, not a made-up recovery
+  ---
+  duration_ms: 1.290513
+  type: 'test'
+  ...
+# Subtest: the fatigue break suggestion remains visible on the receipt
+ok 15 - the fatigue break suggestion remains visible on the receipt
+  ---
+  duration_ms: 0.71582
+  type: 'test'
+  ...
+# Subtest: demo evidence contains no invented measurements
+ok 16 - demo evidence contains no invented measurements
+  ---
+  duration_ms: 0.783757
+  type: 'test'
+  ...
+# Subtest: demo recovery refuses starts, resumes and answers honestly
+ok 17 - demo recovery refuses starts, resumes and answers honestly
+  ---
+  duration_ms: 0.336012
+  type: 'test'
+  ...
+# Subtest: raw n cannot conceal insufficient weighted evidence in the badge
+ok 18 - raw n cannot conceal insufficient weighted evidence in the badge
+  ---
+  duration_ms: 5.752589
+  type: 'test'
+  ...
+# Subtest: a method row prints range and observational source weight next to its number
+ok 19 - a method row prints range and observational source weight next to its number
+  ---
+  duration_ms: 2.06526
+  type: 'test'
+  ...
+# Subtest: adequately measured controlled data is not labelled early
+ok 20 - adequately measured controlled data is not labelled early
+  ---
+  duration_ms: 0.716644
+  type: 'test'
+  ...
+# Subtest: a pilot label remains visible even with adequate effective n
+ok 21 - a pilot label remains visible even with adequate effective n
+  ---
+  duration_ms: 0.641824
+  type: 'test'
+  ...
+# Subtest: missing measurements are unavailable, not invented zero-percent results
+ok 22 - missing measurements are unavailable, not invented zero-percent results
+  ---
+  duration_ms: 0.722807
+  type: 'test'
+  ...
+# Subtest: the frontend's stage ids are the backend's, in the backend's order
+ok 23 - the frontend's stage ids are the backend's, in the backend's order
+  ---
+  duration_ms: 1.587164
+  type: 'test'
+  ...
+# Subtest: every stage has learner-readable words and a route
+ok 24 - every stage has learner-readable words and a route
+  ---
+  duration_ms: 0.220168
+  type: 'test'
+  ...
+# Subtest: no step's own words name the machinery
+ok 25 - no step's own words name the machinery
+  ---
+  duration_ms: 0.816575
+  type: 'test'
+  ...
+# Subtest: a skip is behind you, and the bar counts it
+ok 26 - a skip is behind you, and the bar counts it
+  ---
+  duration_ms: 0.252694
+  type: 'test'
+  ...
+# Subtest: stated items do not show n=0
+ok 27 - stated items do not show n=0
+  ---
+  duration_ms: 0.768733
+  type: 'test'
+  ...
+# Subtest: demo profiles do not mention a profile version
+ok 28 - demo profiles do not mention a profile version
+  ---
+  duration_ms: 0.622956
+  type: 'test'
+  ...
+# Subtest: the onboarding exemption is gone: the old copy now fails on every route
+ok 29 - the onboarding exemption is gone: the old copy now fails on every route
+  ---
+  duration_ms: 0.469986
+  type: 'test'
+  ...
+# Subtest: the setup screen asks once: no developer panel and no duplicated question
+ok 30 - the setup screen asks once: no developer panel and no duplicated question
+  ---
+  duration_ms: 0.418302
+  type: 'test'
+  ...
+# Subtest: the journey shell and the sidebar both lead to the one path
+ok 31 - the journey shell and the sidebar both lead to the one path
+  ---
+  duration_ms: 0.587821
+  type: 'test'
+  ...
+# Subtest: status chip and home copy no longer use the old developer sentences
+ok 32 - status chip and home copy no longer use the old developer sentences
+  ---
+  duration_ms: 1.457467
+  type: 'test'
+  ...
+# Subtest: a signed-out privacy list is not called unread while it is loading or after it arrives
+ok 33 - a signed-out privacy list is not called unread while it is loading or after it arrives
+  ---
+  duration_ms: 0.389992
+  type: 'test'
+  ...
+# Subtest: the newest entry is the first one read back
+ok 34 - the newest entry is the first one read back
+  ---
+  duration_ms: 0.988969
+  type: 'test'
+  ...
+# Subtest: it cannot grow without bound over a long session
+ok 35 - it cannot grow without bound over a long session
+  ---
+  duration_ms: 0.844638
+  type: 'test'
+  ...
+# Subtest: an empty or whitespace entry is not an entry
+ok 36 - an empty or whitespace entry is not an entry
+  ---
+  duration_ms: 1.646251
+  type: 'test'
+  ...
+# Subtest: what is written is what is read back
+ok 37 - what is written is what is read back
+  ---
+  duration_ms: 0.342105
+  type: 'test'
+  ...
+# Subtest: a ledger that was never written reads as empty, not as an error
+ok 38 - a ledger that was never written reads as empty, not as an error
+  ---
+  duration_ms: 0.200474
+  type: 'test'
+  ...
+# Subtest: corrupt storage reads as an empty ledger
+ok 39 - corrupt storage reads as an empty ledger
+  ---
+  duration_ms: 0.281083
+  type: 'test'
+  ...
+# Subtest: a browser that refuses storage loses the ledger and nothing else
+ok 40 - a browser that refuses storage loses the ledger and nothing else
+  ---
+  duration_ms: 0.226333
+  type: 'test'
+  ...
+# Subtest: entries that survive a reload are the entries a learner can read back
+ok 41 - entries that survive a reload are the entries a learner can read back
+  ---
+  duration_ms: 0.139865
+  type: 'test'
+  ...
+# Subtest: every registered type has an instruction of at most 12 words and a hint
+ok 42 - every registered type has an instruction of at most 12 words and a hint
+  ---
+  duration_ms: 0.845764
+  type: 'test'
+  ...
+# Subtest: validatePlanItems keeps only registered types and numbers the items
+ok 43 - validatePlanItems keeps only registered types and numbers the items
+  ---
+  duration_ms: 0.255821
+  type: 'test'
+  ...
+# Subtest: validatePlanItems caps a plan at 8 items
+ok 44 - validatePlanItems caps a plan at 8 items
+  ---
+  duration_ms: 0.207851
+  type: 'test'
+  ...
+# Subtest: validatePlanItems rejects junk shapes without throwing
+ok 45 - validatePlanItems rejects junk shapes without throwing
+  ---
+  duration_ms: 0.58144
+  type: 'test'
+  ...
+# Subtest: splitList trims and drops empties; asInt rounds and falls back
+ok 46 - splitList trims and drops empties; asInt rounds and falls back
+  ---
+  duration_ms: 0.222987
+  type: 'test'
+  ...
+1..46
+# tests 46
+# suites 0
+# pass 46
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1762.690831

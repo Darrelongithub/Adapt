@@ -1,0 +1,9 @@
+{
+  "path": "/tmp/audit-data/adapt.db",
+  "header_is_plaintext_sqlite": false,
+  "opened_by_plain_sqlite": "refused: DatabaseError",
+  "opened_by_adapt": 50,
+  "driver": "sqlcipher",
+  "field_encryption": false,
+  "verdict": "file-level encryption active"
+}

@@ -1,7 +1,7 @@
 """Round 9: the check-in, the syllabus approval gate, and the scan cache.
 
 Revision ID: R9
-Revises: P5
+Revises: 0011
 
 Three additive tables, existence-aware like every revision since 0003 (a
 database built by ``create_all`` from this build already has them):
@@ -33,7 +33,7 @@ from adapt.crypto.fields import EncryptedJSON, EncryptedText
 import adapt.curriculum.models  # noqa: F401
 
 revision: str = "R9"
-down_revision: str | None = "P5"
+down_revision: str | None = "0011"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

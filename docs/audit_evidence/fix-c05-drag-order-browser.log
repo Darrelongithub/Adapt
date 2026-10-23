@@ -1,0 +1,37 @@
+{
+  "check": "C05",
+  "outcome": "PASS",
+  "run_id": "trun_2f73ac5482e9423f9293",
+  "order_before": [
+    "State the theorem",
+    "Derive a contradiction",
+    "Conclude p",
+    "Assume not p"
+  ],
+  "order_after_clicking_move_down": [
+    "Derive a contradiction",
+    "State the theorem",
+    "Conclude p",
+    "Assume not p"
+  ],
+  "verdict": "Not this time. Next one.",
+  "stored_evidence": {
+    "id": "tevi_83c1222340c74c748e4f",
+    "run_id": "trun_2f73ac5482e9423f9293",
+    "subject_id": "subject_c88f58177dda49da8cee",
+    "item_id": "item-2",
+    "item_type": "drag_order",
+    "skill": "ordering",
+    "difficulty": 4,
+    "answer": "Derive a contradiction>State the theorem>Conclude p>Assume not p",
+    "correct": false,
+    "ms": 728,
+    "hints_used": 0,
+    "observed_at": "2026-10-23T04:22:00.156925"
+  },
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "WebSocket connection to 'ws://127.0.0.1:3000/_next/webpack-hmr' failed: Connection closed before receiving a handshake response",
+    "WebSocket connection to 'ws://127.0.0.1:3000/_next/webpack-hmr' failed: Connection closed before receiving a handshake response"
+  ]
+}

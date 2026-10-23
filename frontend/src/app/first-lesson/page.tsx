@@ -20,7 +20,7 @@
  * different way every time it is asked.
  */
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import LessonRenderer, { type LessonValue } from "@/components/lesson/LessonRenderer";
 import { SceneStage, type SceneSpec } from "@/components/animator";
@@ -80,6 +80,8 @@ function FirstLesson() {
   const [topicMatch, setTopicMatch] = useState<boolean | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [moments, setMoments] = useState<Moment[]>([]);
+  const [reflections, setReflections] = useState<Record<number, string>>({});
+  const reflectionRestored = useRef(false);
   // The option id the learner is sitting on while the server grades it.
   const [selectedByItem, setSelectedByItem] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<string | null>(null);
@@ -111,6 +113,14 @@ function FirstLesson() {
   }, [voice?.enabled, scene?.template, moments.length]);
 
   useEffect(() => {
+    const row = journey.state?.stages.find(item => item.id === "first_lesson");
+    setLessonFinished(row?.status === "done");
+    if (!journey.state || reflectionRestored.current || !moments.length) return;
+    reflectionRestored.current = true;
+    if (row?.note) setReflections({ [moments[0].key]: row.note });
+  }, [journey.state, moments]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const wanted = (params.get("topic") ?? "").trim();
     const subjectId = (params.get("subject") ?? "").trim();
@@ -135,6 +145,7 @@ function FirstLesson() {
     setTopicMatch(null);
     setSource(null);
     setMoments([]);
+    setReflections({});
     const lower = wanted.toLowerCase();
     const template = lower.includes("triangle") || lower.includes("geometry") ? "angle-sum-of-triangle" : lower.includes("function") ? "function-plot" : lower.includes("graph") ? "graph-traversal" : lower.includes("language") || lower.includes("grammar") || lower.includes("kiswahili") ? "grammar-sentence-diagram" : "flowchart";
     setScene({ template, captions: [`A picture for ${wanted}.`, "Pause and predict the next step.", "Say what changed."], source: "simple" });
@@ -292,7 +303,12 @@ function FirstLesson() {
 
   async function finishLesson() {
     if (lessonFinished || journey.busy) return;
-    const out = await journey.advance("first_lesson", "done");
+    const reflection = moments.map(moment => reflections[moment.key]?.trim() ?? "").filter(Boolean).join("\n");
+    if (reflection.length > 200) {
+      setNotice("Shorten your reflections to 200 characters altogether before saving.");
+      return;
+    }
+    const out = await journey.advance("first_lesson", "done", reflection || undefined);
     if (out.ok) setLessonFinished(true);
   }
 
@@ -466,6 +482,8 @@ function FirstLesson() {
             verdicts={verdictByItem}
             selected={selectedByItem}
             disabled={busy || pending !== null}
+            reflection={reflections[moment.key] ?? ""}
+            onReflectionChange={text => setReflections(rows => ({ ...rows, [moment.key]: text }))}
             excludeQuestions={moments.slice(0, momentIndex).flatMap(row => row.value.blocks.flatMap(block =>
               (block.type === "check" || block.type === "predict") && typeof block.body === "object" && block.body.question ? [block.body.question] : []
             ))}

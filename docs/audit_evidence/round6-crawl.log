@@ -1,0 +1,5 @@
+round6 crawl: 4 crash(es):
+  [signed-out desktop] / gate-missing: no account gate on protected route
+  [signed-out desktop] /journey gate-missing: no account gate on protected route
+  [signed-out mobile] / gate-missing: no account gate on protected route
+  [signed-out mobile] /journey gate-missing: no account gate on protected route

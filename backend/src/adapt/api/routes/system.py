@@ -253,6 +253,7 @@ def privacy() -> dict[str, Any]:
             "see every event recorded about you",
             "see and delete anything you said at a check-in",
             "review and change the syllabus objectives you approved, at any time",
+            "download a JSON copy of your learner records",
         ],
     }
 

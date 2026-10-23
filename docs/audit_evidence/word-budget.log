@@ -1,0 +1,13 @@
+Word-count regression (round 3, Track R):
+
+  ok  Onboarding                    17/40 words  (3/3 sentences tracked)
+  ok  Journey                        7/40 words  (2/5 sentences tracked)
+         12 words: "Each step below runs in turn. You can stop after any step."  [not in source — check removed or moved]
+         9 words: "Sign in or continue as a guest to start."  [not in source — check removed or moved]
+         11 words: "still checking who you are — nothing here has been lost"  [not in source — check removed or moved]
+  ok  First lesson                  19/40 words  (5/7 sentences tracked)
+         6 words: "Right. Practice keeps it in rotation."  [not in source — check removed or moved]
+         12 words: "The lesson marked that one as wrong — see the explanation ab…"  [not in source — check removed or moved]
+  ok  Baseline                      29/40 words  (5/5 sentences tracked)
+
+Word-count regression: all first-run screens under the 40-word budget.

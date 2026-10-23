@@ -710,6 +710,9 @@ def uvicorn_command(settings, *, host: str, port: int) -> list[str]:
         # Request targets can carry private query parameters. Keep startup/error logs,
         # not raw per-request access logs (also incompatible with our log scrubber).
         "--no-access-log",
+        # Preserve the socket peer for adapt.security.middleware.client_ip; otherwise
+        # Uvicorn trusts localhost forwarding headers before our allowlist runs.
+        "--no-proxy-headers",
         "--host",
         host,
         "--port",

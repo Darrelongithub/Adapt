@@ -1,0 +1,38 @@
+{
+  "untrusted_host": {
+    "status": 400,
+    "body": {
+      "detail": "untrusted host",
+      "hint": "set ADAPT_EXTRA_ALLOWED_HOSTS or run the demo script"
+    }
+  },
+  "malformed_json": {
+    "status": 422,
+    "body": {
+      "error": "validation_failed",
+      "fields": [
+        {
+          "loc": [
+            "body",
+            "1"
+          ],
+          "msg": "JSON decode error",
+          "type": "json_invalid"
+        }
+      ]
+    }
+  },
+  "garbage_session": {
+    "status": 401,
+    "body": {
+      "detail": "not signed in"
+    }
+  },
+  "oversize_body": {
+    "status": 413,
+    "body": {
+      "detail": "request too large (limit 8388608 bytes)"
+    },
+    "sent_bytes": 8388609
+  }
+}

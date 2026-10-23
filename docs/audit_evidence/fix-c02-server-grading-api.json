@@ -1,0 +1,391 @@
+{
+  "check": "C02",
+  "plans": {
+    "geometry": {
+      "run_id": "trun_65431a20031c475f9819",
+      "types": [
+        "geometry_angle",
+        "geometry_congruent",
+        "geometry_angle",
+        "odd_one_out",
+        "pattern_pick"
+      ]
+    },
+    "discrete maths": {
+      "run_id": "trun_26f8d08858294743bcf9",
+      "types": [
+        "truth_table",
+        "venn_region",
+        "drag_order",
+        "pattern_pick",
+        "drag_match"
+      ]
+    },
+    "general": {
+      "run_id": "trun_e32ba2fc9bfc4b3ab054",
+      "types": [
+        "pattern_pick",
+        "odd_one_out",
+        "number_line",
+        "quick_recall",
+        "fraction_bar"
+      ]
+    },
+    "language": {
+      "run_id": "trun_e1697c9006da474e95a0",
+      "types": [
+        "cloze_word_bank",
+        "drag_match",
+        "quick_recall",
+        "cloze_word_bank",
+        "odd_one_out"
+      ]
+    },
+    "law": {
+      "run_id": "trun_82b422847d17470099f4",
+      "types": [
+        "drag_order",
+        "cloze_word_bank",
+        "drag_match",
+        "quick_recall"
+      ]
+    }
+  },
+  "items": [
+    {
+      "subject": "geometry",
+      "type": "geometry_angle",
+      "item_id": "item-0",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "angle",
+        "kind",
+        "options"
+      ]
+    },
+    {
+      "subject": "geometry",
+      "type": "geometry_congruent",
+      "item_id": "item-1",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "options",
+        "target_sides"
+      ]
+    },
+    {
+      "subject": "geometry",
+      "type": "geometry_angle",
+      "item_id": "item-2",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "angle",
+        "kind",
+        "options"
+      ]
+    },
+    {
+      "subject": "geometry",
+      "type": "odd_one_out",
+      "item_id": "item-3",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "options"
+      ]
+    },
+    {
+      "subject": "geometry",
+      "type": "pattern_pick",
+      "item_id": "item-4",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "options",
+        "sequence"
+      ]
+    },
+    {
+      "subject": "discrete maths",
+      "type": "truth_table",
+      "item_id": "item-0",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "columns",
+        "expression",
+        "rows"
+      ]
+    },
+    {
+      "subject": "discrete maths",
+      "type": "venn_region",
+      "item_id": "item-1",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "question",
+        "sets"
+      ]
+    },
+    {
+      "subject": "discrete maths",
+      "type": "drag_order",
+      "item_id": "item-2",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "items",
+        "prompt"
+      ]
+    },
+    {
+      "subject": "discrete maths",
+      "type": "pattern_pick",
+      "item_id": "item-3",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "options",
+        "sequence"
+      ]
+    },
+    {
+      "subject": "discrete maths",
+      "type": "drag_match",
+      "item_id": "item-4",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "left",
+        "right"
+      ]
+    },
+    {
+      "subject": "general",
+      "type": "pattern_pick",
+      "item_id": "item-0",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "options",
+        "sequence"
+      ]
+    },
+    {
+      "subject": "general",
+      "type": "odd_one_out",
+      "item_id": "item-1",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "options"
+      ]
+    },
+    {
+      "subject": "general",
+      "type": "number_line",
+      "item_id": "item-2",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "max",
+        "tolerance",
+        "value"
+      ]
+    },
+    {
+      "subject": "general",
+      "type": "quick_recall",
+      "item_id": "item-3",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "choices",
+        "seconds",
+        "shown"
+      ]
+    },
+    {
+      "subject": "general",
+      "type": "fraction_bar",
+      "item_id": "item-4",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "denominator",
+        "numerator",
+        "options"
+      ]
+    },
+    {
+      "subject": "language",
+      "type": "cloze_word_bank",
+      "item_id": "item-0",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "bank",
+        "sentence"
+      ]
+    },
+    {
+      "subject": "language",
+      "type": "drag_match",
+      "item_id": "item-1",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "left",
+        "right"
+      ]
+    },
+    {
+      "subject": "language",
+      "type": "quick_recall",
+      "item_id": "item-2",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "choices",
+        "seconds",
+        "shown"
+      ]
+    },
+    {
+      "subject": "language",
+      "type": "cloze_word_bank",
+      "item_id": "item-3",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "bank",
+        "sentence"
+      ]
+    },
+    {
+      "subject": "language",
+      "type": "odd_one_out",
+      "item_id": "item-4",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "options"
+      ]
+    },
+    {
+      "subject": "law",
+      "type": "drag_order",
+      "item_id": "item-0",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "items",
+        "prompt"
+      ]
+    },
+    {
+      "subject": "law",
+      "type": "cloze_word_bank",
+      "item_id": "item-1",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "bank",
+        "sentence"
+      ]
+    },
+    {
+      "subject": "law",
+      "type": "drag_match",
+      "item_id": "item-2",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "left",
+        "right"
+      ]
+    },
+    {
+      "subject": "law",
+      "type": "quick_recall",
+      "item_id": "item-3",
+      "status": 200,
+      "correct": false,
+      "stored": 1,
+      "replay_stored": 0,
+      "public_parameter_keys": [
+        "choices",
+        "seconds",
+        "shown"
+      ]
+    }
+  ],
+  "student_id": "stu_ab1d3c5304bc4953b258",
+  "unique_types": [
+    "cloze_word_bank",
+    "drag_match",
+    "drag_order",
+    "fraction_bar",
+    "geometry_angle",
+    "geometry_congruent",
+    "number_line",
+    "odd_one_out",
+    "pattern_pick",
+    "quick_recall",
+    "truth_table",
+    "venn_region"
+  ],
+  "unique_type_count": 12,
+  "answer_fields_absent": true,
+  "outcome": "PASS"
+}

@@ -1,0 +1,62 @@
+{
+  "steps": [
+    {
+      "name": "lesson reflection stores or submits learner input",
+      "expected": "answer is sent or saved rather than discarded",
+      "actual": {
+        "value": "Cells are alive and have specialised parts.",
+        "newPosts": []
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "name": "reteach adds a real alternative explanation",
+      "expected": "new moment with changed method/content",
+      "actual": {
+        "count": 2,
+        "headings": [
+          "Your lesson",
+          "Another way: plainer words"
+        ],
+        "last": "Another way: plainer words\nSimple lesson\n\nIn simpler words: Every living thing is made of cells; a cell is the smallest unit that is alive, and its parts have distinct jobs.\n\nThe key fact is that the cell is the smallest thing that counts as alive."
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "lesson completion saves",
+      "expected": "visible saved confirmation",
+      "actual": true,
+      "verdict": "PASS"
+    }
+  ],
+  "requests": [
+    {
+      "url": "http://127.0.0.1:3000/api/v1/content/prepare",
+      "body": {
+        "topic": "Biology"
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/lesson/plan",
+      "body": {
+        "topic": "Biology",
+        "concept_id": "bio_cell"
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/lesson/reteach",
+      "body": {
+        "topic": "Biology",
+        "concept_id": "bio_cell"
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/journey/advance",
+      "body": {
+        "stage": "first_lesson",
+        "status": "done"
+      }
+    }
+  ],
+  "console": []
+}

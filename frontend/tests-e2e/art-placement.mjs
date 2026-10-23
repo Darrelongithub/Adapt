@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 
 const base = process.env.ADAPT_BASE_URL || 'http://127.0.0.1:3000';
-const routes = ['/', '/baseline', '/learn', '/journey', '/lesson', '/review', '/progress', '/settings', '/proposals', '/evidence', '/voice', '/onboarding', '/diagnose', '/first-lesson'];
+const routes = ['/', '/baseline', '/learn', '/journey', '/lesson', '/review', '/progress', '/settings', '/proposals', '/evidence', '/voice', '/onboarding', '/diagnose', '/first-lesson', '/tools'];
 // Mirrors ART_MAP in src/components/shell/artMap.ts: one header illustration per page.
 const expected = new Map([
   ['/', ['study']], ['/baseline', ['brain']], ['/settings', ['gears']], ['/learn', ['classroom']],
@@ -18,19 +18,20 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
   const page = await browser.newPage({ viewport });
   await page.addInitScript(() => sessionStorage.setItem('adapt:seen-opening', '1'));
   await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
-  // First entry mints the guest learner automatically; the timed opening
-  // overlay hides the shell (and its art) until it fades, so wait it out.
-  await page.locator('[data-dashboard]').waitFor({ timeout: 20000 }).catch(() => {});
+  // The timed opening overlay hides the shell (and its art) until it
+  // fades, so wait it out before interacting with the entry card.
   await page.locator('.opening-overlay').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
-  const consent = page.locator('[data-account-gate] input[type="checkbox"]');
-  if (await consent.count()) {
-    await consent.first().check().catch(() => consent.first().click());
-    const agree = page.getByRole('button', { name: /Agree and continue/i });
-    if (await agree.count()) await agree.click();
-    await page.waitForTimeout(250);
-    const guest = page.getByRole('button', { name: /Continue as guest/i });
-    if (await guest.count()) await guest.click();
-    await page.waitForTimeout(500);
+  const gate = page.locator('[data-account-gate]');
+  if (await gate.count()) {
+    // Consent-first entry: save the (optional) analytics choice, then
+    // continue explicitly as guest. No learner exists before this.
+    const consent = page.locator('[data-account-gate] input[type="checkbox"]');
+    if (await consent.count()) await consent.first().check().catch(() => consent.first().click());
+    await page.getByRole('button', { name: /Save choice and continue|Agree and continue/i }).click();
+    await page.getByRole('button', { name: /Continue as guest/i }).click();
+    await gate.waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
+  } else {
+    await page.locator('[data-dashboard]').waitFor({ timeout: 20000 }).catch(() => {});
   }
   for (const route of routes) {
     await page.goto(`${base}${route}`, { waitUntil: 'domcontentloaded' });

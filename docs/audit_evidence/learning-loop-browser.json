@@ -1,0 +1,1513 @@
+{
+  "at": "2026-10-22T17:13:28.146Z",
+  "steps": [
+    {
+      "name": "real AI 1 proposal is pending, not applied",
+      "expected": "one pending and zero active",
+      "actual": {
+        "pending": 1,
+        "active": 0
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "apply without learner decision refused",
+      "expected": "422/403 and no active row",
+      "actual": {
+        "status": 422,
+        "body": {
+          "error": "validation_failed",
+          "fields": [
+            {
+              "loc": [
+                "body",
+                "decision"
+              ],
+              "msg": "Field required",
+              "type": "missing"
+            }
+          ]
+        },
+        "active": 0
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "apply without CSRF refused",
+      "expected": "403 and no active row",
+      "actual": {
+        "status": 403,
+        "body": {
+          "detail": "csrf token missing or wrong"
+        },
+        "active": 0
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "explicit UI decision applies change",
+      "expected": "one active row after clicking Yes, try it",
+      "actual": {
+        "active": [
+          {
+            "id": "act_b52b82f3d8644a9185e8",
+            "strategy": "difficulty_recalibration",
+            "label": "Meet the current level",
+            "action": "target_success_rate",
+            "payload": {
+              "target": 0.85
+            },
+            "source": "approved",
+            "active": true,
+            "started_at": "2026-10-22T17:13:28.864961",
+            "ends_at": null,
+            "ended_at": null,
+            "end_reason": null,
+            "proposal_id": "adp_28948fa40ab34147a019",
+            "effect_summary": null,
+            "effect_raw": null,
+            "effect_status": "not_measured",
+            "effect_measured": false,
+            "watch_metric": "accuracy",
+            "mechanism": "Items near the zone of proximal development maximise information per attempt and avoid both boredom and overload.",
+            "citations": [
+              "Vygotsky 1978",
+              "Kaplan 1974"
+            ]
+          }
+        ],
+        "waiting_for_effect": [
+          {
+            "id": "act_b52b82f3d8644a9185e8",
+            "strategy": "difficulty_recalibration",
+            "label": "Meet the current level",
+            "action": "target_success_rate",
+            "payload": {
+              "target": 0.85
+            },
+            "source": "approved",
+            "active": true,
+            "started_at": "2026-10-22T17:13:28.864961",
+            "ends_at": null,
+            "ended_at": null,
+            "end_reason": null,
+            "proposal_id": "adp_28948fa40ab34147a019",
+            "effect_summary": null,
+            "effect_raw": null,
+            "effect_status": "not_measured",
+            "effect_measured": false,
+            "watch_metric": "accuracy",
+            "mechanism": "Items near the zone of proximal development maximise information per attempt and avoid both boredom and overload.",
+            "citations": [
+              "Vygotsky 1978",
+              "Kaplan 1974"
+            ]
+          }
+        ]
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "revoke works immediately",
+      "expected": "zero active rows after turn off",
+      "actual": {
+        "active": [],
+        "waiting_for_effect": []
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "progress shows real estimates after evidence",
+      "expected": "topic estimates with observations, no fixed learner labels",
+      "actual": {
+        "text": "What the data says 30-day window · 9 answers · 37 logged interactions Reload Recompute estimates How the app sees you Topic estimates 8 topics with data Position is the estimate. The width of the line through it is the uncertainty around that estimate — wider means less evidence pins it down. The size of the circle is how many answers it rests on. A bigger circle is not a better score, it is a more confident one. Two topics are only comparable by position. Order of operations new · 1% ±19 · n=1 · early signal Decimals and place value new · 1% ±19 · n=1 · early signal Integer operations new · 1% ±19 · n=1 · early signal What a fraction means gapped · 13% ±26 · n=2 · early signal Equivalent fractions proficient · 91% ±22 · n=1 · early signal Negative numbers proficient · 91% ±22 · n=1 · early signal Area and perimeter proficient · 91% ±22 · n=1 · early signal Mean, median and range proficient · 91% ±22 · n=1 · early signal new / gapped developing proficient mastered Shading is the app’s own bands and is neutral on purpose: this is a position with an interval around it, not a grade. A lane with no line through it is a topic the server sent no interval for, and the table says so rather than drawing one up. Estimates by topic — the numbers behind the chart above Topic Band Estimate Uncertainty Answers Next review Order of operations new 1% ± 19 pts (0%–38%) n=1 EARLY SIGNAL — Decimals and place value new 1% ± 19 pts (0%–38%) n=1 EARLY SIGNAL — Integer operations new 1% ± 19 pts (0%–38%) n=1 EARLY SIGNAL — What a fraction means gapped 13% ± 26 pts (0%–53%) n=2 EARLY SIGNAL — Equivalent fractions proficient 91% ± 22 pts (56%–100%) n=1 EARLY SIGNAL — Negative numbers proficient 91% ± 22 pts (56%–100%) n=1 EARLY SIGNAL — Area and perimeter proficient 91% ± 22 pts (56%–100%) n=1 EARLY SIGNAL — Mean, median and range proficient 91% ± 22 pts (56%–100%) n=1 EARLY SIGNAL — PROFICIENT: 4 NEW: 4 Which teaching is working for you actual vs expected, never raw marks Explanation first n=1 EARLY SIGNAL expected 31% · actual 100% · +69 points against expectation range -21 to 69 points · weighted n=0.4 observational · weight 0.4 · n=1 early signal: Actual minus predicted success across all topics; associations, not proof. Each method is compared with what your earlier answers suggested you would get on those very questions, so a method that met harder material is not punished for it. Under 8 observations it is called an early signal, and it stays one until there are enough to say otherwise. Test evidence 0 rows No checks yet. Your starting checks will show here. Every check records the item type, skill, response time, and hints used so your starting plan rests on real evidence. Last 7 days answers 9 mean score 0.56 hints opened 0 median seconds per question — attempts 9 events 37 evidence 1 hypotheses 1 proposals 1 retention checks 0 sessions 2 Time on a question is not a measure of effort and is never scored. It is here because a pattern in it is sometimes a sign of what to change, and you should be able to see the same number the proposal was built from. Blocking prerequisites from the topic graph What a fraction means is ahead of Integer operations · gap 0.98 Multiplying and dividing fractions is ahead of What a fraction means · gap 0.98 Decimals and place value is ahead of What a fraction means · gap 0.98 Percentages of quantities is ahead of Decimals and place value · gap 0.98 Order of operations is ahead of Integer operations · gap 0.98 Indices and powers is ahead of Integer operations · gap 0.98 Standard form is ahead of Decimals and place value · gap 0.98 Converting units is ahead of Decimals and place value · gap 0.98 Probability as a fraction is ahead of What a fraction means · gap 0.98 Collecting like terms is ahead of Order of operations · gap 0.78 The planner is asked to teach the blocker first. When it does, the change is recorded in the plan’s own path so you can check whether it actually happened. Hypotheses about how you learn not diagnoses Your recent success rate is 50%; the range where corrections actually stick is around 0.78. One explanation that fits: the current difficulty is too hard. ACTIVE no disproof written for this one, so treat it loosely Your story session 2 attempt 9 observation 1 hypothesis 1 proposal 1 snapshot 1 adaptation 1 2 session(s), 9 scored attempt(s) (5 correct). AI 1 raised 1 adaptation proposal(s); 0 were approved and are shaping teaching now. Test Diagnostic session started — a working session Test Missed: Integer operations — what the learner did Test Missed: What a fraction means — what the learner did Test Missed: Order of operations — what the learner did Test Missed: Decimals and place value — what the learner did Test Answered correctly: Mean, median and range — what the learner did Test Answered correctly: Area and perimeter — what the learner did Test Answered correctly: Equivalent fractions — what the learner did Test Answered correctly: Negative numbers — what the learner ",
+        "mastery": [
+          {
+            "topic_id": "top_92a3735f985c4772bf9b",
+            "title": "Order of operations",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.550331",
+            "stale": false
+          },
+          {
+            "topic_id": "top_b930364a9cc34841b419",
+            "title": "Decimals and place value",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.615923",
+            "stale": false
+          },
+          {
+            "topic_id": "top_b9a73f0f04004ef68bd0",
+            "title": "Integer operations",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.406598",
+            "stale": false
+          },
+          {
+            "topic_id": "top_acc81d340ec6460fb6fa",
+            "title": "What a fraction means",
+            "p_know": 0.133,
+            "band": "gapped",
+            "observations": 2,
+            "correct": 1,
+            "ci": [
+              0.001,
+              0.529
+            ],
+            "n": 2,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:47.303815",
+            "stale": false
+          },
+          {
+            "topic_id": "top_6cfb191f1e5e4f5c9a8d",
+            "title": "Equivalent fractions",
+            "p_know": 0.911,
+            "band": "proficient",
+            "observations": 1,
+            "correct": 1,
+            "ci": [
+              0.555,
+              0.999
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.820904",
+            "stale": false
+          },
+          {
+            "topic_id": "top_b449f78f5f364eab908e",
+            "title": "Negative numbers",
+            "p_know": 0.911,
+            "band": "proficient",
+            "observations": 1,
+            "correct": 1,
+            "ci": [
+              0.555,
+              0.999
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.890984",
+            "stale": false
+          },
+          {
+            "topic_id": "top_cad64ab13367494ba1a9",
+            "title": "Area and perimeter",
+            "p_know": 0.911,
+            "band": "proficient",
+            "observations": 1,
+            "correct": 1,
+            "ci": [
+              0.555,
+              0.999
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.750973",
+            "stale": false
+          },
+          {
+            "topic_id": "top_ccf3ea0d4e5744e1af7b",
+            "title": "Mean, median and range",
+            "p_know": 0.911,
+            "band": "proficient",
+            "observations": 1,
+            "correct": 1,
+            "ci": [
+              0.555,
+              0.999
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.680611",
+            "stale": false
+          }
+        ]
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "evidence page is backed by real report",
+      "expected": "HTTP report plus non-empty real UI",
+      "actual": {
+        "text": "Preference and performance What you asked for is a preference, not a measurement. Here is what your own answers suggest across all topics. Back to progress What you chose, next to what happened Insufficient evidence to compare your preference with performance. We need at least two methods with eight effective observations each. Actual minus predicted success across all topics; associations, not proof. Explanation first INSUFFICIENT EVIDENCE Actual 100% · expected 31% Difference 69 points · range -21 to 69 n=1 · weighted n=0.4 observational · source weight 0.4 · n=1 · weighted n=0.4 Strategy estimates segmented text · posterior mean 58% · range 6%–100% · n=1 These estimates guide the next suggestion, not a permanent change. Lasting changes still need your approval. Understand a missed question Check the direct prerequisite, consider tiredness, then try the same idea another way with a matched question. If a checked pair is unavailable, we say so rather than inventing a comparison. Failed attempt receipt ID Check this attempt Resume saved check",
+        "report": {
+          "excluded_n": 0,
+          "attributed_elsewhere_n": 0,
+          "format_comparable": true,
+          "methods": [
+            {
+              "method": "explanation",
+              "label": "Explanation first",
+              "n": 1,
+              "effective_n": 0.4,
+              "actual": 1,
+              "expected": 0.309,
+              "residual": 0.691,
+              "ci": [
+                -0.214,
+                0.691
+              ],
+              "sources": [
+                {
+                  "source": "observational",
+                  "n": 1,
+                  "weight": 0.4,
+                  "effective_n": 0.4
+                }
+              ],
+              "formats": [
+                "mcq"
+              ],
+              "evidence": "insufficient evidence"
+            }
+          ],
+          "strategies": [
+            {
+              "strategy": "segmented_text",
+              "n": 1,
+              "p_helps": 0.583,
+              "ci": [
+                0.059,
+                1
+              ],
+              "mean_lift": 0.6914,
+              "band": "provisional"
+            }
+          ],
+          "note": "Actual minus predicted success across all topics; associations, not proof.",
+          "min_effective_n": 8,
+          "preference_vs_performance": null
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "review answer updates schedule",
+      "expected": "due item is rated and next due changes",
+      "actual": {
+        "before": {
+          "topic_id": "top_acc81d340ec6460fb6fa",
+          "title": "What a fraction means",
+          "due_at": "2026-10-22T17:28:52.033323",
+          "overdue": false,
+          "half_life_hours": 1.14,
+          "expected_recall_at_due": 0.85,
+          "reps": 2,
+          "lapses": 1
+        },
+        "checkBefore": {
+          "topic_id": "top_acc81d340ec6460fb6fa",
+          "title": "What a fraction means",
+          "question": "Last time you worked on What a fraction means. Without looking anything up: A pizza is cut into 8 equal slices and 3 are eaten. What fraction is left?",
+          "rationale": "Forgetting curve: projected recall is about 99% after 1 hours. Checking here tests the memory at its most informative point.",
+          "lag_hours": 0.01,
+          "expected_recall": 0.992,
+          "grounded_item_id": "itm_fractions_intro_00",
+          "source": "rules",
+          "notes": "what a good answer covers arrives with with_notes=1, after you have answered"
+        },
+        "afterCount": 8,
+        "beforeCount": 8,
+        "after": {
+          "topic_id": "top_acc81d340ec6460fb6fa",
+          "title": "What a fraction means",
+          "due_at": "2026-10-22T17:28:15.352704",
+          "overdue": false,
+          "half_life_hours": 1.04,
+          "expected_recall_at_due": 0.85,
+          "reps": 3,
+          "lapses": 1
+        }
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "name": "dashboard counts match real data and no demo subjects",
+      "expected": "0 chosen subjects and API-backed due/change counts",
+      "actual": {
+        "text": "Hi Audit Loop, ready to learn?Pick up where you left off.Choose a subjectAdd a subject0Subjects0Active8Due0ChangesContinue learningAdd a subjectNothing chosen yet.Choose your first subject",
+        "overview": {
+          "active_subject_id": null,
+          "subjects": [],
+          "due": {
+            "count": 8
+          },
+          "proposals": {
+            "count": 0
+          }
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "returning account retains learning data",
+      "expected": "progress still visible after sign out and sign in",
+      "actual": {
+        "persisted": true
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "console": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    }
+  ],
+  "api": {
+    "login": {
+      "status": 200,
+      "body": {
+        "student_id": "stu_e15cb1098d7440e6b469",
+        "display_name": "Audit Loop",
+        "role": "student",
+        "onboarding_complete": true,
+        "diagnostic_complete": true,
+        "baseline_started": false,
+        "voice_enabled": false,
+        "voice_gender": "female",
+        "language": "en",
+        "consent_analytics": true,
+        "consent_share_with_ai": false,
+        "sessions": 2,
+        "preferences": {
+          "goal": "GCSE maths, higher tier",
+          "session_minutes": 15,
+          "max_explanation_words": 35,
+          "push_me": true
+        },
+        "profile_taken_at": "2026-10-22T17:12:47.003057",
+        "csrf_token": "zOhjvvvjHFB0hcdPezYdYaPA7lXq4b9p",
+        "expires_at": "2026-10-23T05:13:28.247633",
+        "mode": "local",
+        "created": false
+      }
+    },
+    "before": {
+      "pending": {
+        "status": 200,
+        "body": {
+          "proposals": [
+            {
+              "id": "adp_28948fa40ab34147a019",
+              "student_id": "stu_e15cb1098d7440e6b469",
+              "strategy": "difficulty_recalibration",
+              "strategy_label": "Meet the current level",
+              "what_it_does": "Shift item difficulty toward the point where expected success is about 70% to 85%.",
+              "citations": [
+                {
+                  "ref": "Vygotsky 1978",
+                  "claim": "Zone of proximal development (qualitative, but the target band matches success rate data)."
+                },
+                {
+                  "ref": "Kaplan 1974",
+                  "claim": "Optimal discrepancy/incongruity produces maximal learning per exposure."
+                }
+              ],
+              "action": "target_success_rate",
+              "action_payload": {
+                "target": 0.85
+              },
+              "facts": "Your recent success rate is 50%; the range where corrections actually stick is around 0.78. One explanation that fits: the current difficulty is too hard.",
+              "pattern": "This is the first time accuracy has pointed this way, so treat it as provisional - a single run of answers can be a bad hour.",
+              "hypothesis": "Items near the edge of current ability carry the most information per attempt.",
+              "caveat": "Other explanations we cannot rule out: a low rate can also mean careless speed rather than overload",
+              "alternatives": [
+                {
+                  "explanation": "a low rate can also mean careless speed rather than overload"
+                }
+              ],
+              "change": "Shift item difficulty toward the point where expected success is about 70% to 85%. Not a reward schedule: diagnostic and retention probes stay at their own difficulty.",
+              "ask": "Want me to try that? You can say no, or change it — I will not change how you learn without asking.",
+              "expected_effect": "We will watch accuracy over the next several items and compare it with how you have been doing. If accuracy does not move toward the band after recalibration, the difficulty was not the constraint.",
+              "review_metric": "accuracy",
+              "review_window": {
+                "kind": "next_items",
+                "metric": "accuracy",
+                "min_items": 6,
+                "max_items": 14
+              },
+              "review_window_text": "your next 6-14 answers",
+              "status": "pending",
+              "student_note": null,
+              "modifications": null,
+              "created_at": "2026-10-22T17:12:46.986388",
+              "decided_at": null,
+              "baseline": null,
+              "outcome": null,
+              "evaluation_status": null,
+              "hypothesis_ref": null,
+              "evidence_ids": [
+                "evi_41e445a5ca694185ae19"
+              ]
+            }
+          ],
+          "explain": "Each row separates what was observed from what we think it means. Nothing here has been applied. Saying no is recorded too, and stops us asking again tomorrow."
+        }
+      },
+      "active": {
+        "status": 200,
+        "body": {
+          "active": [],
+          "waiting_for_effect": []
+        }
+      }
+    },
+    "noDecision": {
+      "response": {
+        "status": 422,
+        "body": {
+          "error": "validation_failed",
+          "fields": [
+            {
+              "loc": [
+                "body",
+                "decision"
+              ],
+              "msg": "Field required",
+              "type": "missing"
+            }
+          ]
+        }
+      },
+      "active": {
+        "status": 200,
+        "body": {
+          "active": [],
+          "waiting_for_effect": []
+        }
+      }
+    },
+    "noCsrf": {
+      "response": {
+        "status": 403,
+        "body": {
+          "detail": "csrf token missing or wrong"
+        }
+      },
+      "active": {
+        "status": 200,
+        "body": {
+          "active": [],
+          "waiting_for_effect": []
+        }
+      }
+    },
+    "afterUiAccept": {
+      "status": 200,
+      "body": {
+        "active": [
+          {
+            "id": "act_b52b82f3d8644a9185e8",
+            "strategy": "difficulty_recalibration",
+            "label": "Meet the current level",
+            "action": "target_success_rate",
+            "payload": {
+              "target": 0.85
+            },
+            "source": "approved",
+            "active": true,
+            "started_at": "2026-10-22T17:13:28.864961",
+            "ends_at": null,
+            "ended_at": null,
+            "end_reason": null,
+            "proposal_id": "adp_28948fa40ab34147a019",
+            "effect_summary": null,
+            "effect_raw": null,
+            "effect_status": "not_measured",
+            "effect_measured": false,
+            "watch_metric": "accuracy",
+            "mechanism": "Items near the zone of proximal development maximise information per attempt and avoid both boredom and overload.",
+            "citations": [
+              "Vygotsky 1978",
+              "Kaplan 1974"
+            ]
+          }
+        ],
+        "waiting_for_effect": [
+          {
+            "id": "act_b52b82f3d8644a9185e8",
+            "strategy": "difficulty_recalibration",
+            "label": "Meet the current level",
+            "action": "target_success_rate",
+            "payload": {
+              "target": 0.85
+            },
+            "source": "approved",
+            "active": true,
+            "started_at": "2026-10-22T17:13:28.864961",
+            "ends_at": null,
+            "ended_at": null,
+            "end_reason": null,
+            "proposal_id": "adp_28948fa40ab34147a019",
+            "effect_summary": null,
+            "effect_raw": null,
+            "effect_status": "not_measured",
+            "effect_measured": false,
+            "watch_metric": "accuracy",
+            "mechanism": "Items near the zone of proximal development maximise information per attempt and avoid both boredom and overload.",
+            "citations": [
+              "Vygotsky 1978",
+              "Kaplan 1974"
+            ]
+          }
+        ]
+      }
+    },
+    "afterUiRevoke": {
+      "status": 200,
+      "body": {
+        "active": [],
+        "waiting_for_effect": []
+      }
+    },
+    "dashboard": {
+      "status": 200,
+      "body": {
+        "student_id": "stu_e15cb1098d7440e6b469",
+        "generated_at": "2026-10-22T17:13:32.646469",
+        "profile_taken_at": "2026-10-22T17:12:47.003057",
+        "mastery": [
+          {
+            "topic_id": "top_92a3735f985c4772bf9b",
+            "title": "Order of operations",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.550331",
+            "stale": false
+          },
+          {
+            "topic_id": "top_b930364a9cc34841b419",
+            "title": "Decimals and place value",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.615923",
+            "stale": false
+          },
+          {
+            "topic_id": "top_b9a73f0f04004ef68bd0",
+            "title": "Integer operations",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.406598",
+            "stale": false
+          },
+          {
+            "topic_id": "top_acc81d340ec6460fb6fa",
+            "title": "What a fraction means",
+            "p_know": 0.133,
+            "band": "gapped",
+            "observations": 2,
+            "correct": 1,
+            "ci": [
+              0.001,
+              0.529
+            ],
+            "n": 2,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:47.303815",
+            "stale": false
+          },
+          {
+            "topic_id": "top_6cfb191f1e5e4f5c9a8d",
+            "title": "Equivalent fractions",
+            "p_know": 0.911,
+            "band": "proficient",
+            "observations": 1,
+            "correct": 1,
+            "ci": [
+              0.555,
+              0.999
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.820904",
+            "stale": false
+          },
+          {
+            "topic_id": "top_b449f78f5f364eab908e",
+            "title": "Negative numbers",
+            "p_know": 0.911,
+            "band": "proficient",
+            "observations": 1,
+            "correct": 1,
+            "ci": [
+              0.555,
+              0.999
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.890984",
+            "stale": false
+          },
+          {
+            "topic_id": "top_cad64ab13367494ba1a9",
+            "title": "Area and perimeter",
+            "p_know": 0.911,
+            "band": "proficient",
+            "observations": 1,
+            "correct": 1,
+            "ci": [
+              0.555,
+              0.999
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.750973",
+            "stale": false
+          },
+          {
+            "topic_id": "top_ccf3ea0d4e5744e1af7b",
+            "title": "Mean, median and range",
+            "p_know": 0.911,
+            "band": "proficient",
+            "observations": 1,
+            "correct": 1,
+            "ci": [
+              0.555,
+              0.999
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.680611",
+            "stale": false
+          }
+        ],
+        "learning_activity": {
+          "lessons": [],
+          "tests": []
+        },
+        "band_summary": {
+          "proficient": 4,
+          "new": 4
+        },
+        "weakest": [
+          {
+            "topic_id": "top_92a3735f985c4772bf9b",
+            "title": "Order of operations",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.550331",
+            "stale": false
+          },
+          {
+            "topic_id": "top_b930364a9cc34841b419",
+            "title": "Decimals and place value",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.615923",
+            "stale": false
+          },
+          {
+            "topic_id": "top_b9a73f0f04004ef68bd0",
+            "title": "Integer operations",
+            "p_know": 0.013,
+            "band": "new",
+            "observations": 1,
+            "correct": 0,
+            "ci": [
+              0.001,
+              0.38
+            ],
+            "n": 1,
+            "evidence": "early signal",
+            "half_life_hours": null,
+            "last_practice": "2026-10-22T17:12:46.406598",
+            "stale": false
+          }
+        ],
+        "knowledge_gaps": [
+          {
+            "topic_id": "top_acc81d340ec6460fb6fa",
+            "topic": "top_acc81d340ec6460fb6fa",
+            "topic_title": "What a fraction means",
+            "blocking_prerequisite": "top_b9a73f0f04004ef68bd0",
+            "blocking_prerequisite_title": "Integer operations",
+            "topic_mastery": 0.013,
+            "prerequisite_mastery": 0.013,
+            "observations": 1,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "What a fraction means",
+              "Negative numbers",
+              "Order of operations",
+              "Indices and powers"
+            ],
+            "why": "What a fraction means is at 1% and its prerequisite Integer operations is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_4517487b038f443cb42a",
+            "topic": "top_4517487b038f443cb42a",
+            "topic_title": "Multiplying and dividing fractions",
+            "blocking_prerequisite": "top_acc81d340ec6460fb6fa",
+            "blocking_prerequisite_title": "What a fraction means",
+            "topic_mastery": 0,
+            "prerequisite_mastery": 0.013,
+            "observations": 0,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "Equivalent fractions",
+              "Multiplying and dividing fractions",
+              "Decimals and place value",
+              "Probability as a fraction"
+            ],
+            "why": "Multiplying and dividing fractions is at 0% and its prerequisite What a fraction means is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_b930364a9cc34841b419",
+            "topic": "top_b930364a9cc34841b419",
+            "topic_title": "Decimals and place value",
+            "blocking_prerequisite": "top_acc81d340ec6460fb6fa",
+            "blocking_prerequisite_title": "What a fraction means",
+            "topic_mastery": 0.013,
+            "prerequisite_mastery": 0.013,
+            "observations": 1,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "Equivalent fractions",
+              "Multiplying and dividing fractions",
+              "Decimals and place value",
+              "Probability as a fraction"
+            ],
+            "why": "Decimals and place value is at 1% and its prerequisite What a fraction means is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_e6436c6c14c342f8b157",
+            "topic": "top_e6436c6c14c342f8b157",
+            "topic_title": "Percentages of quantities",
+            "blocking_prerequisite": "top_b930364a9cc34841b419",
+            "blocking_prerequisite_title": "Decimals and place value",
+            "topic_mastery": 0,
+            "prerequisite_mastery": 0.013,
+            "observations": 0,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "Percentages of quantities",
+              "Standard form",
+              "Mean, median and range",
+              "Converting units"
+            ],
+            "why": "Percentages of quantities is at 0% and its prerequisite Decimals and place value is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_92a3735f985c4772bf9b",
+            "topic": "top_92a3735f985c4772bf9b",
+            "topic_title": "Order of operations",
+            "blocking_prerequisite": "top_b9a73f0f04004ef68bd0",
+            "blocking_prerequisite_title": "Integer operations",
+            "topic_mastery": 0.013,
+            "prerequisite_mastery": 0.013,
+            "observations": 1,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "What a fraction means",
+              "Negative numbers",
+              "Order of operations",
+              "Indices and powers"
+            ],
+            "why": "Order of operations is at 1% and its prerequisite Integer operations is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_aaa62281fa0b4c73a201",
+            "topic": "top_aaa62281fa0b4c73a201",
+            "topic_title": "Indices and powers",
+            "blocking_prerequisite": "top_b9a73f0f04004ef68bd0",
+            "blocking_prerequisite_title": "Integer operations",
+            "topic_mastery": 0,
+            "prerequisite_mastery": 0.013,
+            "observations": 0,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "What a fraction means",
+              "Negative numbers",
+              "Order of operations",
+              "Indices and powers"
+            ],
+            "why": "Indices and powers is at 0% and its prerequisite Integer operations is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_ab7ba3e0467b4d12b814",
+            "topic": "top_ab7ba3e0467b4d12b814",
+            "topic_title": "Standard form",
+            "blocking_prerequisite": "top_b930364a9cc34841b419",
+            "blocking_prerequisite_title": "Decimals and place value",
+            "topic_mastery": 0,
+            "prerequisite_mastery": 0.013,
+            "observations": 0,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "Percentages of quantities",
+              "Standard form",
+              "Mean, median and range",
+              "Converting units"
+            ],
+            "why": "Standard form is at 0% and its prerequisite Decimals and place value is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_d3bff526e18f43059044",
+            "topic": "top_d3bff526e18f43059044",
+            "topic_title": "Converting units",
+            "blocking_prerequisite": "top_b930364a9cc34841b419",
+            "blocking_prerequisite_title": "Decimals and place value",
+            "topic_mastery": 0,
+            "prerequisite_mastery": 0.013,
+            "observations": 0,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "Percentages of quantities",
+              "Standard form",
+              "Mean, median and range",
+              "Converting units"
+            ],
+            "why": "Converting units is at 0% and its prerequisite Decimals and place value is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_3ca9d35ec2f34faa8947",
+            "topic": "top_3ca9d35ec2f34faa8947",
+            "topic_title": "Probability as a fraction",
+            "blocking_prerequisite": "top_acc81d340ec6460fb6fa",
+            "blocking_prerequisite_title": "What a fraction means",
+            "topic_mastery": 0,
+            "prerequisite_mastery": 0.013,
+            "observations": 0,
+            "blocks_topics": 4,
+            "severity": 0.982,
+            "unblocks": [
+              "Equivalent fractions",
+              "Multiplying and dividing fractions",
+              "Decimals and place value",
+              "Probability as a fraction"
+            ],
+            "why": "Probability as a fraction is at 0% and its prerequisite What a fraction means is at 1%; fixing the prerequisite first is likely to move 4 other topic(s)."
+          },
+          {
+            "topic_id": "top_c9490ee8b09841ada8a3",
+            "topic": "top_c9490ee8b09841ada8a3",
+            "topic_title": "Collecting like terms",
+            "blocking_prerequisite": "top_92a3735f985c4772bf9b",
+            "blocking_prerequisite_title": "Order of operations",
+            "topic_mastery": 0,
+            "prerequisite_mastery": 0.013,
+            "observations": 0,
+            "blocks_topics": 2,
+            "severity": 0.782,
+            "unblocks": [
+              "Collecting like terms",
+              "Area and perimeter"
+            ],
+            "why": "Collecting like terms is at 0% and its prerequisite Order of operations is at 1%; fixing the prerequisite first is likely to move 2 other topic(s)."
+          }
+        ],
+        "hypotheses": [
+          {
+            "id": "hyp_82bea268b7d945f381f4",
+            "detector": "difficulty_misalignment",
+            "statement": "Your recent success rate is 50%; the range where corrections actually stick is around 0.78. One explanation that fits: the current difficulty is too hard.",
+            "status": "active",
+            "posterior": 0.711,
+            "supports": 0,
+            "refutes": 0,
+            "falsification": "If accuracy does not move toward the band after recalibration, the difficulty was not the constraint.",
+            "proposed_strategy": "difficulty_recalibration",
+            "citations": [
+              "Vygotsky 1978 (ZPD)",
+              "Kaplan 1974 (optimal discrepancy)"
+            ],
+            "status_note": ""
+          }
+        ],
+        "pending_proposals": [],
+        "active_adaptations": [],
+        "decided_adaptations": [
+          {
+            "id": "adp_28948fa40ab34147a019",
+            "student_id": "stu_e15cb1098d7440e6b469",
+            "strategy": "difficulty_recalibration",
+            "strategy_label": "Meet the current level",
+            "what_it_does": "Shift item difficulty toward the point where expected success is about 70% to 85%.",
+            "citations": [
+              {
+                "ref": "Vygotsky 1978",
+                "claim": "Zone of proximal development (qualitative, but the target band matches success rate data)."
+              },
+              {
+                "ref": "Kaplan 1974",
+                "claim": "Optimal discrepancy/incongruity produces maximal learning per exposure."
+              }
+            ],
+            "action": "target_success_rate",
+            "action_payload": {
+              "target": 0.85
+            },
+            "facts": "Your recent success rate is 50%; the range where corrections actually stick is around 0.78. One explanation that fits: the current difficulty is too hard.",
+            "pattern": "This is the first time accuracy has pointed this way, so treat it as provisional - a single run of answers can be a bad hour.",
+            "hypothesis": "Items near the edge of current ability carry the most information per attempt.",
+            "caveat": "Other explanations we cannot rule out: a low rate can also mean careless speed rather than overload",
+            "alternatives": [
+              {
+                "explanation": "a low rate can also mean careless speed rather than overload"
+              }
+            ],
+            "change": "Shift item difficulty toward the point where expected success is about 70% to 85%. Not a reward schedule: diagnostic and retention probes stay at their own difficulty.",
+            "ask": "Want me to try that? You can say no, or change it — I will not change how you learn without asking.",
+            "expected_effect": "We will watch accuracy over the next several items and compare it with how you have been doing. If accuracy does not move toward the band after recalibration, the difficulty was not the constraint.",
+            "review_metric": "accuracy",
+            "review_window": {
+              "kind": "next_items",
+              "metric": "accuracy",
+              "min_items": 6,
+              "max_items": 14
+            },
+            "review_window_text": "your next 6-14 answers",
+            "status": "approved",
+            "student_note": null,
+            "modifications": null,
+            "created_at": "2026-10-22T17:12:46.986388",
+            "decided_at": "2026-10-22T17:13:28.864961",
+            "baseline": {
+              "taken_at": "2026-10-22T17:13:28.864961",
+              "review_metric": "accuracy"
+            },
+            "outcome": null,
+            "evaluation_status": null,
+            "hypothesis_ref": null,
+            "evidence_ids": [
+              "evi_41e445a5ca694185ae19"
+            ]
+          }
+        ],
+        "reviews": {
+          "due_now": [
+            {
+              "topic_id": "top_acc81d340ec6460fb6fa",
+              "title": "What a fraction means",
+              "due_at": "2026-10-22T17:28:52.033323",
+              "overdue": false,
+              "hours_overdue": 0,
+              "half_life_hours": 1.1,
+              "expected_recall": 0.85,
+              "strength": 0.875
+            },
+            {
+              "topic_id": "top_b9a73f0f04004ef68bd0",
+              "title": "Integer operations",
+              "due_at": "2026-10-22T20:01:35.332087",
+              "overdue": false,
+              "hours_overdue": 0,
+              "half_life_hours": 12,
+              "expected_recall": 0.85,
+              "strength": 0.083
+            },
+            {
+              "topic_id": "top_92a3735f985c4772bf9b",
+              "title": "Order of operations",
+              "due_at": "2026-10-22T20:01:35.469814",
+              "overdue": false,
+              "hours_overdue": 0,
+              "half_life_hours": 12,
+              "expected_recall": 0.85,
+              "strength": 0.083
+            },
+            {
+              "topic_id": "top_b930364a9cc34841b419",
+              "title": "Decimals and place value",
+              "due_at": "2026-10-22T20:01:35.534936",
+              "overdue": false,
+              "hours_overdue": 0,
+              "half_life_hours": 12,
+              "expected_recall": 0.85,
+              "strength": 0.083
+            },
+            {
+              "topic_id": "top_ccf3ea0d4e5744e1af7b",
+              "title": "Mean, median and range",
+              "due_at": "2026-10-22T22:50:24.501807",
+              "overdue": false,
+              "hours_overdue": 0,
+              "half_life_hours": 24,
+              "expected_recall": 0.85,
+              "strength": 0.042
+            },
+            {
+              "topic_id": "top_cad64ab13367494ba1a9",
+              "title": "Area and perimeter",
+              "due_at": "2026-10-22T22:50:24.571538",
+              "overdue": false,
+              "hours_overdue": 0,
+              "half_life_hours": 24,
+              "expected_recall": 0.85,
+              "strength": 0.042
+            },
+            {
+              "topic_id": "top_6cfb191f1e5e4f5c9a8d",
+              "title": "Equivalent fractions",
+              "due_at": "2026-10-22T22:50:24.640089",
+              "overdue": false,
+              "hours_overdue": 0,
+              "half_life_hours": 24,
+              "expected_recall": 0.85,
+              "strength": 0.042
+            },
+            {
+              "topic_id": "top_b449f78f5f364eab908e",
+              "title": "Negative numbers",
+              "due_at": "2026-10-22T22:50:24.713096",
+              "overdue": false,
+              "hours_overdue": 0,
+              "half_life_hours": 24,
+              "expected_recall": 0.85,
+              "strength": 0.042
+            }
+          ],
+          "checks_total": 0,
+          "checks_mean_score": null
+        },
+        "last_7_days": {
+          "attempts": 9,
+          "mean_score": 0.556,
+          "hints_used": 0,
+          "mean_seconds_on_question": null
+        },
+        "data_volume": {
+          "attempts": 9,
+          "events": 37,
+          "evidence": 1,
+          "hypotheses": 1,
+          "proposals": 1,
+          "retention_checks": 0,
+          "sessions": 2
+        },
+        "open_questions": [],
+        "measured_outcomes": {
+          "evaluated": 0,
+          "applied": 0
+        },
+        "strategy_evidence": [],
+        "student_preferences": {
+          "goal": "GCSE maths, higher tier",
+          "session_minutes": 15,
+          "max_explanation_words": 35,
+          "push_me": true
+        },
+        "guardrails": {
+          "no_fixed_trait_labels": true,
+          "hypotheses_are_not_facts": true,
+          "persistent_change_requires_student_approval": true
+        },
+        "notes": [
+          "Bands are estimates with uncertainty; a 'developing' label with 3 observations is not the same claim as one with 30.",
+          "Hypotheses are fallible explanations, not diagnoses. Each row shows what would change our mind.",
+          "Nothing here was applied without your answer; the proposals list keeps both yes and no."
+        ]
+      }
+    },
+    "methods": {
+      "status": 200,
+      "body": {
+        "excluded_n": 0,
+        "attributed_elsewhere_n": 0,
+        "format_comparable": true,
+        "methods": [
+          {
+            "method": "explanation",
+            "label": "Explanation first",
+            "n": 1,
+            "effective_n": 0.4,
+            "actual": 1,
+            "expected": 0.309,
+            "residual": 0.691,
+            "ci": [
+              -0.214,
+              0.691
+            ],
+            "sources": [
+              {
+                "source": "observational",
+                "n": 1,
+                "weight": 0.4,
+                "effective_n": 0.4
+              }
+            ],
+            "formats": [
+              "mcq"
+            ],
+            "evidence": "early_signal",
+            "n_randomised": 0,
+            "note": "Actual minus predicted success across all topics; associations, not proof."
+          }
+        ],
+        "strategies": [
+          {
+            "strategy": "segmented_text",
+            "n": 1,
+            "p_helps": 0.583,
+            "ci": [
+              0.059,
+              1
+            ],
+            "mean_lift": 0.6914,
+            "band": "provisional"
+          }
+        ],
+        "note": "Attributed actual-minus-expected outcomes only; failed A awaits diagnosis. n_scored counts answers, not method evidence. Pilot data is labelled separately. Actual minus predicted success across all topics; associations, not proof.",
+        "min_effective_n": 8,
+        "pilot_methods": [],
+        "n_scored": 1,
+        "n_attributed": 1,
+        "min_n_for_a_finding": 8
+      }
+    },
+    "evidence": {
+      "status": 200,
+      "body": {
+        "excluded_n": 0,
+        "attributed_elsewhere_n": 0,
+        "format_comparable": true,
+        "methods": [
+          {
+            "method": "explanation",
+            "label": "Explanation first",
+            "n": 1,
+            "effective_n": 0.4,
+            "actual": 1,
+            "expected": 0.309,
+            "residual": 0.691,
+            "ci": [
+              -0.214,
+              0.691
+            ],
+            "sources": [
+              {
+                "source": "observational",
+                "n": 1,
+                "weight": 0.4,
+                "effective_n": 0.4
+              }
+            ],
+            "formats": [
+              "mcq"
+            ],
+            "evidence": "insufficient evidence"
+          }
+        ],
+        "strategies": [
+          {
+            "strategy": "segmented_text",
+            "n": 1,
+            "p_helps": 0.583,
+            "ci": [
+              0.059,
+              1
+            ],
+            "mean_lift": 0.6914,
+            "band": "provisional"
+          }
+        ],
+        "note": "Actual minus predicted success across all topics; associations, not proof.",
+        "min_effective_n": 8,
+        "preference_vs_performance": null
+      }
+    },
+    "reviewBefore": {
+      "status": 200,
+      "body": {
+        "due": [
+          {
+            "topic_id": "top_acc81d340ec6460fb6fa",
+            "title": "What a fraction means",
+            "due_at": "2026-10-22T17:28:52.033323",
+            "overdue": false,
+            "half_life_hours": 1.14,
+            "expected_recall_at_due": 0.85,
+            "reps": 2,
+            "lapses": 1
+          },
+          {
+            "topic_id": "top_b9a73f0f04004ef68bd0",
+            "title": "Integer operations",
+            "due_at": "2026-10-22T20:01:35.332087",
+            "overdue": false,
+            "half_life_hours": 12,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 1
+          },
+          {
+            "topic_id": "top_92a3735f985c4772bf9b",
+            "title": "Order of operations",
+            "due_at": "2026-10-22T20:01:35.469814",
+            "overdue": false,
+            "half_life_hours": 12,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 1
+          },
+          {
+            "topic_id": "top_b930364a9cc34841b419",
+            "title": "Decimals and place value",
+            "due_at": "2026-10-22T20:01:35.534936",
+            "overdue": false,
+            "half_life_hours": 12,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 1
+          },
+          {
+            "topic_id": "top_ccf3ea0d4e5744e1af7b",
+            "title": "Mean, median and range",
+            "due_at": "2026-10-22T22:50:24.501807",
+            "overdue": false,
+            "half_life_hours": 24,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 0
+          },
+          {
+            "topic_id": "top_cad64ab13367494ba1a9",
+            "title": "Area and perimeter",
+            "due_at": "2026-10-22T22:50:24.571538",
+            "overdue": false,
+            "half_life_hours": 24,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 0
+          },
+          {
+            "topic_id": "top_6cfb191f1e5e4f5c9a8d",
+            "title": "Equivalent fractions",
+            "due_at": "2026-10-22T22:50:24.640089",
+            "overdue": false,
+            "half_life_hours": 24,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 0
+          },
+          {
+            "topic_id": "top_b449f78f5f364eab908e",
+            "title": "Negative numbers",
+            "due_at": "2026-10-22T22:50:24.713096",
+            "overdue": false,
+            "half_life_hours": 24,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 0
+          }
+        ],
+        "count": 8,
+        "rule": "scheduled at the point your own recall is projected to reach ~85%"
+      }
+    },
+    "reviewCheckBefore": {
+      "status": 200,
+      "body": {
+        "topic_id": "top_acc81d340ec6460fb6fa",
+        "title": "What a fraction means",
+        "question": "Last time you worked on What a fraction means. Without looking anything up: A pizza is cut into 8 equal slices and 3 are eaten. What fraction is left?",
+        "rationale": "Forgetting curve: projected recall is about 99% after 1 hours. Checking here tests the memory at its most informative point.",
+        "lag_hours": 0.01,
+        "expected_recall": 0.992,
+        "grounded_item_id": "itm_fractions_intro_00",
+        "source": "rules",
+        "notes": "what a good answer covers arrives with with_notes=1, after you have answered"
+      }
+    },
+    "reviewAfter": {
+      "status": 200,
+      "body": {
+        "due": [
+          {
+            "topic_id": "top_acc81d340ec6460fb6fa",
+            "title": "What a fraction means",
+            "due_at": "2026-10-22T17:28:15.352704",
+            "overdue": false,
+            "half_life_hours": 1.04,
+            "expected_recall_at_due": 0.85,
+            "reps": 3,
+            "lapses": 1
+          },
+          {
+            "topic_id": "top_b9a73f0f04004ef68bd0",
+            "title": "Integer operations",
+            "due_at": "2026-10-22T20:01:35.332087",
+            "overdue": false,
+            "half_life_hours": 12,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 1
+          },
+          {
+            "topic_id": "top_92a3735f985c4772bf9b",
+            "title": "Order of operations",
+            "due_at": "2026-10-22T20:01:35.469814",
+            "overdue": false,
+            "half_life_hours": 12,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 1
+          },
+          {
+            "topic_id": "top_b930364a9cc34841b419",
+            "title": "Decimals and place value",
+            "due_at": "2026-10-22T20:01:35.534936",
+            "overdue": false,
+            "half_life_hours": 12,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 1
+          },
+          {
+            "topic_id": "top_ccf3ea0d4e5744e1af7b",
+            "title": "Mean, median and range",
+            "due_at": "2026-10-22T22:50:24.501807",
+            "overdue": false,
+            "half_life_hours": 24,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 0
+          },
+          {
+            "topic_id": "top_cad64ab13367494ba1a9",
+            "title": "Area and perimeter",
+            "due_at": "2026-10-22T22:50:24.571538",
+            "overdue": false,
+            "half_life_hours": 24,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 0
+          },
+          {
+            "topic_id": "top_6cfb191f1e5e4f5c9a8d",
+            "title": "Equivalent fractions",
+            "due_at": "2026-10-22T22:50:24.640089",
+            "overdue": false,
+            "half_life_hours": 24,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 0
+          },
+          {
+            "topic_id": "top_b449f78f5f364eab908e",
+            "title": "Negative numbers",
+            "due_at": "2026-10-22T22:50:24.713096",
+            "overdue": false,
+            "half_life_hours": 24,
+            "expected_recall_at_due": 0.85,
+            "reps": 1,
+            "lapses": 0
+          }
+        ],
+        "count": 8,
+        "rule": "scheduled at the point your own recall is projected to reach ~85%"
+      }
+    },
+    "overview": {
+      "status": 200,
+      "body": {
+        "active_subject_id": null,
+        "subjects": [],
+        "due": {
+          "count": 8
+        },
+        "proposals": {
+          "count": 0
+        }
+      }
+    }
+  },
+  "csrf": "zOhjvvvjHFB0hcdPezYdYaPA7lXq4b9p"
+}

@@ -1,0 +1,13 @@
+
+> adapt-e2e-journey@0.1.0 test
+> playwright test
+
+
+Running 2 tests using 1 worker
+
+  ✓  1 [desktop] › journey-full.spec.ts:48:5 › the current whole journey with the three lesson moments (10.7s)
+  ✓  2 [mobile] › journey-full.spec.ts:48:5 › the current whole journey with the three lesson moments (10.5s)
+
+  2 passed (22.5s)
+
+Evidence scope: SCRIPTED FAKE MODEL integration only; no real provider was contacted. Real model-dependent checks remain NOT RUN.

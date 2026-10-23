@@ -1,0 +1,1966 @@
+{
+  "at": "2026-10-22T17:16:37.947Z",
+  "steps": [
+    {
+      "name": "baseline reload resumes server cursor",
+      "expected": "same task id and explicit resumed notice",
+      "actual": {
+        "before": "codewords_study",
+        "after": "codewords_study",
+        "text": "Step 3 of 13 · 14% through Spy codewords: study Stop here Picking up where you left off: Spy codewords: study, 2 of 13 steps already done. LOOKING TIME — NOT SCORED about 75s left Learn these eight pairs. You will be asked for them again later. Neril → a green bridge Pirel → a stone tower Quilo → a red roof Solva → a quiet bay Domal → the north gate Kendal → a white tower Mebra → the old well Vasko → the harbour I have looked at them about 45s of looking time, and stopping early is allowed Tab moves between the controls; Enter or Space presses the one in focus. Stop anytime. Unplayed games stay unmeasured."
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "immediate-stop snapshot has no invented factor measurements",
+      "expected": "all unplayed factors have n=0/not measured",
+      "actual": {
+        "factors": [
+          {
+            "key": "prior_knowledge",
+            "title": "What you already know",
+            "state": "not_enough_data",
+            "n": 0,
+            "range": null,
+            "summary": "not measured yet (0 of 5 needed)",
+            "statement": "Not enough data yet — the subject round would fill this in.",
+            "actions": [],
+            "detail": {
+              "needed": 5,
+              "have": 0
+            }
+          },
+          {
+            "key": "working_memory",
+            "title": "How much you hold at once",
+            "state": "not_enough_data",
+            "n": 0,
+            "range": null,
+            "summary": "not measured yet (0 of 3 needed)",
+            "statement": "Not enough data yet — a few more tile sequences would fill this in.",
+            "actions": [],
+            "detail": {
+              "needed": 3,
+              "have": 0
+            }
+          },
+          {
+            "key": "processing_pace",
+            "title": "How fast you work",
+            "state": "not_enough_data",
+            "n": 0,
+            "range": null,
+            "summary": "not measured yet (0 of 6 needed)",
+            "statement": "Not enough data yet — a few more quick taps would fill this in.",
+            "actions": [],
+            "detail": {
+              "needed": 6,
+              "have": 0
+            }
+          },
+          {
+            "key": "attention_self_control",
+            "title": "Staying on it",
+            "state": "not_enough_data",
+            "n": 0,
+            "range": null,
+            "summary": "not measured yet (0 of 4 needed)",
+            "statement": "Not enough data yet — a few more quick trials would fill this in.",
+            "actions": [],
+            "detail": {
+              "needed": 4,
+              "have": 0
+            }
+          },
+          {
+            "key": "long_term_memory",
+            "title": "Remembering over time",
+            "state": "not_enough_data",
+            "n": 0,
+            "range": null,
+            "summary": "not measured yet (0 of 5 needed)",
+            "statement": "Not enough data yet — finishing the codeword round would fill this in.",
+            "actions": [],
+            "detail": {
+              "needed": 5,
+              "have": 0
+            }
+          },
+          {
+            "key": "reasoning",
+            "title": "Working out a rule",
+            "state": "not_enough_data",
+            "n": 0,
+            "range": null,
+            "summary": "not measured yet (0 of 3 needed)",
+            "statement": "Not enough data yet — finishing a machine round would fill this in.",
+            "actions": [],
+            "detail": {
+              "needed": 3,
+              "have": 0
+            }
+          },
+          {
+            "key": "metacognition",
+            "title": "Knowing what you know",
+            "state": "not_enough_data",
+            "n": 0,
+            "range": null,
+            "summary": "not measured yet (0 of 8 needed)",
+            "statement": "Not enough data yet — a few more answers with a coin wager would fill this in.",
+            "actions": [],
+            "detail": {
+              "needed": 8,
+              "have": 0
+            }
+          },
+          {
+            "key": "persistence_help_seeking",
+            "title": "Pushing through, and asking for help",
+            "state": "not_enough_data",
+            "n": 0,
+            "range": null,
+            "summary": "not measured yet (0 of 2 needed)",
+            "statement": "Not enough data yet — trying the locked box would fill this in.",
+            "actions": [],
+            "detail": {
+              "needed": 2,
+              "have": 0
+            }
+          }
+        ]
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "baseline format preference flows into AI 3 plan",
+      "expected": "diagram learner opens visual; text learner opens text; identical content otherwise adapted by stated preference",
+      "actual": {
+        "visualFirst": {
+          "type": "visual",
+          "body": {
+            "kind": "flow",
+            "title": "Read the task",
+            "unfilled": [],
+            "steps": [
+              {
+                "label": "Step 1",
+                "text": "Say what the task asks you to find or explain."
+              },
+              {
+                "label": "Step 2",
+                "text": "A clear goal helps you choose what to do next."
+              }
+            ]
+          },
+          "fact_ids": [
+            "fact_task"
+          ],
+          "why": {
+            "evidence_ids": [],
+            "n": 0
+          },
+          "length": 27
+        },
+        "textFirst": {
+          "type": "text",
+          "body": "Say what the task asks you to find or explain.",
+          "fact_ids": [
+            "fact_task"
+          ],
+          "why": {
+            "evidence_ids": [],
+            "n": 0
+          },
+          "length": 10
+        },
+        "visualWhy": {
+          "evidence_ids": [],
+          "n": 0
+        },
+        "textWhy": {
+          "evidence_ids": [],
+          "n": 0
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "lesson plans carry real evidence/why and no placeholders",
+      "expected": "validated blocks with chunk ids and why, no unresolved template variables",
+      "actual": {
+        "visualBlocks": 4,
+        "textBlocks": 3
+      },
+      "verdict": "FAIL"
+    }
+  ],
+  "accounts": {
+    "audit_pref_visual": {
+      "csrf": "aNAO1S8mr5gTDBh1GxWcJjseaZWL205F",
+      "student_id": "stu_ee89e54ed8434ca5adc4",
+      "reg": {
+        "status": 200,
+        "body": {
+          "student_id": "stu_ee89e54ed8434ca5adc4",
+          "display_name": "audit_pref_visual",
+          "role": "student",
+          "onboarding_complete": false,
+          "diagnostic_complete": false,
+          "baseline_started": false,
+          "voice_enabled": false,
+          "voice_gender": "female",
+          "language": "en",
+          "consent_analytics": false,
+          "consent_share_with_ai": true,
+          "sessions": 0,
+          "preferences": {},
+          "profile_taken_at": null,
+          "csrf_token": "aNAO1S8mr5gTDBh1GxWcJjseaZWL205F",
+          "expires_at": "2026-10-23T05:16:38.116355",
+          "mode": "local",
+          "created": true
+        }
+      },
+      "baseline": {
+        "start": {
+          "status": 200,
+          "body": {
+            "run_id": "base_dd203ebaa52e4862af38",
+            "student_id": "stu_ee89e54ed8434ca5adc4",
+            "status": "in_progress",
+            "stage": "format",
+            "stage_title": "How you like to meet a new idea",
+            "kind": "format",
+            "task": null,
+            "progress": 0,
+            "note": "one question before anything else",
+            "format_pick": null,
+            "format_options": [
+              {
+                "value": "diagram",
+                "label": "a diagram",
+                "hint": "a picture or graph of the idea"
+              },
+              {
+                "value": "text",
+                "label": "a written explanation",
+                "hint": "a short paragraph that explains it"
+              },
+              {
+                "value": "worked_example",
+                "label": "a worked example",
+                "hint": "one worked through, step by step"
+              }
+            ],
+            "questions": [],
+            "answers": {},
+            "completion": {
+              "stages": [
+                {
+                  "stage": "format",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "questions",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_study",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_cued",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_a",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "vault",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "shopkeeper",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_b",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "machine",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "locked_box",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_c",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "trap",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_delayed",
+                  "state": "not_started",
+                  "trials": 0
+                }
+              ],
+              "complete": 0,
+              "total": 13,
+              "played": [],
+              "not_measured": [
+                "format",
+                "questions",
+                "codewords_study",
+                "codewords_cued",
+                "quick_a",
+                "vault",
+                "shopkeeper",
+                "quick_b",
+                "machine",
+                "locked_box",
+                "quick_c",
+                "trap",
+                "codewords_delayed"
+              ]
+            },
+            "measured_trials": 0,
+            "started_at": "2026-10-22T17:16:38.135069"
+          }
+        },
+        "picked": {
+          "status": 200,
+          "body": {
+            "run_id": "base_dd203ebaa52e4862af38",
+            "student_id": "stu_ee89e54ed8434ca5adc4",
+            "status": "in_progress",
+            "stage": "questions",
+            "stage_title": "How you work",
+            "kind": "questions",
+            "task": null,
+            "progress": 0.07142857142857142,
+            "note": "",
+            "format_pick": "diagram",
+            "format_options": [
+              {
+                "value": "diagram",
+                "label": "a diagram",
+                "hint": "a picture or graph of the idea"
+              },
+              {
+                "value": "text",
+                "label": "a written explanation",
+                "hint": "a short paragraph that explains it"
+              },
+              {
+                "value": "worked_example",
+                "label": "a worked example",
+                "hint": "one worked through, step by step"
+              }
+            ],
+            "questions": [
+              {
+                "key": "goal",
+                "question": "What are you learning this for?",
+                "options": [
+                  "an exam with a date",
+                  "a course I am taking",
+                  "work or a job",
+                  "just curious"
+                ],
+                "why": "decides what the app calls progress"
+              },
+              {
+                "key": "session_minutes",
+                "question": "How long would you like one sitting to be?",
+                "options": [
+                  10,
+                  20,
+                  30,
+                  45
+                ],
+                "why": "sizes a lesson to a sitting you actually have"
+              },
+              {
+                "key": "study_days",
+                "question": "How many days a week can you study?",
+                "options": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "why": "sets the review schedule"
+              },
+              {
+                "key": "study_when",
+                "question": "When do you usually study?",
+                "options": [
+                  "early morning",
+                  "midday",
+                  "afternoon",
+                  "evening",
+                  "late night",
+                  "it varies"
+                ],
+                "why": "times reminders, and never sends them at the wrong hour"
+              },
+              {
+                "key": "motivation",
+                "question": "What keeps you going?",
+                "options": [
+                  "seeing progress",
+                  "a streak",
+                  "competing",
+                  "curiosity",
+                  "finishing things"
+                ],
+                "multi": true,
+                "why": "picks what the progress screen shows first"
+              },
+              {
+                "key": "quit_trigger",
+                "question": "What makes you stop?",
+                "options": [
+                  "boredom",
+                  "being stuck",
+                  "no time",
+                  "feeling behind"
+                ],
+                "multi": true,
+                "why": "tells the app what to notice and work around"
+              },
+              {
+                "key": "feedback_style",
+                "question": "How do you want to hear that you got something wrong?",
+                "options": [
+                  "straight",
+                  "gentle",
+                  "just show the answer"
+                ],
+                "why": "sets the tone of every correction"
+              },
+              {
+                "key": "challenge_first",
+                "question": "Would you rather start with something hard, or something you can do?",
+                "options": [
+                  "challenge me first",
+                  "safe success first"
+                ],
+                "why": "sets the opening difficulty of a lesson"
+              },
+              {
+                "key": "when_stuck",
+                "question": "What do you do when you are stuck?",
+                "options": [
+                  "ask someone",
+                  "search for it",
+                  "keep pushing",
+                  "move on and come back"
+                ],
+                "why": "compared later with what you actually did in the locked box"
+              },
+              {
+                "key": "device_context",
+                "question": "Where and on what do you study?",
+                "options": [
+                  "phone",
+                  "laptop",
+                  "shared device",
+                  "limited data",
+                  "often offline"
+                ],
+                "multi": true,
+                "why": "decides how light the pages are and whether things must work offline"
+              },
+              {
+                "key": "language",
+                "question": "Which language should explanations be in?",
+                "options": [
+                  "English",
+                  "Kiswahili",
+                  "mixed"
+                ],
+                "why": "the language of every explanation"
+              },
+              {
+                "key": "timers_help",
+                "question": "Do you like seeing a timer, or does it stress you?",
+                "options": [
+                  "timers help",
+                  "timers stress me"
+                ],
+                "why": "shows or hides the clock; the app still measures quietly either way"
+              },
+              {
+                "key": "anything_else",
+                "question": "Anything else about how you learn? (one line, optional)",
+                "options": [],
+                "free_text": true,
+                "why": "read by you later, and shown next to your settings"
+              }
+            ],
+            "answers": {
+              "preferred_format": "diagram"
+            },
+            "completion": {
+              "stages": [
+                {
+                  "stage": "format",
+                  "state": "complete",
+                  "trials": 0
+                },
+                {
+                  "stage": "questions",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_study",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_cued",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_a",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "vault",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "shopkeeper",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_b",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "machine",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "locked_box",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_c",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "trap",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_delayed",
+                  "state": "not_started",
+                  "trials": 0
+                }
+              ],
+              "complete": 1,
+              "total": 13,
+              "played": [],
+              "not_measured": [
+                "questions",
+                "codewords_study",
+                "codewords_cued",
+                "quick_a",
+                "vault",
+                "shopkeeper",
+                "quick_b",
+                "machine",
+                "locked_box",
+                "quick_c",
+                "trap",
+                "codewords_delayed"
+              ]
+            },
+            "measured_trials": 0,
+            "started_at": "2026-10-22T17:16:38.135069"
+          }
+        },
+        "questions": {
+          "status": 200,
+          "body": {
+            "run_id": "base_dd203ebaa52e4862af38",
+            "student_id": "stu_ee89e54ed8434ca5adc4",
+            "status": "in_progress",
+            "stage": "codewords_study",
+            "stage_title": "Spy codewords: study",
+            "kind": "task",
+            "task": {
+              "id": "codewords_study",
+              "game": "codewords_study",
+              "phase": "show",
+              "pairs": [
+                {
+                  "code": "Neril",
+                  "place": "a green bridge"
+                },
+                {
+                  "code": "Pirel",
+                  "place": "a stone tower"
+                },
+                {
+                  "code": "Quilo",
+                  "place": "a red roof"
+                },
+                {
+                  "code": "Solva",
+                  "place": "a quiet bay"
+                },
+                {
+                  "code": "Domal",
+                  "place": "the north gate"
+                },
+                {
+                  "code": "Kendal",
+                  "place": "a white tower"
+                },
+                {
+                  "code": "Mebra",
+                  "place": "the old well"
+                },
+                {
+                  "code": "Vasko",
+                  "place": "the harbour"
+                }
+              ],
+              "study_ms": 45000,
+              "prompt": "Learn these eight pairs. You will be asked for them again later.",
+              "max_latency_ms": 75000
+            },
+            "progress": 0.14285714285714285,
+            "note": "",
+            "format_pick": "diagram",
+            "format_options": [
+              {
+                "value": "diagram",
+                "label": "a diagram",
+                "hint": "a picture or graph of the idea"
+              },
+              {
+                "value": "text",
+                "label": "a written explanation",
+                "hint": "a short paragraph that explains it"
+              },
+              {
+                "value": "worked_example",
+                "label": "a worked example",
+                "hint": "one worked through, step by step"
+              }
+            ],
+            "questions": [],
+            "answers": {
+              "preferred_format": "diagram"
+            },
+            "completion": {
+              "stages": [
+                {
+                  "stage": "format",
+                  "state": "complete",
+                  "trials": 0
+                },
+                {
+                  "stage": "questions",
+                  "state": "complete",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_study",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_cued",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_a",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "vault",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "shopkeeper",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_b",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "machine",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "locked_box",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_c",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "trap",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_delayed",
+                  "state": "not_started",
+                  "trials": 0
+                }
+              ],
+              "complete": 2,
+              "total": 13,
+              "played": [],
+              "not_measured": [
+                "codewords_study",
+                "codewords_cued",
+                "quick_a",
+                "vault",
+                "shopkeeper",
+                "quick_b",
+                "machine",
+                "locked_box",
+                "quick_c",
+                "trap",
+                "codewords_delayed"
+              ]
+            },
+            "measured_trials": 0,
+            "started_at": "2026-10-22T17:16:38.135069",
+            "refused": [],
+            "refused_note": ""
+          }
+        }
+      },
+      "resume": {
+        "text": "Step 3 of 13 · 14% through Spy codewords: study Stop here Picking up where you left off: Spy codewords: study, 2 of 13 steps already done. LOOKING TIME — NOT SCORED about 75s left Learn these eight pairs. You will be asked for them again later. Neril → a green bridge Pirel → a stone tower Quilo → a red roof Solva → a quiet bay Domal → the north gate Kendal → a white tower Mebra → the old well Vasko → the harbour I have looked at them about 45s of looking time, and stopping early is allowed Tab moves between the controls; Enter or Space presses the one in focus. Stop anytime. Unplayed games stay unmeasured.",
+        "view": {
+          "status": 200,
+          "body": {
+            "run_id": "base_dd203ebaa52e4862af38",
+            "student_id": "stu_ee89e54ed8434ca5adc4",
+            "status": "in_progress",
+            "stage": "codewords_study",
+            "stage_title": "Spy codewords: study",
+            "kind": "task",
+            "task": {
+              "id": "codewords_study",
+              "game": "codewords_study",
+              "phase": "show",
+              "pairs": [
+                {
+                  "code": "Neril",
+                  "place": "a green bridge"
+                },
+                {
+                  "code": "Pirel",
+                  "place": "a stone tower"
+                },
+                {
+                  "code": "Quilo",
+                  "place": "a red roof"
+                },
+                {
+                  "code": "Solva",
+                  "place": "a quiet bay"
+                },
+                {
+                  "code": "Domal",
+                  "place": "the north gate"
+                },
+                {
+                  "code": "Kendal",
+                  "place": "a white tower"
+                },
+                {
+                  "code": "Mebra",
+                  "place": "the old well"
+                },
+                {
+                  "code": "Vasko",
+                  "place": "the harbour"
+                }
+              ],
+              "study_ms": 45000,
+              "prompt": "Learn these eight pairs. You will be asked for them again later.",
+              "max_latency_ms": 75000
+            },
+            "progress": 0.14285714285714285,
+            "note": "",
+            "format_pick": "diagram",
+            "format_options": [
+              {
+                "value": "diagram",
+                "label": "a diagram",
+                "hint": "a picture or graph of the idea"
+              },
+              {
+                "value": "text",
+                "label": "a written explanation",
+                "hint": "a short paragraph that explains it"
+              },
+              {
+                "value": "worked_example",
+                "label": "a worked example",
+                "hint": "one worked through, step by step"
+              }
+            ],
+            "questions": [],
+            "answers": {
+              "preferred_format": "diagram"
+            },
+            "completion": {
+              "stages": [
+                {
+                  "stage": "format",
+                  "state": "complete",
+                  "trials": 0
+                },
+                {
+                  "stage": "questions",
+                  "state": "complete",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_study",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_cued",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_a",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "vault",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "shopkeeper",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_b",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "machine",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "locked_box",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_c",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "trap",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_delayed",
+                  "state": "not_started",
+                  "trials": 0
+                }
+              ],
+              "complete": 2,
+              "total": 13,
+              "played": [],
+              "not_measured": [
+                "codewords_study",
+                "codewords_cued",
+                "quick_a",
+                "vault",
+                "shopkeeper",
+                "quick_b",
+                "machine",
+                "locked_box",
+                "quick_c",
+                "trap",
+                "codewords_delayed"
+              ]
+            },
+            "measured_trials": 0,
+            "started_at": "2026-10-22T17:16:38.135069"
+          }
+        }
+      },
+      "snapshot": {
+        "status": 200,
+        "body": {
+          "student_id": "stu_ee89e54ed8434ca5adc4",
+          "run_id": "base_dd203ebaa52e4862af38",
+          "snapshot_id": "mind_fb3ba8aac6f54882892a",
+          "taken_at": "2026-10-22T17:16:38.911600",
+          "factors": [
+            {
+              "key": "prior_knowledge",
+              "title": "What you already know",
+              "state": "not_enough_data",
+              "n": 0,
+              "range": null,
+              "summary": "not measured yet (0 of 5 needed)",
+              "statement": "Not enough data yet — the subject round would fill this in.",
+              "actions": [],
+              "detail": {
+                "needed": 5,
+                "have": 0
+              }
+            },
+            {
+              "key": "working_memory",
+              "title": "How much you hold at once",
+              "state": "not_enough_data",
+              "n": 0,
+              "range": null,
+              "summary": "not measured yet (0 of 3 needed)",
+              "statement": "Not enough data yet — a few more tile sequences would fill this in.",
+              "actions": [],
+              "detail": {
+                "needed": 3,
+                "have": 0
+              }
+            },
+            {
+              "key": "processing_pace",
+              "title": "How fast you work",
+              "state": "not_enough_data",
+              "n": 0,
+              "range": null,
+              "summary": "not measured yet (0 of 6 needed)",
+              "statement": "Not enough data yet — a few more quick taps would fill this in.",
+              "actions": [],
+              "detail": {
+                "needed": 6,
+                "have": 0
+              }
+            },
+            {
+              "key": "attention_self_control",
+              "title": "Staying on it",
+              "state": "not_enough_data",
+              "n": 0,
+              "range": null,
+              "summary": "not measured yet (0 of 4 needed)",
+              "statement": "Not enough data yet — a few more quick trials would fill this in.",
+              "actions": [],
+              "detail": {
+                "needed": 4,
+                "have": 0
+              }
+            },
+            {
+              "key": "long_term_memory",
+              "title": "Remembering over time",
+              "state": "not_enough_data",
+              "n": 0,
+              "range": null,
+              "summary": "not measured yet (0 of 5 needed)",
+              "statement": "Not enough data yet — finishing the codeword round would fill this in.",
+              "actions": [],
+              "detail": {
+                "needed": 5,
+                "have": 0
+              }
+            },
+            {
+              "key": "reasoning",
+              "title": "Working out a rule",
+              "state": "not_enough_data",
+              "n": 0,
+              "range": null,
+              "summary": "not measured yet (0 of 3 needed)",
+              "statement": "Not enough data yet — finishing a machine round would fill this in.",
+              "actions": [],
+              "detail": {
+                "needed": 3,
+                "have": 0
+              }
+            },
+            {
+              "key": "metacognition",
+              "title": "Knowing what you know",
+              "state": "not_enough_data",
+              "n": 0,
+              "range": null,
+              "summary": "not measured yet (0 of 8 needed)",
+              "statement": "Not enough data yet — a few more answers with a coin wager would fill this in.",
+              "actions": [],
+              "detail": {
+                "needed": 8,
+                "have": 0
+              }
+            },
+            {
+              "key": "persistence_help_seeking",
+              "title": "Pushing through, and asking for help",
+              "state": "not_enough_data",
+              "n": 0,
+              "range": null,
+              "summary": "not measured yet (0 of 2 needed)",
+              "statement": "Not enough data yet — trying the locked box would fill this in.",
+              "actions": [],
+              "detail": {
+                "needed": 2,
+                "have": 0
+              }
+            }
+          ],
+          "levers": {
+            "step_size": {
+              "value": "medium",
+              "why": "no working-memory measurement yet",
+              "source": "default"
+            },
+            "lead_format_prior": {
+              "value": "diagram",
+              "why": "you chose diagram for a new topic (stated, not measured)",
+              "source": "stated"
+            },
+            "pace": {
+              "value": "measured",
+              "why": "no pace measurement yet",
+              "source": "default"
+            },
+            "review_halflife_prior": {
+              "value": 24,
+              "why": "default spacing: nothing measured yet",
+              "source": "default"
+            },
+            "hint_policy": {
+              "value": "on request",
+              "why": "default: hints are there when asked for",
+              "source": "default"
+            },
+            "confidence_prompting": {
+              "value": "off",
+              "why": "no calibration evidence yet",
+              "source": "default"
+            },
+            "tone": {
+              "value": "straight",
+              "why": "you chose how you want to hear that you got something wrong (stated)",
+              "source": "stated"
+            },
+            "language": {
+              "value": "en",
+              "why": "you chose the language for explanations (stated)",
+              "source": "stated"
+            },
+            "timers_visible": {
+              "value": true,
+              "why": "you said timers help (stated)",
+              "source": "stated"
+            },
+            "attention_note": {
+              "value": "not measured yet (0 of 4 needed)",
+              "why": "attention and self-control across the session",
+              "source": "measured"
+            },
+            "reasoning_note": {
+              "value": "not measured yet (0 of 3 needed)",
+              "why": "how you tested the machine's rule",
+              "source": "measured"
+            }
+          },
+          "completion": {
+            "stages": [
+              {
+                "stage": "format",
+                "state": "complete",
+                "trials": 0
+              },
+              {
+                "stage": "questions",
+                "state": "complete",
+                "trials": 0
+              },
+              {
+                "stage": "codewords_study",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "codewords_cued",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "quick_a",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "vault",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "shopkeeper",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "quick_b",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "machine",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "locked_box",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "quick_c",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "trap",
+                "state": "not_started",
+                "trials": 0
+              },
+              {
+                "stage": "codewords_delayed",
+                "state": "not_started",
+                "trials": 0
+              }
+            ],
+            "complete": 2,
+            "total": 13,
+            "played": [],
+            "not_measured": [
+              "codewords_study",
+              "codewords_cued",
+              "quick_a",
+              "vault",
+              "shopkeeper",
+              "quick_b",
+              "machine",
+              "locked_box",
+              "quick_c",
+              "trap",
+              "codewords_delayed"
+            ],
+            "preference_vs_performance": null
+          },
+          "state": "sealed",
+          "preference_vs_performance": null
+        }
+      }
+    },
+    "audit_pref_text": {
+      "csrf": "3-i_RwBuAvvgI528To_mbp1-DgArM216",
+      "student_id": "stu_c97006f5bec04bda9b3e",
+      "reg": {
+        "status": 200,
+        "body": {
+          "student_id": "stu_c97006f5bec04bda9b3e",
+          "display_name": "audit_pref_text",
+          "role": "student",
+          "onboarding_complete": false,
+          "diagnostic_complete": false,
+          "baseline_started": false,
+          "voice_enabled": false,
+          "voice_gender": "female",
+          "language": "en",
+          "consent_analytics": false,
+          "consent_share_with_ai": true,
+          "sessions": 0,
+          "preferences": {},
+          "profile_taken_at": null,
+          "csrf_token": "3-i_RwBuAvvgI528To_mbp1-DgArM216",
+          "expires_at": "2026-10-23T05:16:38.308346",
+          "mode": "local",
+          "created": true
+        }
+      },
+      "baseline": {
+        "start": {
+          "status": 200,
+          "body": {
+            "run_id": "base_f97c80503e204f21a7af",
+            "student_id": "stu_c97006f5bec04bda9b3e",
+            "status": "in_progress",
+            "stage": "format",
+            "stage_title": "How you like to meet a new idea",
+            "kind": "format",
+            "task": null,
+            "progress": 0,
+            "note": "one question before anything else",
+            "format_pick": null,
+            "format_options": [
+              {
+                "value": "diagram",
+                "label": "a diagram",
+                "hint": "a picture or graph of the idea"
+              },
+              {
+                "value": "text",
+                "label": "a written explanation",
+                "hint": "a short paragraph that explains it"
+              },
+              {
+                "value": "worked_example",
+                "label": "a worked example",
+                "hint": "one worked through, step by step"
+              }
+            ],
+            "questions": [],
+            "answers": {},
+            "completion": {
+              "stages": [
+                {
+                  "stage": "format",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "questions",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_study",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_cued",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_a",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "vault",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "shopkeeper",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_b",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "machine",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "locked_box",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_c",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "trap",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_delayed",
+                  "state": "not_started",
+                  "trials": 0
+                }
+              ],
+              "complete": 0,
+              "total": 13,
+              "played": [],
+              "not_measured": [
+                "format",
+                "questions",
+                "codewords_study",
+                "codewords_cued",
+                "quick_a",
+                "vault",
+                "shopkeeper",
+                "quick_b",
+                "machine",
+                "locked_box",
+                "quick_c",
+                "trap",
+                "codewords_delayed"
+              ]
+            },
+            "measured_trials": 0,
+            "started_at": "2026-10-22T17:16:38.323228"
+          }
+        },
+        "picked": {
+          "status": 200,
+          "body": {
+            "run_id": "base_f97c80503e204f21a7af",
+            "student_id": "stu_c97006f5bec04bda9b3e",
+            "status": "in_progress",
+            "stage": "questions",
+            "stage_title": "How you work",
+            "kind": "questions",
+            "task": null,
+            "progress": 0.07142857142857142,
+            "note": "",
+            "format_pick": "text",
+            "format_options": [
+              {
+                "value": "diagram",
+                "label": "a diagram",
+                "hint": "a picture or graph of the idea"
+              },
+              {
+                "value": "text",
+                "label": "a written explanation",
+                "hint": "a short paragraph that explains it"
+              },
+              {
+                "value": "worked_example",
+                "label": "a worked example",
+                "hint": "one worked through, step by step"
+              }
+            ],
+            "questions": [
+              {
+                "key": "goal",
+                "question": "What are you learning this for?",
+                "options": [
+                  "an exam with a date",
+                  "a course I am taking",
+                  "work or a job",
+                  "just curious"
+                ],
+                "why": "decides what the app calls progress"
+              },
+              {
+                "key": "session_minutes",
+                "question": "How long would you like one sitting to be?",
+                "options": [
+                  10,
+                  20,
+                  30,
+                  45
+                ],
+                "why": "sizes a lesson to a sitting you actually have"
+              },
+              {
+                "key": "study_days",
+                "question": "How many days a week can you study?",
+                "options": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "why": "sets the review schedule"
+              },
+              {
+                "key": "study_when",
+                "question": "When do you usually study?",
+                "options": [
+                  "early morning",
+                  "midday",
+                  "afternoon",
+                  "evening",
+                  "late night",
+                  "it varies"
+                ],
+                "why": "times reminders, and never sends them at the wrong hour"
+              },
+              {
+                "key": "motivation",
+                "question": "What keeps you going?",
+                "options": [
+                  "seeing progress",
+                  "a streak",
+                  "competing",
+                  "curiosity",
+                  "finishing things"
+                ],
+                "multi": true,
+                "why": "picks what the progress screen shows first"
+              },
+              {
+                "key": "quit_trigger",
+                "question": "What makes you stop?",
+                "options": [
+                  "boredom",
+                  "being stuck",
+                  "no time",
+                  "feeling behind"
+                ],
+                "multi": true,
+                "why": "tells the app what to notice and work around"
+              },
+              {
+                "key": "feedback_style",
+                "question": "How do you want to hear that you got something wrong?",
+                "options": [
+                  "straight",
+                  "gentle",
+                  "just show the answer"
+                ],
+                "why": "sets the tone of every correction"
+              },
+              {
+                "key": "challenge_first",
+                "question": "Would you rather start with something hard, or something you can do?",
+                "options": [
+                  "challenge me first",
+                  "safe success first"
+                ],
+                "why": "sets the opening difficulty of a lesson"
+              },
+              {
+                "key": "when_stuck",
+                "question": "What do you do when you are stuck?",
+                "options": [
+                  "ask someone",
+                  "search for it",
+                  "keep pushing",
+                  "move on and come back"
+                ],
+                "why": "compared later with what you actually did in the locked box"
+              },
+              {
+                "key": "device_context",
+                "question": "Where and on what do you study?",
+                "options": [
+                  "phone",
+                  "laptop",
+                  "shared device",
+                  "limited data",
+                  "often offline"
+                ],
+                "multi": true,
+                "why": "decides how light the pages are and whether things must work offline"
+              },
+              {
+                "key": "language",
+                "question": "Which language should explanations be in?",
+                "options": [
+                  "English",
+                  "Kiswahili",
+                  "mixed"
+                ],
+                "why": "the language of every explanation"
+              },
+              {
+                "key": "timers_help",
+                "question": "Do you like seeing a timer, or does it stress you?",
+                "options": [
+                  "timers help",
+                  "timers stress me"
+                ],
+                "why": "shows or hides the clock; the app still measures quietly either way"
+              },
+              {
+                "key": "anything_else",
+                "question": "Anything else about how you learn? (one line, optional)",
+                "options": [],
+                "free_text": true,
+                "why": "read by you later, and shown next to your settings"
+              }
+            ],
+            "answers": {
+              "preferred_format": "text"
+            },
+            "completion": {
+              "stages": [
+                {
+                  "stage": "format",
+                  "state": "complete",
+                  "trials": 0
+                },
+                {
+                  "stage": "questions",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_study",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_cued",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_a",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "vault",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "shopkeeper",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_b",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "machine",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "locked_box",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_c",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "trap",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_delayed",
+                  "state": "not_started",
+                  "trials": 0
+                }
+              ],
+              "complete": 1,
+              "total": 13,
+              "played": [],
+              "not_measured": [
+                "questions",
+                "codewords_study",
+                "codewords_cued",
+                "quick_a",
+                "vault",
+                "shopkeeper",
+                "quick_b",
+                "machine",
+                "locked_box",
+                "quick_c",
+                "trap",
+                "codewords_delayed"
+              ]
+            },
+            "measured_trials": 0,
+            "started_at": "2026-10-22T17:16:38.323228"
+          }
+        },
+        "questions": {
+          "status": 200,
+          "body": {
+            "run_id": "base_f97c80503e204f21a7af",
+            "student_id": "stu_c97006f5bec04bda9b3e",
+            "status": "in_progress",
+            "stage": "codewords_study",
+            "stage_title": "Spy codewords: study",
+            "kind": "task",
+            "task": {
+              "id": "codewords_study",
+              "game": "codewords_study",
+              "phase": "show",
+              "pairs": [
+                {
+                  "code": "Harn",
+                  "place": "the river bend"
+                },
+                {
+                  "code": "Pirel",
+                  "place": "a stone tower"
+                },
+                {
+                  "code": "Tuvik",
+                  "place": "a low hill"
+                },
+                {
+                  "code": "Drupe",
+                  "place": "the east field"
+                },
+                {
+                  "code": "Vasko",
+                  "place": "the harbour"
+                },
+                {
+                  "code": "Neril",
+                  "place": "a green bridge"
+                },
+                {
+                  "code": "Quilo",
+                  "place": "a red roof"
+                },
+                {
+                  "code": "Mebra",
+                  "place": "the old well"
+                }
+              ],
+              "study_ms": 45000,
+              "prompt": "Learn these eight pairs. You will be asked for them again later.",
+              "max_latency_ms": 75000
+            },
+            "progress": 0.14285714285714285,
+            "note": "",
+            "format_pick": "text",
+            "format_options": [
+              {
+                "value": "diagram",
+                "label": "a diagram",
+                "hint": "a picture or graph of the idea"
+              },
+              {
+                "value": "text",
+                "label": "a written explanation",
+                "hint": "a short paragraph that explains it"
+              },
+              {
+                "value": "worked_example",
+                "label": "a worked example",
+                "hint": "one worked through, step by step"
+              }
+            ],
+            "questions": [],
+            "answers": {
+              "preferred_format": "text"
+            },
+            "completion": {
+              "stages": [
+                {
+                  "stage": "format",
+                  "state": "complete",
+                  "trials": 0
+                },
+                {
+                  "stage": "questions",
+                  "state": "complete",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_study",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_cued",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_a",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "vault",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "shopkeeper",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_b",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "machine",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "locked_box",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "quick_c",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "trap",
+                  "state": "not_started",
+                  "trials": 0
+                },
+                {
+                  "stage": "codewords_delayed",
+                  "state": "not_started",
+                  "trials": 0
+                }
+              ],
+              "complete": 2,
+              "total": 13,
+              "played": [],
+              "not_measured": [
+                "codewords_study",
+                "codewords_cued",
+                "quick_a",
+                "vault",
+                "shopkeeper",
+                "quick_b",
+                "machine",
+                "locked_box",
+                "quick_c",
+                "trap",
+                "codewords_delayed"
+              ]
+            },
+            "measured_trials": 0,
+            "started_at": "2026-10-22T17:16:38.323228",
+            "refused": [],
+            "refused_note": ""
+          }
+        }
+      }
+    }
+  },
+  "console": [],
+  "concepts": {
+    "status": 200,
+    "body": {
+      "topic": "fractions",
+      "source": "simple",
+      "topic_match": false,
+      "concepts": [
+        {
+          "id": "task",
+          "name": "Read the task"
+        },
+        {
+          "id": "information",
+          "name": "Notice the information"
+        },
+        {
+          "id": "method",
+          "name": "Choose a method"
+        },
+        {
+          "id": "check",
+          "name": "Check the result"
+        }
+      ]
+    }
+  },
+  "plans": {
+    "visual": {
+      "status": 200,
+      "body": {
+        "plan": {
+          "blocks": [
+            {
+              "type": "visual",
+              "body": {
+                "kind": "flow",
+                "title": "Read the task",
+                "unfilled": [],
+                "steps": [
+                  {
+                    "label": "Step 1",
+                    "text": "Say what the task asks you to find or explain."
+                  },
+                  {
+                    "label": "Step 2",
+                    "text": "A clear goal helps you choose what to do next."
+                  }
+                ]
+              },
+              "fact_ids": [
+                "fact_task"
+              ],
+              "why": {
+                "evidence_ids": [],
+                "n": 0
+              },
+              "length": 27
+            },
+            {
+              "type": "check",
+              "body": {
+                "question": "What is the main idea?"
+              },
+              "fact_ids": [
+                "fact_task"
+              ],
+              "why": {
+                "evidence_ids": [],
+                "n": 0
+              },
+              "length": 5
+            },
+            {
+              "type": "text",
+              "body": "Say what the task asks you to find or explain.",
+              "fact_ids": [
+                "fact_task"
+              ],
+              "why": {
+                "evidence_ids": [],
+                "n": 0
+              },
+              "length": 10
+            },
+            {
+              "type": "text",
+              "body": "A clear goal helps you choose what to do next.",
+              "fact_ids": [
+                "fact_task"
+              ],
+              "why": {
+                "evidence_ids": [],
+                "n": 0
+              },
+              "length": 10
+            }
+          ],
+          "source": "simple",
+          "concept_id": "task"
+        },
+        "plan_id": "pln_b5020b1501754663b575",
+        "job_id": null,
+        "upgrade_state": "not_available"
+      }
+    },
+    "text": {
+      "status": 200,
+      "body": {
+        "plan": {
+          "blocks": [
+            {
+              "type": "text",
+              "body": "Say what the task asks you to find or explain.",
+              "fact_ids": [
+                "fact_task"
+              ],
+              "why": {
+                "evidence_ids": [],
+                "n": 0
+              },
+              "length": 10
+            },
+            {
+              "type": "check",
+              "body": {
+                "question": "What is the main idea?"
+              },
+              "fact_ids": [
+                "fact_task"
+              ],
+              "why": {
+                "evidence_ids": [],
+                "n": 0
+              },
+              "length": 5
+            },
+            {
+              "type": "text",
+              "body": "A clear goal helps you choose what to do next.",
+              "fact_ids": [
+                "fact_task"
+              ],
+              "why": {
+                "evidence_ids": [],
+                "n": 0
+              },
+              "length": 10
+            }
+          ],
+          "source": "simple",
+          "concept_id": "task"
+        },
+        "plan_id": "pln_bfcec67d244543fd8594",
+        "job_id": null,
+        "upgrade_state": "not_available"
+      }
+    }
+  }
+}

@@ -1,0 +1,515 @@
+
+> adapt-frontend@0.1.0 lint
+> node ../scripts/check-contract.mjs && tsc --noEmit
+
+checked 132 backend routes against 123 frontend calls
+note: 4 scene kinds: engine, stages and mock agree
+contract ok: every path the frontend calls exists, ?mock=1 covers them, the scene kinds agree across engine/stages/mock, route modules export what Next allows, no host or env misuse in browser code
+
+> adapt-frontend@0.1.0 test:engine
+> node --test src/lib/engine/*.test.mjs
+
+TAP version 13
+# Subtest: the index cannot leave the trace, however it is asked to
+ok 1 - the index cannot leave the trace, however it is asked to
+  ---
+  duration_ms: 1.47706
+  type: 'test'
+  ...
+# Subtest: stepping stops at the end instead of wrapping round
+ok 2 - stepping stops at the end instead of wrapping round
+  ---
+  duration_ms: 0.35105
+  type: 'test'
+  ...
+# Subtest: reaching the end stops the clock; playing from the end starts the scene again
+ok 3 - reaching the end stops the clock; playing from the end starts the scene again
+  ---
+  duration_ms: 0.129934
+  type: 'test'
+  ...
+# Subtest: a prediction blocks the next frame until it is answered, and never after
+ok 4 - a prediction blocks the next frame until it is answered, and never after
+  ---
+  duration_ms: 0.307857
+  type: 'test'
+  ...
+# Subtest: seeking past a prediction is allowed, and the run says so
+ok 5 - seeking past a prediction is allowed, and the run says so
+  ---
+  duration_ms: 0.260286
+  type: 'test'
+  ...
+# Subtest: an unknown index in a jump is clamped, not trusted
+ok 6 - an unknown index in a jump is clamped, not trusted
+  ---
+  duration_ms: 0.193215
+  type: 'test'
+  ...
+# Subtest: dwell time follows the words, inside bounds that cannot flash or freeze
+ok 7 - dwell time follows the words, inside bounds that cannot flash or freeze
+  ---
+  duration_ms: 0.391889
+  type: 'test'
+  ...
+# Subtest: speed is bounded, and a silly number cannot make the scene run at infinity
+ok 8 - speed is bounded, and a silly number cannot make the scene run at infinity
+  ---
+  duration_ms: 0.164435
+  type: 'test'
+  ...
+# Subtest: reduced motion turns off the part that moves by itself
+ok 9 - reduced motion turns off the part that moves by itself
+  ---
+  duration_ms: 0.297674
+  type: 'test'
+  ...
+# Subtest: the seen-frames set grows once per frame, for the review screen
+ok 10 - the seen-frames set grows once per frame, for the review screen
+  ---
+  duration_ms: 0.459961
+  type: 'test'
+  ...
+# Subtest: progress and the clock degrade sensibly
+ok 11 - progress and the clock degrade sensibly
+  ---
+  duration_ms: 0.314601
+  type: 'test'
+  ...
+# Subtest: keys that belong to a text box stay in the text box
+ok 12 - keys that belong to a text box stay in the text box
+  ---
+  duration_ms: 0.137319
+  type: 'test'
+  ...
+# Subtest: a frame with no highlights array renders nothing rather than throwing
+ok 13 - a frame with no highlights array renders nothing rather than throwing
+  ---
+  duration_ms: 0.193427
+  type: 'test'
+  ...
+# Subtest: nothing renders a scene as HTML
+ok 14 - nothing renders a scene as HTML
+  ---
+  duration_ms: 0.571677
+  type: 'test'
+  ...
+# Subtest: browser code never names a host
+ok 15 - browser code never names a host
+  ---
+  duration_ms: 0.396143
+  type: 'test'
+  ...
+1..15
+# tests 15
+# suites 0
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 133.717016
+
+> adapt-frontend@0.1.0 test:lib
+> node --test src/lib/*.test.mjs
+
+TAP version 13
+# Subtest: prose beats the machine code
+ok 1 - prose beats the machine code
+  ---
+  duration_ms: 2.11673
+  type: 'test'
+  ...
+# Subtest: a pacing refusal carries the wait
+ok 2 - a pacing refusal carries the wait
+  ---
+  duration_ms: 0.28206
+  type: 'test'
+  ...
+# Subtest: an unstructured error keeps its own message, and never comes back empty
+ok 3 - an unstructured error keeps its own message, and never comes back empty
+  ---
+  duration_ms: 0.140083
+  type: 'test'
+  ...
+# Subtest: a repeat inside the window is refused, and a fresh key is not
+ok 4 - a repeat inside the window is refused, and a fresh key is not
+  ---
+  duration_ms: 1.042168
+  type: 'test'
+  ...
+# Subtest: the window closes and the learner is allowed to repeat themselves
+ok 5 - the window closes and the learner is allowed to repeat themselves
+  ---
+  duration_ms: 0.191974
+  type: 'test'
+  ...
+# Subtest: forget() reopens a key -- a cleared box is not a repeat
+ok 6 - forget() reopens a key -- a cleared box is not a repeat
+  ---
+  duration_ms: 0.168857
+  type: 'test'
+  ...
+# Subtest: in-flight returns one answer and refuses the second caller
+ok 7 - in-flight returns one answer and refuses the second caller
+  ---
+  duration_ms: 0.250457
+  type: 'test'
+  ...
+# Subtest: share() gives a second click the first request's answer
+ok 8 - share() gives a second click the first request's answer
+  ---
+  duration_ms: 0.263889
+  type: 'test'
+  ...
+# Subtest: a rejected request still releases its slot
+ok 9 - a rejected request still releases its slot
+  ---
+  duration_ms: 0.390364
+  type: 'test'
+  ...
+# Subtest: debounce waits for the last call and cancel() drops it
+ok 10 - debounce waits for the last call and cancel() drops it
+  ---
+  duration_ms: 82.044571
+  type: 'test'
+  ...
+# Subtest: throttle runs on the leading edge and reports what it dropped
+ok 11 - throttle runs on the leading edge and reports what it dropped
+  ---
+  duration_ms: 0.313446
+  type: 'test'
+  ...
+# Subtest: the voice screen and the flow layer actually use the guards
+ok 12 - the voice screen and the flow layer actually use the guards
+  ---
+  duration_ms: 0.787273
+  type: 'test'
+  ...
+# Subtest: failed receipt links directly to its resumable recovery
+ok 13 - failed receipt links directly to its resumable recovery
+  ---
+  duration_ms: 9.386349
+  type: 'test'
+  ...
+# Subtest: missing checked content is a notice, not a made-up recovery
+ok 14 - missing checked content is a notice, not a made-up recovery
+  ---
+  duration_ms: 1.272071
+  type: 'test'
+  ...
+# Subtest: the fatigue break suggestion remains visible on the receipt
+ok 15 - the fatigue break suggestion remains visible on the receipt
+  ---
+  duration_ms: 0.741835
+  type: 'test'
+  ...
+# Subtest: demo evidence contains no invented measurements
+ok 16 - demo evidence contains no invented measurements
+  ---
+  duration_ms: 0.789652
+  type: 'test'
+  ...
+# Subtest: demo recovery refuses starts, resumes and answers honestly
+ok 17 - demo recovery refuses starts, resumes and answers honestly
+  ---
+  duration_ms: 0.41338
+  type: 'test'
+  ...
+# Subtest: raw n cannot conceal insufficient weighted evidence in the badge
+ok 18 - raw n cannot conceal insufficient weighted evidence in the badge
+  ---
+  duration_ms: 7.241374
+  type: 'test'
+  ...
+# Subtest: a method row prints range and observational source weight next to its number
+ok 19 - a method row prints range and observational source weight next to its number
+  ---
+  duration_ms: 2.492795
+  type: 'test'
+  ...
+# Subtest: adequately measured controlled data is not labelled early
+ok 20 - adequately measured controlled data is not labelled early
+  ---
+  duration_ms: 0.776775
+  type: 'test'
+  ...
+# Subtest: a pilot label remains visible even with adequate effective n
+ok 21 - a pilot label remains visible even with adequate effective n
+  ---
+  duration_ms: 0.712993
+  type: 'test'
+  ...
+# Subtest: missing measurements are unavailable, not invented zero-percent results
+ok 22 - missing measurements are unavailable, not invented zero-percent results
+  ---
+  duration_ms: 0.961849
+  type: 'test'
+  ...
+# Subtest: the frontend's stage ids are the backend's, in the backend's order
+ok 23 - the frontend's stage ids are the backend's, in the backend's order
+  ---
+  duration_ms: 1.816468
+  type: 'test'
+  ...
+# Subtest: every stage has learner-readable words and a route
+ok 24 - every stage has learner-readable words and a route
+  ---
+  duration_ms: 0.25112
+  type: 'test'
+  ...
+# Subtest: no step's own words name the machinery
+ok 25 - no step's own words name the machinery
+  ---
+  duration_ms: 0.88635
+  type: 'test'
+  ...
+# Subtest: a skip is behind you, and the bar counts it
+ok 26 - a skip is behind you, and the bar counts it
+  ---
+  duration_ms: 0.234901
+  type: 'test'
+  ...
+# Subtest: stated items do not show n=0
+ok 27 - stated items do not show n=0
+  ---
+  duration_ms: 1.021542
+  type: 'test'
+  ...
+# Subtest: demo profiles do not mention a profile version
+ok 28 - demo profiles do not mention a profile version
+  ---
+  duration_ms: 0.71445
+  type: 'test'
+  ...
+# Subtest: the onboarding exemption is gone: the old copy now fails on every route
+ok 29 - the onboarding exemption is gone: the old copy now fails on every route
+  ---
+  duration_ms: 0.495821
+  type: 'test'
+  ...
+# Subtest: the setup screen asks once: no developer panel and no duplicated question
+ok 30 - the setup screen asks once: no developer panel and no duplicated question
+  ---
+  duration_ms: 0.498539
+  type: 'test'
+  ...
+# Subtest: the journey shell and the sidebar both lead to the one path
+ok 31 - the journey shell and the sidebar both lead to the one path
+  ---
+  duration_ms: 0.599856
+  type: 'test'
+  ...
+# Subtest: status chip and home copy no longer use the old developer sentences
+ok 32 - status chip and home copy no longer use the old developer sentences
+  ---
+  duration_ms: 1.314633
+  type: 'test'
+  ...
+# Subtest: a signed-out privacy list is not called unread while it is loading or after it arrives
+ok 33 - a signed-out privacy list is not called unread while it is loading or after it arrives
+  ---
+  duration_ms: 0.396412
+  type: 'test'
+  ...
+# Subtest: a signed-out session waits for an explicit entry instead of creating a guest
+ok 34 - a signed-out session waits for an explicit entry instead of creating a guest
+  ---
+  duration_ms: 0.257648
+  type: 'test'
+  ...
+# Subtest: analytics is an optional entry choice, not a condition for using the app
+ok 35 - analytics is an optional entry choice, not a condition for using the app
+  ---
+  duration_ms: 0.392155
+  type: 'test'
+  ...
+# Subtest: the newest entry is the first one read back
+ok 36 - the newest entry is the first one read back
+  ---
+  duration_ms: 1.03251
+  type: 'test'
+  ...
+# Subtest: it cannot grow without bound over a long session
+ok 37 - it cannot grow without bound over a long session
+  ---
+  duration_ms: 0.953884
+  type: 'test'
+  ...
+# Subtest: an empty or whitespace entry is not an entry
+ok 38 - an empty or whitespace entry is not an entry
+  ---
+  duration_ms: 0.712492
+  type: 'test'
+  ...
+# Subtest: what is written is what is read back
+ok 39 - what is written is what is read back
+  ---
+  duration_ms: 1.143827
+  type: 'test'
+  ...
+# Subtest: a ledger that was never written reads as empty, not as an error
+ok 40 - a ledger that was never written reads as empty, not as an error
+  ---
+  duration_ms: 0.332746
+  type: 'test'
+  ...
+# Subtest: corrupt storage reads as an empty ledger
+ok 41 - corrupt storage reads as an empty ledger
+  ---
+  duration_ms: 0.256327
+  type: 'test'
+  ...
+# Subtest: a browser that refuses storage loses the ledger and nothing else
+ok 42 - a browser that refuses storage loses the ledger and nothing else
+  ---
+  duration_ms: 0.265555
+  type: 'test'
+  ...
+# Subtest: entries that survive a reload are the entries a learner can read back
+ok 43 - entries that survive a reload are the entries a learner can read back
+  ---
+  duration_ms: 0.190292
+  type: 'test'
+  ...
+# Subtest: every registered type has an instruction of at most 12 words and a hint
+ok 44 - every registered type has an instruction of at most 12 words and a hint
+  ---
+  duration_ms: 0.98164
+  type: 'test'
+  ...
+# Subtest: validatePlanItems keeps only registered types and numbers the items
+ok 45 - validatePlanItems keeps only registered types and numbers the items
+  ---
+  duration_ms: 0.307711
+  type: 'test'
+  ...
+# Subtest: validatePlanItems caps a plan at 8 items
+ok 46 - validatePlanItems caps a plan at 8 items
+  ---
+  duration_ms: 0.272511
+  type: 'test'
+  ...
+# Subtest: validatePlanItems rejects junk shapes without throwing
+ok 47 - validatePlanItems rejects junk shapes without throwing
+  ---
+  duration_ms: 0.559818
+  type: 'test'
+  ...
+# Subtest: splitList trims and drops empties; asInt rounds and falls back
+ok 48 - splitList trims and drops empties; asInt rounds and falls back
+  ---
+  duration_ms: 0.243293
+  type: 'test'
+  ...
+# Subtest: subject chips offer only authored lesson topics
+ok 49 - subject chips offer only authored lesson topics
+  ---
+  duration_ms: 1.607968
+  type: 'test'
+  ...
+1..49
+# tests 49
+# suites 0
+# pass 49
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2374.226415
+
+> adapt-frontend@0.1.0 test:server
+> node --test server.test.mjs
+
+TAP version 13
+# Subtest: ADAPT_API=offline answers 503 and stays up, and the UI still serves
+ok 1 - ADAPT_API=offline answers 503 and stays up, and the UI still serves
+  ---
+  duration_ms: 18328.995576
+  type: 'test'
+  ...
+# Subtest: a LAN Host header reaches the API as 127.0.0.1, and the 101 keeps its own headers
+ok 2 - a LAN Host header reaches the API as 127.0.0.1, and the 101 keeps its own headers
+  ---
+  duration_ms: 9952.872235
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 28367.44979
+
+> adapt-frontend@0.1.0 test:env
+> node --test env.test.mjs
+
+TAP version 13
+# Subtest: the frontend parser accepts copyable dotenv values but ignores secrets
+ok 1 - the frontend parser accepts copyable dotenv values but ignores secrets
+  ---
+  duration_ms: 1.413822
+  type: 'test'
+  ...
+# Subtest: local frontend values override file defaults while process variables win
+ok 2 - local frontend values override file defaults while process variables win
+  ---
+  duration_ms: 1.68317
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 67.086263
+
+> adapt-frontend@0.1.0 test:dev
+> node --test dev.test.mjs
+
+TAP version 13
+# Subtest: uses the repository venv without requiring shell activation
+ok 1 - uses the repository venv without requiring shell activation
+  ---
+  duration_ms: 0.861074
+  type: 'test'
+  ...
+# Subtest: supports an explicit Python override and an activated venv
+ok 2 - supports an explicit Python override and an activated venv
+  ---
+  duration_ms: 1.373191
+  type: 'test'
+  ...
+# Subtest: launches both services in dev mode, forwarding the port and LAN override
+ok 3 - launches both services in dev mode, forwarding the port and LAN override
+  ---
+  duration_ms: 0.949389
+  type: 'test'
+  ...
+# Subtest: missing Python fails with setup instructions, rather than starting half the app
+ok 4 - missing Python fails with setup instructions, rather than starting half the app
+  ---
+  duration_ms: 37.550832
+  type: 'test'
+  ...
+# Subtest: production hosting keeps the same port/arguments without enabling dev compilation
+ok 5 - production hosting keeps the same port/arguments without enabling dev compilation
+  ---
+  duration_ms: 0.246352
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 111.805198

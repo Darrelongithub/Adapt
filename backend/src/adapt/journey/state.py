@@ -130,7 +130,7 @@ def _stored(s: Session, student_id: str) -> dict[str, JourneyStage]:
     return {row.stage: row for row in rows}
 
 
-def statuses(s: Session, student_id: str) -> list[dict[str, str]]:
+def statuses(s: Session, student_id: str) -> list[dict[str, Any]]:
     """Every stage with its status, in path order.
 
     ``status`` is one of ``todo|done|skipped`` (frozen). ``evidence`` is an extra key
@@ -157,7 +157,7 @@ def statuses(s: Session, student_id: str) -> list[dict[str, str]]:
         else:
             status = "todo"
             evidence = "none"
-        out.append({"id": stage, "status": status, "evidence": evidence})
+        out.append({"id": stage, "status": status, "evidence": evidence, "note": row.note if row is not None else None})
     return out
 
 

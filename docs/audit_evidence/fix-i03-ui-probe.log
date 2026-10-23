@@ -1,0 +1,323 @@
+
+[1mADAPT UI probe[0m  http://127.0.0.1:3000
+backend 200 {"ok":true,"version":"0.1.0","lessons":{"state":"simple mode","says":"Lessons: simple mode
+
+
+[1mentry gate and home[0m
+  [32mok[0m  server HTML covers the app before hydration (no dashboard flash)
+  [32mok[0m  welcome is neutral rather than a time-of-day greeting
+  [32mok[0m  navigation and learning pages are not mounted before entry
+  [32mok[0m  optional choices start unchecked and the explicit continue control is enabled
+  [32mok[0m  Tab stays inside the mandatory card
+  [32mok[0m  Shift-Tab wraps without landing on a disabled control
+  [32mok[0m  Escape and outside clicks cannot dismiss the card
+  [32mok[0m  continuing without optional analytics opens account choices without creating an account
+  [32mok[0m  first-time registration enters the journey and removes the access card
+  [32mok[0m  optional analytics was saved at creation; model sharing was not silently enabled
+  [32mok[0m  returning sign-in resumes the journey without starting another baseline
+  [32mok[0m  the journey exposes its current stage and no access form
+  [32mok[0m  no uncaught entry or navigation errors
+  [32mok[0m  a direct journey URL cannot bypass the access gate
+  [32mok[0m  first guest goes straight to the journey, not back to access
+  [32mok[0m  guest can reach the dashboard without being forced through an assessment
+
+[1monboarding[0m
+  [32mok[0m  the setup screen renders as a form, not an error
+  [32mok[0m  no developer panel: the server's key names are not printed at the learner
+  [32mok[0m  the questions about how you work are asked once, elsewhere — not on this screen
+  [32mok[0m  the account-level time setting is a numeric field
+  [32mok[0m  the voice switch is a control that takes the press
+  [32mok[0m  asking for voice exposes the male/female choice rather than hiding it
+  [32mok[0m  what the learner typed is what the page sent
+  [32mok[0m  clicking save really posted to the onboarding endpoint
+  [32mok[0m  the page answers with what it stored
+  [32mok[0m  the saved card names no key and hands the learner to the path
+  [32mok[0m  the minutes are on the server, not just in the form
+  [32mok[0m  the free text lands in the same preference store the rest of the app reads
+  [32mok[0m  and this screen did not store a mind-check answer it does not ask
+  [32mok[0m  the voice switch and the chosen voice reached the learner record
+  [32mok[0m  a refresh shows the same value (it was persisted, not cached in memory)
+  [32mok[0m  the account is marked as onboarded
+
+[1mjourney[0m
+  [32mok[0m  the current three-step overview and initial stage render
+  [32mok[0m  the current stage offers a real mind-check link and one skip
+  [32mok[0m  the initial stage comes from the server
+  [32mok[0m  skip posts journey advancement instead of changing only React state
+  [32mok[0m  the skip is stored as skipped and advances to games
+  [32mok[0m  the skipped stage is reported as not measured
+  [32mok[0m  the page redraws with the server-owned games stage
+  [32mok[0m  a fresh page resumes the stored games stage
+  [32mok[0m  the path keeps the responsive shell controls in the document
+[1mdiagnose[0m
+  [32mok[0m  opening placement opens a real session and asks for items
+  [32mok[0m  placement is a sequence of items, not one question
+  [32mok[0m  no raw template placeholders reach the screen
+  [32mok[0m  the learner is told what the answers are for
+  [32mok[0m  placement really withholds help, as the copy promises
+  [32mok[0m  the question offers a way in (choices, a box to type in, or a teach-back)
+  [32mok[0m  nothing is covering the question screen
+[2m  note  the first item is not a choice question — the choice path is checked on the first choice question in the walk below[0m
+  [32mok[0m  an answer is accepted by the control before submitting
+  [32mok[0m  the submit control is locked with nothing entered and unlocked once there is an answer
+  [32mok[0m  one press of the submit control sends the attempt
+  [32mok[0m  answering is accepted and unlocks the next question
+  [32mok[0m  the marking is shown in words, not just a colour
+  [32mok[0m  the attempt is on the session's own event log
+  [32mok[0m  next moves the sequence on and the answer box is clear again
+  [32mok[0m  moving on does not quietly end placement early
+  [32mok[0m  coming back to a question shows the answer that was given
+  [32mok[0m  coming back does not lock the way forward
+  [32mok[0m  the answer typed on the other question is still there
+  [32mok[0m  every question in the sequence can be reached from the previous one
+[2m  note  this placement sequence served no choice question (the selector picks the most informative item per topic, and for these topics they are typed or teach-back) — the press check runs on the choice question in the learn scenario[0m
+  [32mok[0m  the final question offers finishing rather than another page turn
+  [32mok[0m  the report says what it did with the evidence
+  [32mok[0m  the report offers the next real step
+  [32mok[0m  finishing placement marks the learner as placed, and that survives a reload
+  [32mok[0m  the landing page offers the next subject step instead of placing the learner again
+  [32mok[0m  no uncaught error anywhere on the screen
+
+[1mlearn[0m
+  [32mok[0m  practice without a subject offers an honest subject-choice state
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  the plan asks for items, for active adaptations and for the review queue
+  [32mok[0m  practice is reachable and serves a question (or says honestly there is none)
+  [32mok[0m  no raw template placeholders reach the screen
+  [32mok[0m  unlike placement, help is offered here
+  [32mok[0m  the assigned method's teaching is on screen, not just in the payload
+  [32mok[0m  the next step is behind the step check, and the check explains itself
+  [32mok[0m  a hint comes back as readable text, not an error
+  [32mok[0m  running out of hints says so in words a learner can act on
+  [32mok[0m  the hint budget is enforced by the page, not just by the server
+  [32mok[0m  a worked example opens with steps and no template leak
+  [32mok[0m  revealing the answer is allowed, asked of the API, and shown on screen
+  [32mok[0m  one press of the submit control sends the attempt
+  [32mok[0m  submitting an answer posts to /attempts and the screen reacts
+  [32mok[0m  asking the tutor in plain words gets an answer on screen
+  [32mok[0m  the tutor reply contains no unrendered item template
+  [32mok[0m  the tutor reply shows the numbers on the card, not the author's variables
+  [32mok[0m  the reply is not the question echoed back
+  [32mok[0m  the attempt is retrievable afterwards
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  a reload brings practice back with the same session state and no new error
+  [32mok[0m  the method's teaching arrives with the question (mock: explanation first)
+  [32mok[0m  the next step is locked until the step check is answered
+  [32mok[0m  answering the check opens the next step, and the check says it is not being marked
+  [32mok[0m  one step is on screen at a time, with the material never cut
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+
+[1mproposals[0m
+  [32mok[0m  a learner who is clearly struggling produces real evidence and a real question
+  [32mok[0m  reject: nothing is applied before the learner has answered
+  [32mok[0m  a waiting proposal shows observation, pattern, explanation and what it would change
+  [32mok[0m  the four answers a learner can give are all offered
+  [32mok[0m  the ask is a question, not a decision already made
+  [32mok[0m  a proposal shows where the idea comes from
+  [32mok[0m  the evidence is separated from the interpretation
+  [32mok[0m  rejecting is offered as its own answer
+  [32mok[0m  a rejection applies nothing: no adaptation is active afterwards
+  [32mok[0m  a rejection changes no teaching setting either
+  [32mok[0m  the rejection is stored as the learner's own decision
+  [32mok[0m  a proposal cannot be answered twice to sneak a change in
+  [32mok[0m  and the refused second answer still applied nothing
+  [32mok[0m  no uncaught error on the decisions screen
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  accept: nothing is applied before the learner has answered
+  [32mok[0m  the accept control is pressable
+  [32mok[0m  saying yes is what turns an adaptation on
+  [32mok[0m  the confirmation names the change and its review, rather than just thanking the learner
+  [32mok[0m  the audit records the acceptance as answered_by=student from the web
+  [32mok[0m  what the learner approved is the number now in force, not the default already in use
+  [32mok[0m  an approval that was not about settings leaves settings alone
+  [32mok[0m  the learner can see the change in force on the practice screen
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  the applied row carries the evidence line with it
+  [32mok[0m  after a reload the accepted change is still listed as on right now
+  [32mok[0m  turning it off from the page actually turns it off
+  [32mok[0m  a change of mind is written down beside the decision it undid
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  modify: nothing is applied before the learner has answered
+  [32mok[0m  modifying opens the numbers so the learner can change them
+  [32mok[0m  a modified approval is recorded as the learner's modification, not the model's proposal
+  [32mok[0m  and the reason the learner typed is kept with it
+  [32mok[0m  the decision is written into the log the learner can read back
+  [32mok[0m  the version that takes effect is the learner's edited one
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  the decisions scenario never borrowed the run's own session
+
+[1mprogress[0m
+  [32mok[0m  mastery is shown with a number or an explicit empty state
+  [32mok[0m  the page distinguishes measurement from diagnosis
+  [32mok[0m  history/journey or its absence is stated
+  [32mok[0m  a count of observations sits next to every estimate
+  [32mok[0m  a small sample is called an early signal in words, not just coloured
+  [32mok[0m  what the page shows exists in the API response
+  [32mok[0m  the estimate is drawn, not only listed
+  [32mok[0m  the drawing is described for a screen reader instead of being decoration
+  [32mok[0m  the page says what each dimension of the chart means
+  [32mok[0m  every lane has a row of exact figures underneath it
+  [32mok[0m  the interval around the estimate is named as an interval
+  [32mok[0m  the sidebar names the section it is standing on
+  [32mok[0m  and offers every other section in plain words
+  [32mok[0m  mock: both lanes are drawn, with a row of exact figures each
+  [32mok[0m  mock: the four-answer estimate carries the wider interval
+  [32mok[0m  mock: the small sample is called an early signal beside its own number
+  [32mok[0m  mock: the estimates on screen are the ones the fixture sent
+  [32mok[0m  mock: the evidence count sizes the circle, and the page says so
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+
+[1mreview[0m
+  [32mok[0m  due-review list or an explicit 'nothing due' state
+  [32mok[0m  what was rated stays readable after the announcement is gone
+  [32mok[0m  the sidebar names this section too
+  [32mok[0m  a due row offers the retention check
+  [32mok[0m  the check arrives with the question and the reason it is asked now
+  [32mok[0m  the answer key is not shown before an answer
+  [32mok[0m  after rating, the key opens and the next check is scheduled
+  [32mok[0m  and no uncaught error on the mocked review walk
+
+[1msettings[0m
+  [32mok[0m  settings page renders controls
+  [32mok[0m  the privacy/delete story is present, not hidden
+  [32mok[0m  the control moves in the page when it is clicked
+  [32mok[0m  the server took the key instead of quietly dropping it
+  [32mok[0m  the saved value is what the API now returns (push_me)
+  [32mok[0m  a flipped control is still flipped after a reload
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  a phrase preference is typed, not ticked
+  [32mok[0m  what was typed is stored as separate phrases, not one long string
+  [32mok[0m  and the page shows the phrases again after a reload
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  a changed choice reaches the stored preferences
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+
+[1mvoice[0m
+  [32mok[0m  voice page states what is and is not installed
+  [32mok[0m  the engine status is honest, not 'ready' with no engine
+  [32mok[0m  capabilities answers, and names no engine to a signed-in learner
+  [32mok[0m  pressing the mic without permission explains itself and does not hang
+  [32mok[0m  the control returns to a usable state (no stuck 'listening')
+  [32mok[0m  both voice genders are selectable
+  [32mok[0m  choosing a gender takes effect without a save that never arrives
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+[1mlesson[0m
+  [32mok[0m  the initial page offers learner lessons without a demo scene wall
+  [32mok[0m  the scene catalogue answers with real scenes
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  opening a scene asks for a run once
+  [32mok[0m  the stage draws the backend's own caption
+  [32mok[0m  nothing is autoplaying over a question
+  [32mok[0m  'next' is present on a blocked frame (the gate is honest, not a disabled button)
+  [32mok[0m  and it does not advance past an unanswered prediction
+  [32mok[0m  the choices are the ones the frame carried
+  [32mok[0m  the grade arrives from the simulation, and says so
+  [32mok[0m  and the frame moves once it has been answered
+  [32mok[0m  there is somewhere to ask a question
+  [32mok[0m  a question the simulation can settle is answered by the simulation
+  [32mok[0m  and no model was billed for it
+  [32mok[0m  the editable parameters are the ones the engine declares
+  [32mok[0m  changing the numbers says plainly that this is a new scene
+  [32mok[0m  and it is the backend that recomputed the trace
+  [32mok[0m  the derived run has an owned scene and server frame to resume
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  resuming names the exact frame stored on the server
+  [32mok[0m  the review counts predictions before the answer, not accuracy as mastery
+  [32mok[0m  the run is in the learner's evidence, described in the API's own words
+  [32mok[0m  and it is still not a mastery number
+  [32mok[0m  a frame the player moved was written back, and a frame the gate held was not
+  [32mok[0m  no uncaught error during the whole lesson
+  [32mok[0m  no raw object reached the screen
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+
+[1msubject[0m
+  [32mok[0m  the current journey opens with a real subject chooser
+  [32mok[0m  choosing a subject reaches its authored setup
+  [32mok[0m  setup offers Confident
+  [32mok[0m  setup offers Try it
+  [32mok[0m  setup offers Exam
+  [32mok[0m  starting checks requests exactly one plan
+  [32mok[0m  the owned saved run contains a sealed four-item plan
+  [32mok[0m  the screen shows the saved run's current item
+  [32mok[0m  reload resumes the same run without requesting a replacement plan
+  [32mok[0m  no uncaught error occurs in the current subject flow
+
+[1mfailures[0m
+  [32mok[0m  an invalid submission is a client error, not a 500
+  [32mok[0m  the error says what was wrong
+  [32mok[0m  an unauthenticated write is refused
+  [32mok[0m  a cookie-authenticated POST without the CSRF token is refused
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  an unknown API path 404s rather than 500ing
+[2m  (explain answered 429 {"detail":{"error":"rate_limited","retry_after_s":0.52,"scope":"llm"}})[0m
+  [32mok[0m  a flooded learner is told to wait, with a number
+  [32mok[0m  a throttled session read is a retry, not a sign-out wall
+  [32mok[0m  and the retry is something the learner can press
+  [32mok[0m  the back-off retry finds the session again without being told to
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  the changes screen does not announce a sign-out it was not told about
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  being rate limited does not break the app (reads still answer)
+[1mcontent[0m
+  [32mok[0m  the engine's own learner can be created
+  [32mok[0m  a topic's breakdown arrives over HTTP
+  [32mok[0m  every concept carries its misconceptions and objectives
+  [32mok[0m  the breakdown does not ship the answer kits
+  [32mok[0m  a topic with no authored chain says so instead of inventing one
+  [32mok[0m  a concept pack arrives with all three variants
+  [32mok[0m  the matched pair arrives with both legs
+  [32mok[0m  no leg carries its answer key
+  [32mok[0m  no leg carries the answer explanation
+  [32mok[0m  the pair is matched on format and says it is not matched on difficulty
+  [32mok[0m  the worked example is present and verified
+  [32mok[0m  three graded hints and a three-point checklist
+  [32mok[0m  a GET never writes
+  [32mok[0m  the hint ladder climbs nudge, method, near-answer and then stops
+  [32mok[0m  an unknown concept names the ones that exist
+  [32mok[0m  an answer is graded over HTTP, by option text, and comes back with its explanation
+  [32mok[0m  the current lesson serves authored choices without showing the checked answer first
+  [32mok[0m  answering the current lesson produces a server grade and visible verdict
+  [32mok[0m  the lesson does not expose a raw grading object
+[1mbaseline[0m
+  [32mok[0m  opens on the format pick, not a game
+  [32mok[0m  the format pick is a labelled group with three pressed-state options
+  [32mok[0m  a preference screen asks for no coin wager
+  [32mok[0m  stopping is on screen from the first step
+  [32mok[0m  the questions arrive one at a time with their own progress
+  [32mok[0m  every question says why it is asked
+  [32mok[0m  the questions are skippable
+  [32mok[0m  the study screen shows the eight pairs it will ask for later
+  [32mok[0m  a practice screen is labelled as unscored and offers no coins
+  [32mok[0m  a scored question task offers the coin wager
+  [32mok[0m  no practice trial ever offers coins
+  [32mok[0m  the vault arrives as a nine-tile grid
+  [32mok[0m  the tiles are disabled while the sequence is being flashed
+  [32mok[0m  the flash ends and the grid becomes tappable
+  [32mok[0m  a number key taps a tile: no mouse needed for the grid
+  [32mok[0m  no uncaught error during the walk
+  [32mok[0m  stopping early still produces the snapshot
+  [32mok[0m  the snapshot names what was not measured instead of zeroing it
+  [32mok[0m  a measured factor carries its range and its n
+  [32mok[0m  every lever says where it came from
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+  [32mok[0m  ?mock=1 opens the baseline without a backend
+  [32mok[0m  the mock answers with the questions screen, not an error frame
+  [32mok[0m  and no uncaught error on the mocked walk
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+
+[1mnavigation (06 → 07 → 11)[0m
+  [32mok[0m  a cold sidebar click immediately shows loading feedback
+  [32mok[0m  latest click wins over a slower previous navigation
+  [32mok[0m  Settings reuses the shell session instead of refetching me
+  [32mok[0m  Settings is labelled consistently with the sidebar
+  [32mok[0m  returning to 06 resumes the saved baseline step
+  [32mok[0m  switches preserve the document and shared sidebar
+  [32mok[0m  one main landmark and one skip-link target
+  [32mok[0m  no stuck pending marker
+  [32mok[0m  no uncaught navigation or hydration errors
+  [32mok[0m  no raw JSON object is shown to the learner on this screen
+
+[1m286/286 checks passed[0m  [2m(283 API calls)[0m

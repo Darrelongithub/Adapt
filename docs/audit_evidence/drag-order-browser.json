@@ -1,0 +1,20 @@
+{
+  "before": [
+    "Shape",
+    "Mix",
+    "Bake"
+  ],
+  "immediatelyAfterMove": [
+    "Mix",
+    "Shape",
+    "Bake"
+  ],
+  "after300ms": [
+    "Shape",
+    "Mix",
+    "Bake"
+  ],
+  "verdict": "Correct.",
+  "submittedExpectedWrong": false,
+  "controlPersisted": false
+}

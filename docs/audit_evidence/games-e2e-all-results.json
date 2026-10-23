@@ -1,0 +1,805 @@
+{
+  "config": {
+    "argv": [
+      "/usr/local/bin/node",
+      "/home/user/Adapt/e2e/games/node_modules/.bin/playwright",
+      "test"
+    ],
+    "configFile": "/home/user/Adapt/e2e/games/playwright.config.ts",
+    "rootDir": "/home/user/Adapt/e2e/games",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          "/keyboard\\.spec/"
+        ],
+        "testMatch": [
+          "/.*\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      },
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          "/keyboard\\.spec/"
+        ],
+        "testMatch": [
+          "/.*\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      },
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "keyboard",
+        "name": "keyboard",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [],
+        "testMatch": [
+          "/keyboard\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "desktop",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "snapshotDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          {}
+        ],
+        "testMatch": {},
+        "timeout": 1200000,
+        "use": {
+          "baseURL": "http://127.0.0.1:3000",
+          "trace": "retain-on-failure",
+          "actionTimeout": 20000,
+          "screenshot": "off",
+          "launchOptions": {
+            "executablePath": "/opt/pw-browsers/chromium",
+            "args": [
+              "--no-sandbox",
+              "--no-zygote",
+              "--disable-gpu"
+            ]
+          },
+          "reducedMotion": "reduce",
+          "locale": "en-GB",
+          "viewport": {
+            "width": 1280,
+            "height": 900
+          }
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "desktop"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "mobile",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "snapshotDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          {}
+        ],
+        "testMatch": {},
+        "timeout": 1200000,
+        "use": {
+          "baseURL": "http://127.0.0.1:3000",
+          "trace": "retain-on-failure",
+          "actionTimeout": 20000,
+          "screenshot": "off",
+          "launchOptions": {
+            "executablePath": "/opt/pw-browsers/chromium",
+            "args": [
+              "--no-sandbox",
+              "--no-zygote",
+              "--disable-gpu"
+            ]
+          },
+          "reducedMotion": "reduce",
+          "locale": "en-GB",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "isMobile": true,
+          "hasTouch": true,
+          "deviceScaleFactor": 2
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "mobile"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "keyboard",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "snapshotDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 1200000,
+        "use": {
+          "baseURL": "http://127.0.0.1:3000",
+          "trace": "retain-on-failure",
+          "actionTimeout": 20000,
+          "screenshot": "off",
+          "launchOptions": {
+            "executablePath": "/opt/pw-browsers/chromium",
+            "args": [
+              "--no-sandbox",
+              "--no-zygote",
+              "--disable-gpu"
+            ]
+          },
+          "reducedMotion": "reduce",
+          "locale": "en-GB",
+          "viewport": {
+            "width": 1280,
+            "height": 900
+          }
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "keyboard"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "baseline-games.spec.ts",
+      "file": "baseline-games.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the whole baseline: every game, the next-day check, and what the server recorded",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 126184,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:31:17.512Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 127652,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:36:03.472Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8f36cc2efe03426522dc-0d0b65e2f0511eac2746",
+          "file": "baseline-games.spec.ts",
+          "line": 10,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "snapshot-honesty.spec.ts",
+      "file": "snapshot-honesty.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "stopping straight away records every game as not measured, and no number",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2439,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:33:23.775Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "wording and structure: checked once, on the desktop",
+                  "location": {
+                    "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                    "line": 11,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 1,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:38:11.217Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "wording and structure: checked once, on the desktop",
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                        "line": 11,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "cd53569ef487edde1dd7-a5c6edd32e4a5db4b5f1",
+          "file": "snapshot-honesty.spec.ts",
+          "line": 14,
+          "column": 5
+        },
+        {
+          "title": "stopping part-way keeps what was measured, with its n, and names what was not reached",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 112869,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/locked_box/\u001b[39m\nReceived string:  \u001b[31m\"What we measured, and what we did not 4 of 8 things were measurable from this sitting. Everything else says “not measured” on purpose: a game you did not play is unknown, not a zero. What you already know NOT MEASURED Not enough data yet — the subject round would fill this in. How much you hold at once 8-9 n=30 You currently hold about 8–9 steps at once, so lessons will use smaller steps and check between them. keep explanation blocks to about 8 ideas before a check prefer a worked example split into short steps over one long paragraph How fast you work 0.1-0.1 n=8 Most quick answers take you about 0.1 seconds, so the app will pace new material at that speed and not chase a fastest time. size checks to about this pace rather than to a clock keep block length as it is Staying on it 0-0.6 n=8 Your accuracy dropped toward the end of the session, so the app will shorten blocks and add a check-in. shorten blocks and add a check-in keep answers as they are Remembering over time 0.9-1 n=8 You recalled 100% of the pairs straight away, so review will be scheduled around the default spacing. seed your review spacing from this, with a range keep recall practice as it is Working out a rule NOT MEASURED Not enough data yet — finishing a machine round would fill this in. Knowing what you know NOT MEASURED Not enough data yet — a few more answers with a coin wager would fill this in. Pushing through, and asking for help NOT MEASURED Not enough data yet — trying the locked box would fill this in. What we will do differently step size MEASURED large holds about 8–9 steps at once (n=30) lead format prior YOU TOLD US diagram you chose diagram for a new topic (stated, not measured) pace MEASURED steady median 80ms per quick tap, drift -68% across the session (n=8) review halflife prior MEASURED 90 recalled 100% of new pairs straight away (n=8) hint policy DEFAULT on request default: hints are there when asked for confidence prompting DEFAULT off no calibration evidence yet tone YOU TOLD US straight you chose how you want to hear that you got something wrong (stated) language YOU TOLD US en you chose the language for explanations (stated) timers visible YOU TOLD US true you said timers help (stated) attention note MEASURED 50% right early, 0% right late, traps not reached attention and self-control across the session reasoning note MEASURED not measured yet (0 of 3 needed) how you tested the machine's rule Steps that did not happen Recorded as not measured, not as zero: Reasoning, Logic, Quick thinking, Careful thinking, Delayed recall. Come back later The codeword check is meant for another day. You can ask for it now: it measures a shorter gap than the one it is designed for, and the check says so when you answer. Show the codeword check where this comes from\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/locked_box/\u001b[39m\nReceived string:  \u001b[31m\"What we measured, and what we did not 4 of 8 things were measurable from this sitting. Everything else says “not measured” on purpose: a game you did not play is unknown, not a zero. What you already know NOT MEASURED Not enough data yet — the subject round would fill this in. How much you hold at once 8-9 n=30 You currently hold about 8–9 steps at once, so lessons will use smaller steps and check between them. keep explanation blocks to about 8 ideas before a check prefer a worked example split into short steps over one long paragraph How fast you work 0.1-0.1 n=8 Most quick answers take you about 0.1 seconds, so the app will pace new material at that speed and not chase a fastest time. size checks to about this pace rather than to a clock keep block length as it is Staying on it 0-0.6 n=8 Your accuracy dropped toward the end of the session, so the app will shorten blocks and add a check-in. shorten blocks and add a check-in keep answers as they are Remembering over time 0.9-1 n=8 You recalled 100% of the pairs straight away, so review will be scheduled around the default spacing. seed your review spacing from this, with a range keep recall practice as it is Working out a rule NOT MEASURED Not enough data yet — finishing a machine round would fill this in. Knowing what you know NOT MEASURED Not enough data yet — a few more answers with a coin wager would fill this in. Pushing through, and asking for help NOT MEASURED Not enough data yet — trying the locked box would fill this in. What we will do differently step size MEASURED large holds about 8–9 steps at once (n=30) lead format prior YOU TOLD US diagram you chose diagram for a new topic (stated, not measured) pace MEASURED steady median 80ms per quick tap, drift -68% across the session (n=8) review halflife prior MEASURED 90 recalled 100% of new pairs straight away (n=8) hint policy DEFAULT on request default: hints are there when asked for confidence prompting DEFAULT off no calibration evidence yet tone YOU TOLD US straight you chose how you want to hear that you got something wrong (stated) language YOU TOLD US en you chose the language for explanations (stated) timers visible YOU TOLD US true you said timers help (stated) attention note MEASURED 50% right early, 0% right late, traps not reached attention and self-control across the session reasoning note MEASURED not measured yet (0 of 3 needed) how you tested the machine's rule Steps that did not happen Recorded as not measured, not as zero: Reasoning, Logic, Quick thinking, Careful thinking, Delayed recall. Come back later The codeword check is meant for another day. You can ask for it now: it measures a shorter gap than the one it is designed for, and the check says so when you answer. Show the codeword check where this comes from\"\u001b[39m\n    at /home/user/Adapt/e2e/games/snapshot-honesty.spec.ts:40:16",
+                    "location": {
+                      "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                      "column": 16,
+                      "line": 40
+                    },
+                    "snippet": "  38 |   const text = (await page.locator(\".baseline-snapshot\").innerText()).replace(/\\s+/g, \" \");\n  39 |   expect(text).toMatch(/steps that did not happen/i);\n> 40 |   expect(text).toMatch(/locked_box/); // the stage keys of what was not reached\n     |                ^\n  41 |   expect(text).toMatch(/n=\\d+/); // the games that were played report their n\n  42 |   expect(ledger.cued.length).toBeGreaterThan(0);\n  43 |   await shot(page, \"desktop\", \"snapshot-stopped-part-way\");"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                        "column": 16,
+                        "line": 40
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/locked_box/\u001b[39m\nReceived string:  \u001b[31m\"What we measured, and what we did not 4 of 8 things were measurable from this sitting. Everything else says “not measured” on purpose: a game you did not play is unknown, not a zero. What you already know NOT MEASURED Not enough data yet — the subject round would fill this in. How much you hold at once 8-9 n=30 You currently hold about 8–9 steps at once, so lessons will use smaller steps and check between them. keep explanation blocks to about 8 ideas before a check prefer a worked example split into short steps over one long paragraph How fast you work 0.1-0.1 n=8 Most quick answers take you about 0.1 seconds, so the app will pace new material at that speed and not chase a fastest time. size checks to about this pace rather than to a clock keep block length as it is Staying on it 0-0.6 n=8 Your accuracy dropped toward the end of the session, so the app will shorten blocks and add a check-in. shorten blocks and add a check-in keep answers as they are Remembering over time 0.9-1 n=8 You recalled 100% of the pairs straight away, so review will be scheduled around the default spacing. seed your review spacing from this, with a range keep recall practice as it is Working out a rule NOT MEASURED Not enough data yet — finishing a machine round would fill this in. Knowing what you know NOT MEASURED Not enough data yet — a few more answers with a coin wager would fill this in. Pushing through, and asking for help NOT MEASURED Not enough data yet — trying the locked box would fill this in. What we will do differently step size MEASURED large holds about 8–9 steps at once (n=30) lead format prior YOU TOLD US diagram you chose diagram for a new topic (stated, not measured) pace MEASURED steady median 80ms per quick tap, drift -68% across the session (n=8) review halflife prior MEASURED 90 recalled 100% of new pairs straight away (n=8) hint policy DEFAULT on request default: hints are there when asked for confidence prompting DEFAULT off no calibration evidence yet tone YOU TOLD US straight you chose how you want to hear that you got something wrong (stated) language YOU TOLD US en you chose the language for explanations (stated) timers visible YOU TOLD US true you said timers help (stated) attention note MEASURED 50% right early, 0% right late, traps not reached attention and self-control across the session reasoning note MEASURED not measured yet (0 of 3 needed) how you tested the machine's rule Steps that did not happen Recorded as not measured, not as zero: Reasoning, Logic, Quick thinking, Careful thinking, Delayed recall. Come back later The codeword check is meant for another day. You can ask for it now: it measures a shorter gap than the one it is designed for, and the check says so when you answer. Show the codeword check where this comes from\"\u001b[39m\n\n  38 |   const text = (await page.locator(\".baseline-snapshot\").innerText()).replace(/\\s+/g, \" \");\n  39 |   expect(text).toMatch(/steps that did not happen/i);\n> 40 |   expect(text).toMatch(/locked_box/); // the stage keys of what was not reached\n     |                ^\n  41 |   expect(text).toMatch(/n=\\d+/); // the games that were played report their n\n  42 |   expect(ledger.cued.length).toBeGreaterThan(0);\n  43 |   await shot(page, \"desktop\", \"snapshot-stopped-part-way\");\n    at /home/user/Adapt/e2e/games/snapshot-honesty.spec.ts:40:16"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:33:26.228Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/user/Adapt/e2e/games/test-results/snapshot-honesty-stopping--bff39--names-what-was-not-reached-desktop/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/home/user/Adapt/e2e/games/test-results/snapshot-honesty-stopping--bff39--names-what-was-not-reached-desktop/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                    "column": 16,
+                    "line": 40
+                  }
+                }
+              ],
+              "status": "unexpected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "wording and structure: checked once, on the desktop",
+                  "location": {
+                    "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                    "line": 11,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:38:11.229Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "wording and structure: checked once, on the desktop",
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                        "line": 11,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "cd53569ef487edde1dd7-7c77eebc2dbc5336af50",
+          "file": "snapshot-honesty.spec.ts",
+          "line": 32,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "subject-round.spec.ts",
+      "file": "subject-round.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the plan says why these skills, and the reason matches what was actually found",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 20393,
+                  "error": {
+                    "message": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n",
+                    "stack": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n\n    at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)\n    at /home/user/Adapt/e2e/games/subject-round.spec.ts:37:5",
+                    "location": {
+                      "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                      "column": 69,
+                      "line": 22
+                    },
+                    "snippet": "  20 | async function findSubject(page: Page, topic: string): Promise<void> {\n  21 |   await page.goto(\"/subject\");\n> 22 |   await page.getByRole(\"textbox\", { name: \"Subject\", exact: true }).fill(topic);\n     |                                                                     ^\n  23 |   await page.getByRole(\"button\", { name: \"Preview outline\", exact: true }).click();\n  24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.\n  25 |   await expect(page.getByRole(\"button\", { name: \"Confirm outline and start\", exact: true })).toBeVisible({ timeout: 30_000 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                        "column": 69,
+                        "line": 22
+                      },
+                      "message": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n\n\n  20 | async function findSubject(page: Page, topic: string): Promise<void> {\n  21 |   await page.goto(\"/subject\");\n> 22 |   await page.getByRole(\"textbox\", { name: \"Subject\", exact: true }).fill(topic);\n     |                                                                     ^\n  23 |   await page.getByRole(\"button\", { name: \"Preview outline\", exact: true }).click();\n  24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.\n  25 |   await expect(page.getByRole(\"button\", { name: \"Confirm outline and start\", exact: true })).toBeVisible({ timeout: 30_000 });\n    at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)\n    at /home/user/Adapt/e2e/games/subject-round.spec.ts:37:5"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:35:21.452Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/user/Adapt/e2e/games/test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-desktop/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/home/user/Adapt/e2e/games/test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-desktop/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                    "column": 69,
+                    "line": 22
+                  }
+                }
+              ],
+              "status": "unexpected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 20366,
+                  "error": {
+                    "message": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n",
+                    "stack": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n\n    at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)\n    at /home/user/Adapt/e2e/games/subject-round.spec.ts:37:5",
+                    "location": {
+                      "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                      "column": 69,
+                      "line": 22
+                    },
+                    "snippet": "  20 | async function findSubject(page: Page, topic: string): Promise<void> {\n  21 |   await page.goto(\"/subject\");\n> 22 |   await page.getByRole(\"textbox\", { name: \"Subject\", exact: true }).fill(topic);\n     |                                                                     ^\n  23 |   await page.getByRole(\"button\", { name: \"Preview outline\", exact: true }).click();\n  24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.\n  25 |   await expect(page.getByRole(\"button\", { name: \"Confirm outline and start\", exact: true })).toBeVisible({ timeout: 30_000 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                        "column": 69,
+                        "line": 22
+                      },
+                      "message": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n\n\n  20 | async function findSubject(page: Page, topic: string): Promise<void> {\n  21 |   await page.goto(\"/subject\");\n> 22 |   await page.getByRole(\"textbox\", { name: \"Subject\", exact: true }).fill(topic);\n     |                                                                     ^\n  23 |   await page.getByRole(\"button\", { name: \"Preview outline\", exact: true }).click();\n  24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.\n  25 |   await expect(page.getByRole(\"button\", { name: \"Confirm outline and start\", exact: true })).toBeVisible({ timeout: 30_000 });\n    at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)\n    at /home/user/Adapt/e2e/games/subject-round.spec.ts:37:5"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:38:11.239Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/user/Adapt/e2e/games/test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-mobile/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/home/user/Adapt/e2e/games/test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-mobile/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                    "column": 69,
+                    "line": 22
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "31f0ca594c5f26e68fce-6105bdcbb4d2dbff85d3",
+          "file": "subject-round.spec.ts",
+          "line": 28,
+          "column": 5
+        },
+        {
+          "title": "a whole subject round, answered by the bot, ends in a map that says what it did not reach",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 900000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 20458,
+                  "error": {
+                    "message": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n",
+                    "stack": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n\n    at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)\n    at /home/user/Adapt/e2e/games/subject-round.spec.ts:54:3",
+                    "location": {
+                      "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                      "column": 69,
+                      "line": 22
+                    },
+                    "snippet": "  20 | async function findSubject(page: Page, topic: string): Promise<void> {\n  21 |   await page.goto(\"/subject\");\n> 22 |   await page.getByRole(\"textbox\", { name: \"Subject\", exact: true }).fill(topic);\n     |                                                                     ^\n  23 |   await page.getByRole(\"button\", { name: \"Preview outline\", exact: true }).click();\n  24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.\n  25 |   await expect(page.getByRole(\"button\", { name: \"Confirm outline and start\", exact: true })).toBeVisible({ timeout: 30_000 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                        "column": 69,
+                        "line": 22
+                      },
+                      "message": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n\n\n  20 | async function findSubject(page: Page, topic: string): Promise<void> {\n  21 |   await page.goto(\"/subject\");\n> 22 |   await page.getByRole(\"textbox\", { name: \"Subject\", exact: true }).fill(topic);\n     |                                                                     ^\n  23 |   await page.getByRole(\"button\", { name: \"Preview outline\", exact: true }).click();\n  24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.\n  25 |   await expect(page.getByRole(\"button\", { name: \"Confirm outline and start\", exact: true })).toBeVisible({ timeout: 30_000 });\n    at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)\n    at /home/user/Adapt/e2e/games/subject-round.spec.ts:54:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:35:42.465Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/user/Adapt/e2e/games/test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-desktop/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/home/user/Adapt/e2e/games/test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-desktop/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                    "column": 69,
+                    "line": 22
+                  }
+                }
+              ],
+              "status": "unexpected"
+            },
+            {
+              "timeout": 900000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 20424,
+                  "error": {
+                    "message": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n",
+                    "stack": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n\n    at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)\n    at /home/user/Adapt/e2e/games/subject-round.spec.ts:54:3",
+                    "location": {
+                      "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                      "column": 69,
+                      "line": 22
+                    },
+                    "snippet": "  20 | async function findSubject(page: Page, topic: string): Promise<void> {\n  21 |   await page.goto(\"/subject\");\n> 22 |   await page.getByRole(\"textbox\", { name: \"Subject\", exact: true }).fill(topic);\n     |                                                                     ^\n  23 |   await page.getByRole(\"button\", { name: \"Preview outline\", exact: true }).click();\n  24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.\n  25 |   await expect(page.getByRole(\"button\", { name: \"Confirm outline and start\", exact: true })).toBeVisible({ timeout: 30_000 });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                        "column": 69,
+                        "line": 22
+                      },
+                      "message": "TimeoutError: locator.fill: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('textbox', { name: 'Subject', exact: true })\u001b[22m\n\n\n  20 | async function findSubject(page: Page, topic: string): Promise<void> {\n  21 |   await page.goto(\"/subject\");\n> 22 |   await page.getByRole(\"textbox\", { name: \"Subject\", exact: true }).fill(topic);\n     |                                                                     ^\n  23 |   await page.getByRole(\"button\", { name: \"Preview outline\", exact: true }).click();\n  24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.\n  25 |   await expect(page.getByRole(\"button\", { name: \"Confirm outline and start\", exact: true })).toBeVisible({ timeout: 30_000 });\n    at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)\n    at /home/user/Adapt/e2e/games/subject-round.spec.ts:54:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:38:32.159Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/user/Adapt/e2e/games/test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-mobile/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/home/user/Adapt/e2e/games/test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-mobile/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/user/Adapt/e2e/games/subject-round.spec.ts",
+                    "column": 69,
+                    "line": 22
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "31f0ca594c5f26e68fce-95dc3762f29e1caad4bb",
+          "file": "subject-round.spec.ts",
+          "line": 51,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "keyboard.spec.ts",
+      "file": "keyboard.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the whole baseline with the keyboard alone, each trial sent once",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "keyboard",
+              "projectName": "keyboard",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 134955,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T17:38:53.212Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "866d5cea7c69e902a1e2-0e376440a838f189c92f",
+          "file": "keyboard.spec.ts",
+          "line": 11,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-22T17:31:17.111Z",
+    "duration": 591232.586,
+    "expected": 4,
+    "skipped": 2,
+    "unexpected": 5,
+    "flaky": 0
+  }
+}

@@ -326,6 +326,15 @@ export default function Settings() {
         </div>
       </div>
 
+      <Card title="Download your data" tone="plain">
+        <p className="text-sm text-[var(--muted)]">
+          A JSON copy of your profile, answers, learning sessions, reflections, subject work and saved settings. Sign-in credentials and grading seals are excluded.
+        </p>
+        <div className="mt-3">
+          <a className="btn btn-ctl btn-secondary" href="/api/v1/me/export" download>Download JSON</a>
+        </div>
+      </Card>
+
       <Card title="Privacy: what may be recorded about you" tone="plain" right={<span>what is recorded</span>}>
         <p className="text-sm">{privacy.data?.telemetry?.note ?? "The server owns this list; the client cannot add a field to it."}</p>
         <div className="mt-2 grid gap-3 md:grid-cols-2">

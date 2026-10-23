@@ -1,0 +1,2346 @@
+{
+  "started": "2026-10-22T17:02:47.522Z",
+  "checks": [
+    {
+      "name": "fresh visitor must give consent before account creation",
+      "expected": "consent gate; zero automatic learner creation",
+      "actual": {
+        "gate": 0,
+        "autoCreates": [
+          {
+            "label": "visitor",
+            "method": "POST",
+            "url": "http://127.0.0.1:3000/api/v1/students",
+            "status": 200,
+            "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+          }
+        ],
+        "me": {
+          "status": 200,
+          "body": {
+            "student_id": "stu_4b710c8328f9482a966b",
+            "display_name": "Guest learner",
+            "role": "student",
+            "onboarding_complete": false,
+            "diagnostic_complete": false,
+            "baseline_started": false,
+            "voice_enabled": false,
+            "voice_gender": "female",
+            "language": "en",
+            "consent_analytics": true,
+            "consent_share_with_ai": false,
+            "sessions": 0,
+            "preferences": {},
+            "profile_taken_at": null
+          }
+        },
+        "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 HOME Voice off Guest learner Sign out Hi Guest learner, ready to learn? Pick up where you left off. Choose a subject Add a subject 0 Subjects 0 Active 0 Due 0 Changes Continue learning Add a subject Nothing chosen yet. Choose your first subject Estimates, not labels: nothing here is a fixed trait, and no lasting change is applied without you answering a question about it. What is recorded about you"
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "name": "consent unchecked by default",
+      "expected": "required checkbox unchecked",
+      "actual": false,
+      "verdict": "PASS"
+    },
+    {
+      "name": "agree requires consent",
+      "expected": "button disabled",
+      "actual": true,
+      "verdict": "PASS"
+    },
+    {
+      "name": "decline has no entry",
+      "expected": "explanatory refusal, still on consent",
+      "actual": "Skip to content adapt 01 \u00b7 Before you begin Welcome to ADAPT. Practice that asks before it changes anything. \u2713 Recorded: answers, question times, lesson steps. \u2715 Never recorded: keystrokes, screenshots, other tabs. more on privacy I agree to this recording. Required. Research interest (optional; not saved yet). Agree and continue Decline Without that consent you cannot enter the app. Nothing has been created. You may reconsider or close this browser tab.",
+      "verdict": "PASS"
+    },
+    {
+      "name": "decline creates no additional session",
+      "expected": "no new POST /students after decline",
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "name": "research interest is not sent or stored",
+      "expected": "creation payload has no research field",
+      "actual": {
+        "creation_payload": {
+          "username": "audit_research",
+          "password": "correct horse 42",
+          "age_band": "16-18",
+          "consent_analytics": true,
+          "consent_share_with_llm": false
+        },
+        "payload_keys": [
+          "age_band",
+          "consent_analytics",
+          "consent_share_with_llm",
+          "password",
+          "username"
+        ]
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "account creation establishes session",
+      "expected": "GET /me returns new account",
+      "actual": {
+        "status": 200,
+        "body": {
+          "student_id": "stu_7fd963caf2bb40c6b793",
+          "display_name": "audit_research",
+          "role": "student",
+          "onboarding_complete": false,
+          "diagnostic_complete": false,
+          "baseline_started": false,
+          "voice_enabled": false,
+          "voice_gender": "female",
+          "language": "en",
+          "consent_analytics": true,
+          "consent_share_with_ai": false,
+          "sessions": 0,
+          "preferences": {},
+          "profile_taken_at": null
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "sign out revokes session",
+      "expected": "GET /me unauthorized",
+      "actual": {
+        "status": 401,
+        "body": {
+          "detail": "not signed in"
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "weak password blocked in UI",
+      "expected": "native invalid and still on auth",
+      "actual": {
+        "valid": false,
+        "message": "Please lengthen this text to 10 characters or more (you are currently using 5 characters)."
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "weak password rejected by API",
+      "expected": "HTTP 422",
+      "actual": {
+        "status": 422,
+        "body": {
+          "error": "validation_failed",
+          "fields": [
+            {
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "String should have at least 10 characters",
+              "type": "string_too_short"
+            }
+          ]
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "blank account creation rejected by API",
+      "expected": "HTTP 422 validation error; no account established",
+      "actual": {
+        "status": 422,
+        "body": {
+          "error": "validation_failed",
+          "fields": [
+            {
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "String should have at least 10 characters",
+              "type": "string_too_short"
+            }
+          ]
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "duplicate username rejected",
+      "expected": "HTTP 409",
+      "actual": {
+        "status": 409,
+        "body": {
+          "detail": {
+            "error": "username_taken",
+            "next": "pick another username, or sign in if it is yours"
+          }
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "protected routes require an explicit entry decision",
+      "expected": "signed-out visitor sees gate, not auto-provisioned learning pages",
+      "actual": [
+        {
+          "route": "/",
+          "url": "http://127.0.0.1:3000/",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 HOME Voice off Guest learner Sign out Hi Guest learner, ready to learn? Pick up where you left off. Choose a subject Add "
+        },
+        {
+          "route": "/baseline",
+          "url": "http://127.0.0.1:3000/baseline",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 MIND CHECK Voice off Guest learner Sign out Step 1 of 13 \u00b7 0% through"
+        },
+        {
+          "route": "/diagnose",
+          "url": "http://127.0.0.1:3000/diagnose",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off Guest learner Sign out Placement question 1 of 8 0 MIN IN Back Next stop here This placement puts you on "
+        },
+        {
+          "route": "/evidence",
+          "url": "http://127.0.0.1:3000/evidence",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 EVIDENCE Voice off Guest learner Sign out Preference and performance "
+        },
+        {
+          "route": "/first-lesson",
+          "url": "http://127.0.0.1:3000/first-lesson",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off Guest learner Sign out Your first lesson One idea, written for you. What are you working on? Write my les"
+        },
+        {
+          "route": "/journey",
+          "url": "http://127.0.0.1:3000/journey",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 YOUR PATH Voice off Guest learner Sign out Your path One step at a ti"
+        },
+        {
+          "route": "/learn",
+          "url": "http://127.0.0.1:3000/learn",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 LEARN Voice off Guest learner Sign out Practice One question at a time, taught your way. What do you want to learn? Pick "
+        },
+        {
+          "route": "/lesson",
+          "url": "http://127.0.0.1:3000/lesson",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 LESSONS Voice off Guest learner Sign out Lessons Your subjects' lesso"
+        },
+        {
+          "route": "/onboarding",
+          "url": "http://127.0.0.1:3000/onboarding",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off Guest learner Sign out \u00a7 Setup Set up how this should run These are requests \u2014 they apply right away. how"
+        },
+        {
+          "route": "/progress",
+          "url": "http://127.0.0.1:3000/progress",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 PROGRESS Voice off Guest learner Sign out What the data says 30-day window \u00b7 0 answers \u00b7 0 logged interactions Reload Rec"
+        },
+        {
+          "route": "/proposals",
+          "url": "http://127.0.0.1:3000/proposals",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 CHANGES Voice off Guest learner Sign out Changes waiting for you Each"
+        },
+        {
+          "route": "/review",
+          "url": "http://127.0.0.1:3000/review",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 REVIEW Voice off Guest learner Sign out Review queue scheduled at the point your own recall is projected to reach ~85% Re"
+        },
+        {
+          "route": "/settings",
+          "url": "http://127.0.0.1:3000/settings",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 SETTINGS Voice off Guest learner Sign out Settings, and what is kept Every claim here is read from the server that enforc"
+        },
+        {
+          "route": "/voice",
+          "url": "http://127.0.0.1:3000/voice",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 VOICE Voice off Guest learner Sign out Talk to it Greeting, read-alou"
+        },
+        {
+          "route": "/dev/animator",
+          "url": "http://127.0.0.1:3000/dev/animator",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off Guest learner Sign out DEVELOPER PREVIEW Scene templates Every visual is drawn from the same safe primiti"
+        },
+        {
+          "route": "/dev/test-lab",
+          "url": "http://127.0.0.1:3000/dev/test-lab",
+          "gated": false,
+          "has404": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off Guest learner Sign out Test lab Every registered item type, once. Developer page \u2014 not linked from the ap"
+        }
+      ],
+      "verdict": "FAIL"
+    },
+    {
+      "name": "all signed-in routes render",
+      "expected": "no gate, 404 or crash",
+      "actual": [
+        {
+          "route": "/",
+          "url": "http://127.0.0.1:3000/",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 HOME Voice off audit_routes Sign out Hi audit_routes, ready to learn? Pick up where you left off. Choose a subject Add a "
+        },
+        {
+          "route": "/baseline",
+          "url": "http://127.0.0.1:3000/baseline",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 MIND CHECK Voice off audit_routes Sign out Step 1 of 13 \u00b7 0% through "
+        },
+        {
+          "route": "/diagnose",
+          "url": "http://127.0.0.1:3000/diagnose",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off audit_routes Sign out Placement question 1 of 8 0 MIN IN Back Next stop here This placement puts you on e"
+        },
+        {
+          "route": "/evidence",
+          "url": "http://127.0.0.1:3000/evidence",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 EVIDENCE Voice off audit_routes Sign out Preference and performance W"
+        },
+        {
+          "route": "/first-lesson",
+          "url": "http://127.0.0.1:3000/first-lesson",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off audit_routes Sign out Your first lesson One idea, written for you. What are you working on? Write my less"
+        },
+        {
+          "route": "/journey",
+          "url": "http://127.0.0.1:3000/journey",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 YOUR PATH Voice off audit_routes Sign out Your path One step at a tim"
+        },
+        {
+          "route": "/learn",
+          "url": "http://127.0.0.1:3000/learn",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 LEARN Voice off audit_routes Sign out Practice One question at a time, taught your way. What do you want to learn? Pick a"
+        },
+        {
+          "route": "/lesson",
+          "url": "http://127.0.0.1:3000/lesson",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 LESSONS Voice off audit_routes Sign out Lessons Your subjects' lesson"
+        },
+        {
+          "route": "/onboarding",
+          "url": "http://127.0.0.1:3000/onboarding",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off audit_routes Sign out \u00a7 Setup Set up how this should run These are requests \u2014 they apply right away. how "
+        },
+        {
+          "route": "/progress",
+          "url": "http://127.0.0.1:3000/progress",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 PROGRESS Voice off audit_routes Sign out What the data says 30-day window \u00b7 0 answers \u00b7 3 logged interactions Reload Reco"
+        },
+        {
+          "route": "/proposals",
+          "url": "http://127.0.0.1:3000/proposals",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 CHANGES Voice off audit_routes Sign out Changes waiting for you Each "
+        },
+        {
+          "route": "/review",
+          "url": "http://127.0.0.1:3000/review",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 REVIEW Voice off audit_routes Sign out Review queue scheduled at the point your own recall is projected to reach ~85% Rel"
+        },
+        {
+          "route": "/settings",
+          "url": "http://127.0.0.1:3000/settings",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 SETTINGS Voice off audit_routes Sign out Settings, and what is kept Every claim here is read from the server that enforce"
+        },
+        {
+          "route": "/voice",
+          "url": "http://127.0.0.1:3000/voice",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings Less Lessons Your path Changes Mind check Evidence Voice service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 VOICE Voice off audit_routes Sign out Talk to it Greeting, read-aloud"
+        },
+        {
+          "route": "/dev/animator",
+          "url": "http://127.0.0.1:3000/dev/animator",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off audit_routes Sign out DEVELOPER PREVIEW Scene templates Every visual is drawn from the same safe primitiv"
+        },
+        {
+          "route": "/dev/test-lab",
+          "url": "http://127.0.0.1:3000/dev/test-lab",
+          "gated": false,
+          "has404": false,
+          "hasError": false,
+          "body": "Skip to content adapt Home Learn Review Progress Settings More service up \u00b7 Lessons: simple mode \u00b7 whole file encrypted \u00b7 v0.1.0 ADAPT Voice off audit_routes Sign out Test lab Every registered item type, once. Developer page \u2014 not linked from the app"
+        }
+      ],
+      "verdict": "PASS"
+    },
+    {
+      "name": "wrong password gives readable error",
+      "expected": "error visible and still signed out",
+      "actual": "Skip to content adapt 02 \u00b7 Your place to learn Welcome to ADAPT. Sign in, create an account, or continue as guest. Sign in Create account Username An older account may use email. Password Sign in Continue as guest wrong username or password Guest progress stays in this session. Review consent",
+      "verdict": "PASS"
+    },
+    {
+      "name": "returning account signs in",
+      "expected": "same student id as created",
+      "actual": {
+        "status": 200,
+        "body": {
+          "student_id": "stu_cd0b18143be346d18703",
+          "display_name": "audit_routes",
+          "role": "student",
+          "onboarding_complete": false,
+          "diagnostic_complete": false,
+          "baseline_started": true,
+          "voice_enabled": false,
+          "voice_gender": "female",
+          "language": "en",
+          "consent_analytics": true,
+          "consent_share_with_ai": false,
+          "sessions": 2,
+          "preferences": {},
+          "profile_taken_at": null
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "guest session persists across refresh",
+      "expected": "same id before and after refresh",
+      "actual": {
+        "before": {
+          "status": 200,
+          "body": {
+            "student_id": "stu_52f04fa7083e40be8e4c",
+            "display_name": "Guest learner",
+            "role": "student",
+            "onboarding_complete": false,
+            "diagnostic_complete": false,
+            "baseline_started": false,
+            "voice_enabled": false,
+            "voice_gender": "female",
+            "language": "en",
+            "consent_analytics": true,
+            "consent_share_with_ai": false,
+            "sessions": 0,
+            "preferences": {},
+            "profile_taken_at": null
+          }
+        },
+        "after": {
+          "status": 200,
+          "body": {
+            "student_id": "stu_52f04fa7083e40be8e4c",
+            "display_name": "Guest learner",
+            "role": "student",
+            "onboarding_complete": false,
+            "diagnostic_complete": false,
+            "baseline_started": false,
+            "voice_enabled": false,
+            "voice_gender": "female",
+            "language": "en",
+            "consent_analytics": true,
+            "consent_share_with_ai": false,
+            "sessions": 0,
+            "preferences": {},
+            "profile_taken_at": null
+          }
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "guest sign-out ends old guest session",
+      "expected": "old session unauthorized and next guest differs",
+      "actual": {
+        "afterLogout": 401,
+        "newGuest": {
+          "status": 200,
+          "body": {
+            "student_id": "stu_ff07ed63eb5945d19261",
+            "display_name": "Guest learner",
+            "role": "student",
+            "onboarding_complete": false,
+            "diagnostic_complete": false,
+            "baseline_started": false,
+            "voice_enabled": false,
+            "voice_gender": "female",
+            "language": "en",
+            "consent_analytics": true,
+            "consent_share_with_ai": false,
+            "sessions": 0,
+            "preferences": {},
+            "profile_taken_at": null
+          }
+        }
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "console": [
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "visitor",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "guest",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "guest",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "guest",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "label": "guest",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    }
+  ],
+  "requests": [
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/review/due",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/dashboard",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/logout",
+      "status": 200,
+      "postData": "{}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/privacy",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"username\":\"audit_research\",\"password\":\"correct horse 42\",\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/dashboard",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/review/due",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/logout",
+      "status": 200,
+      "postData": "{}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/privacy",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/review/due",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/dashboard",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/baseline/next-day?finished=true",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/baseline",
+      "status": 200,
+      "postData": "{}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/sessions",
+      "status": 200,
+      "postData": "{\"mode\":\"diagnostic\",\"device_hint\":\"2 cores\"}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/assessment/diagnostic",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/evidence",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/sessions",
+      "status": 200,
+      "postData": "{\"mode\":\"practice\",\"device_hint\":\"2 cores\"}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/lessons/kinds",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/lessons/evidence",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/lessons",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me/preferences",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/strategies",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/dashboard",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/methods/report",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey?days=30&limit=400",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/tests/evidence",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/adaptations/pending",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/adaptations/active",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/adaptations/history",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/review/due?within_hours=72",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/plan",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/privacy",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me/preferences",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/events/allowlist",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/audit?limit=50",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/voice/capabilities",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/logout",
+      "status": 200,
+      "postData": "{}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/privacy",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"username\":\"audit_routes\",\"password\":\"correct horse 42\",\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/review/due",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/dashboard",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/baseline",
+      "status": 200,
+      "postData": "{}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/baseline/next-day?finished=true",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/sessions",
+      "status": 200,
+      "postData": "{\"mode\":\"diagnostic\",\"device_hint\":\"2 cores\"}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/assessment/diagnostic",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/evidence",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/sessions",
+      "status": 200,
+      "postData": "{\"mode\":\"practice\",\"device_hint\":\"2 cores\"}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/lessons/kinds",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/lessons",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/lessons/evidence",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me/preferences",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/strategies",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/dashboard",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/methods/report",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey?days=30&limit=400",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/tests/evidence",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/adaptations/active",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/adaptations/pending",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/adaptations/history",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/review/due?within_hours=72",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/plan",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/privacy",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me/preferences",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/events/allowlist",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/audit?limit=50",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/voice/capabilities",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/logout",
+      "status": 200,
+      "postData": "{}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/privacy",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/login",
+      "status": 401,
+      "postData": "{\"username\":\"audit_routes\",\"password\":\"definitely wrong\"}"
+    },
+    {
+      "label": "visitor",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/login",
+      "status": 200,
+      "postData": "{\"username\":\"audit_routes\",\"password\":\"correct horse 42\"}"
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "visitor",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "guest",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/sessions",
+      "status": 200,
+      "postData": "{\"mode\":\"practice\",\"device_hint\":\"2 cores\"}"
+    },
+    {
+      "label": "guest",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/logout",
+      "status": 200,
+      "postData": "{}"
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/privacy",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/logout",
+      "status": 200,
+      "postData": "{}"
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/privacy",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 401
+    },
+    {
+      "label": "guest",
+      "method": "POST",
+      "url": "http://127.0.0.1:3000/api/v1/students",
+      "status": 200,
+      "postData": "{\"as_guest\":true,\"age_band\":\"16-18\",\"consent_analytics\":true,\"consent_share_with_llm\":false}"
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/health",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/journey/state",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/status",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/learning/overview",
+      "status": 200
+    },
+    {
+      "label": "guest",
+      "method": "GET",
+      "url": "http://127.0.0.1:3000/api/v1/me",
+      "status": 200
+    }
+  ],
+  "accounts": {
+    "research": {
+      "student_id": "stu_7fd963caf2bb40c6b793",
+      "display_name": "audit_research",
+      "role": "student",
+      "onboarding_complete": false,
+      "diagnostic_complete": false,
+      "baseline_started": false,
+      "voice_enabled": false,
+      "voice_gender": "female",
+      "language": "en",
+      "consent_analytics": true,
+      "consent_share_with_ai": false,
+      "sessions": 0,
+      "preferences": {},
+      "profile_taken_at": null
+    },
+    "returning": {
+      "student_id": "stu_cd0b18143be346d18703",
+      "display_name": "audit_routes",
+      "role": "student",
+      "onboarding_complete": false,
+      "diagnostic_complete": false,
+      "baseline_started": true,
+      "voice_enabled": false,
+      "voice_gender": "female",
+      "language": "en",
+      "consent_analytics": true,
+      "consent_share_with_ai": false,
+      "sessions": 2,
+      "preferences": {},
+      "profile_taken_at": null
+    },
+    "guest": {
+      "before": {
+        "student_id": "stu_52f04fa7083e40be8e4c",
+        "display_name": "Guest learner",
+        "role": "student",
+        "onboarding_complete": false,
+        "diagnostic_complete": false,
+        "baseline_started": false,
+        "voice_enabled": false,
+        "voice_gender": "female",
+        "language": "en",
+        "consent_analytics": true,
+        "consent_share_with_ai": false,
+        "sessions": 0,
+        "preferences": {},
+        "profile_taken_at": null
+      },
+      "afterRefresh": {
+        "student_id": "stu_52f04fa7083e40be8e4c",
+        "display_name": "Guest learner",
+        "role": "student",
+        "onboarding_complete": false,
+        "diagnostic_complete": false,
+        "baseline_started": false,
+        "voice_enabled": false,
+        "voice_gender": "female",
+        "language": "en",
+        "consent_analytics": true,
+        "consent_share_with_ai": false,
+        "sessions": 0,
+        "preferences": {},
+        "profile_taken_at": null
+      },
+      "newAfterLogout": {
+        "student_id": "stu_ff07ed63eb5945d19261",
+        "display_name": "Guest learner",
+        "role": "student",
+        "onboarding_complete": false,
+        "diagnostic_complete": false,
+        "baseline_started": false,
+        "voice_enabled": false,
+        "voice_gender": "female",
+        "language": "en",
+        "consent_analytics": true,
+        "consent_share_with_ai": false,
+        "sessions": 0,
+        "preferences": {},
+        "profile_taken_at": null
+      }
+    }
+  },
+  "finished": "2026-10-22T17:03:24.896Z"
+}

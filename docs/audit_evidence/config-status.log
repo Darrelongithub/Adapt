@@ -1,0 +1,9 @@
+$ adapt config status
+gemini: not configured (set it with `adapt config set-key`)
+youtube: not configured (set it with `adapt config set-key`)
+status_exit=0
+$ adapt config test
+Connection test failed. No credential is configured.
+test_exit=1
+$ curl /api/v1/health
+{"ok":true,"version":"0.1.0","lessons":{"state":"simple mode","says":"Lessons: simple mode","note":"every explanation here is assembled from your own course material by the built-in tutor: correct and specific, but plainer than a written-for-you lesson. Nothing is sent anywhere."},"database_reachable":true}

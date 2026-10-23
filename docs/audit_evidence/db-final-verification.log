@@ -1,0 +1,170 @@
+{
+  "driver": "sqlite:////tmp/audit-data/adapt.db",
+  "db_file": "/tmp/audit-data/adapt.db",
+  "note": "Host was stopped before this snapshot; no live WAL writer.",
+  "security_student": {
+    "id": "stu_54f424bd011e464d855f",
+    "consent_analytics": 0,
+    "deleted_at": null
+  },
+  "consent_off_events": [
+    {
+      "seq": 1,
+      "type": "session_start",
+      "payload": {
+        "mode": "practice"
+      }
+    },
+    {
+      "seq": 2,
+      "type": "question_shown",
+      "payload": {
+        "stem_words": 8
+      }
+    },
+    {
+      "seq": 3,
+      "type": "question_shown",
+      "payload": {
+        "stem_words": 8
+      }
+    },
+    {
+      "seq": 4,
+      "type": "pause",
+      "payload": {
+        "reason": "consent off test"
+      }
+    }
+  ],
+  "fabricated_evidence": [
+    {
+      "id": "tevi_4e5a62d9f3c84e5f8eaa",
+      "run_id": "audit-invalid-type",
+      "item_type": "made_up_type",
+      "correct": true,
+      "answer": "1"
+    },
+    {
+      "id": "tevi_c74b438c93c144bd91fd",
+      "run_id": "run-mvjsxp4w",
+      "item_type": "geometry_angle",
+      "correct": true,
+      "answer": "15\u00b0"
+    },
+    {
+      "id": "tevi_fd09538a8c7e4d2e95f5",
+      "run_id": "run-mvjsxp4w",
+      "item_type": "geometry_congruent",
+      "correct": true,
+      "answer": "25"
+    },
+    {
+      "id": "tevi_3159defce6424a2d898f",
+      "run_id": "run-mvjsxp4w",
+      "item_type": "geometry_angle",
+      "correct": true,
+      "answer": "90\u00b0"
+    },
+    {
+      "id": "tevi_669ef0b5089a4cb8927e",
+      "run_id": "run-mvjsxp4w",
+      "item_type": "odd_one_out",
+      "correct": true,
+      "answer": "circle"
+    },
+    {
+      "id": "tevi_e51c0d4a259f49da8489",
+      "run_id": "run-mvjsxp4w",
+      "item_type": "pattern_pick",
+      "correct": true,
+      "answer": "hexagon"
+    }
+  ],
+  "soft_deleted_learner": {
+    "student": {
+      "id": "stu_bb7e018cafd64e13a4db",
+      "deleted_at": "2026-10-22 17:23:03.122480"
+    },
+    "auth_sessions": 1,
+    "learning_sessions": 1,
+    "events": [
+      {
+        "seq": 1,
+        "type": "session_start",
+        "payload": {
+          "mode": "practice"
+        }
+      },
+      {
+        "seq": 2,
+        "type": "session_start",
+        "payload": {
+          "mode": "practice"
+        }
+      }
+    ]
+  },
+  "adaptation_proposals": [
+    {
+      "id": "adp_28948fa40ab34147a019",
+      "status": "approved",
+      "strategy": "difficulty_recalibration"
+    }
+  ],
+  "adaptation_active_rows": [
+    {
+      "id": "act_b52b82f3d8644a9185e8",
+      "active": false,
+      "end_reason": "student_revoked",
+      "started_at": "2026-10-22 17:13:28.864961",
+      "ended_at": "2026-10-22 17:13:30.310855"
+    }
+  ],
+  "review_schedule": {
+    "student_id": "stu_e15cb1098d7440e6b469",
+    "topic_id": "top_acc81d340ec6460fb6fa",
+    "half_life_hours": 1.0418091558299882,
+    "reps": 3,
+    "lapses": 1,
+    "last_recall_at": "2026-10-22 17:13:35.987719",
+    "due_at": "2026-10-22 17:28:15.352704",
+    "last_lag_hours": 0.05,
+    "last_result": 1
+  },
+  "review_checks": [
+    {
+      "id": "rtc_90c81b03b4e54819b934",
+      "topic_id": "top_acc81d340ec6460fb6fa",
+      "lag_hours": 0.014,
+      "expected_recall": 0.9918,
+      "correct": 1,
+      "score": 1.0,
+      "kind": "scheduled",
+      "created_at": "2026-10-22 17:13:35.983086"
+    }
+  ],
+  "robustness_attempts": [
+    {
+      "id": "att_d1c8679fe09d43c9a2d0",
+      "item_id": "itm_bio_photosynthesis_00",
+      "correct": false,
+      "score": 0.0,
+      "final_answer": {
+        "value": "0.999"
+      },
+      "submitted_at": "2026-10-22 17:47:00.948368"
+    },
+    {
+      "id": "att_60d22774941140e29e69",
+      "item_id": "itm_bio_photosynthesis_01",
+      "correct": true,
+      "score": 1.0,
+      "final_answer": {
+        "value": 0
+      },
+      "submitted_at": "2026-10-22 17:47:04.169024"
+    }
+  ],
+  "robustness_attempt_count": 2
+}

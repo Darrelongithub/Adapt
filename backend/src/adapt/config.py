@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Extra hosts accepted for WebSocket / redirect safety (tunnel hostnames).
     extra_allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Only these direct peers may supply Forwarded/X-Forwarded-For client addresses.
+    # Empty by default: a direct client must never choose its own rate-limit bucket.
+    trusted_proxies: Annotated[list[str], NoDecode] = Field(default_factory=list)
     require_https: bool = False  # set true when serving the judge tunnel with TLS
     tls_certfile: Path | None = None
     tls_keyfile: Path | None = None
@@ -330,7 +333,7 @@ class Settings(BaseSettings):
             return _repo_root() / "var"
         return v
 
-    @field_validator("allowed_origins", "extra_allowed_hosts", mode="before")
+    @field_validator("allowed_origins", "extra_allowed_hosts", "trusted_proxies", mode="before")
     @classmethod
     def _split_list(cls, v: object) -> object:
         """Accept both spellings of a host/origin list: ``a,b`` and ``["a","b"]``.

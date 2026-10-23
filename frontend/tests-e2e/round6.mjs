@@ -43,6 +43,7 @@ const ROUTES = [
   "/onboarding",
   "/diagnose",
   "/first-lesson",
+  "/tools",
 ];
 
 const VIEWPORTS = [
@@ -99,33 +100,39 @@ async function newPage(browser, viewport, { mobile } = {}) {
   return { context, page };
 }
 
+async function dismissOpening(page) {
+  const opening = page.locator(".opening-overlay");
+  if (await opening.count()) {
+    await opening.click({ position: { x: 8, y: 8 } });
+    await opening.waitFor({ state: "detached" });
+  }
+}
+
 async function guestSignIn(page) {
-  await page.addInitScript(() => sessionStorage.setItem("adapt:seen-opening", "1"));
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
-  const consent = page.locator('input[type="checkbox"]');
+  await dismissOpening(page);
+  const consent = page.locator('[data-account-gate] input[type="checkbox"]');
   if (await consent.count()) {
     await consent.first().click();
-    await page.getByRole("button", { name: /Agree and continue/i }).click();
-    await page.waitForTimeout(300);
+    await page.getByRole("button", { name: /Save choice and continue/i }).click();
     await page.getByRole("button", { name: /Continue as guest/i }).click();
-    await page.waitForTimeout(1200);
+    await page.locator('[data-testid="journey-card"]').waitFor({ timeout: 20000 });
   }
 }
 
 async function registeredSignIn(page, tag) {
-  await page.addInitScript(() => sessionStorage.setItem("adapt:seen-opening", "1"));
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
-  const consent = page.locator('input[type="checkbox"]');
+  await dismissOpening(page);
+  const consent = page.locator('[data-account-gate] input[type="checkbox"]');
   if (!(await consent.count())) return; // already signed in
   await consent.first().click();
-  await page.getByRole("button", { name: /Agree and continue/i }).click();
-  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /Save choice and continue/i }).click();
   await page.getByRole("tab", { name: /Create account/i }).click();
   const username = `crawl_${tag}_${Date.now().toString(36)}`;
   await page.getByLabel(/Username/i).fill(username);
   await page.getByLabel(/^Password/i).fill("crawl-password-123");
   await page.getByRole("button", { name: /^Create account$/i }).click();
-  await page.waitForTimeout(1500);
+  await page.locator('[data-testid="journey-card"]').waitFor({ timeout: 20000 });
 }
 
 async function crawl(browser, mode, signIn) {
@@ -146,13 +153,8 @@ async function crawl(browser, mode, signIn) {
       const body = await page.evaluate(() => document.body?.innerText?.trim() ?? "").catch(() => "");
       if (!body) recordHere("blank-body", "empty body text");
       if (await page.locator("[data-route-error]").count()) recordHere("error-screen", "route error boundary shown");
-      const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
-      if (mode === "signed-out" && (route === "/" || route === "/journey")) {
-        // First entry is guest-first now: SessionGate mints the guest
-        // learner when /me refuses, so a fresh browser reaches the
-        // dashboard/path as "Guest learner". The consent account gate
-        // remains the surface after an explicit sign-out.
-        if (!/Guest learner|Your path|Welcome to ADAPT|Before you begin|Agree/i.test(text)) recordHere("entry-missing", "neither the guest entry nor the account gate appeared");
+      if (mode === "signed-out" && !(await page.locator("[data-account-gate]").count())) {
+        recordHere("gate-missing", "no account gate on protected route");
       }
       checks.push({ mode, viewport: viewport.name, route, ok: crashes.length === before });
     }
@@ -205,9 +207,7 @@ const browser = await chromium.launch({
 });
 const report = { at: new Date().toISOString(), chromium: await browser.version(), checks: 0, rapid: null };
 
-await crawl(browser, "signed-out", async (page) => {
-  await page.addInitScript(() => sessionStorage.setItem("adapt:seen-opening", "1"));
-});
+await crawl(browser, "signed-out", async () => {});
 await crawl(browser, "guest", guestSignIn);
 await crawl(browser, "signed-in", (page) => registeredSignIn(page, "r6"));
 report.checks = checks.length;

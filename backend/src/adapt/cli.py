@@ -903,6 +903,9 @@ def serve(
         port=int(port or st.port),
         reload=reload,
         log_level=str(st.log_level).lower(),
+        # Preserve the socket peer. Uvicorn otherwise trusts forwarding headers from
+        # localhost before ADAPT can apply its explicit trusted-proxy allowlist.
+        proxy_headers=False,
     )
 
 

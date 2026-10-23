@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -84,7 +85,7 @@ class LoginBody(BaseModel):
 
 class OnboardingBody(BaseModel):
     preferences: dict[str, Any] = Field(default_factory=dict)
-    consent_analytics: bool = True
+    consent_analytics: bool = False
     consent_share_with_llm: bool = True
     voice_enabled: bool = False
     voice_gender: str = "female"
@@ -230,6 +231,18 @@ def logout(
         auth.revoke(s, row)
     clear_login(response, request)
     return {"ok": True}
+
+
+@router.get("/me/export")
+def export_me(
+    s: Session = Depends(db_session), student: Student = Depends(student_from_request)
+) -> JSONResponse:
+    from ...services.export import export_learner
+
+    return JSONResponse(
+        export_learner(s, student),
+        headers={"Content-Disposition": f'attachment; filename="adapt-export-{student.id}.json"'},
+    )
 
 
 @router.get("/me")
