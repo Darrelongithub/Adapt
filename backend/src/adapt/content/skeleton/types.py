@@ -131,6 +131,22 @@ class Item:
 
 
 @dataclass(frozen=True)
+class ObjectiveRef:
+    """One approved guideline objective this skeleton was scoped to (Round 9).
+
+    Ids come from the learner's approved guideline (``adapt/curriculum``),
+    never from the model that authored the skeleton. A lesson built from
+    this pack may only cite these ids.
+    """
+
+    id: str
+    title: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {"id": self.id, "title": self.title}
+
+
+@dataclass(frozen=True)
 class Pack:
     topic_key: str
     topic_title: str
@@ -139,10 +155,16 @@ class Pack:
     concepts: tuple[Concept, ...]
     prereq_edges: tuple[tuple[str, str], ...]
     items: tuple[Item, ...]
+    #: Round 9 scope, recorded only when the pack was built for one. Absent
+    #: (not null) from ``as_dict`` when unscoped, so the frozen contract --
+    #: and every stored pack's content hash -- is unchanged for old packs.
+    curriculum: str | None = None
+    grade: str | None = None
+    objectives: tuple[ObjectiveRef, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         """A JSON-ready copy with exactly the fields in the frozen Pack contract."""
-        return {
+        out: dict[str, Any] = {
             "topic_key": self.topic_key,
             "topic_title": self.topic_title,
             "subject_family": self.subject_family,
@@ -151,6 +173,13 @@ class Pack:
             "prereq_edges": [[source, target] for source, target in self.prereq_edges],
             "items": [item.as_dict() for item in self.items],
         }
+        if self.curriculum:
+            out["curriculum"] = self.curriculum
+        if self.grade:
+            out["grade"] = self.grade
+        if self.objectives:
+            out["objectives"] = [objective.as_dict() for objective in self.objectives]
+        return out
 
     def scorable_items(self) -> tuple[Item, ...]:
         """The only items downstream scoring/placement code is permitted to consume."""
@@ -230,4 +259,11 @@ def pack_from_dict(payload: dict[str, Any]) -> Pack:
         concepts=concepts,
         prereq_edges=tuple((str(edge[0]), str(edge[1])) for edge in payload["prereq_edges"]),
         items=items,
+        curriculum=(str(payload["curriculum"]) if payload.get("curriculum") else None),
+        grade=(str(payload["grade"]) if payload.get("grade") else None),
+        objectives=tuple(
+            ObjectiveRef(id=str(row["id"]), title=str(row["title"]))
+            for row in (payload.get("objectives") or [])
+            if isinstance(row, dict) and row.get("id") and row.get("title")
+        ),
     )

@@ -1,10 +1,36 @@
 """Regression: subject runs resume from account-owned server state, not browser storage."""
 
 
+def _approve_syllabus(client, learner, subject_id):
+    scan = client.post(
+        "/api/v1/curriculum/scan",
+        json={"subject_id": subject_id},
+        headers=learner["headers"],
+    )
+    assert scan.status_code == 200, scan.text
+    objectives = scan.json()["objectives"]
+    assert objectives, scan.text
+    approved = client.post(
+        "/api/v1/curriculum/approve",
+        json={
+            "subject_id": subject_id,
+            "objectives": [
+                {"id": item["id"], "title": item["title"], "strand": item.get("strand")}
+                for item in objectives
+            ],
+        },
+        headers=learner["headers"],
+    )
+    assert approved.status_code == 200, approved.text
+
+
 def _plan(client, learner):
     chosen = client.post("/api/v1/subjects/choose", json={"text": "Biology"}, headers=learner["headers"])
     assert chosen.status_code == 200, chosen.text
     subject_id = chosen.json()["subject_id"]
+    # Round 9: a chosen subject's test plan is gated on the learner
+    # approving the syllabus checklist first.
+    _approve_syllabus(client, learner, subject_id)
     response = client.post(
         "/api/v1/tests/plan",
         json={"subject": "Biology", "subject_id": subject_id, "level": 2, "style": "try", "goal": "exam"},

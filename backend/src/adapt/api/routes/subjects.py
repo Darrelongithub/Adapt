@@ -62,6 +62,9 @@ class ChooseBody(BaseModel):
     """The learner's subject words are data, never instructions to a model."""
 
     text: str = Field(min_length=1, max_length=240)
+    # Round 9: which syllabus the learner means (optional chips + grade/year).
+    curriculum: str | None = Field(default=None, max_length=24)
+    grade: str | None = Field(default=None, max_length=24)
 
 
 class CompleteTestsBody(BaseModel):
@@ -418,8 +421,18 @@ def choose(
     resulting closed taxonomy. The browser receives only ``model`` or ``simple``; internal provider
     names and configuration never cross this boundary.
     """
+    from ...curriculum.scanner import normalise_curriculum
+
+    curriculum = normalise_curriculum(body.curriculum)
+    if body.curriculum and curriculum is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "unknown_curriculum", "message": "choose Kenya CBC, KCSE, IGCSE, University or Self-study"},
+        )
     try:
-        result = choose_subject(s, _subjects(), student_id=student.id, text=body.text)
+        result = choose_subject(
+            s, _subjects(), student_id=student.id, text=body.text, curriculum=curriculum, grade=body.grade
+        )
     except (ValueError, SubjectsError) as exc:
         raise HTTPException(status_code=422, detail={"error": "subject_refused", "message": str(exc)}) from None
     return {

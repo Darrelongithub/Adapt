@@ -105,6 +105,16 @@ async function createGuest(page) {
   await page.goto(new URL("/", BASE).href, { waitUntil: "domcontentloaded" });
   await page.evaluate(() => sessionStorage.setItem("adapt:seen-opening", "1"));
   await page.reload({ waitUntil: "domcontentloaded" });
+  // The opening no longer consults that session flag: it holds for a few
+  // seconds, then either the app has already bootstrapped its guest
+  // learner or the consent-first account gate is what is on screen.
+  await page.locator(".opening-overlay").waitFor({ state: "detached", timeout: 20_000 }).catch(() => {});
+  const existing = await page.evaluate(async () => {
+    const response = await fetch("/api/v1/me", { credentials: "same-origin" });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  });
+  if (existing.status === 200 && existing.body?.student_id) return existing.body.student_id;
+  // The account gate is consent-first (Phase D): agree, then continue as guest.
   try {
     await page.waitForSelector("[data-account-gate]", { timeout: 20_000 });
   } catch {

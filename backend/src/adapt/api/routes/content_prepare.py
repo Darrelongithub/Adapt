@@ -40,6 +40,9 @@ class PrepareBody(BaseModel):
     topic: str = Field(min_length=1, max_length=240)
     level: int = Field(default=0, ge=0, le=20)
     language: str = Field(default="en", min_length=2, max_length=32)
+    #: Round 9 wizard scope; recorded on the built pack (see below).
+    curriculum: str | None = Field(default=None, max_length=32)
+    grade: str | None = Field(default=None, max_length=64)
 
 
 class _GeminiBridge:
@@ -101,7 +104,8 @@ def _update_job(*, job_id: str, state: str, source: str | None) -> None:
 
 
 async def _prepare_and_store(
-    job_id: str, topic: str, level: int, language: str, student_id: str | None = None
+    job_id: str, topic: str, level: int, language: str, student_id: str | None = None,
+    curriculum: str | None = None, grade: str | None = None,
 ) -> None:
     services = current_services()
     topic_key = canonical_topic_key(topic)
@@ -123,11 +127,19 @@ async def _prepare_and_store(
         level=level,
         language=language,
         model=model,
+        curriculum=curriculum,
+        grade=grade,
     )
     with services.scope() as session:
         # Another worker may have filled the cache while this pack was being validated. Upsert the
-        # same content key so no duplicate cache rows can be created.
-        store_pack(session, identity, pack)
+        # same content key so no duplicate cache rows can be created. The
+        # shared pack cache stays learner-neutral: the Round 9 scope is
+        # stripped before storing (approved objectives are per learner and
+        # must never ride in a cache entry shared with other learners).
+        from dataclasses import replace as _replace
+
+        shared = _replace(pack, curriculum=None, grade=None, objectives=()) if (curriculum or grade) else pack
+        store_pack(session, identity, shared)
         row = session.get(ContentPrepareJob, job_id)
         if row is not None:
             row.state = _state_for_source(pack.source)
@@ -136,10 +148,11 @@ async def _prepare_and_store(
 
 
 def _run_prepare(
-    job_id: str, topic: str, level: int, language: str, student_id: str | None = None
+    job_id: str, topic: str, level: int, language: str, student_id: str | None = None,
+    curriculum: str | None = None, grade: str | None = None,
 ) -> None:
     try:
-        asyncio.run(_prepare_and_store(job_id, topic, level, language, student_id))
+        asyncio.run(_prepare_and_store(job_id, topic, level, language, student_id, curriculum, grade))
     except Exception:
         # Do not stringify exception messages: they can include provider or topic text.
         log.error("content_prepare_failed job_id=%s", job_id)
@@ -156,6 +169,14 @@ def prepare_content(
     _student: Student = Depends(rate("content")),
 ) -> dict[str, str]:
     """Queue a validated pack build or immediately return a status job for a cache hit."""
+    from ...curriculum.scanner import normalise_curriculum
+
+    curriculum = normalise_curriculum(body.curriculum)
+    if body.curriculum and curriculum is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "unknown_curriculum", "message": "choose Kenya CBC, KCSE, IGCSE, University or Self-study"},
+        )
     key = canonical_topic_key(body.topic)
     identity = cache_identity(key, level=body.level, language=body.language)
     cached = get_cached(session, identity)
@@ -185,14 +206,27 @@ def prepare_content(
     job_id = job.id
     # Commit before submitting so the worker can safely see the job row on another DB connection.
     session.commit()
-    _WORKERS.submit(
-        _run_prepare,
-        job_id,
-        body.topic,
-        body.level,
-        body.language,
-        getattr(_student, "id", None),
-    )
+    if curriculum or body.grade:
+        _WORKERS.submit(
+            _run_prepare,
+            job_id,
+            body.topic,
+            body.level,
+            body.language,
+            getattr(_student, "id", None),
+            curriculum,
+            body.grade,
+        )
+    else:
+        # The unscoped call keeps its pre-Round-9 shape exactly.
+        _WORKERS.submit(
+            _run_prepare,
+            job_id,
+            body.topic,
+            body.level,
+            body.language,
+            getattr(_student, "id", None),
+        )
     return {"job_id": job_id}
 
 

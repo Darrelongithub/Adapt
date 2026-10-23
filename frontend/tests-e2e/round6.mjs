@@ -146,11 +146,14 @@ async function crawl(browser, mode, signIn) {
       current.route = route;
       const before = crashes.length;
       await page.goto(`${BASE}${route}`, { waitUntil: "networkidle", timeout: 30000 }).catch((e) => recordHere("goto", e.message));
+      // Home's opening overlay is timed (~6s) and hides the shell while it
+      // is up; judge the page underneath, not the welcome card.
+      if (route === "/") await page.locator(".opening-overlay").waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(450);
       const body = await page.evaluate(() => document.body?.innerText?.trim() ?? "").catch(() => "");
       if (!body) recordHere("blank-body", "empty body text");
       if (await page.locator("[data-route-error]").count()) recordHere("error-screen", "route error boundary shown");
-      if (mode === "signed-out" && !(await page.locator('[data-account-gate]').count())) {
+      if (mode === "signed-out" && !(await page.locator("[data-account-gate]").count())) {
         recordHere("gate-missing", "no account gate on protected route");
       }
       checks.push({ mode, viewport: viewport.name, route, ok: crashes.length === before });
