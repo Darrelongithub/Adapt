@@ -266,8 +266,8 @@ function PatternPicker({ parameters, onAnswer, answered }: { parameters: Record<
 /* ------------------------------------------------------------------ */
 
 function DragOrder({ parameters, onAnswer, answered }: { parameters: Record<string, unknown>; onAnswer: (c: boolean, a: string) => void; answered: boolean }) {
-  const items = splitList(parameters.items);
-  const answer = splitList(parameters.answer);
+  const items = useMemo(() => splitList(parameters.items), [parameters.items]);
+  const answer = useMemo(() => splitList(parameters.answer), [parameters.answer]);
   const prompt = String(parameters.prompt ?? "");
   // Deterministic shuffle from the answer order, so a refresh shows the same start.
   const initial = useMemo(() => {
