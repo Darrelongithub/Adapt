@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { AccountGate } from "./account-gate";
 import { SessionProvider, useSession } from "./ui";
-import { api, get, isMock, logout, type Me } from "@/lib/api";
+import { get, isMock, logout, type Me } from "@/lib/api";
 import type { Health, Status } from "@/lib/types";
 import { Icon, routeIcon } from "./icons";
 import { IconTile } from "./ui";
@@ -339,12 +339,11 @@ export function SessionGate({ children }: { children: ReactNode }) {
   const attempt = useRef(0);
   const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generation = useRef(0);
-  const signedOut = useRef(false);
   const refresh = useCallback(() => {
     const request = ++generation.current;
     if (retry.current) clearTimeout(retry.current);
     setLoading(true);
-    get<Me>("me").then(async (r) => {
+    get<Me>("me").then((r) => {
       if (request !== generation.current) return;
       const refused = r.status === 401 || r.status === 403;
       if (r.data) {
@@ -353,27 +352,6 @@ export function SessionGate({ children }: { children: ReactNode }) {
         attempt.current = 0;
         setLoading(false);
       } else if (refused) {
-        if (!signedOut.current) {
-          try {
-            const guest = await api<Me>("students", {
-              method: "POST",
-              json: {
-                as_guest: true,
-                age_band: "16-18",
-                consent_analytics: true,
-                consent_share_with_llm: false,
-              },
-            });
-            if (request !== generation.current) return;
-            setMe(guest);
-            setUnknown(null);
-            attempt.current = 0;
-            setLoading(false);
-            return;
-          } catch {
-            if (request !== generation.current) return;
-          }
-        }
         setMe(null);
         setUnknown(null);
         attempt.current = 0;
@@ -403,7 +381,6 @@ export function SessionGate({ children }: { children: ReactNode }) {
     generation.current += 1;
     if (retry.current) clearTimeout(retry.current);
     attempt.current = 0;
-    signedOut.current = false;
     setMe(profile as Me);
     setUnknown(null);
     setLoading(false);
@@ -417,7 +394,6 @@ export function SessionGate({ children }: { children: ReactNode }) {
       refresh,
       establish,
       signOut: async () => {
-        signedOut.current = true;
         await logout();
         refresh();
       },

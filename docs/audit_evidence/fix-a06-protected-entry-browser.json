@@ -1,0 +1,90 @@
+{
+  "check": "A06",
+  "outcome": "PASS",
+  "routes": [
+    {
+      "route": "/",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/baseline",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/diagnose",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/evidence",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/first-lesson",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/journey",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/learn",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/lesson",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/onboarding",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/progress",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/proposals",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/review",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/settings",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/voice",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/dev/animator",
+      "gated": true,
+      "auth_step": null
+    },
+    {
+      "route": "/dev/test-lab",
+      "gated": true,
+      "auth_step": null
+    }
+  ],
+  "creation_requests_before_entry": 0,
+  "creation_requests_after_explicit_guest": 1,
+  "explicit_guest_student_id": "stu_6e04a90f9582486ba0a5",
+  "unlocked_route": "/learn"
+}
