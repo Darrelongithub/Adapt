@@ -68,6 +68,19 @@ type EvidenceRow = {
   grading_seal?: string;
 };
 
+type SavedRun = {
+  version: 1;
+  run_id: string;
+  step: "run" | "results";
+  chosen: Chosen;
+  level: number | null;
+  style: string | null;
+  goal: string | null;
+  items: PlanItem[];
+  index: number;
+  evidence: EvidenceRow[];
+};
+
 export default function Journey() {
   const { me, loading } = useSession();
   const router = useRouter();
@@ -86,10 +99,13 @@ export default function Journey() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const runId = useRef(`run-${Date.now().toString(36)}`);
+  const restoreAttempted = useRef<string | null>(null);
+  const studentId = typeof me?.student_id === "string" ? me.student_id : null;
 
   const state = path.state;
   const stage = state?.stage ?? "preferences";
   const active = overview.data?.subjects.find((item) => item.id === overview.data?.active_subject_id) ?? null;
+  const activeSubjectId = active?.id ?? null;
 
   // A learner who arrives with ?step=subject starts at the subject step; otherwise
   // the path stage decides which card is shown (mind check first, then the wizard).
@@ -98,6 +114,38 @@ export default function Journey() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("step") === "subject") setForceSubject(true);
   }, []);
+
+  useEffect(() => {
+    if (!studentId || !activeSubjectId || chosen || items.length) return;
+    const restoreKey = `${studentId}:${activeSubjectId}`;
+    if (restoreAttempted.current === restoreKey) return;
+    restoreAttempted.current = restoreKey;
+    let cancelled = false;
+    get<SavedRun>("tests/run", { subject_id: activeSubjectId }).then(({ data: saved }) => {
+      if (cancelled || !saved || saved.version !== 1 || saved.chosen?.id !== activeSubjectId || !saved.run_id) return;
+      const restoredItems = validatePlanItems(saved.items);
+      if (restoredItems.length < 4 || restoredItems.length !== saved.items.length) return;
+      if (restoredItems.some((item) => item.run_id !== saved.run_id || !item.grading_seal)) return;
+      const restoredEvidence: EvidenceRow[] = [];
+      for (const [position, row] of (Array.isArray(saved.evidence) ? saved.evidence : []).entries()) {
+        if (!row || row.item_id !== restoredItems[position]?.id || typeof row.correct !== "boolean") break;
+        restoredEvidence.push(row);
+      }
+      const savedIndex = Number.isInteger(saved.index) ? saved.index : restoredEvidence.length;
+      runId.current = saved.run_id;
+      setChosen(saved.chosen);
+      setLevel(saved.level);
+      setStyle(saved.style);
+      setGoal(saved.goal);
+      setItems(restoredItems);
+      setEvidence(restoredEvidence);
+      setIndex(Math.min(restoredItems.length - 1, Math.max(0, savedIndex, restoredEvidence.length)));
+      setStep(saved.step === "results" && restoredEvidence.length === restoredItems.length ? "results" : "run");
+    }).catch(() => {
+      // No saved run (or a temporary read failure) must not block a fresh one.
+    });
+    return () => { cancelled = true; };
+  }, [studentId, activeSubjectId, chosen, items.length]);
 
   const wizard = forceSubject || stage === "subject" || stage === "subject_round" || Boolean(chosen);
 
@@ -128,7 +176,7 @@ export default function Journey() {
     setBusy(true);
     setNotice(null);
     try {
-      const plan = await post<{ items: unknown[]; source: "model" | "simple" }>("tests/plan", {
+      const plan = await post<{ items: unknown[]; run_id: string; source: "model" | "simple" }>("tests/plan", {
         subject: chosen.title,
         subject_id: chosen.id,
         level,
@@ -141,7 +189,7 @@ export default function Journey() {
         setBusy(false);
         return;
       }
-      runId.current = `run-${Date.now().toString(36)}`;
+      runId.current = plan.run_id;
       setItems(validated);
       setEvidence([]);
       setIndex(0);
@@ -274,7 +322,14 @@ export default function Journey() {
             </div>
           ) : null}
           {step === "results" && chosen ? (
-            <ResultsStep chosen={chosen} evidence={evidence} onAddAnother={() => { setChosen(null); setStep("subject"); setText(""); }} />
+            <ResultsStep chosen={chosen} evidence={evidence} onAddAnother={() => {
+              setChosen(null);
+              setItems([]);
+              setEvidence([]);
+              setIndex(0);
+              setStep("subject");
+              setText("");
+            }} />
           ) : null}
         </>
       ) : (

@@ -14,6 +14,7 @@ browser's registry mirrors it so anything here renders and scores over there.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from ...db.models import Student, new_id
 from ...services import current
+from ...subjects.catalog import subject_payload
 from ...subjects.grading import GRADING_FIELDS, public_item, read_grading_token, score_answer
 from ...subjects.models import LearnerSubject, SubjectTestEvidence
 from ...subjects.test_items import FAMILIES, build_plan
@@ -81,6 +83,36 @@ def _owned_subject(s: Session, student_id: str, subject_id: str) -> LearnerSubje
     return row
 
 
+def _update_active_run(
+    row: LearnerSubject | None,
+    run_id: str,
+    *,
+    entry: dict[str, Any] | None = None,
+    finish: bool = False,
+) -> None:
+    """Persist the server-graded resume snapshot inside the encrypted subject plan."""
+    if row is None:
+        return
+    plan = deepcopy(row.plan or {})
+    saved = plan.get("active_run")
+    if not isinstance(saved, dict) or saved.get("run_id") != run_id:
+        return
+    items = [item for item in saved.get("items", []) if isinstance(item, dict)]
+    evidence = [old for old in saved.get("evidence", []) if isinstance(old, dict)]
+    if entry is not None and not any(old.get("item_id") == entry.get("item_id") for old in evidence):
+        evidence.append(entry)
+    order = {str(item.get("id")): index for index, item in enumerate(items)}
+    evidence.sort(key=lambda old: order.get(str(old.get("item_id")), len(order)))
+    answered = {str(old.get("item_id")) for old in evidence}
+    next_index = next((index for index, item in enumerate(items) if str(item.get("id")) not in answered), max(0, len(items) - 1))
+    saved["evidence"] = evidence
+    saved["index"] = next_index
+    if finish and items and len(evidence) == len(items):
+        saved["step"] = "results"
+    plan["active_run"] = saved
+    row.plan = plan
+
+
 @router.post("/plan")
 def plan(
     body: PlanBody,
@@ -116,7 +148,36 @@ def plan(
         )
         for index, item in enumerate(plan_payload["items"])
     ]
+    if subject_row is not None:
+        subject_row.plan = {
+            **deepcopy(subject_row.plan or {}),
+            "active_run": {
+                "version": 1,
+                "run_id": run_id,
+                "step": "run",
+                "level": body.level,
+                "style": body.style,
+                "goal": body.goal,
+                "items": deepcopy(plan_payload["items"]),
+                "index": 0,
+                "evidence": [],
+            },
+        }
+        s.commit()
     return plan_payload
+
+
+@router.get("/run")
+def read_active_run(
+    subject_id: str,
+    s: Session = Depends(db_session),
+    student: Student = Depends(student_from_request),
+) -> dict[str, Any]:
+    row = _owned_subject(s, student.id, subject_id)
+    saved = (row.plan or {}).get("active_run")
+    if not isinstance(saved, dict) or not saved.get("run_id"):
+        raise HTTPException(status_code=404, detail={"error": "no_active_run", "message": "no saved test run"})
+    return {**deepcopy(saved), "chosen": subject_payload(row)}
 
 
 @router.post("/grade")
@@ -136,8 +197,7 @@ def grade(
         ) from None
     item = payload["item"]
     subject_id = payload.get("subject_id")
-    if subject_id:
-        _owned_subject(s, student.id, subject_id)
+    subject_row = _owned_subject(s, student.id, subject_id) if subject_id else None
     existing = s.execute(
         select(SubjectTestEvidence).where(
             SubjectTestEvidence.run_id == body.run_id,
@@ -164,6 +224,18 @@ def grade(
         hints_used=body.hints_used,
         facts={"parameters": visible_parameters},
     ))
+    _update_active_run(subject_row, body.run_id, entry={
+        "item_id": body.item_id,
+        "item_type": str(item["item_type"]),
+        "skill": str(item["skill"]),
+        "difficulty": max(1, min(5, int(item["difficulty"]))),
+        "answer": (body.answer or "")[:240] or None,
+        "correct": correct,
+        "ms": body.ms,
+        "hints_used": body.hints_used,
+        "parameters": visible_parameters,
+        "grading_seal": body.grading_seal,
+    })
     s.commit()
     return {"correct": correct, "stored": 1, "run_id": body.run_id, "item_id": body.item_id}
 
@@ -178,8 +250,7 @@ def write_evidence(
     if not body.rows:
         raise HTTPException(status_code=422, detail={"error": "no_rows", "message": "a test run must produce evidence rows"})
     subject_id = body.subject_id or None
-    if subject_id:
-        _owned_subject(s, student.id, subject_id)
+    subject_row = _owned_subject(s, student.id, subject_id) if subject_id else None
     stored = 0
     for row in body.rows[:64]:
         try:
@@ -222,7 +293,20 @@ def write_evidence(
             hints_used=row.hints_used,
             facts={"parameters": visible_parameters},
         ))
+        _update_active_run(subject_row, body.run_id, entry={
+            "item_id": row.item_id,
+            "item_type": str(item["item_type"]),
+            "skill": str(item["skill"]),
+            "difficulty": max(1, min(5, int(item["difficulty"]))),
+            "answer": (row.answer or "")[:240] or None,
+            "correct": correct,
+            "ms": row.ms,
+            "hints_used": row.hints_used,
+            "parameters": visible_parameters,
+            "grading_seal": row.grading_seal,
+        })
         stored += 1
+    _update_active_run(subject_row, body.run_id, finish=True)
     s.commit()
     return {"stored": stored, "run_id": body.run_id}
 
