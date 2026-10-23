@@ -1,5 +1,7 @@
 /** Conservative rectangles include transparent artwork. Require 16px clearance. */
 export function inspectArtZones() {
+  // Decoration belongs to the page shell; global navigation and footer are outside its contract.
+  const root = document.querySelector("[data-page-shell]") ?? document.body;
   const visible = (n) => {
     const d = n.closest("details:not([open])");
     if (d && !d.querySelector(":scope > summary")?.contains(n)) return false;
@@ -30,17 +32,17 @@ export function inspectArtZones() {
     a.y < b.bottom + p &&
     a.bottom > b.y - p;
   const content = [
-    ...document.querySelectorAll(
+    ...root.querySelectorAll(
       "input,button,a,p,h1,h2,h3,h4,h5,h6,label,li,[role=radio],[role=button],.choice-card,[data-account-gate],.lesson-block",
     ),
   ].filter(visible);
-  const patterns = [...document.querySelectorAll("[data-pattern]")].filter(
+  const patterns = [...root.querySelectorAll("[data-pattern]")].filter(
       visible,
     ),
-    art = [...document.querySelectorAll("[data-art]")].filter(visible),
+    art = [...root.querySelectorAll("[data-art]")].filter(visible),
     failures = [];
   const textBoxes = [];
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     const n = walker.currentNode,
       p = n.parentElement;

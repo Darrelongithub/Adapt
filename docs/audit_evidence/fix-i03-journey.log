@@ -1,0 +1,36 @@
+
+desktop
+  ok  desktop: initial server stage is preferences — preferences
+  ok  desktop: visible card agrees with the server
+  ok  desktop: current three-step overview is visible
+  ok  desktop: no horizontal overflow — 1280/1280
+  ok  desktop: sidebar marks Your path current
+  ok  desktop: subject choice opens the real subject form
+  ok  desktop: four authored suggestions are offered
+  ok  desktop: preferences skip is stored
+  ok  desktop: preferences skip advances to games — games
+  ok  desktop: games skip is stored
+  ok  desktop: games skip advances to subject — subject
+  ok  desktop: skipped stages are not measured
+  ok  desktop: reload resumes the stored subject stage
+  ok  desktop: no uncaught browser error
+
+mobile
+  ok  mobile: initial server stage is preferences — preferences
+  ok  mobile: visible card agrees with the server
+  ok  mobile: current three-step overview is visible
+  ok  mobile: no horizontal overflow — 390/390
+  ok  mobile: drawer control exists
+  ok  mobile: drawer marks Your path current
+  ok  mobile: Escape closes the drawer
+  ok  mobile: subject choice opens the real subject form
+  ok  mobile: four authored suggestions are offered
+  ok  mobile: preferences skip is stored
+  ok  mobile: preferences skip advances to games — games
+  ok  mobile: games skip is stored
+  ok  mobile: games skip advances to subject — subject
+  ok  mobile: skipped stages are not measured
+  ok  mobile: reload resumes the stored subject stage
+  ok  mobile: no uncaught browser error
+
+30 checks: 30 passed, 0 failed

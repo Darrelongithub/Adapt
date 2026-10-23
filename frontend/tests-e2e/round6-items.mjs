@@ -6,8 +6,8 @@
  * Part 1 drives /dev/test-lab, which renders every registered type once and
  * carries the answers in data-answer (a dev page; real items never expose keys).
  * Part 2 drives the real journey: subject → level/style/goal tiles → the run,
- * answering every item correctly from the plan the API returned (the plan's
- * parameters are the scorer's contract), then reads the evidence rows back.
+ * answering every item through its public renderer, accepting the server's
+ * verdict without an exposed answer key, then reading the evidence rows back.
  *
  * Needs a Chromium (PLAYWRIGHT_CHROMIUM_EXECUTABLE / PW_CHROMIUM /
  * /opt/pw-browsers/chromium). Run from frontend/: node tests-e2e/round6-items.mjs
@@ -30,15 +30,18 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 900 
 const page = await context.newPage();
 
 async function guestSignIn() {
-  await page.addInitScript(() => sessionStorage.setItem("adapt:seen-opening", "1"));
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
-  const consent = page.locator('input[type="checkbox"]');
+  const opening = page.locator(".opening-overlay");
+  if (await opening.count()) {
+    await opening.click({ position: { x: 8, y: 8 } });
+    await opening.waitFor({ state: "detached" });
+  }
+  const consent = page.locator('[data-account-gate] input[type="checkbox"]');
   if (await consent.count()) {
     await consent.first().click();
-    await page.getByRole("button", { name: /Agree and continue/i }).click();
-    await page.waitForTimeout(300);
+    await page.getByRole("button", { name: /Save choice and continue/i }).click();
     await page.getByRole("button", { name: /Continue as guest/i }).click();
-    await page.waitForTimeout(1200);
+    await page.locator('[data-testid="journey-card"]').waitFor({ state: "visible", timeout: 20000 });
   }
 }
 
@@ -70,9 +73,21 @@ async function answerCurrent(item) {
       const [l, r] = pair.split(":").map((s) => s.trim());
       return [l, r];
     });
-    for (const [l, r] of pairs) {
-      await card.getByRole("button", { name: new RegExp(`^${escapeRe(l)}\\b`) }).click();
-      await card.getByRole("button", { name: new RegExp(`^${escapeRe(r)}\\b`) }).click();
+    if (pairs.length && pairs.every(([l, r]) => l && r)) {
+      for (const [l, r] of pairs) {
+        await card.getByRole("button", { name: new RegExp(`^${escapeRe(l)}\\b`) }).click();
+        await card.getByRole("button", { name: new RegExp(`^${escapeRe(r)}\\b`) }).click();
+      }
+    } else {
+      // Real plans do not expose the answer mapping. Complete the public control;
+      // the server verdict, not a client-side answer key, decides the result.
+      const leftButtons = card.getByRole("group", { name: "left side" }).getByRole("button");
+      const rightButtons = card.getByRole("group", { name: "right side" }).getByRole("button");
+      const rightCount = await rightButtons.count();
+      for (let index = 0; index < await leftButtons.count(); index += 1) {
+        await leftButtons.nth(index).click();
+        await rightButtons.nth(index % rightCount).click();
+      }
     }
     void left;
     await card.getByRole("button", { name: /^Check$/ }).click();
@@ -89,7 +104,7 @@ async function answerCurrent(item) {
   if (type === "venn_region") {
     const region = String(p.answer_region ?? "AB");
     const label = region === "AB" ? "A and B" : region === "none" ? "outside" : `${region} only`;
-    await card.locator(`.venn-hit:has(text:text-is("${label}")) circle`).click();
+    await card.locator(".venn-hit", { hasText: label }).locator("circle").click();
     return;
   }
   if (type === "number_line") {
@@ -167,7 +182,7 @@ console.log(`part 1 ok: ${seen.length} types clicked through, all scored correct
 
 console.log("part 2: journey — geometry vs discrete maths…");
 
-async function runWizard(subjectText) {
+async function runWizard(subjectText, navigate = true) {
   const plans = [];
   const onPlan = async (r) => {
     if (r.url().includes("/tests/plan") && r.request().method() === "POST") {
@@ -175,7 +190,7 @@ async function runWizard(subjectText) {
     }
   };
   page.on("response", onPlan);
-  await page.goto(`${BASE}/journey?step=subject`, { waitUntil: "networkidle" });
+  if (navigate) await page.goto(`${BASE}/journey?step=subject`, { waitUntil: "networkidle" });
   await page.locator('input[aria-label="What do you want to learn?"]').fill(subjectText);
   await page.getByRole("button", { name: /See the starting checks/i }).click();
   // Setup step: three big tile questions.
@@ -218,7 +233,7 @@ assert.ok(evidence.rows.every((r) => typeof r.correct === "boolean" && typeof r.
 
 // Second subject: discrete maths must give a visibly DIFFERENT test.
 await page.getByRole("button", { name: /Add a subject/i }).click();
-const discreteTypes = await runWizard("discrete maths");
+const discreteTypes = await runWizard("discrete maths", false);
 assert.ok(discreteTypes.includes("truth_table") || discreteTypes.includes("venn_region"), `discrete run should emphasise logic/sets, got ${discreteTypes.join(",")}`);
 assert.notDeepEqual(geometryTypes, discreteTypes, "geometry and discrete maths must give different tests");
 console.log(`discrete run: ${discreteTypes.join(", ")}`);
