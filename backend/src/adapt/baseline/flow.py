@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from .games import (
+    QUICK_MAX_TRIALS,
     TRAPS,
     Trial,
     codewords_cued,
@@ -40,20 +41,27 @@ STAGES: tuple[dict[str, Any], ...] = (
     {"key": "questions", "kind": "questions", "title": "How you work", "seconds": 150},
     {"key": "codewords_study", "kind": "study", "title": "Spy codewords: study", "seconds": 45},
     {"key": "codewords_cued", "kind": "game", "title": "Spy codewords: straight after", "seconds": 70},
-    {"key": "quick_a", "kind": "game", "title": "Quick taps", "seconds": 20},
+    {"key": "quick_a", "kind": "game", "title": "Quick taps", "seconds": 30},
     {"key": "vault", "kind": "game", "title": "Vault lights", "seconds": 90},
     {"key": "shopkeeper", "kind": "game", "title": "Vault lights: shopkeeper", "seconds": 45},
-    {"key": "quick_b", "kind": "game", "title": "Quick taps", "seconds": 20},
+    {"key": "quick_b", "kind": "game", "title": "Quick taps", "seconds": 30},
     {"key": "machine", "kind": "game", "title": "Crack the machine", "seconds": 150},
     {"key": "locked_box", "kind": "game", "title": "The locked box", "seconds": 120},
-    {"key": "quick_c", "kind": "game", "title": "Quick taps", "seconds": 20},
+    {"key": "quick_c", "kind": "game", "title": "Quick taps", "seconds": 30},
     {"key": "trap", "kind": "game", "title": "Two questions to think about", "seconds": 30},
     {"key": "codewords_delayed", "kind": "game", "title": "Spy codewords: later", "seconds": 90},
     {"key": "snapshot", "kind": "snapshot", "title": "What we noticed", "seconds": 60},
 )
 
 STAGE_KEYS: tuple[str, ...] = tuple(s["key"] for s in STAGES)
-QUICK_BUDGET = {"quick_a": 4, "quick_b": 4, "quick_c": 4}
+
+#: The three laps of "Quick taps" and the ceiling on how many taps each can hold. The laps are
+#: timed on the page (see :data:`QUICK_LAP_SECONDS`); the ceiling is the safety net for a lap whose
+#: clock never reports back, so it is a *ceiling*, not the way the lap ends.
+QUICK_BUDGET = {"quick_a": QUICK_MAX_TRIALS, "quick_b": QUICK_MAX_TRIALS, "quick_c": QUICK_MAX_TRIALS}
+
+#: What the three laps call themselves on the page. Each lap is the same game, one rung harder.
+QUICK_LAP_TITLES = {1: "lap 1 of 3", 2: "lap 2 of 3", 3: "lap 3 of 3"}
 
 
 @dataclass(frozen=True)
@@ -82,10 +90,6 @@ def _index_of(stage: str) -> int:
 
 def progress_for(stage: str) -> float:
     return _index_of(stage) / max(1, len(STAGE_KEYS))
-
-
-def quick_index(trials: Sequence[Trial], stage: str) -> int:
-    return len([t for t in trials if t.game == "quick" and t.task.get("stage") == stage])
 
 
 def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None:
@@ -127,12 +131,16 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
         bought = [str(t.response.get("hint_id")) for t in done if t.task.get("action") == "hint" and t.response.get("hint_id")]
         return locked_box_task(seed, len(done), attempts_used=attempts, bought_hints=bought)
     if stage in QUICK_BUDGET:
-        used = quick_index(trials, stage)
-        if used >= QUICK_BUDGET[stage]:
+        done = [t for t in trials if t.game == "quick" and t.task.get("stage") == stage]
+        # The lap is over when the page says the clock ran out (a `timeout` action), or when the
+        # hard ceiling is reached. Either is a normal ending, not a failure.
+        if any(str(t.task.get("action") or t.response.get("action") or "") == "timeout" for t in done):
             return None
-        task = quick_trial(used)
-        task["id"] = f"{stage}_{used}"
-        task["stage"] = stage
+        if len(done) >= QUICK_BUDGET[stage]:
+            return None
+        task = quick_trial(stage, len(done), seed)
+        task["lap"] = 1 + tuple(QUICK_BUDGET).index(stage)
+        task["lap_title"] = QUICK_LAP_TITLES[task["lap"]]
         return task
     if stage == "trap":
         # Two questions, one after the other, as the screen says. (Only the first was ever served.)
@@ -158,8 +166,18 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
     return None
 
 
-def next_step(*, seed: int, trials: Sequence[Trial], format_done: bool, questions_done: bool) -> Step:
+def next_step(*, seed: int, trials: Sequence[Trial], format_done: bool, questions_done: bool, demo_mode: bool = False) -> Step:
     """Walk the stages in order and return the first one that still has something to show."""
+    if demo_mode:
+        # Ten answers at most; unplayed factors remain honestly "not measured".
+        for index, stage in enumerate(("quick_a", "vault", "trap")):
+            done = [t for t in trials if _stage_of(t) == stage]
+            if len(done) >= (4 if stage != "trap" else 2):
+                continue
+            task = next_task_for(stage, seed=seed, trials=trials)
+            if task is not None:
+                return Step(kind="task", stage=stage, task=task, progress=index / 3)
+        return Step(kind="snapshot", stage="snapshot", progress=1.0, note="Demo: early signals, not a diagnosis")
     if not format_done:
         return Step(kind="format", stage="format", progress=0.0, note="one question before anything else")
     if not questions_done:

@@ -71,6 +71,8 @@ export async function playBaseline(page: Page, opts: RunOptions): Promise<Ledger
   let machineProbe = 0;
   let cuedMeasured = 0;
   let quickMeasured = 0;
+  /** Taps sent in the lap on screen now. Reset whenever the screen is not the tap grid. */
+  let quickTapsInLap = 0;
   let vaultSeen = 0;
   const submit = (name: string) => act(page, () => press(page, page.getByRole("button", { name }), mode));
 
@@ -79,6 +81,7 @@ export async function playBaseline(page: Page, opts: RunOptions): Promise<Ledger
   let seen: Screen = "unknown";
   for (let guard = 0; guard < 400; guard++) {
     seen = await screen(page);
+    if (seen !== "choice") quickTapsInLap = 0;
     if (process.env.ADAPT_E2E_TRACE) console.log(`[trace] ${guard} ${seen}`);
     if (seen === "snapshot") break;
     if (opts.stopAt === seen) break;
@@ -162,16 +165,59 @@ export async function playBaseline(page: Page, opts: RunOptions): Promise<Ledger
     if (seen === "choice") {
       const practice = await isPractice(page);
       const group = page.locator('[aria-label="answers"]');
+      const game = await page.locator(".baseline-task").first().getAttribute("data-game");
+
+      if (game === "codewords_delayed") {
+        // Recognition: the page shows a code word and four places. Tapping the right place is the
+        // measurement, so press the one the study screen paired with the cue.
+        await snap("delayed-recognition");
+        const cue = (await page.locator("p.baseline-cue").innerText()).trim();
+        const place = ledger.pairs[cue];
+        expect(place, `the recognition cue ${cue} was not on the study screen`).toBeTruthy();
+        const buttons = group.locator("button");
+        const texts = (await buttons.allInnerTexts()).map((t) => t.trim());
+        const index = texts.indexOf(place);
+        expect(index, `the right place ${place} was not offered`).toBeGreaterThanOrEqual(0);
+        await act(page, () => pickInGroup(page, group, index, mode));
+        if (!practice) ledger.recognition.push({ code: cue, answer: place, correct: true });
+        ledger.expect.push({ game: "codewords_recognition", correct: practice ? null : true });
+        continue;
+      }
+
       const trap = (await page.locator(".baseline-story").count()) > 0;
       const value = (await group.locator("button").nth(0).innerText()).trim();
       if (trap) await snap("trap");
       else if (quickMeasured === 0) await snap("quick-tap");
       if (!trap && !practice) quickMeasured += 1;
       await act(page, () => pickInGroup(page, group, 0, mode));
-      if (trap) ledger.traps.push({ value });
-      else ledger.quick.push({ value, screen: practice ? "practice" : "measure" });
+      if (trap) {
+        ledger.traps.push({ value });
+        // Two questions, and the reveal comes with the verdict: a trap has a right answer.
+        ledger.expect.push({ game: "trap", correct: undefined, given: value });
+        continue;
+      }
+      ledger.quick.push({ value, screen: practice ? "practice" : "measure" });
       // The first option is the learner's pick; whether it was right is not known to this suite.
-      ledger.expect.push({ game: trap ? "trap" : "quick", correct: undefined, given: value });
+      ledger.expect.push({ game: "quick", correct: undefined, given: value });
+
+      // The lap is timed: thirty seconds, a rung harder every three answers. Tapping until the
+      // grid goes away would race the page's own closing `timeout` (two posts at once, and the
+      // ledger could pair a reply with the wrong tap). Three taps in, let the clock end the lap and
+      // record that closing reply as the one entry it is.
+      quickTapsInLap += 1;
+      if (quickTapsInLap === 3) {
+        const closed = await page
+          .waitForResponse(
+            (r) => r.request().method() === "POST" && /\/baseline\/[^/]+\/trial/.test(r.url()),
+            { timeout: 45_000 },
+          )
+          .catch(() => null);
+        if (closed) {
+          const body = (await closed.json().catch(() => ({}))) as { scored?: { action?: string } };
+          expect(body.scored?.action, "the clock should end the lap with a timeout").toBe("timeout");
+          ledger.expect.push({ game: "quick", correct: null });
+        }
+      }
       continue;
     }
 

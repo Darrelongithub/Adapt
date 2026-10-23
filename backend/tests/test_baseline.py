@@ -464,7 +464,7 @@ def test_stopping_early_keeps_what_was_measured_and_invents_nothing(client, lear
     """The brief's partial-completion rule, asserted: stop after the vault, keep the vault."""
     view = _start(client, learner)
     run_id = view["run_id"]
-    _play_until(client, learner, run_id, stop_stage="machine", max_trials=60)
+    _play_until(client, learner, run_id, stop_stage="machine", max_trials=260)
     body = client.post(f"/api/v1/baseline/{run_id}/finish", headers=learner["headers"]).json()
     assert body["state"] == "sealed"
     completion = body["completion"]
@@ -482,7 +482,7 @@ def test_a_partial_baseline_is_usable_by_the_rest_of_the_app(client, learner, se
     """Its trials are evidence, so they are in the shared log with the run's own event ids."""
     view = _start(client, learner)
     run_id = view["run_id"]
-    _play_until(client, learner, run_id, stop_stage="machine", max_trials=40)
+    _play_until(client, learner, run_id, stop_stage="machine", max_trials=260)
     rows = services.state.evidence_rows(learner["student_id"])
     baseline_events = [r for r in rows if str(r["event_id"]).startswith(f"base_{run_id}_")]
     assert baseline_events, "no baseline trial reached the evidence log"

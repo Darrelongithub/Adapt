@@ -527,7 +527,7 @@ class GeminiLLM:
 
     @property
     def configured(self) -> bool:
-        return bool(self.settings.gemini_api_key)
+        return bool(self.settings.gemini_api_key) and not self.settings.demo_mode
 
     def plan(self, purpose: str, *, role: str = "ai2", **kw: Any) -> routing.CallPlan:
         """What this call would do, without making it. Used by tests, docs and the CLI."""

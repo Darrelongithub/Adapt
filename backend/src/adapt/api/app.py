@@ -159,10 +159,14 @@ def create_app() -> FastAPI:
     # Order matters: the outermost middleware is added last. Security headers go on
     # every response, including a rejection from the host or rate-limit checks, so
     # they must be outside both.
-    limiter = build_limiter(multiplier=st.rate_limit_multiplier)
+    limiter = build_limiter(multiplier=st.rate_limit_multiplier, demo_mode=st.demo_mode)
     app.add_middleware(LimitsMiddleware, settings=st, limiter=limiter)
     app.add_middleware(TrustedHostMiddleware, settings=st)
     app.add_middleware(SecurityHeadersMiddleware, settings=st)
+    if st.demo_mode:
+        from ..security.demo_capacity import DemoCapacityMiddleware
+
+        app.add_middleware(DemoCapacityMiddleware)
     app.state.limiter = limiter
 
     from .routes import lesson_plan, subjects

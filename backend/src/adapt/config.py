@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     app_name: str = "ADAPT"
     mode: Mode = "local"
     debug: bool = False
+    # Trusted LAN only: consent-only guests, short baseline, no remote model calls.
+    demo_mode: bool = False
     host: str = "0.0.0.0"
     port: int = 8000
     data_dir: Path = _repo_root() / "var"

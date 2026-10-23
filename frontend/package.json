@@ -17,6 +17,7 @@
     "test:server": "node --test server.test.mjs",
     "test:env": "node --test env.test.mjs",
     "test:e2e:banned": "node tests-e2e/banned-phrases.mjs",
+    "test:e2e:demo": "node tests-e2e/demo-flow.mjs",
     "host": "npm run build && node host.mjs",
     "dev:web": "node server.mjs",
     "test:dev": "node --test dev.test.mjs",

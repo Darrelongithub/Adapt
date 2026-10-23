@@ -90,6 +90,11 @@ CODEWORD_PAIRS: tuple[tuple[str, str], ...] = (
     ("Kendal", "a white tower"),
 )
 
+#: The pair used to teach the shape of the cued-recall screen. Deliberately *not* one of the eight
+#: measured pairs: the practice trial shows its answer, and practising on a measured pair would
+#: hand that pair a free point (the old practice used ``pairs[0]``, which was then asked again).
+PRACTICE_PAIR: tuple[str, str] = ("Zimo", "the blue door")
+
 #: Language for the codewords themselves. The *pairs* are made-up words on purpose: a real word
 #: would be recalled from the learner's own vocabulary and stop measuring the encoding.
 CODEWORD_INSTRUCTIONS = {
@@ -113,18 +118,67 @@ SHOP_ITEMS: tuple[str, ...] = (
     "a pair of socks",
 )
 
-#: The trivial trials that give a pace estimate (brief §5.2 "quick draw, folded in").
-#: Chosen so a wrong answer means a mis-tap, not a knowledge gap.
-QUICK_TRIALS = (
-    ("tap the bigger number", ("7", "3"), "7"),
-    ("tap the bigger number", ("12", "21"), "21"),
-    ("tap the smaller number", ("8", "4"), "4"),
-    ("tap the bigger number", ("0.5", "0.7"), "0.7"),
-    ("tap the smaller number", ("99", "100"), "99"),
-    ("tap the bigger number", ("1/2", "1/4"), "1/2"),
-    ("tap the longer word", ("cat", "elephant"), "elephant"),
-    ("tap the heavier one", ("a feather", "a brick"), "a brick"),
+#: "Quick taps" is a **timed lap whose difficulty climbs**, not a fixed list of eight
+#: comparisons. Level 1 is deliberately trivial — a wrong tap there is a mis-tap, not a knowledge
+#: gap, which is what the pace estimate needs (brief §5.2). Each level up asks for one more thing
+#: at once (three options, a small sum, a near-miss, a fraction of a number), so accuracy under a
+#: burning clock is measured, not assumed.
+QUICK_LADDER: tuple[tuple[tuple[str, tuple[str, ...], str], ...], ...] = (
+    (  # 1 — warm-up: a single obvious comparison
+        ("tap the bigger number", ("7", "3"), "7"),
+        ("tap the smaller number", ("8", "4"), "4"),
+        ("tap the bigger number", ("12", "21"), "21"),
+    ),
+    (  # 2 — still easy, one mental step
+        ("tap the bigger number", ("0.5", "0.7"), "0.7"),
+        ("tap the smaller number", ("99", "100"), "99"),
+        ("tap the longer word", ("cat", "elephant"), "elephant"),
+        ("tap the heavier one", ("a feather", "a brick"), "a brick"),
+    ),
+    (  # 3 — fractions, and the first three-way answer
+        ("tap the bigger number", ("1/2", "1/4"), "1/2"),
+        ("tap the smaller number", ("2/3", "1/3"), "1/3"),
+        ("tap the answer to 6 + 7", ("12", "13", "14"), "13"),
+    ),
+    (  # 4 — three options and a near miss
+        ("tap the answer to 9 × 4", ("32", "36", "38"), "36"),
+        ("tap the bigger number", ("3/5", "5/8"), "5/8"),
+        ("tap the number closest to 50", ("48", "53", "61"), "48"),
+        ("tap the answer to 17 − 9", ("6", "8", "9"), "8"),
+    ),
+    (  # 5 — the last stretch
+        ("tap the smaller number", ("0.09", "0.1"), "0.09"),
+        ("tap the answer to 7 × 8", ("54", "56", "58"), "56"),
+        ("tap the odd one out", ("square", "circle", "cube"), "cube"),
+        ("tap the answer to 2/3 of 18", ("10", "12", "14"), "12"),
+    ),
 )
+
+#: What the lap calls itself at each level. Shown on the game HUD so the climb is visible.
+QUICK_LEVEL_NAMES: tuple[str, ...] = ("warming up", "steady", "quick", "tricky", "very quick")
+
+#: The lap's clock, in seconds. The page runs the clock and tells the server how far into the lap
+#: each answer came; the server ends the lap from that number, so a slow network cannot buy time.
+QUICK_LAP_SECONDS = 30
+
+#: A hard ceiling, so a lap with a broken clock still ends. Two taps a second for the whole lap is
+#: faster than anyone sustains, so the clock -- not this number -- is what normally ends a lap.
+#: (It used to be 24, which a quick tapper reached in twelve seconds: the lap then ended early,
+#: which is the opposite of "harder until the time runs out".)
+QUICK_MAX_TRIALS = 72
+
+#: Which level a lap opens on. The three laps are one game in three waves: the second starts where
+#: the first left off and the third starts harder still, so the whole sitting climbs.
+QUICK_START_LEVEL = {"quick_a": 1, "quick_b": 2, "quick_c": 3}
+
+#: Every third answer within a lap is one level harder, up to the last rung.
+QUICK_TRIALS_PER_LEVEL = 3
+
+
+def quick_level(stage: str, index: int) -> int:
+    """The rung for the ``index``-th answer of a lap (0-based)."""
+    start = QUICK_START_LEVEL.get(stage, 1)
+    return min(len(QUICK_LADDER), start + max(0, index) // QUICK_TRIALS_PER_LEVEL)
 
 #: Trap questions: the intuitive answer is wrong, and the point is whether the learner pauses.
 #: Both are well-known, checkable, and cheap to explain, so the item is not the problem — the
@@ -230,7 +284,9 @@ def vault_next(seed: int, trials: Sequence[Trial], direction: str) -> dict[str, 
     # The block's direction is the answer direction for every task in it. (It used to flip to
     # "backward" after the first measured trial, so a "same order" block asked for reverse order.)
     wanted = direction
-    seq = _vault_sequence(seed, direction, length, attempt)
+    # The practice used attempt 0 at length 3; the first *measured* trial must not be the same
+    # sequence the learner just rehearsed, or the span estimate starts with a free point.
+    seq = _vault_sequence(seed, direction, length, attempt + 1)
     return {
         "id": f"vault_{direction}_{length}_{attempt}",
         "game": "vault",
@@ -337,6 +393,10 @@ def shopkeeper_score(task: Mapping[str, Any], response: Mapping[str, Any]) -> di
     wanted = [str(x).strip().lower() for x in (task.get("items") or [])]
     hits = [w for w in wanted if any(w in f or f in w for f in recalled if f)]
     distractor_answers = response.get("distractors") or {}
+    if not isinstance(distractor_answers, Mapping):
+        # The page sends a map of id -> true/false. Anything else is a malformed body, not a wrong
+        # answer; the caller refuses it as a 422 rather than letting `.get` raise a 500.
+        distractor_answers = {}
     distractor_hits = 0
     for d in task.get("distractors") or []:
         given = distractor_answers.get(d["id"])
@@ -385,14 +445,14 @@ def codewords_cued(seed: int, trials: Sequence[Trial]) -> dict[str, Any] | None:
     done = [t for t in trials if t.game == "codewords_cued"]
     pairs = codewords_pairs(seed)
     if not done:
-        first = pairs[0]
+        code, place = PRACTICE_PAIR
         return {
             "id": "codewords_cued_practice",
             "game": "codewords_cued",
             "phase": "practice",
-            "prompt": f"Which place went with {first['code']}?",
-            "cue": first["code"],
-            "answer": first["place"],
+            "prompt": f"Which place went with {code}?",
+            "cue": code,
+            "answer": place,
             "practice": True,
             "max_latency_ms": 30000,
         }
@@ -835,16 +895,68 @@ def locked_box_score(task: Mapping[str, Any], response: Mapping[str, Any]) -> di
 # --------------------------------------------------------------------------- #
 # Quick trials and traps (speed, attention, self-control)
 # --------------------------------------------------------------------------- #
-def quick_trial(index: int) -> dict[str, Any]:
-    label, pair, answer = QUICK_TRIALS[index % len(QUICK_TRIALS)]
+def quick_trial(stage: str, index: int, seed: int) -> dict[str, Any]:
+    """One item of a timed lap.
+
+    The rung is a function of the position in the lap (never of how well the learner is doing),
+    so two learners — or the same learner after a reload — see the same ladder. The item within a
+    rung is drawn from the run's seed, so a resumed lap asks the same question it would have asked.
+    """
+    level = quick_level(stage, index)
+    items = QUICK_LADDER[level - 1]
+    label, options, answer = rng(seed, "quick", stage, index).choice(items)
     return {
-        "id": f"quick_{index}",
+        "id": f"{stage}_{index}",
         "game": "quick",
         "phase": "measure",
+        "stage": stage,
         "prompt": label,
-        "options": list(pair),
+        "options": list(options),
         "answer": answer,
-        "max_latency_ms": 15000,
+        "level": level,
+        "level_name": QUICK_LEVEL_NAMES[level - 1],
+        "lap_seconds": QUICK_LAP_SECONDS,
+        "max_trials": QUICK_MAX_TRIALS,
+        "base_points": 10 * level,
+        # Quick items are not knowledge tests: telling the learner the right answer afterwards is
+        # feedback, not a leak, and a feedback-less sprint teaches nothing.
+        "feedback": "show",
+        "max_latency_ms": 12000,
+    }
+
+
+def quick_score(task: Mapping[str, Any], response: Mapping[str, Any], *, streak_before: int = 0) -> dict[str, Any]:
+    """Score one tap, and count the points and the streak the HUD shows.
+
+    A lap that runs out of time ends with an ``action: "timeout"`` response, which is recorded as
+    *no answer* (``correct: None``) rather than as a wrong one: running out of clock is a fact
+    about the lap, not a wrong answer about the item.
+    """
+    if str(response.get("action") or "") == "timeout":
+        return {
+            "correct": None,
+            "action": "timeout",
+            "expected": task.get("answer"),
+            "given": "",
+            "points": 0,
+            "streak": 0,
+        }
+    expected = str(task.get("answer") or "").strip()
+    given = str(response.get("value") or response.get("text") or "").strip()
+    correct = given.lower() == expected.lower()
+    streak = streak_before + 1 if correct else 0
+    base = int(task.get("base_points") or 10)
+    points = base + (min(streak, 5) * 2) if correct else 0
+    return {
+        "correct": correct,
+        "expected": expected,
+        "given": given,
+        # A wrong tap costs two seconds on the page's clock; the server states the price so the
+        # page and the record agree about it.
+        "penalty_seconds": 0 if correct else 2,
+        "points": points,
+        "streak": streak,
+        "level": task.get("level"),
     }
 
 
@@ -860,6 +972,9 @@ def trap_task(index: int) -> dict[str, Any]:
         "answer": t["correct"],
         "intuitive": t["intuitive"],
         "explain": t["explain"],
+        # The trap is the one game whose whole point is the reveal: the intuitive answer, the right
+        # one, and why they differ, once the learner has committed.
+        "feedback": "show",
         "max_latency_ms": 60000,
     }
 
