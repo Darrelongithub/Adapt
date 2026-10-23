@@ -1,0 +1,630 @@
+{
+  "config": {
+    "argv": [
+      "/usr/local/bin/node",
+      "/home/user/Adapt/e2e/games/node_modules/.bin/playwright",
+      "test"
+    ],
+    "configFile": "/home/user/Adapt/e2e/games/playwright.config.ts",
+    "rootDir": "/home/user/Adapt/e2e/games",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          "/keyboard\\.spec/"
+        ],
+        "testMatch": [
+          "/.*\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      },
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          "/keyboard\\.spec/"
+        ],
+        "testMatch": [
+          "/.*\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      },
+      {
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "keyboard",
+        "name": "keyboard",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [],
+        "testMatch": [
+          "/keyboard\\.spec\\.ts/"
+        ],
+        "timeout": 1200000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "desktop",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "snapshotDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          {}
+        ],
+        "testMatch": {},
+        "timeout": 1200000,
+        "use": {
+          "baseURL": "http://127.0.0.1:3000",
+          "trace": "retain-on-failure",
+          "actionTimeout": 20000,
+          "screenshot": "off",
+          "launchOptions": {
+            "executablePath": "/tmp/chromium",
+            "args": [
+              "--no-sandbox",
+              "--no-zygote",
+              "--disable-gpu"
+            ]
+          },
+          "reducedMotion": "reduce",
+          "locale": "en-GB",
+          "viewport": {
+            "width": 1280,
+            "height": 900
+          }
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "desktop"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "mobile",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "snapshotDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [
+          {}
+        ],
+        "testMatch": {},
+        "timeout": 1200000,
+        "use": {
+          "baseURL": "http://127.0.0.1:3000",
+          "trace": "retain-on-failure",
+          "actionTimeout": 20000,
+          "screenshot": "off",
+          "launchOptions": {
+            "executablePath": "/tmp/chromium",
+            "args": [
+              "--no-sandbox",
+              "--no-zygote",
+              "--disable-gpu"
+            ]
+          },
+          "reducedMotion": "reduce",
+          "locale": "en-GB",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "isMobile": true,
+          "hasTouch": true,
+          "deviceScaleFactor": 2
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "mobile"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/user/Adapt/e2e/games/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "keyboard",
+        "testDir": "/home/user/Adapt/e2e/games",
+        "snapshotDir": "/home/user/Adapt/e2e/games",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 1200000,
+        "use": {
+          "baseURL": "http://127.0.0.1:3000",
+          "trace": "retain-on-failure",
+          "actionTimeout": 20000,
+          "screenshot": "off",
+          "launchOptions": {
+            "executablePath": "/tmp/chromium",
+            "args": [
+              "--no-sandbox",
+              "--no-zygote",
+              "--disable-gpu"
+            ]
+          },
+          "reducedMotion": "reduce",
+          "locale": "en-GB",
+          "viewport": {
+            "width": 1280,
+            "height": 900
+          }
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "keyboard"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "baseline-games.spec.ts",
+      "file": "baseline-games.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the whole baseline: every game, the next-day check, and what the server recorded",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 125960,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:33:38.276Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 126268,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:37:49.774Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8f36cc2efe03426522dc-0d0b65e2f0511eac2746",
+          "file": "baseline-games.spec.ts",
+          "line": 10,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "snapshot-honesty.spec.ts",
+      "file": "snapshot-honesty.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "stopping straight away records every game as not measured, and no number",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2393,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:35:44.325Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "wording and structure: checked once, on the desktop",
+                  "location": {
+                    "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                    "line": 11,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 1,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:39:56.134Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "wording and structure: checked once, on the desktop",
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                        "line": 11,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "cd53569ef487edde1dd7-a5c6edd32e4a5db4b5f1",
+          "file": "snapshot-honesty.spec.ts",
+          "line": 14,
+          "column": 5
+        },
+        {
+          "title": "stopping part-way keeps what was measured, with its n, and names what was not reached",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 111090,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:35:46.729Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "wording and structure: checked once, on the desktop",
+                  "location": {
+                    "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                    "line": 11,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:39:56.149Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "wording and structure: checked once, on the desktop",
+                      "location": {
+                        "file": "/home/user/Adapt/e2e/games/snapshot-honesty.spec.ts",
+                        "line": 11,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "cd53569ef487edde1dd7-7c77eebc2dbc5336af50",
+          "file": "snapshot-honesty.spec.ts",
+          "line": 32,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "subject-round.spec.ts",
+      "file": "subject-round.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the current subject plan is relevant, sealed, and hides its scoring fields",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1065,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:37:37.835Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1035,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:39:56.164Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "31f0ca594c5f26e68fce-e8d12cdac9386af06a1e",
+          "file": "subject-round.spec.ts",
+          "line": 76,
+          "column": 5
+        },
+        {
+          "title": "a whole current subject round stores one readable evidence row per item",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 10304,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:37:38.910Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9656,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:39:57.208Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "31f0ca594c5f26e68fce-dfabb3a51fffd8c89226",
+          "file": "subject-round.spec.ts",
+          "line": 85,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "keyboard.spec.ts",
+      "file": "keyboard.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the whole baseline with the keyboard alone, each trial sent once",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 1200000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "keyboard",
+              "projectName": "keyboard",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 132325,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-23T05:40:07.398Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "866d5cea7c69e902a1e2-0e376440a838f189c92f",
+          "file": "keyboard.spec.ts",
+          "line": 11,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-23T05:33:37.717Z",
+    "duration": 522175.625,
+    "expected": 9,
+    "skipped": 2,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
