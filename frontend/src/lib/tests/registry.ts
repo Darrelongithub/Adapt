@@ -24,6 +24,8 @@ export type ItemTypeName =
 
 export type TestItem = {
   id?: string;
+  run_id?: string;
+  grading_seal?: string;
   item_type: ItemTypeName;
   skill: string;
   difficulty: number;
@@ -110,6 +112,8 @@ export function validatePlanItems(raw: unknown): PlanItem[] {
     const parameters = e.parameters && typeof e.parameters === "object" ? { ...e.parameters } : {};
     items.push({
       id: `item-${items.length}`,
+      run_id: typeof e.run_id === "string" ? e.run_id : undefined,
+      grading_seal: typeof e.grading_seal === "string" ? e.grading_seal : undefined,
       item_type: type,
       skill: String(e.skill ?? type),
       difficulty: Math.max(1, Math.min(5, asInt(e.difficulty, 3))),

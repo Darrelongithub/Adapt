@@ -9,6 +9,7 @@
  * Instruction copy is capped at ~12 words per screen (registry INSTRUCTIONS).
  */
 
+import { post } from "@/lib/api";
 import { friendlyLabel } from "@/lib/labels";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../icons";
@@ -41,23 +42,49 @@ export function TestItemCard({
   const [hints, setHints] = useState(0);
   const [showHint, setShowHint] = useState(false);
   const [result, setResult] = useState<ItemResult | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     start.current = Date.now();
     setHints(0);
     setShowHint(false);
     setResult(null);
+    setPending(false);
+    setError(null);
   }, [item.id]);
 
   const finish = useCallback(
-    (correct: boolean, answer: string) => {
+    async (locallyCorrect: boolean, answer: string) => {
+      if (pending || result) return;
       const ms = Date.now() - start.current;
+      let correct = locallyCorrect;
+      if (item.run_id && item.grading_seal) {
+        setPending(true);
+        setError(null);
+        try {
+          const verdict = await post<{ correct: boolean }>("tests/grade", {
+            run_id: item.run_id,
+            item_id: item.id,
+            grading_seal: item.grading_seal,
+            answer,
+            ms,
+            hints_used: hints,
+          });
+          correct = verdict.correct;
+        } catch (cause) {
+          setPending(false);
+          setError((cause as { shown?: string }).shown ?? "That answer could not be checked. Try again.");
+          return;
+        }
+      }
       const r: ItemResult = { correct, answer, ms, hints };
+      setPending(false);
       setResult(r);
       // The feedback beat is short: the next item is the learner's to choose.
       window.setTimeout(() => onDone(r), correct ? 650 : 1400);
     },
-    [hints, onDone],
+    [hints, item, onDone, pending, result],
   );
 
   return (
@@ -70,12 +97,15 @@ export function TestItemCard({
       </div>
       <h2 className="t-h2">{INSTRUCTIONS[item.item_type]}</h2>
       <div className="test-item-body">
-        <ItemRenderer type={item.item_type} parameters={item.parameters} onAnswer={finish} answered={result !== null} />
+        <ItemRenderer type={item.item_type} parameters={item.parameters} onAnswer={finish} answered={result !== null || pending} />
       </div>
+      {error ? <p className="test-verdict is-wrong" role="alert">{error}</p> : null}
       {result ? (
         <p className={`test-verdict ${result.correct ? "is-correct" : "is-wrong"}`} role="status">
           {result.correct ? "Correct." : "Not this time. Next one."}
         </p>
+      ) : pending ? (
+        <p className="t-small" role="status">Checking your answer…</p>
       ) : (
         <div className="wrap-2">
           {showHint ? (
@@ -197,7 +227,7 @@ function OptionTile({
 function PatternPicker({ parameters, onAnswer, answered }: { parameters: Record<string, unknown>; onAnswer: (c: boolean, a: string) => void; answered: boolean }) {
   const sequence = splitList(parameters.sequence);
   const options = splitList(parameters.options);
-  const answerIndex = asInt(parameters.answer_index, 0);
+  const answerIndex = asInt(parameters.answer_index, -1);
   const [picked, setPicked] = useState<number | null>(null);
   return (
     <div className="stack-3">
@@ -217,7 +247,7 @@ function PatternPicker({ parameters, onAnswer, answered }: { parameters: Record<
             word={word}
             selected={picked === i}
             correct={answered && i === answerIndex}
-            wrong={answered && picked === i && i !== answerIndex}
+            wrong={answered && answerIndex >= 0 && picked === i && i !== answerIndex}
             disabled={answered}
             onClick={() => {
               if (answered) return;
@@ -373,7 +403,7 @@ function DragMatch({ parameters, onAnswer, answered }: { parameters: Record<stri
 
 function OddOneOut({ parameters, onAnswer, answered }: { parameters: Record<string, unknown>; onAnswer: (c: boolean, a: string) => void; answered: boolean }) {
   const options = splitList(parameters.options);
-  const answerIndex = asInt(parameters.answer_index, 0);
+  const answerIndex = asInt(parameters.answer_index, -1);
   const [picked, setPicked] = useState<number | null>(null);
   return (
     <div className="option-grid" role="group" aria-label="choices">
@@ -383,7 +413,7 @@ function OddOneOut({ parameters, onAnswer, answered }: { parameters: Record<stri
           word={word}
           selected={picked === i}
           correct={answered && i === answerIndex}
-          wrong={answered && picked === i && i !== answerIndex}
+          wrong={answered && answerIndex >= 0 && picked === i && i !== answerIndex}
           disabled={answered}
           onClick={() => {
             if (answered) return;
@@ -466,7 +496,7 @@ function VennRegion({ parameters, onAnswer, answered }: { parameters: Record<str
   const a = sets[0] ?? "A";
   const b = sets[1] ?? "B";
   const question = String(parameters.question ?? "Tap the region.");
-  const answerRegion = String(parameters.answer_region ?? "AB");
+  const answerRegion = String(parameters.answer_region ?? "");
   const [picked, setPicked] = useState<string | null>(null);
   const regions: Array<{ id: string; label: string; cx: number; cy: number }> = [
     { id: a, label: `${a} only`, cx: 130, cy: 140 },
@@ -512,7 +542,7 @@ function VennRegion({ parameters, onAnswer, answered }: { parameters: Record<str
 function GeometryAngle({ parameters, onAnswer, answered }: { parameters: Record<string, unknown>; onAnswer: (c: boolean, a: string) => void; answered: boolean }) {
   const angle = Math.max(15, Math.min(165, asInt(parameters.angle, 45)));
   const options = splitList(parameters.options);
-  const answerIndex = asInt(parameters.answer_index, Math.min(options.length - 1, Math.round((angle - 15) / 40)));
+  const answerIndex = asInt(parameters.answer_index, -1);
   const [picked, setPicked] = useState<number | null>(null);
   // Two rays from a vertex at the given angle, opening up-right.
   const rad = (angle * Math.PI) / 180;
@@ -536,7 +566,7 @@ function GeometryAngle({ parameters, onAnswer, answered }: { parameters: Record<
             word={word}
             selected={picked === i}
             correct={answered && i === answerIndex}
-            wrong={answered && picked === i && i !== answerIndex}
+            wrong={answered && answerIndex >= 0 && picked === i && i !== answerIndex}
             disabled={answered}
             onClick={() => {
               if (answered) return;
@@ -556,8 +586,8 @@ function GeometryAngle({ parameters, onAnswer, answered }: { parameters: Record<
 
 function GeometryCongruent({ parameters, onAnswer, answered }: { parameters: Record<string, unknown>; onAnswer: (c: boolean, a: string) => void; answered: boolean }) {
   const target = splitList(parameters.target_sides);
-  const options = splitList(parameters.options).map((row) => splitList(row));
-  const answerIndex = asInt(parameters.answer_index, 0);
+  const options = String(parameters.options ?? "").split("|").map((row) => splitList(row)).filter((row) => row.length > 0);
+  const answerIndex = asInt(parameters.answer_index, -1);
   const [picked, setPicked] = useState<number | null>(null);
   return (
     <div className="stack-3">
@@ -569,7 +599,7 @@ function GeometryCongruent({ parameters, onAnswer, answered }: { parameters: Rec
           <button
             key={i}
             type="button"
-            className={`option-tile tri-tile${picked === i ? " is-selected" : ""}${answered && i === answerIndex ? " is-correct" : ""}${answered && picked === i && i !== answerIndex ? " is-wrong" : ""}`}
+            className={`option-tile tri-tile${picked === i ? " is-selected" : ""}${answered && i === answerIndex ? " is-correct" : ""}${answered && answerIndex >= 0 && picked === i && i !== answerIndex ? " is-wrong" : ""}`}
             aria-pressed={picked === i}
             disabled={answered}
             onClick={() => {
@@ -649,7 +679,7 @@ function FractionBar({ parameters, onAnswer, answered }: { parameters: Record<st
   const numerator = Math.max(1, asInt(parameters.numerator, 1));
   const denominator = Math.max(2, asInt(parameters.denominator, 4));
   const options = splitList(parameters.options);
-  const answerIndex = asInt(parameters.answer_index, 0);
+  const answerIndex = asInt(parameters.answer_index, -1);
   const [picked, setPicked] = useState<number | null>(null);
   return (
     <div className="stack-3">
@@ -665,7 +695,7 @@ function FractionBar({ parameters, onAnswer, answered }: { parameters: Record<st
             word={word}
             selected={picked === i}
             correct={answered && i === answerIndex}
-            wrong={answered && picked === i && i !== answerIndex}
+            wrong={answered && answerIndex >= 0 && picked === i && i !== answerIndex}
             disabled={answered}
             onClick={() => {
               if (answered) return;
@@ -686,7 +716,7 @@ function FractionBar({ parameters, onAnswer, answered }: { parameters: Record<st
 function ClozeWordBank({ parameters, onAnswer, answered }: { parameters: Record<string, unknown>; onAnswer: (c: boolean, a: string) => void; answered: boolean }) {
   const sentence = String(parameters.sentence ?? "");
   const bank = splitList(parameters.bank);
-  const answerIndex = asInt(parameters.answer_index, 0);
+  const answerIndex = asInt(parameters.answer_index, -1);
   const [picked, setPicked] = useState<number | null>(null);
   return (
     <div className="stack-3">
@@ -698,7 +728,7 @@ function ClozeWordBank({ parameters, onAnswer, answered }: { parameters: Record<
             word={word}
             selected={picked === i}
             correct={answered && i === answerIndex}
-            wrong={answered && picked === i && i !== answerIndex}
+            wrong={answered && answerIndex >= 0 && picked === i && i !== answerIndex}
             disabled={answered}
             onClick={() => {
               if (answered) return;

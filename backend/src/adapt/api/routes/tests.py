@@ -21,8 +21,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...db.models import Student
+from ...db.models import Student, new_id
 from ...services import current
+from ...subjects.grading import GRADING_FIELDS, public_item, read_grading_token, score_answer
 from ...subjects.models import LearnerSubject, SubjectTestEvidence
 from ...subjects.test_items import FAMILIES, build_plan
 from ..deps import db_session, rate, student_from_request
@@ -56,9 +57,27 @@ class EvidenceBody(BaseModel):
     rows: Sequence[EvidenceRow] = Field(default_factory=list)
 
 
+class GradeBody(BaseModel):
+    run_id: str = Field(min_length=1, max_length=64)
+    item_id: str = Field(min_length=1, max_length=64)
+    grading_seal: str = Field(min_length=1, max_length=16_384)
+    answer: str | None = Field(default=None, max_length=240)
+    ms: int = Field(default=0, ge=0, le=600_000)
+    hints_used: int = Field(default=0, ge=0, le=20)
+
+
 def _llm() -> Any:
     svcs = current()
     return getattr(getattr(svcs, "ai2", None), "llm", None)
+
+
+def _owned_subject(s: Session, student_id: str, subject_id: str) -> LearnerSubject:
+    row = s.execute(
+        select(LearnerSubject).where(LearnerSubject.id == subject_id, LearnerSubject.student_id == student_id)
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"error": "unknown_subject", "message": "no such subject"})
+    return row
 
 
 @router.post("/plan")
@@ -69,14 +88,12 @@ def plan(
 ) -> dict[str, Any]:
     """A validated interactive test plan. ``source`` is model or simple — never a provider name."""
     family = None
+    subject_row = None
     subject_text = body.subject.strip()
     if body.subject_id:
-        row = s.execute(
-            select(LearnerSubject).where(LearnerSubject.id == body.subject_id, LearnerSubject.student_id == student.id)
-        ).scalar_one_or_none()
-        if row is not None:
-            family = row.family if row.family in FAMILIES else None
-            subject_text = row.text
+        subject_row = _owned_subject(s, student.id, body.subject_id)
+        family = subject_row.family if subject_row.family in FAMILIES else None
+        subject_text = subject_row.text
     plan_payload = build_plan(
         subject=subject_text,
         family=family,
@@ -86,7 +103,68 @@ def plan(
         llm=_llm(),
         student_id=student.id,
     )
+    run_id = new_id("trun")
+    plan_payload["run_id"] = run_id
+    plan_payload["items"] = [
+        public_item(
+            item,
+            student_id=student.id,
+            run_id=run_id,
+            item_id=f"item-{index}",
+            subject_id=body.subject_id,
+        )
+        for index, item in enumerate(plan_payload["items"])
+    ]
     return plan_payload
+
+
+@router.post("/grade")
+def grade(
+    body: GradeBody,
+    s: Session = Depends(db_session),
+    student: Student = Depends(rate("mutation")),
+) -> dict[str, Any]:
+    """Grade from the authenticated server-held item, never a browser verdict."""
+    try:
+        payload = read_grading_token(
+            body.grading_seal, student_id=student.id, run_id=body.run_id, item_id=body.item_id
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error": "invalid_grading_token", "message": str(exc)}
+        ) from None
+    item = payload["item"]
+    subject_id = payload.get("subject_id")
+    if subject_id:
+        _owned_subject(s, student.id, subject_id)
+    existing = s.execute(
+        select(SubjectTestEvidence).where(
+            SubjectTestEvidence.run_id == body.run_id,
+            SubjectTestEvidence.item_id == body.item_id,
+            SubjectTestEvidence.student_id == student.id,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return {"correct": bool(existing.correct), "stored": 0, "run_id": body.run_id, "item_id": body.item_id}
+    correct = score_answer(item, body.answer)
+    parameters = item.get("parameters") if isinstance(item.get("parameters"), dict) else {}
+    visible_parameters = {key: value for key, value in parameters.items() if key not in GRADING_FIELDS}
+    s.add(SubjectTestEvidence(
+        student_id=student.id,
+        subject_id=subject_id,
+        run_id=body.run_id,
+        item_id=body.item_id,
+        item_type=str(item["item_type"]),
+        skill=str(item["skill"]),
+        difficulty=max(1, min(5, int(item["difficulty"]))),
+        answer=(body.answer or "")[:240] or None,
+        correct=correct,
+        ms=body.ms,
+        hints_used=body.hints_used,
+        facts={"parameters": visible_parameters},
+    ))
+    s.commit()
+    return {"correct": correct, "stored": 1, "run_id": body.run_id, "item_id": body.item_id}
 
 
 @router.post("/evidence")
