@@ -208,7 +208,7 @@ def quotas(s: Session = Depends(db_session), student: Student = Depends(student_
     from ...security.ratelimit import effective_limits
 
     st = get_settings()
-    limits = effective_limits(st.rate_limit_multiplier)
+    limits = effective_limits(st.rate_limit_multiplier, demo_mode=st.demo_mode)
     return {
         "pacing": {name: limits[scope] for scope, name in _PACING_NAMES.items() if scope in limits},
         "note": (

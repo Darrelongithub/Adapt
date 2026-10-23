@@ -345,6 +345,7 @@ class Baseline:
             run = self._run(s, run_id)
             trials = self.trials_of(run_id, session=s)
             step = flow.next_step(
+                demo_mode=bool(getattr(self.settings, "demo_mode", False)),
                 seed=int(run.seed or 0),
                 trials=trials,
                 format_done=bool(run.format_pick),
@@ -457,6 +458,7 @@ class Baseline:
             run = self._run(s, run_id)
             trials = self.trials_of(run_id, session=s)
             step = flow.next_step(
+                demo_mode=bool(getattr(self.settings, "demo_mode", False)),
                 seed=int(run.seed or 0),
                 trials=trials,
                 format_done=bool(run.format_pick),
@@ -680,6 +682,7 @@ class Baseline:
             run = self._run(s, run_id)
             trials = self.trials_of(run_id, session=s)
             step = flow.next_step(
+                demo_mode=bool(getattr(self.settings, "demo_mode", False)),
                 seed=int(run.seed or 0),
                 trials=trials,
                 format_done=bool(run.format_pick),

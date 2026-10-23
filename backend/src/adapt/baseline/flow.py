@@ -166,8 +166,18 @@ def next_task_for(stage: str, *, seed: int, trials: Sequence[Trial]) -> dict[str
     return None
 
 
-def next_step(*, seed: int, trials: Sequence[Trial], format_done: bool, questions_done: bool) -> Step:
+def next_step(*, seed: int, trials: Sequence[Trial], format_done: bool, questions_done: bool, demo_mode: bool = False) -> Step:
     """Walk the stages in order and return the first one that still has something to show."""
+    if demo_mode:
+        # Ten answers at most; unplayed factors remain honestly "not measured".
+        for index, stage in enumerate(("quick_a", "vault", "trap")):
+            done = [t for t in trials if _stage_of(t) == stage]
+            if len(done) >= (4 if stage != "trap" else 2):
+                continue
+            task = next_task_for(stage, seed=seed, trials=trials)
+            if task is not None:
+                return Step(kind="task", stage=stage, task=task, progress=index / 3)
+        return Step(kind="snapshot", stage="snapshot", progress=1.0, note="Demo: early signals, not a diagnosis")
     if not format_done:
         return Step(kind="format", stage="format", progress=0.0, note="one question before anything else")
     if not questions_done:
