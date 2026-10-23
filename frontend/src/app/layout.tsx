@@ -17,7 +17,7 @@ import "./globals.css";
 import "@/styles/tokens.css";
 import "@/styles/choice-cards.css";
 
-import { Chrome, SessionGate } from "@/components/chrome";
+import { ProductFrame } from "@/components/chrome";
 import { Opening } from "@/components/opening";
 import { VoiceProvider } from "@/components/voice/context";
 
@@ -38,9 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div aria-live="polite" className="sr-only" id="adapt-live-region" />
         <VoiceProvider>
           <Opening>
-            <SessionGate>
-              <Chrome>{children}</Chrome>
-            </SessionGate>
+            <ProductFrame>{children}</ProductFrame>
           </Opening>
         </VoiceProvider>
       </body>

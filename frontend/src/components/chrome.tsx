@@ -112,6 +112,13 @@ export function StatusChip() {
   );
 }
 
+/** The short pitch flow is intentionally outside the full learner chrome and session gate. */
+export function ProductFrame({ children }: { children: ReactNode }) {
+  const pathname = usePathname() || "/";
+  if (pathname === "/demo" || pathname.startsWith("/demo/")) return children;
+  return <SessionGate><Chrome>{children}</Chrome></SessionGate>;
+}
+
 export function Chrome({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname() || "/";

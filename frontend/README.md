@@ -12,6 +12,25 @@ npm run dev:web      # frontend only, for a separately managed API
 npm run build && npm run start   # the same server, production build
 ```
 
+## Three-game demo
+
+Share **`/demo`** for the short pitch flow, not the full `/baseline` mind check. One consent action
+creates a passwordless guest and opens three phone-friendly games; each answer selects the next
+challenge from the validated plan, and the final screen shows the three results, the two actual
+adaptations and a next step. The fixed `DEMO` sticker stays on every screen. The full sidebar,
+voice controls, sign-in form and opening sequence do not appear on this route.
+
+The real path uses `POST /api/v1/students`, `POST /api/v1/tests/plan`, three
+`POST /api/v1/tests/grade` calls and one `POST /api/v1/tests/evidence` call. Preparation is bounded
+at eight seconds. A slow, refused or unusable plan opens the built-in games instead; that path is
+labelled on the analysis and does not pretend the run was saved. The AI/local-content fallback still
+belongs to the API — the browser fallback is the last resort, not a replacement tutor.
+
+With the web app and API running, `npm run test:e2e:demo` drives fresh phone and desktop contexts
+through all three games, checks the analysis and evidence writes, and repeats the phone run with the
+plan request deliberately delayed beyond the fallback bound and then refused. It fails if any run exceeds two minutes, overflows horizontally,
+loses the demo sticker or produces an uncaught browser error.
+
 **For smooth page switching, use `npm run host`.** It builds all routes before starting both
 servers, so the first click on a section does not wait for development compilation. Stop any
 running dev server before switching modes: both use `.next`. Startup takes the build time;
