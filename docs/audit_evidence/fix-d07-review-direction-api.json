@@ -1,0 +1,53 @@
+{
+  "check": "D07",
+  "attempts": [
+    {
+      "submitted_answer": 0,
+      "correct": false,
+      "score": 0.0
+    },
+    {
+      "submitted_answer": 1,
+      "correct": true,
+      "score": 1.0
+    }
+  ],
+  "topic_id": "top_fb85c065c9ee4e9abef7",
+  "before": {
+    "topic_id": "top_fb85c065c9ee4e9abef7",
+    "title": "What a fraction means",
+    "due_at": "2026-10-22T22:04:06.168431",
+    "overdue": false,
+    "half_life_hours": 12.0,
+    "expected_recall_at_due": 0.85,
+    "reps": 2,
+    "lapses": 1
+  },
+  "success": {
+    "lag_hours": 0.0,
+    "expected_recall": 1.0,
+    "correct": true,
+    "scheduled": {
+      "due_at": "2026-10-22T22:04:06.197404",
+      "half_life_hours": 12.0,
+      "reps": 3,
+      "lapses": 1,
+      "expected_recall_at_due": 0.8500000000016282
+    },
+    "was_due_at": "2026-10-22T22:04:06.168431"
+  },
+  "lapse_control": {
+    "lag_hours": 0.0,
+    "expected_recall": 1.0,
+    "correct": false,
+    "scheduled": {
+      "due_at": "2026-10-22T19:22:19.344113",
+      "half_life_hours": 0.5,
+      "reps": 4,
+      "lapses": 2,
+      "expected_recall_at_due": 0.8499999998516069
+    },
+    "was_due_at": "2026-10-22T22:04:06.197404"
+  },
+  "outcome": "PASS"
+}
