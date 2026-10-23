@@ -145,27 +145,28 @@ class TestEvidenceApi:
 
         rows = [
             {
-                "item_id": f"it-{i}",
+                "item_id": item["id"],
+                "grading_seal": item["grading_seal"],
                 "item_type": item["item_type"],
                 "skill": item["skill"],
                 "difficulty": item["difficulty"],
                 "answer": "0",
-                "correct": i % 2 == 0,
+                "correct": i % 2 == 0,  # deliberately ignored; the server regrades every row
                 "ms": 1200 + i,
                 "hints_used": 0,
                 "parameters": item["parameters"],
             }
             for i, item in enumerate(body["items"])
         ]
-        ev = client.post("/api/v1/tests/evidence", json={"run_id": "run-1", "rows": rows}, headers=learner["headers"])
+        ev = client.post("/api/v1/tests/evidence", json={"run_id": body["run_id"], "rows": rows}, headers=learner["headers"])
         assert ev.status_code == 200
         assert ev.json()["stored"] == len(rows)
 
         # idempotent: replaying the same run must not double-count
-        again = client.post("/api/v1/tests/evidence", json={"run_id": "run-1", "rows": rows}, headers=learner["headers"])
+        again = client.post("/api/v1/tests/evidence", json={"run_id": body["run_id"], "rows": rows}, headers=learner["headers"])
         assert again.json()["stored"] == 0
 
-        read = client.get("/api/v1/tests/evidence?run_id=run-1")
+        read = client.get(f"/api/v1/tests/evidence?run_id={body['run_id']}")
         assert read.status_code == 200
         got = read.json()["rows"]
         assert len(got) == len(rows)

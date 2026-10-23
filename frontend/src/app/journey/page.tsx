@@ -65,6 +65,7 @@ type EvidenceRow = {
   ms: number;
   hints_used: number;
   parameters: Record<string, unknown>;
+  grading_seal?: string;
 };
 
 export default function Journey() {
@@ -170,6 +171,7 @@ export default function Journey() {
         ms: result.ms,
         hints_used: result.hints,
         parameters: item.parameters,
+        grading_seal: item.grading_seal,
       };
       const nextEvidence = [...evidence, row];
       setEvidence(nextEvidence);

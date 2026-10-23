@@ -133,3 +133,93 @@ def test_tampered_and_cross_learner_tokens_cannot_grade(client, learner):
     assert client.get(f"/api/v1/tests/evidence?run_id={run_id}").json()["rows"] == []
 
 
+def test_fabricated_evidence_type_is_refused_and_never_stored(client, learner, services):
+    from sqlalchemy import select
+
+    from adapt.subjects.models import SubjectTestEvidence
+
+    response = client.post(
+        "/api/v1/tests/evidence",
+        json={
+            "run_id": "run-fabricated",
+            "rows": [{
+                "item_id": "made-up",
+                "item_type": "made_up_type",
+                "skill": "fabricated",
+                "difficulty": 5,
+                "answer": "anything",
+                "correct": True,
+                "grading_seal": "not-a-real-seal",
+            }],
+        },
+        headers=learner["headers"],
+    )
+    assert response.status_code == 422
+    with services.scope() as session:
+        assert session.execute(select(SubjectTestEvidence).where(SubjectTestEvidence.run_id == "run-fabricated")).scalars().all() == []
+
+
+def test_batch_evidence_ignores_forged_verdict_metadata_and_parameters(client, learner, services):
+    from sqlalchemy import select
+
+    from adapt.subjects.models import SubjectTestEvidence
+
+    plan = client.post(
+        "/api/v1/tests/plan", json={"subject": "geometry"}, headers=learner["headers"]
+    ).json()
+    item = plan["items"][0]
+    response = client.post(
+        "/api/v1/tests/evidence",
+        json={
+            "run_id": plan["run_id"],
+            "rows": [{
+                "item_id": item["id"],
+                "grading_seal": item["grading_seal"],
+                "item_type": "made_up_type",
+                "skill": "fabricated.skill",
+                "difficulty": 1,
+                "answer": "definitely-not-one-of-the-options",
+                "correct": True,
+                "ms": 987,
+                "hints_used": 2,
+                "parameters": {"answer_index": 0, "answer": "fabricated"},
+            }],
+        },
+        headers=learner["headers"],
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["stored"] == 1
+    row = client.get(f"/api/v1/tests/evidence?run_id={plan['run_id']}").json()["rows"][0]
+    assert row["item_type"] == item["item_type"]
+    assert row["skill"] == item["skill"]
+    assert row["difficulty"] == item["difficulty"]
+    assert row["correct"] is False
+    with services.scope() as session:
+        stored = session.execute(
+            select(SubjectTestEvidence).where(SubjectTestEvidence.run_id == plan["run_id"])
+        ).scalar_one()
+        assert stored.facts == {"parameters": item["parameters"]}
+        assert not (GRADING_FIELDS & set(stored.facts["parameters"]))
+
+
+def test_a_seal_cannot_be_moved_to_another_run_or_item(client, learner):
+    plan = client.post("/api/v1/tests/plan", json={"subject": "general"}, headers=learner["headers"]).json()
+    item = plan["items"][0]
+    for run_id, item_id in (("trun_other_run", item["id"]), (plan["run_id"], "item-other")):
+        response = client.post(
+            "/api/v1/tests/evidence",
+            json={
+                "run_id": run_id,
+                "rows": [{
+                    "item_id": item_id,
+                    "grading_seal": item["grading_seal"],
+                    "item_type": item["item_type"],
+                    "skill": item["skill"],
+                    "difficulty": item["difficulty"],
+                    "answer": "0",
+                }],
+            },
+            headers=learner["headers"],
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["error"] == "invalid_grading_seal"

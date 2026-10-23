@@ -41,6 +41,7 @@ class PlanBody(BaseModel):
 
 class EvidenceRow(BaseModel):
     item_id: str = Field(min_length=1, max_length=64)
+    grading_seal: str = Field(min_length=1, max_length=16_384)
     item_type: str = Field(min_length=1, max_length=48)
     skill: str = Field(min_length=1, max_length=64)
     difficulty: int = Field(default=3, ge=1, le=5)
@@ -178,34 +179,48 @@ def write_evidence(
         raise HTTPException(status_code=422, detail={"error": "no_rows", "message": "a test run must produce evidence rows"})
     subject_id = body.subject_id or None
     if subject_id:
-        owned = s.execute(
-            select(LearnerSubject.id).where(LearnerSubject.id == subject_id, LearnerSubject.student_id == student.id)
-        ).first()
-        if owned is None:
-            raise HTTPException(status_code=404, detail={"error": "unknown_subject", "message": "no such subject"})
+        _owned_subject(s, student.id, subject_id)
     stored = 0
     for row in body.rows[:64]:
+        try:
+            payload = read_grading_token(
+                row.grading_seal, student_id=student.id, run_id=body.run_id, item_id=row.item_id
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail={"error": "invalid_grading_seal", "message": str(exc)}
+            ) from None
+        if payload.get("subject_id") != subject_id:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "subject_mismatch", "message": "the grading seal belongs to a different subject"},
+            )
+        item = payload["item"]
         exists = s.execute(
             select(SubjectTestEvidence.id).where(
                 SubjectTestEvidence.run_id == body.run_id,
                 SubjectTestEvidence.item_id == row.item_id,
+                SubjectTestEvidence.student_id == student.id,
             )
         ).first()
         if exists is not None:
             continue
+        parameters = item.get("parameters") if isinstance(item.get("parameters"), dict) else {}
+        visible_parameters = {key: value for key, value in parameters.items() if key not in GRADING_FIELDS}
+        correct = score_answer(item, row.answer)
         s.add(SubjectTestEvidence(
             student_id=student.id,
             subject_id=subject_id,
             run_id=body.run_id,
             item_id=row.item_id,
-            item_type=row.item_type,
-            skill=row.skill,
-            difficulty=max(1, min(5, int(row.difficulty))),
+            item_type=str(item["item_type"]),
+            skill=str(item["skill"]),
+            difficulty=max(1, min(5, int(item["difficulty"]))),
             answer=(row.answer or "")[:240] or None,
-            correct=bool(row.correct),
-            ms=max(0, int(row.ms)),
-            hints_used=max(0, int(row.hints_used)),
-            facts={"parameters": dict(row.parameters)},
+            correct=correct,
+            ms=row.ms,
+            hints_used=row.hints_used,
+            facts={"parameters": visible_parameters},
         ))
         stored += 1
     s.commit()
