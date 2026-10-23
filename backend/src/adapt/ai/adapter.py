@@ -428,6 +428,11 @@ class Limits:
     max_blocks: int = MAX_BLOCKS
     timers_visible: bool = True
     pace: str = "steady"
+    #: Round 9's deterministic "make this lesson shorter": a cap on whole
+    #: explanation chunks, applied before checks are interleaved so the
+    #: "every chunk is followed by one check" invariant holds by
+    #: construction. ``None`` keeps the unlimited legacy behaviour.
+    max_explanation_chunks: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -439,6 +444,7 @@ class Limits:
             "max_blocks": self.max_blocks,
             "timers_visible": self.timers_visible,
             "pace": self.pace,
+            "max_explanation_chunks": self.max_explanation_chunks,
             "rules": [
                 "every explanation chunk is followed by exactly one check question",
                 "no sentence is cut in half to fit a block; a long sentence travels whole and is flagged",
@@ -480,8 +486,13 @@ def derive_limits(*, levers: Mapping[str, Any] | None, preferences: Mapping[str,
     pace = str(pace_value or "steady").lower()
     if pace not in ("steady", "short_blocks", "measured"):
         pace = "steady"
+    max_chunks = constraints.get("max_explanation_chunks")
+    try:
+        max_chunks = max(1, min(MAX_BLOCKS, int(max_chunks))) if max_chunks is not None else None
+    except (TypeError, ValueError):
+        max_chunks = None
     return Limits(max_words_per_block=cap, step_size=step_size, language=language, tone=tone, reading_level=reading,
-                  timers_visible=timers_visible, pace=pace)
+                  timers_visible=timers_visible, pace=pace, max_explanation_chunks=max_chunks)
 
 
 def _reading_ok(text: str, level: str) -> tuple[bool, str]:
@@ -754,6 +765,16 @@ class LessonAdapter:
                 _why("this concept has been explained to you before, so the lesson starts by recalling it instead of repeating the same words",
                      lever="teaching_memory", source="measured", evidence_ids=evidence_ids, n=len(rows)))
         chunks = [] if already_explained else (_chunk_sentences(pack.explanation, limits.max_words_per_block) if pack.explanation else [])
+        if limits.max_explanation_chunks is not None and len(chunks) > limits.max_explanation_chunks:
+            # Round 9's shorter lesson: whole early steps are kept and the
+            # rest waits for next time. Trimming at chunk boundaries keeps
+            # every kept step followed by its check — the invariants hold
+            # by construction rather than by repair.
+            kept = limits.max_explanation_chunks
+            fallbacks.append(
+                f"kept short on purpose: the first {kept} of {len(chunks)} explanation steps; the rest comes next time"
+            )
+            chunks = chunks[:kept]
         for i, chunk_text in enumerate(chunks):
             oversize = _words(chunk_text) > limits.max_words_per_block
             content: dict[str, Any] = {"text": chunk_text, "part": i + 1, "of": len(chunks)}

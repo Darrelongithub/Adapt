@@ -89,6 +89,7 @@ def subject_payload(row: LearnerSubject) -> dict[str, Any]:
         "stage": row.stage,
         "active": bool(row.active),
         "plan": {"tests": tests, "source": row.source},
+        "curriculum_spec": (plan.get("curriculum_spec") if isinstance(plan.get("curriculum_spec"), dict) else None),
         "progress": {
             "done": int(progress.get("done", 0)),
             "total": int(progress.get("total", len(tests))),
@@ -98,15 +99,35 @@ def subject_payload(row: LearnerSubject) -> dict[str, Any]:
     }
 
 
-def choose(s: Session, svc: Any, *, student_id: str, text: str) -> dict[str, Any]:
+def choose(
+    s: Session,
+    svc: Any,
+    *,
+    student_id: str,
+    text: str,
+    curriculum: str | None = None,
+    grade: str | None = None,
+) -> dict[str, Any]:
     clean = " ".join(str(text or "").split())[:240]
     key = normalise(clean)
     if not key:
         raise ValueError("type a subject or topic first")
+    # Round 9 wizard spec: which syllabus the learner means, in their own
+    # tap. Stored with the (encrypted) plan; the scanner and the approval
+    # gate read it from here so the choice is made once.
+    spec = {
+        "curriculum": str(curriculum)[:24] if curriculum else None,
+        "grade": " ".join(str(grade or "").split())[:24] or None,
+    }
     existing = s.execute(
         select(LearnerSubject).where(LearnerSubject.student_id == student_id, LearnerSubject.normalised_text == key)
     ).scalar_one_or_none()
     if existing is not None:
+        if curriculum is not None or grade is not None:
+            plan = dict(existing.plan or {})
+            plan["curriculum_spec"] = spec
+            existing.plan = plan
+            s.commit()
         return subject_payload(existing) | {"cached": True}
 
     built = _simple_plan(svc, clean, student_id)
@@ -125,7 +146,7 @@ def choose(s: Session, svc: Any, *, student_id: str, text: str) -> dict[str, Any
         source=built["source"],
         active=not has_active,
         stage="tests",
-        plan={"tests": built["tests"], "source": built["source"], "detail": built.get("detail")},
+        plan={"tests": built["tests"], "source": built["source"], "detail": built.get("detail"), "curriculum_spec": spec},
         progress={"done": 0, "total": len(built["tests"]), "next": {"label": "Start the subject checks", "href": "/journey?step=subject"}},
     )
     s.add(row)

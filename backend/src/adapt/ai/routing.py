@@ -145,6 +145,22 @@ TASKS: dict[str, TaskPolicy] = {
         "one question plus a rationale about a topic the learner already passed; the "
         "question is shown for approval and the schedule is decided by code",
     ),
+    "ai1_check_in": _p(
+        "light",
+        0.2,
+        260,
+        "phrases a 10-second check-in from the learner's tiles and practice numbers "
+        "code already computed; every field is re-validated against fixed enums and "
+        "the action is re-derived by a code rule, so a wrong answer is a replaced field",
+    ),
+    "curriculum_merge": _p(
+        "light",
+        0.1,
+        500,
+        "trims and orders a scanned syllabus objective list (or proposes one when no "
+        "source answered); code owns provenance, so anything the model adds is marked "
+        "suggested and can never be labelled as coming from a syllabus",
+    ),
     # -- educational intelligence (AI 2) ----------------------------------- #
     "ai2_explain": _p(
         "standard",

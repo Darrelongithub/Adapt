@@ -10,8 +10,12 @@
  * fraction bar, cloze, quick recall — and each one writes an evidence row
  * (item, answer, correct, ms, hints) the dashboard and AI 1 can read.
  *
- * Steps: subject (big input + chips) → setup (level / style / goal tiles) →
- * the run (4–8 interactive items) → results (bars + two-line summary + lesson).
+ * Steps: subject (big input + chips, optional curriculum + grade) → what
+ * to cover (the scanned syllabus checklist -- untick, reorder, add your
+ * own, then "Use this plan"; nothing runs before that tap) → setup
+ * (level / style / goal tiles) → the run (4–8 interactive items) →
+ * results (bars + two-line summary + lesson), with a 10-second
+ * check-in after the run.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -23,6 +27,16 @@ import { get, post } from "@/lib/api";
 import { useJourney } from "@/lib/journey";
 import { TestItemCard } from "@/components/tests/items";
 import { validatePlanItems, type ItemResult, type PlanItem } from "@/lib/tests/registry";
+import { CheckInCard } from "@/components/check-in";
+import {
+  CURRICULA,
+  moveObjective,
+  originLabel,
+  type CurriculumId,
+  type GuidelineReply,
+  type ObjectiveDraft,
+  type ScanReply,
+} from "@/lib/round9";
 import type { LearningOverview } from "@/components/home-dashboard";
 import "@/components/tests/tests.css";
 
@@ -32,6 +46,7 @@ type Chosen = {
   family: string;
   source: "model" | "simple";
   plan: { tests: unknown[]; source: "model" | "simple" };
+  curriculum_spec?: { curriculum: string | null; grade: string | null } | null;
   progress: { done: number; total: number };
 };
 type SubjectReply = { subject_id: string; plan: Chosen["plan"]; subject: Chosen };
@@ -87,9 +102,15 @@ export default function Journey() {
   const path = useJourney(Boolean(me));
   const overview = useOverview(Boolean(me));
 
-  const [step, setStep] = useState<"subject" | "setup" | "run" | "results">("subject");
+  const [step, setStep] = useState<"subject" | "syllabus" | "setup" | "run" | "results">("subject");
   const [text, setText] = useState("");
+  const [curriculum, setCurriculum] = useState<CurriculumId | null>(null);
+  const [grade, setGrade] = useState("");
   const [chosen, setChosen] = useState<Chosen | null>(null);
+  const [scan, setScan] = useState<ScanReply | null>(null);
+  const [objectives, setObjectives] = useState<ObjectiveDraft[]>([]);
+  const [ownObjective, setOwnObjective] = useState("");
+  const [scanBusy, setScanBusy] = useState(false);
   const [level, setLevel] = useState<number | null>(null);
   const [style, setStyle] = useState<string | null>(null);
   const [goal, setGoal] = useState<string | null>(null);
@@ -156,15 +177,81 @@ export default function Journey() {
     setBusy(true);
     setNotice(null);
     try {
-      const out = await post<SubjectReply>("subjects/choose", { text: text.trim() });
+      const out = await post<SubjectReply>("subjects/choose", {
+        text: text.trim(),
+        curriculum,
+        grade: grade.trim() || null,
+      });
       setChosen(out.subject);
-      setStep("setup");
+      setStep("syllabus");
       await path.reload();
+      await loadScan(out.subject.id, false);
     } catch (error) {
       setNotice((error as { shown?: string }).shown ?? "That subject could not be checked just now.");
     } finally {
       setBusy(false);
     }
+  }
+
+  /* ------------------------------------------------- what to cover (gate) */
+
+  async function loadScan(subjectId: string, skipSources: boolean) {
+    setScanBusy(true);
+    setScan(null);
+    try {
+      const out = await post<ScanReply>("curriculum/scan", {
+        subject_id: subjectId,
+        curriculum,
+        grade: grade.trim() || null,
+        goal,
+        skip_sources: skipSources,
+      });
+      setScan(out);
+      setObjectives(out.objectives.map((row) => ({ ...row, keep: true })));
+    } catch (error) {
+      setNotice((error as { shown?: string }).shown ?? "The syllabus list could not be built just now.");
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  async function approveSyllabus() {
+    if (!chosen || busy) return;
+    const kept = objectives.filter((row) => row.keep);
+    if (!kept.length) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await post<GuidelineReply>("curriculum/approve", {
+        subject_id: chosen.id,
+        objectives: kept.map((row) => ({ id: row.id, title: row.title, strand: row.strand })),
+        curriculum,
+        grade: grade.trim() || null,
+      });
+      setStep("setup");
+    } catch (error) {
+      setNotice((error as { shown?: string }).shown ?? "That plan could not be saved just now.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function keepCurrentPlan() {
+    if (!chosen || busy) return;
+    // A rescan that differs is only a proposal: saying no clears it and
+    // the approved list keeps running untouched.
+    if (scan?.proposal_pending) {
+      setBusy(true);
+      try {
+        await post("curriculum/reject-proposal", { subject_id: chosen.id });
+      } catch (error) {
+        setNotice((error as { shown?: string }).shown ?? "That choice could not be saved just now.");
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+    }
+    setStep("setup");
   }
 
   /* ------------------------------------------------------------- setup step */
@@ -182,6 +269,8 @@ export default function Journey() {
         level,
         style,
         goal,
+        curriculum,
+        grade: grade.trim() || null,
       });
       const validated = validatePlanItems(plan.items);
       if (validated.length < 4) {
@@ -197,6 +286,13 @@ export default function Journey() {
       await post(`subjects/${chosen.id}/activate`, {});
       await path.advance("subject", "done");
     } catch (error) {
+      const detail = (error as { detail?: { error?: string } }).detail;
+      if (detail?.error === "syllabus_not_approved" && chosen) {
+        // The gate, in the learner's face only as a friendly step back:
+        // choose what to cover first, then the checks can start.
+        setStep("syllabus");
+        if (!scan) void loadScan(chosen.id, false);
+      }
       setNotice((error as { shown?: string }).shown ?? "The test could not start just now.");
     } finally {
       setBusy(false);
@@ -289,9 +385,29 @@ export default function Journey() {
             <SubjectChooser
               text={text}
               setText={setText}
+              curriculum={curriculum}
+              setCurriculum={setCurriculum}
+              grade={grade}
+              setGrade={setGrade}
               choose={choose}
               busy={busy}
               subjects={existingSubjects}
+            />
+          ) : null}
+          {step === "syllabus" && chosen ? (
+            <SyllabusStep
+              chosen={chosen}
+              scan={scan}
+              objectives={objectives}
+              setObjectives={setObjectives}
+              ownObjective={ownObjective}
+              setOwnObjective={setOwnObjective}
+              scanBusy={scanBusy}
+              busy={busy}
+              onApprove={() => void approveSyllabus()}
+              onKeepCurrent={() => void keepCurrentPlan()}
+              onSkipSources={() => void loadScan(chosen.id, true)}
+              onBack={() => setStep("subject")}
             />
           ) : null}
           {step === "setup" && chosen ? (
@@ -322,14 +438,20 @@ export default function Journey() {
             </div>
           ) : null}
           {step === "results" && chosen ? (
-            <ResultsStep chosen={chosen} evidence={evidence} onAddAnother={() => {
-              setChosen(null);
-              setItems([]);
-              setEvidence([]);
-              setIndex(0);
-              setStep("subject");
-              setText("");
-            }} />
+            <ResultsStep
+              chosen={chosen}
+              evidence={evidence}
+              onAddAnother={() => {
+                setChosen(null);
+                setScan(null);
+                setObjectives([]);
+                setItems([]);
+                setEvidence([]);
+                setIndex(0);
+                setStep("subject");
+                setText("");
+              }}
+            />
           ) : null}
         </>
       ) : (
@@ -400,19 +522,27 @@ export default function Journey() {
 function SubjectChooser({
   text,
   setText,
+  curriculum,
+  setCurriculum,
+  grade,
+  setGrade,
   choose,
   busy,
   subjects,
 }: {
   text: string;
   setText: (v: string) => void;
+  curriculum: CurriculumId | null;
+  setCurriculum: (v: CurriculumId | null) => void;
+  grade: string;
+  setGrade: (v: string) => void;
   choose: () => void;
   busy: boolean;
   subjects: LearningOverview["subjects"];
 }) {
   return (
     <div className="stack-4">
-      <Card title="What do you want to learn?" sub="Pick a subject to build your starting checks." tone="blue" icon={<Icon name="search" />}>
+      <Card title="What do you want to learn?" sub="Pick a subject, then choose what to cover in it." tone="blue" icon={<Icon name="search" />}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -436,9 +566,35 @@ function SubjectChooser({
               </button>
             ))}
           </div>
+          <div className="stack-2">
+            <p className="t-small" style={{ margin: 0 }}>
+              Following a syllabus? <span style={{ color: "var(--muted)" }}>(optional)</span>
+            </p>
+            <div className="wrap-2" role="group" aria-label="Curriculum">
+              {CURRICULA.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className="tap-chip"
+                  aria-pressed={curriculum === row.id}
+                  onClick={() => setCurriculum(curriculum === row.id ? null : row.id)}
+                >
+                  {row.label}
+                </button>
+              ))}
+            </div>
+            <input
+              className="input"
+              value={grade}
+              onChange={(event) => setGrade(event.target.value)}
+              placeholder="Grade or year (optional), e.g. Grade 8"
+              aria-label="Grade or year"
+              maxLength={24}
+            />
+          </div>
           <div className="wrap-2" style={{ paddingTop: "var(--s1)" }}>
             <Btn icon="search" kind="primary" type="submit" disabled={!text.trim() || busy}>
-              {busy ? "Checking…" : "See the starting checks"}
+              {busy ? "Checking…" : "Choose what to cover"}
             </Btn>
             <Btn kind="secondary" href="/baseline">
               Open mind check
@@ -454,11 +610,11 @@ function SubjectChooser({
         </div>
         <div className="card" data-tone="mint" style={{ padding: "var(--s3) var(--s4)" }}>
           <div className="kicker">Step 02</div>
-          <h3 className="t-h3" style={{ marginTop: "4px" }}>Short starting checks</h3>
+          <h3 className="t-h3" style={{ marginTop: "4px" }}>Choose what to cover</h3>
         </div>
         <div className="card" data-tone="peach" style={{ padding: "var(--s3) var(--s4)" }}>
           <div className="kicker">Step 03</div>
-          <h3 className="t-h3" style={{ marginTop: "4px" }}>First tailored lesson</h3>
+          <h3 className="t-h3" style={{ marginTop: "4px" }}>Short starting checks</h3>
         </div>
       </div>
 
@@ -473,6 +629,154 @@ function SubjectChooser({
           </div>
         </Card>
       ) : null}
+    </div>
+  );
+}
+
+function SyllabusStep({
+  chosen,
+  scan,
+  objectives,
+  setObjectives,
+  ownObjective,
+  setOwnObjective,
+  scanBusy,
+  busy,
+  onApprove,
+  onKeepCurrent,
+  onSkipSources,
+  onBack,
+}: {
+  chosen: Chosen;
+  scan: ScanReply | null;
+  objectives: ObjectiveDraft[];
+  setObjectives: (rows: ObjectiveDraft[]) => void;
+  ownObjective: string;
+  setOwnObjective: (v: string) => void;
+  scanBusy: boolean;
+  busy: boolean;
+  onApprove: () => void;
+  onKeepCurrent: () => void;
+  onSkipSources: () => void;
+  onBack: () => void;
+}) {
+  const kept = objectives.filter((row) => row.keep).length;
+
+  function addOwn() {
+    const title = ownObjective.trim();
+    if (!title) return;
+    setObjectives([
+      ...objectives,
+      { id: `yours-${Date.now().toString(36)}`, title: title.slice(0, 160), strand: "", origin: "yours", keep: true },
+    ]);
+    setOwnObjective("");
+  }
+
+  return (
+    <div className="stack-4" data-testid="syllabus-step">
+      <Card title={`What to cover in ${chosen.title}`} tone="blue" icon={<Icon name="book" />}>
+        <p>Tick what you want to learn. Nothing starts until you tap “Use this plan”.</p>
+        {scan ? (
+          <div className="stack-2" style={{ marginTop: "var(--s2)" }}>
+            <p className="t-h3" style={{ margin: 0 }}>{scan.source_label}</p>
+            {scan.attribution ? (
+              <p className="t-small" style={{ color: "var(--muted)", margin: 0 }}>
+                Source: {scan.attribution}
+                {scan.from_cache ? " · shown from a saved copy" : ""}
+              </p>
+            ) : null}
+            {scan.proposal_pending ? (
+              <Notice tone="info">A newer list was found. Your current plan stays until you choose this one.</Notice>
+            ) : null}
+          </div>
+        ) : scanBusy ? (
+          <p role="status">Looking for the syllabus list…</p>
+        ) : (
+          <p role="status">The list is not ready yet.</p>
+        )}
+      </Card>
+
+      <Card title="Your list" tone="sand">
+        <div className="stack-3">
+          {objectives.map((row, index) => (
+            <div key={row.id} className="wrap-2" style={{ alignItems: "center" }}>
+              <label className="wrap-2" style={{ alignItems: "center", flex: "1 1 260px" }}>
+                <input
+                  type="checkbox"
+                  checked={row.keep}
+                  onChange={(event) =>
+                    setObjectives(objectives.map((item) => (item.id === row.id ? { ...item, keep: event.target.checked } : item)))
+                  }
+                />
+                <span>
+                  <strong>{row.title}</strong>
+                  {row.strand ? <span className="t-small" style={{ color: "var(--muted)" }}> · {row.strand}</span> : null}
+                  <span className="t-small" style={{ display: "block", color: "var(--muted)" }}>
+                    {originLabel(row.origin)}
+                  </span>
+                </span>
+              </label>
+              <button
+                type="button"
+                className="tap-chip"
+                aria-label={`Move ${row.title} up`}
+                disabled={index === 0}
+                onClick={() => setObjectives(moveObjective(objectives, index, -1))}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="tap-chip"
+                aria-label={`Move ${row.title} down`}
+                disabled={index === objectives.length - 1}
+                onClick={() => setObjectives(moveObjective(objectives, index, 1))}
+              >
+                ↓
+              </button>
+            </div>
+          ))}
+          <form
+            className="wrap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              addOwn();
+            }}
+          >
+            <input
+              className="input"
+              value={ownObjective}
+              onChange={(event) => setOwnObjective(event.target.value)}
+              placeholder="Add your own, e.g. Draw better diagrams"
+              aria-label="Add your own objective"
+              maxLength={160}
+            />
+            <Btn icon="plus" kind="secondary" type="submit" disabled={!ownObjective.trim()}>
+              Add
+            </Btn>
+          </form>
+        </div>
+      </Card>
+
+      <div className="wrap-2">
+        <Btn icon="play" kind="primary" disabled={!kept || busy || scanBusy} onClick={onApprove}>
+          {busy ? "Saving…" : "Use this plan"}
+        </Btn>
+        {scan?.approved_version ? (
+          <Btn kind="secondary" onClick={onKeepCurrent}>
+            Keep my current plan
+          </Btn>
+        ) : null}
+        {scan?.checked ? (
+          <Btn kind="ghost" disabled={busy || scanBusy} onClick={onSkipSources}>
+            Skip the syllabus check
+          </Btn>
+        ) : null}
+        <Btn kind="ghost" onClick={onBack}>
+          Back
+        </Btn>
+      </div>
+      {!kept ? <p className="t-small">Keep at least one ticked, or add your own.</p> : null}
     </div>
   );
 }
@@ -575,6 +879,8 @@ function ResultsStep({ chosen, evidence, onAddAnother }: { chosen: Chosen; evide
           </Btn>
         </div>
       </Card>
+      {/* After a test, ask once -- it shapes the next lesson, nothing else. */}
+      <CheckInCard context="after_test" subjectId={chosen.id} autoPrompt title="How did that feel?" />
     </div>
   );
 }

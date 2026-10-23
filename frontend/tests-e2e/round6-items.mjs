@@ -5,7 +5,8 @@
  *
  * Part 1 drives /dev/test-lab, which renders every registered type once and
  * carries the answers in data-answer (a dev page; real items never expose keys).
- * Part 2 drives the real journey: subject → level/style/goal tiles → the run,
+ * Part 2 drives the real journey: subject → the syllabus checklist the
+ * learner approves ("Use this plan") → level/style/goal tiles → the run,
  * answering every item through its public renderer, accepting the server's
  * verdict without an exposed answer key, then reading the evidence rows back.
  *
@@ -192,7 +193,16 @@ async function runWizard(subjectText, navigate = true) {
   page.on("response", onPlan);
   if (navigate) await page.goto(`${BASE}/journey?step=subject`, { waitUntil: "networkidle" });
   await page.locator('input[aria-label="What do you want to learn?"]').fill(subjectText);
-  await page.getByRole("button", { name: /See the starting checks/i }).click();
+  await page.getByRole("button", { name: /Choose what to cover/i }).click();
+  // Round 9 approval gate: the scanned list appears with honest labels and
+  // nothing runs until the learner taps "Use this plan".
+  const syllabus = page.locator('[data-testid="syllabus-step"]');
+  await syllabus.waitFor({ state: "visible", timeout: 25000 });
+  const usePlan = page.getByRole("button", { name: /Use this plan/i });
+  await usePlan.waitFor({ state: "visible", timeout: 25000 });
+  const objectives = await syllabus.locator("label strong").allTextContents();
+  assert.ok(objectives.length >= 1, `${subjectText}: no objectives to approve`);
+  await usePlan.click();
   // Setup step: three big tile questions.
   await page.locator(".tile-btn", { hasText: "Confident" }).first().click();
   await page.locator(".tile-btn", { hasText: "Try it" }).first().click();
@@ -213,10 +223,10 @@ async function runWizard(subjectText, navigate = true) {
   const summary = await page.locator("[data-item-id], .results-bars").first().isVisible();
   assert.ok(summary, `${subjectText}: no results picture`);
   page.off("response", onPlan);
-  return types;
+  return { types, objectives };
 }
 
-const geometryTypes = await runWizard("geometry");
+const { types: geometryTypes, objectives: geometryObjectives } = await runWizard("geometry");
 assert.ok(
   geometryTypes.some((t) => t === "geometry_angle" || t === "geometry_congruent"),
   `geometry run should emphasise spatial items, got ${geometryTypes.join(",")}`,
@@ -233,9 +243,10 @@ assert.ok(evidence.rows.every((r) => typeof r.correct === "boolean" && typeof r.
 
 // Second subject: discrete maths must give a visibly DIFFERENT test.
 await page.getByRole("button", { name: /Add a subject/i }).click();
-const discreteTypes = await runWizard("discrete maths", false);
+const { types: discreteTypes, objectives: discreteObjectives } = await runWizard("discrete maths", false);
 assert.ok(discreteTypes.includes("truth_table") || discreteTypes.includes("venn_region"), `discrete run should emphasise logic/sets, got ${discreteTypes.join(",")}`);
 assert.notDeepEqual(geometryTypes, discreteTypes, "geometry and discrete maths must give different tests");
+assert.notDeepEqual(geometryObjectives, discreteObjectives, "geometry and discrete maths must approve different objective lists");
 console.log(`discrete run: ${discreteTypes.join(", ")}`);
 
 // No self-rating anywhere on the journey.

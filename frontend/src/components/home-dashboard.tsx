@@ -12,6 +12,7 @@ import Link from "next/link";
 import { Btn, Card, Err, IconTile, PageHeader } from "./ui";
 import { Icon } from "./icons";
 import { PageArt } from "./shell/PageArt";
+import { CheckInCard } from "./check-in";
 import { useApi, type Me } from "@/lib/api";
 import type { Mastery } from "@/lib/types";
 import "./shell/dashboard.css";
@@ -82,6 +83,12 @@ export function HomeDashboard({ me }: { me: Me }) {
         <StatTile icon="play" tone="mint" value={overview.data?.active_subject_id ? "1" : "0"} label="Active" />
         <StatTile icon="clock" tone="sand" value={String(overview.data?.due.count ?? reviews.data?.count ?? 0)} label="Due" />
         <StatTile icon="message" tone="peach" value={String(overview.data?.proposals.count ?? data?.pending_proposals.length ?? 0)} label="Changes" />
+      </div>
+
+      {/* Round 9: the check-in is on demand here -- it never opens itself
+          on Home; the learner taps it when they want to say how it is going. */}
+      <div style={{ margin: "var(--s4) 0" }}>
+        <CheckInCard context="home" subjectId={overview.data?.active_subject_id ?? null} />
       </div>
 
       {/* ---------- Continue learning ---------- */}

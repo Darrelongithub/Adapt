@@ -972,6 +972,33 @@ def get_pack(
     language: str,
     model: Model | None = None,
     force_simple: bool = False,
+    curriculum: str | None = None,
+    grade: str | None = None,
+    objectives: Any = None,
+) -> Pack:
+    """A checked Pack, recording the Round 9 scope it was built for.
+
+    ``curriculum``/``grade``/``objectives`` (the wizard's spec and the
+    learner's approved guideline ids) are attached to the returned pack
+    verbatim — they are the caller's facts, never the model's — so every
+    downstream consumer can check a lesson against exactly this list.
+    Unscoped calls return byte-identical packs to before Round 9.
+    """
+    pack = _build_pack(topic, level=level, language=language, model=model, force_simple=force_simple)
+    if curriculum or grade or objectives:
+        from .objectives import with_curriculum
+
+        pack = with_curriculum(pack, curriculum=curriculum, grade=grade, objectives=list(objectives or []))
+    return pack
+
+
+def _build_pack(
+    topic: str,
+    *,
+    level: int,
+    language: str,
+    model: Model | None = None,
+    force_simple: bool = False,
 ) -> Pack:
     """Return a checked Pack; authored content wins, and every failure falls back honestly.
 

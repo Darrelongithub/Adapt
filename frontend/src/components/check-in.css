@@ -1,0 +1,35 @@
+/* The 10-second check-in: tiles only, no scores, no art. */
+
+.check-in-effort {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: var(--s1);
+}
+
+.check-in-effort .tap-chip {
+  justify-content: center;
+  padding: 10px 4px;
+}
+
+.check-in-ends {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+}
+
+.check-in-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.check-in-reading {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s2);
+}
+
+@media (max-width: 560px) {
+  .check-in-effort {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}

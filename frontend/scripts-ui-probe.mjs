@@ -599,9 +599,12 @@ async function main() {
     ssr.window.close();
     const page = await open("/", "home");
     const dismissWelcome = async p => {
-      const skip = p.doc.querySelector(".opening-skip");
-      if (skip) await p.click(skip);
-      await waitFor(() => !p.doc.querySelector(".opening-overlay"), { label: "welcome dismissal" });
+      // The opening is a timed overlay now: any key or pointer press starts
+      // its fade. There is no separate skip control to look for.
+      if (p.doc.querySelector(".opening-overlay")) {
+        p.dom.window.dispatchEvent(new p.dom.window.KeyboardEvent("keydown", { bubbles: true }));
+      }
+      await waitFor(() => !p.doc.querySelector(".opening-overlay"), { timeout: 15_000, label: "welcome dismissal" });
     };
     const accept = async p => {
       await waitFor(() => p.find('[data-account-gate] input[type="checkbox"]').length === 2, { label: "consent gate" });
@@ -610,6 +613,9 @@ async function main() {
       await waitFor(() => p.doc.querySelector('[data-auth-step="auth"]'), { label: "account choices" });
     };
     await dismissWelcome(page);
+    // First entry is consent-first on the merged main branch: no learner
+    // is created before the account choices, and protected pages stay
+    // unmounted behind the mandatory card.
     await waitFor(() => !!page.doc.querySelector("[data-account-gate]"), { label: "mandatory account card" });
     check("home", "welcome is neutral rather than a time-of-day greeting", /Welcome/.test(page.text()) && !/Good morning|Good afternoon|Good evening/.test(page.text()));
     check("home", "navigation and learning pages are not mounted before entry", page.find(".sidebar").length === 0 && page.find("[data-dashboard]").length === 0 && !page.requests.some(r => /baseline|dashboard|practice/.test(r)));
@@ -640,10 +646,10 @@ async function main() {
     const cookie = jar.getCookieStringSync(BASE);
     const me = await api("/api/v1/me", { headers: { cookie } });
     const journeyState = await api("/api/v1/journey/state", { headers: { cookie } });
-    check("home", "optional analytics was saved at creation; model sharing was not silently enabled", me.body.consent_analytics === true && me.body.consent_share_with_ai === false && journeyState.body.stage === "preferences", JSON.stringify({ status: me.status, analytics: me.body.consent_analytics, share: me.body.consent_share_with_ai, stage: journeyState.body.stage }));
+    check("home", "optional analytics was saved at creation; model sharing was not silently enabled and no baseline was started", me.body.consent_analytics === true && me.body.consent_share_with_ai === false && me.body.baseline_started === false && journeyState.body.stage === "preferences", JSON.stringify({ status: me.status, analytics: me.body.consent_analytics, share: me.body.consent_share_with_ai, baseline_started: me.body.baseline_started, stage: journeyState.body.stage }));
     csrf = /adapt_csrf=([^;]+)/.exec(page.doc.cookie ?? "")?.[1] ?? "";
     const baselineStarts = page.requests.filter(r => r === "POST /api/v1/baseline").length;
-    await page.click("sign out", "button");
+    await page.click("Sign out", "button");
     await accept(page);
     page.type(page.find('input[autocomplete="username"]')[0], learner.username);
     page.type(page.find('input[type="password"]')[0], learner.password);
@@ -665,7 +671,11 @@ async function main() {
     check("home", "first guest goes straight to the journey, not back to access", !guest.doc.querySelector("[data-account-gate]"));
     await guest.click("Home", "a");
     await waitFor(() => !!guest.doc.querySelector("[data-dashboard]"), { label: "guest dashboard" });
+    await waitFor(() => guest.find(".stat-value").length === 4, { label: "guest dashboard stat tiles" });
     check("home", "guest can reach the dashboard without being forced through an assessment", guest.find(".sidebar").length === 1 && !guest.doc.querySelector("[data-account-gate]"));
+    check("home", "the Round 9 check-in is collapsed and on demand on Home", !!guest.doc.querySelector('[data-testid="check-in-open"]') && !guest.doc.querySelector('[data-testid="check-in-form"]'));
+    await waitFor(() => /Nothing chosen yet/.test(guest.text()), { label: "guest dashboard empty state" }).catch(() => {});
+    check("home", "dashboard has a real empty state and no consent form", /Nothing chosen yet/.test(guest.text()) && /Choose your first subject/.test(guest.text()) && !guest.doc.querySelector("[data-account-gate]"), guest.text().slice(0, 220));
     closePage(guest);
 
   }
@@ -774,7 +784,7 @@ async function main() {
     check("journey", "the current three-step overview and initial stage render", overview.join(" > ") === "Mind check > Choose a subject > First tailored lesson" && /A few questions/.test(page.text()), overview.join(" > "));
     check("journey", "the current stage offers a real mind-check link and one skip", card()?.querySelector('a[href="/baseline"]')?.textContent?.includes("Open mind check") && page.find("button").filter((b) => /Skip this step/.test(b.textContent ?? "")).length === 1, JSON.stringify({ link: card()?.querySelector('a[href="/baseline"]')?.outerHTML ?? null, skips: page.find("button").filter((b) => /Skip this step/.test(b.textContent ?? "")).length }));
     const before = await api("/api/v1/journey/state", { headers: { cookie: jar.getCookieStringSync(BASE) } });
-    check("journey", "the initial stage comes from the server", before.status === 200 && before.body?.stage === "preferences" && Array.isArray(before.body?.stages), JSON.stringify({ status: before.status, stage: before.body?.stage, stages: before.body?.stages?.length }));
+    check("journey", "the initial stage and frozen stage order come from the server", before.status === 200 && before.body?.stage === "preferences" && Array.isArray(before.body?.stages) && ["account", "preferences", "games", "subject", "subject_round", "snapshot", "first_lesson", "practice"].every((id, i) => before.body.stages[i]?.id === id), JSON.stringify({ status: before.status, stage: before.body?.stage, stages: before.body?.stages?.map((s) => s.id) }));
     const requestStart = page.requests.length;
     await page.click("Skip this step", "button");
     await waitFor(() => card()?.getAttribute("data-stage") === "games", { timeout: 15_000, label: "the skipped stage to advance" });

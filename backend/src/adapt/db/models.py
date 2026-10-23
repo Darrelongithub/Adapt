@@ -1345,3 +1345,8 @@ from ..journey import models as _journey_models  # noqa: E402,F401
 # and ``content_pack_item_calibration`` — exactly the drift ``tests/test_migrations.py``
 # exists to catch. Phase G added this while integrating Part B (see handoff-b.md §2).
 from ..content.skeleton import cache as _skeleton_cache  # noqa: E402,F401
+
+# Round 9's tables (the check-in and the syllabus approval gate), declared
+# beside their features and registered the same way for the same reason.
+from ..ai.monitor import models as _monitor_models  # noqa: E402,F401
+from ..curriculum import models as _curriculum_models  # noqa: E402,F401

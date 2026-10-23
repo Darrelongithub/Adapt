@@ -149,7 +149,7 @@ def public_item(
         for key, value in dict(parameters if isinstance(parameters, Mapping) else {}).items()
         if key not in GRADING_FIELDS
     }
-    return {
+    public = {
         "id": item_id,
         "run_id": run_id,
         "item_type": item.get("item_type"),
@@ -160,6 +160,12 @@ def public_item(
             item, student_id=student_id, run_id=run_id, item_id=item_id, subject_id=subject_id
         ),
     }
+    # Round 9 binds each generated item to one approved syllabus
+    # objective. That link is curriculum scope, not grading data, so it
+    # stays visible alongside the rendering parameters.
+    if item.get("objective_id") is not None:
+        public["objective_id"] = item.get("objective_id")
+    return public
 
 
 __all__ = [

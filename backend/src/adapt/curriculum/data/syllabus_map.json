@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "compiled_at": "2026-10-23",
+  "provenance": "Compiled by the ADAPT team on 2026-10-23 from public material: KICD curriculum-design strand/sub-strand lists (kicd.ac.ke/cbc-materials/, rationalised Junior School designs, titles only), KNEC KCSE syllabus topic lists in public circulation, and the Wikibooks/Wikipedia open outlines named per entry. Short factual titles only; no syllabus text is reproduced. KICD/KNEC-issued titles remain their issuers' work; verify against the current official design before exam use.",
+  "entries": [
+    {
+      "id": "kicd-cbc-maths",
+      "curricula": ["kenya_cbc"],
+      "subject_keywords": ["mathematics", "maths", "math"],
+      "title": "Mathematics (Kenya CBC, Junior School)",
+      "source": "kicd_map",
+      "source_ref": "https://kicd.ac.ke/cbc-materials/",
+      "licence": "KICD curriculum titles (official Kenya curriculum designs)",
+      "attribution": "Kenya Institute of Curriculum Development (KICD) curriculum designs — strand titles compiled 2026-10-23",
+      "strands": [
+        {"strand": "Numbers", "objectives": ["Whole numbers and integers", "Fractions, decimals and percentages", "Ratio, proportion and rates", "Squares, cubes and roots"]},
+        {"strand": "Algebra", "objectives": ["Algebraic expressions", "Linear equations and inequalities", "Patterns and sequences"]},
+        {"strand": "Geometry", "objectives": ["Lines, angles and constructions", "Triangles and quadrilaterals", "Circles", "Transformations"]},
+        {"strand": "Measurement", "objectives": ["Length, area and volume", "Mass, time and money"]},
+        {"strand": "Data Handling and Probability", "objectives": ["Collecting and presenting data", "Averages", "Chance and simple probability"]}
+      ]
+    },
+    {
+      "id": "kicd-cbc-geometry",
+      "curricula": ["kenya_cbc", "kcse", "igcse"],
+      "subject_keywords": ["geometry"],
+      "title": "Geometry (Kenya CBC strand, Junior School Mathematics)",
+      "source": "kicd_map",
+      "source_ref": "https://kicd.ac.ke/cbc-materials/",
+      "licence": "KICD curriculum titles (official Kenya curriculum designs)",
+      "attribution": "Kenya Institute of Curriculum Development (KICD) curriculum designs — strand titles compiled 2026-10-23",
+      "strands": [
+        {"strand": "Geometry", "objectives": ["Lines and angles", "Geometric constructions", "Triangles: properties and congruence", "Quadrilaterals and polygons", "Circles and their parts", "Transformations: reflection, rotation, translation and enlargement", "Area of plane shapes", "Volume and surface area of solids"]}
+      ]
+    },
+    {
+      "id": "kicd-cbc-kiswahili",
+      "curricula": ["kenya_cbc", "kcse"],
+      "subject_keywords": ["kiswahili", "swahili"],
+      "title": "Kiswahili (Kenya CBC, Junior School)",
+      "source": "kicd_map",
+      "source_ref": "https://kicd.ac.ke/cbc-materials/",
+      "licence": "KICD curriculum titles (official Kenya curriculum designs)",
+      "attribution": "Kenya Institute of Curriculum Development (KICD) curriculum designs — strand titles compiled 2026-10-23",
+      "strands": [
+        {"strand": "Kusikiliza na Kuzungumza", "objectives": ["Kusikiliza kwa ufahamu", "Mazungumzo na uwasilishaji"]},
+        {"strand": "Kusoma", "objectives": ["Ufahamu wa kusoma", "Kusoma kwa mapana"]},
+        {"strand": "Kuandika", "objectives": ["Insha za kubuni", "Uandishi wa kiofisi na barua"]},
+        {"strand": "Sarufi", "objectives": ["Aina za maneno na ngeli", "Sentensi na nyakati", "Matumizi ya lugha na msamiati"]},
+        {"strand": "Fasihi", "objectives": ["Fasihi simulizi", "Ushairi", "Hadithi fupi na tamthilia"]}
+      ]
+    },
+    {
+      "id": "kicd-cbc-english",
+      "curricula": ["kenya_cbc", "kcse", "igcse"],
+      "subject_keywords": ["english"],
+      "title": "English (Kenya CBC, Junior School)",
+      "source": "kicd_map",
+      "source_ref": "https://kicd.ac.ke/cbc-materials/",
+      "licence": "KICD curriculum titles (official Kenya curriculum designs)",
+      "attribution": "Kenya Institute of Curriculum Development (KICD) curriculum designs — strand titles compiled 2026-10-23",
+      "strands": [
+        {"strand": "Listening and Speaking", "objectives": ["Listening for information", "Oral presentation and discussion"]},
+        {"strand": "Reading", "objectives": ["Reading comprehension", "Extensive reading"]},
+        {"strand": "Grammar in Use", "objectives": ["Word classes and sentence structure", "Tenses and agreement"]},
+        {"strand": "Writing", "objectives": ["Composition writing", "Functional writing"]}
+      ]
+    },
+    {
+      "id": "kicd-cbc-integrated-science",
+      "curricula": ["kenya_cbc"],
+      "subject_keywords": ["integrated science", "science"],
+      "title": "Integrated Science (Kenya CBC, Junior School)",
+      "source": "kicd_map",
+      "source_ref": "https://kicd.ac.ke/cbc-materials/",
+      "licence": "KICD curriculum titles (official Kenya curriculum designs)",
+      "attribution": "Kenya Institute of Curriculum Development (KICD) curriculum designs — strand titles compiled 2026-10-23",
+      "strands": [
+        {"strand": "Living Things and Their Environment", "objectives": ["Cells and organisation of life", "Nutrition in plants and animals", "Ecosystems and conservation"]},
+        {"strand": "Matter", "objectives": ["States and properties of matter", "Elements, compounds and mixtures", "Acids, bases and indicators"]},
+        {"strand": "Energy, Force and Motion", "objectives": ["Forms of energy", "Forces and simple machines", "Electricity and magnetism"]},
+        {"strand": "Earth and Space", "objectives": ["The solar system", "Weather and the water cycle"]}
+      ]
+    },
+    {
+      "id": "knec-kcse-maths",
+      "curricula": ["kcse"],
+      "subject_keywords": ["mathematics", "maths", "math"],
+      "title": "Mathematics (KCSE)",
+      "source": "kicd_map",
+      "source_ref": "https://www.knec.ac.ke/",
+      "licence": "KNEC syllabus titles (official Kenya examination syllabus)",
+      "attribution": "Kenya National Examinations Council (KNEC) KCSE syllabus — topic titles compiled 2026-10-23",
+      "strands": [
+        {"strand": "Numbers and Algebra", "objectives": ["Indices and logarithms", "Quadratic expressions and equations", "Sequences, series and binomial expansion", "Matrices and transformations"]},
+        {"strand": "Geometry and Trigonometry", "objectives": ["Trigonometry", "Vectors", "Circles and constructions", "Three-dimensional geometry"]},
+        {"strand": "Statistics and Probability", "objectives": ["Statistics and data presentation", "Probability"]},
+        {"strand": "Calculus", "objectives": ["Differentiation", "Integration and area"]}
+      ]
+    },
+    {
+      "id": "open-discrete-maths",
+      "curricula": ["university", "self_study"],
+      "subject_keywords": ["discrete"],
+      "title": "Discrete Mathematics (open outline)",
+      "source": "wikimedia",
+      "source_ref": "https://en.wikibooks.org/wiki/Discrete_Mathematics",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wikibooks/Wikipedia contributors, \"Discrete Mathematics\" outline (CC BY-SA 4.0) — headings compiled 2026-10-23",
+      "strands": [
+        {"strand": "Foundations", "objectives": ["Sets and set operations", "Functions and relations", "Propositional logic and truth tables", "Proof techniques"]},
+        {"strand": "Counting and Structures", "objectives": ["Combinatorics: permutations and combinations", "Recurrence relations", "Graph theory basics", "Number theory basics: divisibility and modular arithmetic"]},
+        {"strand": "Chance", "objectives": ["Discrete probability"]}
+      ]
+    }
+  ]
+}

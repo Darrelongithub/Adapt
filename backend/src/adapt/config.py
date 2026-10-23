@@ -246,6 +246,19 @@ class Settings(BaseSettings):
     resource_timeout_s: float = 12.0
     resource_max_results: int = 6
 
+    # -- Round 9 connectors (all off by default; see adapt/connectors) ---
+    # Oak National Academy outline titles for the curriculum scanner.
+    # Enabled when a key exists; the key travels the console-only path
+    # (`adapt config set-key --service oak`) exactly like the model key.
+    oak_api_key: str | None = Field(default=None, repr=False, exclude=True)
+    # Wikipedia "Outline of ..." headings for the scanner. Off unless an
+    # operator turns it on: a default install makes no new outbound calls.
+    connector_wikimedia_enabled: bool = False
+    # General wellbeing reading links after a high-frustration check-in.
+    # Reading only — never tests, scores, or learner data. Off by default.
+    connector_wellbeing_enabled: bool = False
+    connector_timeout_s: float = 8.0
+
     # -- Numbas ----------------------------------------------------------
     numbas_export_dir: Path | None = None
     numbas_bank_path: Path | None = None  # JSON/.numbas package(s) to import
