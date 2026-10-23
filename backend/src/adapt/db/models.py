@@ -172,7 +172,7 @@ class Student(Base):
     voice_gender: Mapped[str] = mapped_column(String(8), default=VoiceGender.FEMALE.value)
 
     # consent + privacy flags
-    consent_analytics: Mapped[bool] = mapped_column(Boolean, default=True)
+    consent_analytics: Mapped[bool] = mapped_column(Boolean, default=False)
     #: DB and write-API name. Learner-facing *reads* call this ``consent_share_with_ai``
     #: (``services/sessions.py``); the split is deliberate privacy copy, not a rename.
     #: New endpoints should read through that mapping rather than exposing this name.

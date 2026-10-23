@@ -472,7 +472,8 @@ def test_onboarding_never_asks_how_you_learn(client, learner):
     assert body["rejected_reasons"]["bogus_key"] == "unknown preference key"
     assert "learning_style" in body["ignored_keys"], "the app must not collect a learning-style label at all"
     assert "learning style" in body["note"] and "measured" in body["note"]
-    assert body["consent"] == {"analytics": True, "share_summary_with_ai": True}
+    # Omitting an analytics choice must not silently opt the learner in.
+    assert body["consent"] == {"analytics": False, "share_summary_with_ai": True}
 
     me = client.get("/api/v1/me", headers=learner["headers"]).json()
     assert me["onboarding_complete"] is True

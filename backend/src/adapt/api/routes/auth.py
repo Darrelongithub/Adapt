@@ -84,7 +84,7 @@ class LoginBody(BaseModel):
 
 class OnboardingBody(BaseModel):
     preferences: dict[str, Any] = Field(default_factory=dict)
-    consent_analytics: bool = True
+    consent_analytics: bool = False
     consent_share_with_llm: bool = True
     voice_enabled: bool = False
     voice_gender: str = "female"

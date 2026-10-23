@@ -1,0 +1,30 @@
+{
+  "check": "A01",
+  "outcome": "PASS",
+  "default_off": {
+    "opt_in": false,
+    "creation_requests_before_choice": 0,
+    "creation_payload": {
+      "as_guest": true,
+      "age_band": "16-18",
+      "consent_analytics": false,
+      "consent_share_with_llm": false
+    },
+    "response_consent": false,
+    "me_consent": false,
+    "student_id": "stu_203c1f2116b540839be8"
+  },
+  "explicit_on": {
+    "opt_in": true,
+    "creation_requests_before_choice": 0,
+    "creation_payload": {
+      "as_guest": true,
+      "age_band": "16-18",
+      "consent_analytics": true,
+      "consent_share_with_llm": false
+    },
+    "response_consent": true,
+    "me_consent": true,
+    "student_id": "stu_5b21aa46614c480bb788"
+  }
+}

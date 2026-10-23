@@ -108,3 +108,19 @@ test("a signed-out privacy list is not called unread while it is loading or afte
   assert.match(gate, /privacy\.data\?\.telemetry\?\.note \?\?/);
   assert.doesNotMatch(gate, /could not be read just now/);
 });
+
+test("a signed-out session waits for an explicit entry instead of creating a guest", () => {
+  const chrome = readFileSync(new URL("../components/chrome.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(chrome, /api<Me>\("students"/);
+  assert.doesNotMatch(chrome, /as_guest:\s*true/);
+  assert.match(chrome, /<AccountGate \/>/);
+});
+
+test("analytics is an optional entry choice, not a condition for using the app", () => {
+  const gate = readFileSync(new URL("../components/account-gate.tsx", import.meta.url), "utf8");
+  assert.match(gate, /Optional/);
+  assert.match(gate, /Save choice and continue/);
+  assert.doesNotMatch(gate, /disabled=\{!consent\}/);
+  assert.doesNotMatch(gate, /busy \|\| !consent/);
+  assert.doesNotMatch(gate, /consent_analytics:\s*true/);
+});
