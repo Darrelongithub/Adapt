@@ -1,0 +1,601 @@
+{
+  "at": "2026-10-22T17:15:17.775Z",
+  "steps": [
+    {
+      "name": "subject plan is real and code-scored",
+      "expected": "4-8 validated simple-mode items",
+      "actual": {
+        "count": 5,
+        "source": "simple",
+        "types": [
+          "geometry_angle",
+          "geometry_congruent",
+          "geometry_angle",
+          "odd_one_out",
+          "pattern_pick"
+        ]
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "learner-facing plan does not expose answers",
+      "expected": "no answer-bearing parameter fields",
+      "actual": {
+        "leak": "answer_index",
+        "parameters": [
+          {
+            "angle": 23,
+            "kind": "pick",
+            "options": "15°,45°,90°,135°",
+            "answer_index": 0
+          },
+          {
+            "target_sides": "30,50,40",
+            "options": "20,25,30|30,40,50|30,50,80|10,20,30",
+            "answer_index": 1
+          },
+          {
+            "angle": 90,
+            "kind": "right",
+            "options": "30°,60°,90°,120°",
+            "answer_index": 2
+          },
+          {
+            "options": "square,rectangle,circle,parallelogram",
+            "answer_index": 2,
+            "why": "Only the circle has no straight sides."
+          },
+          {
+            "sequence": "triangle,square,pentagon",
+            "options": "hexagon,circle,triangle,line",
+            "answer_index": 0
+          }
+        ]
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "name": "refresh during subject checks resumes without loss",
+      "expected": "same run/item or saved first response; no silent reset",
+      "actual": {
+        "firstVerdict": "Correct.",
+        "beforeRows": 0,
+        "afterRows": 0,
+        "text": "Your path One step at a time. You can pause or skip any step. What do you want to learn? Pick a subject to build your starting checks. Maths Discrete structures Geometry Kiswahili Law Chemistry Coding See the starting checks Open mind check Step 01 Choose a subject Step 02 Short starting checks Step 03 First tailored lesson Your active subjects Geometry"
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "name": "complete subject journey stores every scored row",
+      "expected": "one API row per plan item with boolean score, ms and hints",
+      "actual": {
+        "results": [
+          {
+            "type": "geometry_angle",
+            "verdict": "Correct."
+          },
+          {
+            "type": "geometry_congruent",
+            "verdict": "Correct."
+          },
+          {
+            "type": "geometry_angle",
+            "verdict": "Correct."
+          },
+          {
+            "type": "odd_one_out",
+            "verdict": "Correct."
+          },
+          {
+            "type": "pattern_pick",
+            "verdict": "Correct."
+          }
+        ],
+        "resultText": "Your path One step at a time. You can pause or skip any step. Your starting picture 5 of 5 checks right. Even across the skills. geometry spatial 4/4 patterns sequence 1/1 Start lesson Add a subject",
+        "rows": [
+          {
+            "id": "tevi_e51c0d4a259f49da8489",
+            "run_id": "run-mvjsxp4w",
+            "subject_id": "subject_d1f91eec58a24327b7de",
+            "item_id": "item-4",
+            "item_type": "pattern_pick",
+            "skill": "patterns.sequence",
+            "difficulty": 5,
+            "answer": "hexagon",
+            "correct": true,
+            "ms": 507,
+            "hints_used": 0,
+            "observed_at": "2026-10-22T17:15:27.026731"
+          },
+          {
+            "id": "tevi_669ef0b5089a4cb8927e",
+            "run_id": "run-mvjsxp4w",
+            "subject_id": "subject_d1f91eec58a24327b7de",
+            "item_id": "item-3",
+            "item_type": "odd_one_out",
+            "skill": "geometry.spatial",
+            "difficulty": 4,
+            "answer": "circle",
+            "correct": true,
+            "ms": 511,
+            "hints_used": 0,
+            "observed_at": "2026-10-22T17:15:27.026343"
+          },
+          {
+            "id": "tevi_3159defce6424a2d898f",
+            "run_id": "run-mvjsxp4w",
+            "subject_id": "subject_d1f91eec58a24327b7de",
+            "item_id": "item-2",
+            "item_type": "geometry_angle",
+            "skill": "geometry.spatial",
+            "difficulty": 4,
+            "answer": "90°",
+            "correct": true,
+            "ms": 514,
+            "hints_used": 0,
+            "observed_at": "2026-10-22T17:15:27.025740"
+          },
+          {
+            "id": "tevi_fd09538a8c7e4d2e95f5",
+            "run_id": "run-mvjsxp4w",
+            "subject_id": "subject_d1f91eec58a24327b7de",
+            "item_id": "item-1",
+            "item_type": "geometry_congruent",
+            "skill": "geometry.spatial",
+            "difficulty": 5,
+            "answer": "25",
+            "correct": true,
+            "ms": 511,
+            "hints_used": 0,
+            "observed_at": "2026-10-22T17:15:27.025144"
+          },
+          {
+            "id": "tevi_c74b438c93c144bd91fd",
+            "run_id": "run-mvjsxp4w",
+            "subject_id": "subject_d1f91eec58a24327b7de",
+            "item_id": "item-0",
+            "item_type": "geometry_angle",
+            "skill": "geometry.spatial",
+            "difficulty": 4,
+            "answer": "15°",
+            "correct": true,
+            "ms": 343,
+            "hints_used": 0,
+            "observed_at": "2026-10-22T17:15:27.024175"
+          }
+        ]
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "dashboard and progress read back subject evidence",
+      "expected": "chosen subject visible and real test evidence on progress",
+      "actual": {
+        "home": "Hi Audit Subject, ready to learn?Pick up where you left off.Continue: GeometryAdd a subject1Subjects1Active0Due0ChangesContinue learningAdd a subject0GeometryLearningContinue: Geometry",
+        "overview": {
+          "active_subject_id": "subject_d1f91eec58a24327b7de",
+          "subjects": [
+            {
+              "id": "subject_d1f91eec58a24327b7de",
+              "title": "Geometry",
+              "family": "maths",
+              "stage": "learning",
+              "progress": {
+                "done": 0,
+                "total": 5
+              },
+              "next": {
+                "label": "Open the first lesson",
+                "href": "/first-lesson?subject=subject_d1f91eec58a24327b7de"
+              }
+            }
+          ],
+          "due": {
+            "count": 0
+          },
+          "proposals": {
+            "count": 0
+          }
+        },
+        "progress": "What the data says 30-day window · 0 answers · 0 logged interactions Reload Recompute estimates No answers recorded yet Estimates, not labels: nothing here is a fixed trait about you, and nothing changes without your answer. Nothing measured yet. One placement session or practice round is enough to put a number on each topic it touches — with the observation count next to it, because one data point is not a level. Start a subject check Practise Topic estimates 0 topics with data Nothing measured yet. One placement session is enough to put a number on each topic it touches — with the observation count next to it, because one data point is not a level. NOT STARTED DEVELOPING ACQUIRED Which teaching is working for you actual vs expected, never raw marks No teaching has been measured yet. Each method is judged on actual minus expected on the same questions, so this fills in as you practise. Each method is compared with what your earlier answers suggested you would get on those very questions, so a method that met harder material is not punished for it. Under 8 observations it is called an early signal, and it stays one until there are enough to say otherwise. Test evidence 5 rows RIGHT pattern pick · patterns sequence · 507 ms RIGHT odd one out · geometry spatial · 511 ms RIGHT geometry angle · geometry spatial · 514 ms RIGHT geometry congruent · geometry spatial · 511 ms RIGHT geometry angle · geometry spatial · 343 ms Last 7 days answers 0 mean score — hints opened 0 median seconds per question — attempts 0 events 0 evidence 0 hypotheses 0 proposals 0 retention checks 0 sessions 0 Time on a question is not a measure of effort and is never scored. It is here because a pattern in it is sometimes a sign of what to change, and you should be able to see the same number the proposal was built from. Blocking prerequisites from the topic graph No topic is being asked for while something it depends on is still unlearned. That is a statement about the topics the syllabus here covers, not about you. The planner is asked to teach the blocker first. When it does, the change is recorded in the plan’s own path so you can check whether it actually happened. Hypotheses about how you learn not diagnoses None yet — and none will be invented to fill this box. Your story Nothing recorded yet. The journey starts with the diagnostic. No nodes in this window. Activity from your checks and lessons will appear here in chronological order. Guardrails the server says are on 13 strategies in the catalog Bands are estimates with uncertainty; a 'developing' label with 3 observations is not the same claim as one with 30. Hypotheses are fallible explanations, not diagnoses. Each row shows what would change our mind. Nothing here was applied without your answer; the proposals list keeps both yes and no. Help in the moment (a clearer explanation, one more example) is not here because it needs no approval: you asked for it. Only changes that keep applying after this screen are proposed, and only with your answer. Changes Check the audit log"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "double-submitting the same evidence is idempotent",
+      "expected": "second POST stores zero duplicate rows",
+      "actual": {
+        "stored": 0,
+        "run_id": "run-mvjsxp4w"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "server rejects unknown scored item type",
+      "expected": "422 and no fake evidence row",
+      "actual": {
+        "status": 200,
+        "body": {
+          "stored": 1,
+          "run_id": "audit-invalid-type"
+        }
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "name": "server rejects evidence missing item_type",
+      "expected": "422 validation error",
+      "actual": {
+        "status": 422,
+        "body": {
+          "error": "validation_failed",
+          "fields": [
+            {
+              "loc": [
+                "body",
+                "rows",
+                "0",
+                "item_type"
+              ],
+              "msg": "Field required",
+              "type": "missing"
+            }
+          ]
+        }
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "client rejects plan item missing item_type",
+      "expected": "invalid item filtered; fewer than four valid items blocks run with notice",
+      "actual": {
+        "text": "Your path One step at a time. You can pause or skip any step. The starting checks could not be built just now. Try again. Starting checks for Chemistry Three taps, then the checks. How much do you know? Beginner Starting fresh Some knowledge I know a bit Confident Test the edges How do you like to learn? See it Pictures first Try it Learn by doing Hear it Spoken explanation Read it Written steps Why are you learning? Exam Prepare for a test Skills Use it in life Curiosity For the joy of it Start the checks",
+        "cards": 0
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "console": [
+    {
+      "type": "warning",
+      "text": "The resource http://127.0.0.1:3000/_next/static/css/882611466ea8c5e5.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally."
+    },
+    {
+      "type": "warning",
+      "text": "The resource http://127.0.0.1:3000/_next/static/css/64f54db2ddc8095c.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally."
+    }
+  ],
+  "api": {
+    "register": {
+      "status": 200,
+      "body": {
+        "student_id": "stu_3f9e0120e8654e1a95b6",
+        "display_name": "Audit Subject",
+        "role": "student",
+        "onboarding_complete": false,
+        "diagnostic_complete": false,
+        "baseline_started": false,
+        "voice_enabled": false,
+        "voice_gender": "female",
+        "language": "en",
+        "consent_analytics": false,
+        "consent_share_with_ai": true,
+        "sessions": 0,
+        "preferences": {},
+        "profile_taken_at": null,
+        "csrf_token": "IApM2zxuZoZ9iSwEaPnX-izxNjiI6VBB",
+        "expires_at": "2026-10-23T05:15:17.881187",
+        "mode": "local",
+        "created": true
+      }
+    },
+    "plan": {
+      "items": [
+        {
+          "item_type": "geometry_angle",
+          "skill": "geometry.spatial",
+          "difficulty": 4,
+          "parameters": {
+            "angle": 23,
+            "kind": "pick",
+            "options": "15°,45°,90°,135°",
+            "answer_index": 0
+          }
+        },
+        {
+          "item_type": "geometry_congruent",
+          "skill": "geometry.spatial",
+          "difficulty": 5,
+          "parameters": {
+            "target_sides": "30,50,40",
+            "options": "20,25,30|30,40,50|30,50,80|10,20,30",
+            "answer_index": 1
+          }
+        },
+        {
+          "item_type": "geometry_angle",
+          "skill": "geometry.spatial",
+          "difficulty": 4,
+          "parameters": {
+            "angle": 90,
+            "kind": "right",
+            "options": "30°,60°,90°,120°",
+            "answer_index": 2
+          }
+        },
+        {
+          "item_type": "odd_one_out",
+          "skill": "geometry.spatial",
+          "difficulty": 4,
+          "parameters": {
+            "options": "square,rectangle,circle,parallelogram",
+            "answer_index": 2,
+            "why": "Only the circle has no straight sides."
+          }
+        },
+        {
+          "item_type": "pattern_pick",
+          "skill": "patterns.sequence",
+          "difficulty": 5,
+          "parameters": {
+            "sequence": "triangle,square,pentagon",
+            "options": "hexagon,circle,triangle,line",
+            "answer_index": 0
+          }
+        }
+      ],
+      "source": "simple",
+      "family": "geometry",
+      "level": 3,
+      "style": "try",
+      "goal": "exam"
+    },
+    "reload": {
+      "before": {
+        "status": 200,
+        "body": {
+          "rows": []
+        }
+      },
+      "after": {
+        "status": 200,
+        "body": {
+          "rows": []
+        }
+      },
+      "text": "Your path One step at a time. You can pause or skip any step. What do you want to learn? Pick a subject to build your starting checks. Maths Discrete structures Geometry Kiswahili Law Chemistry Coding See the starting checks Open mind check Step 01 Choose a subject Step 02 Short starting checks Step 03 First tailored lesson Your active subjects Geometry"
+    },
+    "completed": {
+      "plan": {
+        "items": [
+          {
+            "item_type": "geometry_angle",
+            "skill": "geometry.spatial",
+            "difficulty": 4,
+            "parameters": {
+              "angle": 23,
+              "kind": "pick",
+              "options": "15°,45°,90°,135°",
+              "answer_index": 0
+            }
+          },
+          {
+            "item_type": "geometry_congruent",
+            "skill": "geometry.spatial",
+            "difficulty": 5,
+            "parameters": {
+              "target_sides": "30,50,40",
+              "options": "20,25,30|30,40,50|30,50,80|10,20,30",
+              "answer_index": 1
+            }
+          },
+          {
+            "item_type": "geometry_angle",
+            "skill": "geometry.spatial",
+            "difficulty": 4,
+            "parameters": {
+              "angle": 90,
+              "kind": "right",
+              "options": "30°,60°,90°,120°",
+              "answer_index": 2
+            }
+          },
+          {
+            "item_type": "odd_one_out",
+            "skill": "geometry.spatial",
+            "difficulty": 4,
+            "parameters": {
+              "options": "square,rectangle,circle,parallelogram",
+              "answer_index": 2,
+              "why": "Only the circle has no straight sides."
+            }
+          },
+          {
+            "item_type": "pattern_pick",
+            "skill": "patterns.sequence",
+            "difficulty": 5,
+            "parameters": {
+              "sequence": "triangle,square,pentagon",
+              "options": "hexagon,circle,triangle,line",
+              "answer_index": 0
+            }
+          }
+        ],
+        "source": "simple",
+        "family": "geometry",
+        "level": 3,
+        "style": "try",
+        "goal": "exam"
+      },
+      "results": [
+        {
+          "type": "geometry_angle",
+          "verdict": "Correct."
+        },
+        {
+          "type": "geometry_congruent",
+          "verdict": "Correct."
+        },
+        {
+          "type": "geometry_angle",
+          "verdict": "Correct."
+        },
+        {
+          "type": "odd_one_out",
+          "verdict": "Correct."
+        },
+        {
+          "type": "pattern_pick",
+          "verdict": "Correct."
+        }
+      ],
+      "resultText": "Your path One step at a time. You can pause or skip any step. Your starting picture 5 of 5 checks right. Even across the skills. geometry spatial 4/4 patterns sequence 1/1 Start lesson Add a subject",
+      "evidence": {
+        "status": 200,
+        "body": {
+          "rows": [
+            {
+              "id": "tevi_e51c0d4a259f49da8489",
+              "run_id": "run-mvjsxp4w",
+              "subject_id": "subject_d1f91eec58a24327b7de",
+              "item_id": "item-4",
+              "item_type": "pattern_pick",
+              "skill": "patterns.sequence",
+              "difficulty": 5,
+              "answer": "hexagon",
+              "correct": true,
+              "ms": 507,
+              "hints_used": 0,
+              "observed_at": "2026-10-22T17:15:27.026731"
+            },
+            {
+              "id": "tevi_669ef0b5089a4cb8927e",
+              "run_id": "run-mvjsxp4w",
+              "subject_id": "subject_d1f91eec58a24327b7de",
+              "item_id": "item-3",
+              "item_type": "odd_one_out",
+              "skill": "geometry.spatial",
+              "difficulty": 4,
+              "answer": "circle",
+              "correct": true,
+              "ms": 511,
+              "hints_used": 0,
+              "observed_at": "2026-10-22T17:15:27.026343"
+            },
+            {
+              "id": "tevi_3159defce6424a2d898f",
+              "run_id": "run-mvjsxp4w",
+              "subject_id": "subject_d1f91eec58a24327b7de",
+              "item_id": "item-2",
+              "item_type": "geometry_angle",
+              "skill": "geometry.spatial",
+              "difficulty": 4,
+              "answer": "90°",
+              "correct": true,
+              "ms": 514,
+              "hints_used": 0,
+              "observed_at": "2026-10-22T17:15:27.025740"
+            },
+            {
+              "id": "tevi_fd09538a8c7e4d2e95f5",
+              "run_id": "run-mvjsxp4w",
+              "subject_id": "subject_d1f91eec58a24327b7de",
+              "item_id": "item-1",
+              "item_type": "geometry_congruent",
+              "skill": "geometry.spatial",
+              "difficulty": 5,
+              "answer": "25",
+              "correct": true,
+              "ms": 511,
+              "hints_used": 0,
+              "observed_at": "2026-10-22T17:15:27.025144"
+            },
+            {
+              "id": "tevi_c74b438c93c144bd91fd",
+              "run_id": "run-mvjsxp4w",
+              "subject_id": "subject_d1f91eec58a24327b7de",
+              "item_id": "item-0",
+              "item_type": "geometry_angle",
+              "skill": "geometry.spatial",
+              "difficulty": 4,
+              "answer": "15°",
+              "correct": true,
+              "ms": 343,
+              "hints_used": 0,
+              "observed_at": "2026-10-22T17:15:27.024175"
+            }
+          ]
+        }
+      }
+    },
+    "readback": {
+      "home": "Hi Audit Subject, ready to learn?Pick up where you left off.Continue: GeometryAdd a subject1Subjects1Active0Due0ChangesContinue learningAdd a subject0GeometryLearningContinue: Geometry",
+      "overview": {
+        "status": 200,
+        "body": {
+          "active_subject_id": "subject_d1f91eec58a24327b7de",
+          "subjects": [
+            {
+              "id": "subject_d1f91eec58a24327b7de",
+              "title": "Geometry",
+              "family": "maths",
+              "stage": "learning",
+              "progress": {
+                "done": 0,
+                "total": 5
+              },
+              "next": {
+                "label": "Open the first lesson",
+                "href": "/first-lesson?subject=subject_d1f91eec58a24327b7de"
+              }
+            }
+          ],
+          "due": {
+            "count": 0
+          },
+          "proposals": {
+            "count": 0
+          }
+        }
+      },
+      "progress": "What the data says 30-day window · 0 answers · 0 logged interactions Reload Recompute estimates No answers recorded yet Estimates, not labels: nothing here is a fixed trait about you, and nothing changes without your answer. Nothing measured yet. One placement session or practice round is enough to put a number on each topic it touches — with the observation count next to it, because one data point is not a level. Start a subject check Practise Topic estimates 0 topics with data Nothing measured yet. One placement session is enough to put a number on each topic it touches — with the observation count next to it, because one data point is not a level. NOT STARTED DEVELOPING ACQUIRED Which teaching is working for you actual vs expected, never raw marks No teaching has been measured yet. Each method is judged on actual minus expected on the same questions, so this fills in as you practise. Each method is compared with what your earlier answers suggested you would get on those very questions, so a method that met harder material is not punished for it. Under 8 observations it is called an early signal, and it stays one until there are enough to say otherwise. Test evidence 5 rows RIGHT pattern pick · patterns sequence · 507 ms RIGHT odd one out · geometry spatial · 511 ms RIGHT geometry angle · geometry spatial · 514 ms RIGHT geometry congruent · geometry spatial · 511 ms RIGHT geometry angle · geometry spatial · 343 ms Last 7 days answers 0 mean score — hints opened 0 median seconds per question — attempts 0 events 0 evidence 0 hypotheses 0 proposals 0 retention checks 0 sessions 0 Time on a question is not a measure of effort and is never scored. It is here because a pattern in it is sometimes a sign of what to change, and you should be able to see the same number the proposal was built from. Blocking prerequisites from the topic graph No topic is being asked for while something it depends on is still unlearned. That is a statement about the topics the syllabus here covers, not about you. The planner is asked to teach the blocker first. When it does, the change is recorded in the plan’s own path so you can check whether it actually happened. Hypotheses about how you learn not diagnoses None yet — and none will be invented to fill this box. Your story Nothing recorded yet. The journey starts with the diagnostic. No nodes in this window. Activity from your checks and lessons will appear here in chronological order. Guardrails the server says are on 13 strategies in the catalog Bands are estimates with uncertainty; a 'developing' label with 3 observations is not the same claim as one with 30. Hypotheses are fallible explanations, not diagnoses. Each row shows what would change our mind. Nothing here was applied without your answer; the proposals list keeps both yes and no. Help in the moment (a clearer explanation, one more example) is not here because it needs no approval: you asked for it. Only changes that keep applying after this screen are proposed, and only with your answer. Changes Check the audit log"
+    },
+    "duplicateEvidence": {
+      "status": 200,
+      "body": {
+        "stored": 0,
+        "run_id": "run-mvjsxp4w"
+      }
+    },
+    "invalidEvidenceType": {
+      "status": 200,
+      "body": {
+        "stored": 1,
+        "run_id": "audit-invalid-type"
+      }
+    },
+    "missingEvidenceType": {
+      "status": 422,
+      "body": {
+        "error": "validation_failed",
+        "fields": [
+          {
+            "loc": [
+              "body",
+              "rows",
+              "0",
+              "item_type"
+            ],
+            "msg": "Field required",
+            "type": "missing"
+          }
+        ]
+      }
+    },
+    "malformedClient": {
+      "text": "Your path One step at a time. You can pause or skip any step. The starting checks could not be built just now. Try again. Starting checks for Chemistry Three taps, then the checks. How much do you know? Beginner Starting fresh Some knowledge I know a bit Confident Test the edges How do you like to learn? See it Pictures first Try it Learn by doing Hear it Spoken explanation Read it Written steps Why are you learning? Exam Prepare for a test Skills Use it in life Curiosity For the joy of it Start the checks",
+      "itemCards": 0
+    }
+  },
+  "csrf": "IApM2zxuZoZ9iSwEaPnX-izxNjiI6VBB"
+}

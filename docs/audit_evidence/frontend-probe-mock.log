@@ -1,0 +1,19 @@
+
+> adapt-frontend@0.1.0 probe:mock
+> node scripts-ui-probe.mjs --mock
+
+
+[1mADAPT UI probe[0m  http://127.0.0.1:3000
+backend 200 {"ok":true,"version":"0.1.0","lessons":{"state":"simple mode","says":"Lessons: simple mode
+
+
+[1mentry gate and home[0m
+  [32mok[0m  server HTML covers the app before hydration (no dashboard flash)
+
+[31mprobe crashed[0m (a harness or app fault, not a check failure)
+Error: timed out after 8000ms waiting for mandatory account card
+    at waitFor (file:///home/user/Adapt/frontend/scripts-ui-probe.mjs:86:47)
+    at async main (file:///home/user/Adapt/frontend/scripts-ui-probe.mjs:577:5)
+
+[1m1/1 checks passed before the crash[0m  [2m(stalled in home)[0m
+[2mscreens after home were not judged[0m

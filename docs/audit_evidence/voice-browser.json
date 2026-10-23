@@ -1,0 +1,212 @@
+{
+  "steps": [
+    {
+      "name": "voice websocket connects to the learner session",
+      "expected": "connected/listening and hello frame",
+      "actual": {
+        "connected": 0,
+        "ws": "ws://127.0.0.1:3000/ws/voice",
+        "frames": [
+          {
+            "direction": "out",
+            "payload": "{\"t\":\"config\",\"voice_on\":true,\"gender\":\"female\",\"barge_in\":true}"
+          },
+          {
+            "direction": "in",
+            "payload": "{\"t\":\"hello\",\"sample_rate_in\":16000,\"sample_rate_out\":24000,\"encoding\":\"s16le\",\"session_id\":null,\"status\":{\"state\":\"idle\",\"busy\":false,\"session_id\":\"voice_4af4b0dd\",\"turns\":0,\"buffered_s\":0.0,\"voice_enabled\":true,\"barge_in\":true,\"gender\":\"female\",\"frames_in\":0,\"bytes_in\":0,\"stt\":\"browser\",\"tts\":\"none\",\"vad\":\"energy\",\"last_error\":null,\"last_turn\":null}}"
+          },
+          {
+            "direction": "in",
+            "payload": "{\"t\":\"config_ack\",\"voice_enabled\":true,\"gender\":\"female\",\"barge_in\":true}"
+          },
+          {
+            "direction": "out",
+            "payload": "{\"t\":\"text\",\"text\":\"What is photosynthesis?\"}"
+          },
+          {
+            "direction": "in",
+            "payload": "{\"t\":\"state\",\"state\":\"thinking\"}"
+          },
+          {
+            "direction": "in",
+            "payload": "{\"t\":\"reply\",\"text\":\"Here it is with real numbers, once. Photosynthesis is how a plant makes its own food.\",\"ms\":20,\"meta\":{\"served_by\":\"your own material\",\"intent\":null,\"level\":\"new\",\"adaptations\":[],\"message_id\":\"msg_53d766aeb68148d68d2e\",\"next_action\":null}}"
+          },
+          {
+            "direction": "in",
+            "payload": "{\"t\":\"speak_unavailable\",\"reason\":\"browser_speech_synthesis\",\"text\":\"Here it is with real numbers, once. Photosynthesis is how a plant makes its own food.\"}"
+          }
+        ]
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "voice text turn returns a real tutor reply",
+      "expected": "reply frame and visible learner/tutor turn",
+      "actual": {
+        "replyFrames": [
+          {
+            "direction": "in",
+            "payload": "{\"t\":\"reply\",\"text\":\"Here it is with real numbers, once. Photosynthesis is how a plant makes its own food.\",\"ms\":20,\"meta\":{\"served_by\":\"your own material\",\"intent\":null,\"level\":\"new\",\"adaptations\":[],\"message_id\":\"msg_53d766aeb68148d68d2e\",\"next_action\":null}}"
+          }
+        ],
+        "text": "Talk to it Greeting, read-aloud, and listen-and-answer. Same tutor, same memory, different input. transcription accuracy and teaching accuracy are measured separately: a misheard word is a speech problem, not a tutoring problem, and the transcript is always editable THINKING hang up Turn you What is photosynthesis? tutor Here it is with real numbers, once. Photosynthesis is how a plant makes its own food.20 ms What you said (edit it, because this is what the tutor actually reads) send hold to talk stop talking Voice and speech LISTENING: IN THE BROWSER Listening uses the browser. Nothing you say is sent away to be transcribed. SPEAKING: IN THE BROWSER Speaking uses the browser. The audio stays on this device. A live connection is used when it is available. Text still works without it. Let it speak out loud off = text bubbles only, and the server stops synthesising anything Interrupt me when I start talking any keypress stops the current utterance — being able to cut in is the difference between a tutor and a lecture Which voice female male apply to this session The voice switch is app-wide and is also available in the top bar. When it is off, no microphone, speech audio, or voice turn is used; the keyboard path remains available. Session log connected · in 16000Hz out 24000Hz · session config: voice=true gender=female barge_in=true server voice off (browser_speech_synthesis): Here it is with real numbers, once. Photosynthesis is how a … browser has no speech voices installed; text only The local engines are optional Voice works without them: your browser dictates and speaks, and nothing is uploaded. An operator who wants the on-machine engines installs them once at the console - the steps are in docs/VOICE.md, and this page always reports which path is actually in use above."
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "microphone dictation with real audio",
+      "expected": "browser/device dictation available and transcript produced",
+      "actual": {
+        "browserCaps": {
+          "speechSynthesis": true,
+          "voices": 0,
+          "recognition": true,
+          "mediaDevices": true
+        },
+        "text": "Talk to it Greeting, read-aloud, and listen-and-answer. Same tutor, same memory, different input. transcription accuracy and teaching accuracy are measured separately: a misheard word is a speech problem, not a tutoring problem, and the transcript is always editable THINKING hang up Turn you What is photosynthesis? tutor Here it is with real numbers, once. Photosynthesis is how a plant makes its own food.20 ms What you said (edit it, because this is what the tutor actually reads) send listening… stop stop talking listening… Voice and speech LISTENING: IN THE BROWSER Listening uses the browser. Nothing you say is sent away to be transcribed. SPEAKING: IN THE BROWSER Speaking uses the browser. The audio stays on this device. A live connection is used when it is available. Text still works without it. Let it speak out loud off = text bubbles only, and the server stops synthesising anything Interrupt me when I start talking any keypress stops the current utterance — being able to cut in is the difference between a tutor and a lecture Which voice female male apply to this session The voice switch is app-wide and is also available in the top bar. When it is off, no microphone, speech audio, or voice turn is used; the keyboard path remains available. Session log connected · in 16000Hz out 24000Hz · session config: voice=true gender=female barge_in=true server voice off (browser_speech_synthesis): Here it is with real numbers, once. Photosynthesis is how a … browser has no speech voices installed; text only The local engines are optional Voice works without them: your browser dictates and speaks, and nothing is uploaded. An operator who wants the on-machine engines installs them once at the console - the steps are in docs/VOICE.md, and this page always reports which path is act"
+      },
+      "verdict": "NOT RUN (no audio input device)"
+    },
+    {
+      "name": "audible speech output",
+      "expected": "at least one browser/local voice and audible playback verified",
+      "actual": {
+        "capabilities": {
+          "stt": {
+            "local_stt": false,
+            "detail": "local transcription is not installed in this environment",
+            "fallback": "browser Web Speech API dictation (free, on your device in Chrome, Edge or Safari)",
+            "compute_type": "int8",
+            "spoken_math_normalisation": true
+          },
+          "tts": {
+            "local_tts": false,
+            "detail": "the local voice engine is not installed in this environment",
+            "fallback": "browser speechSynthesis with male/female voice selection (free, on your device)",
+            "voices": {
+              "female": "af_heart",
+              "male": "am_fenrir"
+            },
+            "sample_rate": 24000,
+            "interruption": "chunked synthesis so speech can be stopped between sentences"
+          },
+          "voices": {
+            "female": {
+              "a": "af_heart",
+              "b": "bf_violet"
+            },
+            "male": {
+              "a": "am_fenrir",
+              "b": "bm_ola"
+            }
+          },
+          "barge_in": true,
+          "transport": "websocket /ws/voice (binary s16le frames + JSON control messages)",
+          "path": "/ws/voice",
+          "note": "transcription accuracy and teaching accuracy are measured separately: a misheard word is a speech problem, not a tutoring problem, and the transcript is always editable"
+        },
+        "browserCaps": {
+          "speechSynthesis": true,
+          "voices": 0,
+          "recognition": true,
+          "mediaDevices": true
+        },
+        "frames": [
+          {
+            "direction": "in",
+            "payload": "{\"t\":\"speak_unavailable\",\"reason\":\"browser_speech_synthesis\",\"text\":\"Here it is with real numbers, once. Photosynthesis is how a plant makes its own food.\"}"
+          }
+        ]
+      },
+      "verdict": "NOT RUN (no speech voices installed)"
+    },
+    {
+      "name": "voice off blocks microphone and voice turn",
+      "expected": "no new text frame; microphone disabled and send cannot emit while voice off",
+      "actual": {
+        "afterOff": [],
+        "sendDisabled": true,
+        "micDisabled": true
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "console": [],
+  "api": {
+    "capabilities": {
+      "status": 200,
+      "body": {
+        "stt": {
+          "local_stt": false,
+          "detail": "local transcription is not installed in this environment",
+          "fallback": "browser Web Speech API dictation (free, on your device in Chrome, Edge or Safari)",
+          "compute_type": "int8",
+          "spoken_math_normalisation": true
+        },
+        "tts": {
+          "local_tts": false,
+          "detail": "the local voice engine is not installed in this environment",
+          "fallback": "browser speechSynthesis with male/female voice selection (free, on your device)",
+          "voices": {
+            "female": "af_heart",
+            "male": "am_fenrir"
+          },
+          "sample_rate": 24000,
+          "interruption": "chunked synthesis so speech can be stopped between sentences"
+        },
+        "voices": {
+          "female": {
+            "a": "af_heart",
+            "b": "bf_violet"
+          },
+          "male": {
+            "a": "am_fenrir",
+            "b": "bm_ola"
+          }
+        },
+        "barge_in": true,
+        "transport": "websocket /ws/voice (binary s16le frames + JSON control messages)",
+        "path": "/ws/voice",
+        "note": "transcription accuracy and teaching accuracy are measured separately: a misheard word is a speech problem, not a tutoring problem, and the transcript is always editable"
+      }
+    },
+    "browserCaps": {
+      "speechSynthesis": true,
+      "voices": 0,
+      "recognition": true,
+      "mediaDevices": true
+    },
+    "websocket": "ws://127.0.0.1:3000/ws/voice",
+    "frames": [
+      {
+        "direction": "out",
+        "payload": "{\"t\":\"config\",\"voice_on\":true,\"gender\":\"female\",\"barge_in\":true}"
+      },
+      {
+        "direction": "in",
+        "payload": "{\"t\":\"hello\",\"sample_rate_in\":16000,\"sample_rate_out\":24000,\"encoding\":\"s16le\",\"session_id\":null,\"status\":{\"state\":\"idle\",\"busy\":false,\"session_id\":\"voice_4af4b0dd\",\"turns\":0,\"buffered_s\":0.0,\"voice_enabled\":true,\"barge_in\":true,\"gender\":\"female\",\"frames_in\":0,\"bytes_in\":0,\"stt\":\"browser\",\"tts\":\"none\",\"vad\":\"energy\",\"last_error\":null,\"last_turn\":null}}"
+      },
+      {
+        "direction": "in",
+        "payload": "{\"t\":\"config_ack\",\"voice_enabled\":true,\"gender\":\"female\",\"barge_in\":true}"
+      },
+      {
+        "direction": "out",
+        "payload": "{\"t\":\"text\",\"text\":\"What is photosynthesis?\"}"
+      },
+      {
+        "direction": "in",
+        "payload": "{\"t\":\"state\",\"state\":\"thinking\"}"
+      },
+      {
+        "direction": "in",
+        "payload": "{\"t\":\"reply\",\"text\":\"Here it is with real numbers, once. Photosynthesis is how a plant makes its own food.\",\"ms\":20,\"meta\":{\"served_by\":\"your own material\",\"intent\":null,\"level\":\"new\",\"adaptations\":[],\"message_id\":\"msg_53d766aeb68148d68d2e\",\"next_action\":null}}"
+      },
+      {
+        "direction": "in",
+        "payload": "{\"t\":\"speak_unavailable\",\"reason\":\"browser_speech_synthesis\",\"text\":\"Here it is with real numbers, once. Photosynthesis is how a plant makes its own food.\"}"
+      }
+    ],
+    "wsClosed": true
+  }
+}

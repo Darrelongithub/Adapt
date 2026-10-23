@@ -1,0 +1,162 @@
+
+> adapt-e2e-games@0.1.0 test
+> playwright test
+
+
+Running 11 tests using 1 worker
+
+  ✓   1 [desktop] › baseline-games.spec.ts:10:5 › the whole baseline: every game, the next-day check, and what the server recorded (2.1m)
+  ✓   2 [desktop] › snapshot-honesty.spec.ts:14:5 › stopping straight away records every game as not measured, and no number (2.4s)
+  ✘   3 [desktop] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached (1.9m)
+  ✘   4 [desktop] › subject-round.spec.ts:28:5 › the plan says why these skills, and the reason matches what was actually found (20.4s)
+  ✘   5 [desktop] › subject-round.spec.ts:51:5 › a whole subject round, answered by the bot, ends in a map that says what it did not reach (20.5s)
+  ✓   6 [mobile] › baseline-games.spec.ts:10:5 › the whole baseline: every game, the next-day check, and what the server recorded (2.1m)
+  -   7 [mobile] › snapshot-honesty.spec.ts:14:5 › stopping straight away records every game as not measured, and no number
+  -   8 [mobile] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached
+  ✘   9 [mobile] › subject-round.spec.ts:28:5 › the plan says why these skills, and the reason matches what was actually found (20.4s)
+  ✘  10 [mobile] › subject-round.spec.ts:51:5 › a whole subject round, answered by the bot, ends in a map that says what it did not reach (20.4s)
+  ✓  11 [keyboard] › keyboard.spec.ts:11:5 › the whole baseline with the keyboard alone, each trial sent once (2.2m)
+
+
+  1) [desktop] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached 
+
+    Error: expect(received).toMatch(expected)
+
+    Expected pattern: /locked_box/
+    Received string:  "What we measured, and what we did not 4 of 8 things were measurable from this sitting. Everything else says “not measured” on purpose: a game you did not play is unknown, not a zero. What you already know NOT MEASURED Not enough data yet — the subject round would fill this in. How much you hold at once 8-9 n=30 You currently hold about 8–9 steps at once, so lessons will use smaller steps and check between them. keep explanation blocks to about 8 ideas before a check prefer a worked example split into short steps over one long paragraph How fast you work 0.1-0.1 n=8 Most quick answers take you about 0.1 seconds, so the app will pace new material at that speed and not chase a fastest time. size checks to about this pace rather than to a clock keep block length as it is Staying on it 0-0.6 n=8 Your accuracy dropped toward the end of the session, so the app will shorten blocks and add a check-in. shorten blocks and add a check-in keep answers as they are Remembering over time 0.9-1 n=8 You recalled 100% of the pairs straight away, so review will be scheduled around the default spacing. seed your review spacing from this, with a range keep recall practice as it is Working out a rule NOT MEASURED Not enough data yet — finishing a machine round would fill this in. Knowing what you know NOT MEASURED Not enough data yet — a few more answers with a coin wager would fill this in. Pushing through, and asking for help NOT MEASURED Not enough data yet — trying the locked box would fill this in. What we will do differently step size MEASURED large holds about 8–9 steps at once (n=30) lead format prior YOU TOLD US diagram you chose diagram for a new topic (stated, not measured) pace MEASURED steady median 80ms per quick tap, drift -68% across the session (n=8) review halflife prior MEASURED 90 recalled 100% of new pairs straight away (n=8) hint policy DEFAULT on request default: hints are there when asked for confidence prompting DEFAULT off no calibration evidence yet tone YOU TOLD US straight you chose how you want to hear that you got something wrong (stated) language YOU TOLD US en you chose the language for explanations (stated) timers visible YOU TOLD US true you said timers help (stated) attention note MEASURED 50% right early, 0% right late, traps not reached attention and self-control across the session reasoning note MEASURED not measured yet (0 of 3 needed) how you tested the machine's rule Steps that did not happen Recorded as not measured, not as zero: Reasoning, Logic, Quick thinking, Careful thinking, Delayed recall. Come back later The codeword check is meant for another day. You can ask for it now: it measures a shorter gap than the one it is designed for, and the check says so when you answer. Show the codeword check where this comes from"
+
+      38 |   const text = (await page.locator(".baseline-snapshot").innerText()).replace(/\s+/g, " ");
+      39 |   expect(text).toMatch(/steps that did not happen/i);
+    > 40 |   expect(text).toMatch(/locked_box/); // the stage keys of what was not reached
+         |                ^
+      41 |   expect(text).toMatch(/n=\d+/); // the games that were played report their n
+      42 |   expect(ledger.cued.length).toBeGreaterThan(0);
+      43 |   await shot(page, "desktop", "snapshot-stopped-part-way");
+        at /home/user/Adapt/e2e/games/snapshot-honesty.spec.ts:40:16
+
+    Error Context: test-results/snapshot-honesty-stopping--bff39--names-what-was-not-reached-desktop/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/snapshot-honesty-stopping--bff39--names-what-was-not-reached-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/snapshot-honesty-stopping--bff39--names-what-was-not-reached-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [desktop] › subject-round.spec.ts:28:5 › the plan says why these skills, and the reason matches what was actually found 
+
+    TimeoutError: locator.fill: Timeout 20000ms exceeded.
+    Call log:
+      - waiting for getByRole('textbox', { name: 'Subject', exact: true })
+
+
+      20 | async function findSubject(page: Page, topic: string): Promise<void> {
+      21 |   await page.goto("/subject");
+    > 22 |   await page.getByRole("textbox", { name: "Subject", exact: true }).fill(topic);
+         |                                                                     ^
+      23 |   await page.getByRole("button", { name: "Preview outline", exact: true }).click();
+      24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.
+      25 |   await expect(page.getByRole("button", { name: "Confirm outline and start", exact: true })).toBeVisible({ timeout: 30_000 });
+        at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)
+        at /home/user/Adapt/e2e/games/subject-round.spec.ts:37:5
+
+    Error Context: test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-desktop/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [desktop] › subject-round.spec.ts:51:5 › a whole subject round, answered by the bot, ends in a map that says what it did not reach 
+
+    TimeoutError: locator.fill: Timeout 20000ms exceeded.
+    Call log:
+      - waiting for getByRole('textbox', { name: 'Subject', exact: true })
+
+
+      20 | async function findSubject(page: Page, topic: string): Promise<void> {
+      21 |   await page.goto("/subject");
+    > 22 |   await page.getByRole("textbox", { name: "Subject", exact: true }).fill(topic);
+         |                                                                     ^
+      23 |   await page.getByRole("button", { name: "Preview outline", exact: true }).click();
+      24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.
+      25 |   await expect(page.getByRole("button", { name: "Confirm outline and start", exact: true })).toBeVisible({ timeout: 30_000 });
+        at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)
+        at /home/user/Adapt/e2e/games/subject-round.spec.ts:54:3
+
+    Error Context: test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-desktop/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [mobile] › subject-round.spec.ts:28:5 › the plan says why these skills, and the reason matches what was actually found 
+
+    TimeoutError: locator.fill: Timeout 20000ms exceeded.
+    Call log:
+      - waiting for getByRole('textbox', { name: 'Subject', exact: true })
+
+
+      20 | async function findSubject(page: Page, topic: string): Promise<void> {
+      21 |   await page.goto("/subject");
+    > 22 |   await page.getByRole("textbox", { name: "Subject", exact: true }).fill(topic);
+         |                                                                     ^
+      23 |   await page.getByRole("button", { name: "Preview outline", exact: true }).click();
+      24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.
+      25 |   await expect(page.getByRole("button", { name: "Confirm outline and start", exact: true })).toBeVisible({ timeout: 30_000 });
+        at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)
+        at /home/user/Adapt/e2e/games/subject-round.spec.ts:37:5
+
+    Error Context: test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-mobile/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/subject-round-the-plan-say-c4636-hes-what-was-actually-found-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) [mobile] › subject-round.spec.ts:51:5 › a whole subject round, answered by the bot, ends in a map that says what it did not reach 
+
+    TimeoutError: locator.fill: Timeout 20000ms exceeded.
+    Call log:
+      - waiting for getByRole('textbox', { name: 'Subject', exact: true })
+
+
+      20 | async function findSubject(page: Page, topic: string): Promise<void> {
+      21 |   await page.goto("/subject");
+    > 22 |   await page.getByRole("textbox", { name: "Subject", exact: true }).fill(topic);
+         |                                                                     ^
+      23 |   await page.getByRole("button", { name: "Preview outline", exact: true }).click();
+      24 |   // The outline comes first: every check is ticked by default, and the round starts only on confirmation.
+      25 |   await expect(page.getByRole("button", { name: "Confirm outline and start", exact: true })).toBeVisible({ timeout: 30_000 });
+        at findSubject (/home/user/Adapt/e2e/games/subject-round.spec.ts:22:69)
+        at /home/user/Adapt/e2e/games/subject-round.spec.ts:54:3
+
+    Error Context: test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-mobile/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/subject-round-a-whole-subj-6fd21--says-what-it-did-not-reach-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5 failed
+    [desktop] › snapshot-honesty.spec.ts:32:5 › stopping part-way keeps what was measured, with its n, and names what was not reached 
+    [desktop] › subject-round.spec.ts:28:5 › the plan says why these skills, and the reason matches what was actually found 
+    [desktop] › subject-round.spec.ts:51:5 › a whole subject round, answered by the bot, ends in a map that says what it did not reach 
+    [mobile] › subject-round.spec.ts:28:5 › the plan says why these skills, and the reason matches what was actually found 
+    [mobile] › subject-round.spec.ts:51:5 › a whole subject round, answered by the bot, ends in a map that says what it did not reach 
+  2 skipped
+  4 passed (9.9m)

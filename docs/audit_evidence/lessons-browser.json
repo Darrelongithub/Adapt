@@ -1,0 +1,277 @@
+{
+  "at": "2026-10-22T17:18:03.839Z",
+  "steps": [
+    {
+      "name": "animator step/play/pause/replay and caption substitution",
+      "expected": "captions advance, pause stays fixed, replay returns; topic inserted",
+      "actual": {
+        "cap0": "A picture for Geometry.",
+        "cap1": "Pause and predict the next step.",
+        "capLast": "Say what changed.",
+        "cap2": "A picture for Geometry.",
+        "cap3": "A picture for Geometry.",
+        "cap4": "A picture for Geometry."
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "animator respects reduced motion",
+      "expected": "jumps to final static frame and does not autoplay",
+      "actual": {
+        "reducedCap": "Say what changed.",
+        "range": "2",
+        "capLast": "Say what changed."
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "suggested Geometry subject receives subject-specific first lesson",
+      "expected": "geometry content, not generic study-skills fallback",
+      "actual": {
+        "topicMatch": false,
+        "fallback": [
+          "No detailed lesson for this topic offline — here is how to study it."
+        ],
+        "concepts": [
+          "Read the task",
+          "Notice the information",
+          "Choose a method",
+          "Check the result"
+        ],
+        "lessonText": "Your lesson Simple lesson Say what the task asks you to find or explain. What is the main idea? A clear goal helps you choose what to do next. ⓘ About this lesson"
+      },
+      "verdict": "PARTIAL"
+    },
+    {
+      "name": "authored Biology lesson renders checked real content",
+      "expected": "topic match and non-generic blocks with server-gradeable check",
+      "actual": {
+        "topicMatch": true,
+        "concepts": [
+          "The cell as the unit of life",
+          "How materials move in and out of a cell",
+          "How a green plant makes its own food",
+          "How organs work together in a system"
+        ],
+        "blocks": [
+          {
+            "type": "text",
+            "body": "Every living thing is made of cells; a cell is the smallest unit that is alive, and its parts have distinct jobs.",
+            "fact_ids": [
+              "fact_bio_cell_overview",
+              "fact_bio_cell_r1",
+              "fact_bio_cell_r2"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 22
+          },
+          {
+            "type": "check",
+            "body": {
+              "question": "What is the main idea?"
+            },
+            "fact_ids": [
+              "fact_bio_cell_overview",
+              "fact_bio_cell_r1",
+              "fact_bio_cell_r2"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 5
+          },
+          {
+            "type": "text",
+            "body": "The key fact is that the cell is the smallest thing that counts as alive.",
+            "fact_ids": [
+              "fact_bio_cell_overview",
+              "fact_bio_cell_r1",
+              "fact_bio_cell_r2"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 15
+          }
+        ]
+      },
+      "verdict": "FAIL"
+    }
+  ],
+  "console": [],
+  "geometry": {
+    "conceptResp": {
+      "topic": "Geometry",
+      "source": "simple",
+      "topic_match": false,
+      "concepts": [
+        {
+          "id": "task",
+          "name": "Read the task"
+        },
+        {
+          "id": "information",
+          "name": "Notice the information"
+        },
+        {
+          "id": "method",
+          "name": "Choose a method"
+        },
+        {
+          "id": "check",
+          "name": "Check the result"
+        }
+      ]
+    },
+    "planResp": {
+      "plan": {
+        "blocks": [
+          {
+            "type": "text",
+            "body": "Say what the task asks you to find or explain.",
+            "fact_ids": [
+              "fact_task"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 10
+          },
+          {
+            "type": "check",
+            "body": {
+              "question": "What is the main idea?"
+            },
+            "fact_ids": [
+              "fact_task"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 5
+          },
+          {
+            "type": "text",
+            "body": "A clear goal helps you choose what to do next.",
+            "fact_ids": [
+              "fact_task"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 10
+          }
+        ],
+        "source": "simple",
+        "concept_id": "task"
+      },
+      "plan_id": "pln_82e6b6fbc5a3496987d7",
+      "job_id": null,
+      "upgrade_state": "not_available"
+    },
+    "fallback": [
+      "No detailed lesson for this topic offline — here is how to study it."
+    ],
+    "concepts": [
+      "Read the task",
+      "Notice the information",
+      "Choose a method",
+      "Check the result"
+    ],
+    "lessonText": "Your lesson Simple lesson Say what the task asks you to find or explain. What is the main idea? A clear goal helps you choose what to do next. ⓘ About this lesson"
+  },
+  "biology": {
+    "conceptResp": {
+      "topic": "Biology",
+      "source": "authored",
+      "topic_match": true,
+      "concepts": [
+        {
+          "id": "bio_cell",
+          "name": "The cell as the unit of life"
+        },
+        {
+          "id": "bio_transport",
+          "name": "How materials move in and out of a cell"
+        },
+        {
+          "id": "bio_energy",
+          "name": "How a green plant makes its own food"
+        },
+        {
+          "id": "bio_systems",
+          "name": "How organs work together in a system"
+        }
+      ]
+    },
+    "planResp": {
+      "plan": {
+        "blocks": [
+          {
+            "type": "text",
+            "body": "Every living thing is made of cells; a cell is the smallest unit that is alive, and its parts have distinct jobs.",
+            "fact_ids": [
+              "fact_bio_cell_overview",
+              "fact_bio_cell_r1",
+              "fact_bio_cell_r2"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 22
+          },
+          {
+            "type": "check",
+            "body": {
+              "question": "What is the main idea?"
+            },
+            "fact_ids": [
+              "fact_bio_cell_overview",
+              "fact_bio_cell_r1",
+              "fact_bio_cell_r2"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 5
+          },
+          {
+            "type": "text",
+            "body": "The key fact is that the cell is the smallest thing that counts as alive.",
+            "fact_ids": [
+              "fact_bio_cell_overview",
+              "fact_bio_cell_r1",
+              "fact_bio_cell_r2"
+            ],
+            "why": {
+              "evidence_ids": [],
+              "n": 0
+            },
+            "length": 15
+          }
+        ],
+        "source": "simple",
+        "concept_id": "bio_cell"
+      },
+      "plan_id": "pln_b7bc3917ee9840bf9e11",
+      "job_id": null,
+      "upgrade_state": "not_available"
+    },
+    "bioConcepts": [
+      "The cell as the unit of life",
+      "How materials move in and out of a cell",
+      "How a green plant makes its own food",
+      "How organs work together in a system"
+    ]
+  }
+}

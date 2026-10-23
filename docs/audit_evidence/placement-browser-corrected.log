@@ -1,0 +1,21 @@
+  ok  no full-screen layer covers the question screen — 0 overlay(s)
+  ok  placement serves a sequence of questions — 8 questions
+  ok  question 1 (numeric): pressing the answer unlocks the submit control — typed 3/4
+FAIL  question 1 (numeric): the answer was recorded server-side — POST /api/v1/attempts → never sent
+  ok  question 2 (teachback): pressing the answer unlocks the submit control — typed a teach-back
+FAIL  question 2 (teachback): the answer was recorded server-side — POST /api/v1/attempts → never sent
+  ok  question 3 (numeric): pressing the answer unlocks the submit control — typed 3/4
+FAIL  question 3 (numeric): the answer was recorded server-side — POST /api/v1/attempts → never sent
+  ok  question 4 (numeric): pressing the answer unlocks the submit control — typed 3/4
+FAIL  question 4 (numeric): the answer was recorded server-side — POST /api/v1/attempts → never sent
+  ok  question 5 (numeric): pressing the answer unlocks the submit control — typed 3/4
+FAIL  question 5 (numeric): the answer was recorded server-side — POST /api/v1/attempts → never sent
+  ok  question 6 (numeric): pressing the answer unlocks the submit control — typed 3/4
+FAIL  question 6 (numeric): the answer was recorded server-side — POST /api/v1/attempts → never sent
+  ok  question 7 (numeric): pressing the answer unlocks the submit control — typed 3/4
+FAIL  question 7 (numeric): the answer was recorded server-side — POST /api/v1/attempts → never sent
+  ok  question 8 (numeric): pressing the answer unlocks the submit control — typed 3/4
+  ok  question 8 (numeric): the answer was recorded server-side — POST /api/v1/attempts → 200
+  note  placement did not serve a mcq item in this run — the kind is exercised by the jsdom probe's fixture switch (PROBE_FIRST_ITEM_KIND)
+
+7 check(s) failed

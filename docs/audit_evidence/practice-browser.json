@@ -1,0 +1,1122 @@
+{
+  "steps": [
+    {
+      "name": "chosen Biology subject yields a relevant practice queue",
+      "expected": "non-empty plan for Biology/cell topics with no answer key",
+      "actual": {
+        "subject": {
+          "id": "subject_0cc0d94419644068a891",
+          "text": "Biology",
+          "title": "Biology",
+          "family": "sciences",
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "source": "simple",
+          "stage": "learning",
+          "active": true,
+          "plan": {
+            "tests": [
+              {
+                "id": "sci.cause_chains",
+                "title": "Cause chains",
+                "why": "Biology leans on this all the time (3 of 3)",
+                "level": 4
+              },
+              {
+                "id": "sci.prediction_models",
+                "title": "Prediction and models",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              },
+              {
+                "id": "sci.data_sense",
+                "title": "Data sense",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              },
+              {
+                "id": "sci.experimental_thinking",
+                "title": "Experimental thinking",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              }
+            ],
+            "source": "simple"
+          },
+          "progress": {
+            "done": 0,
+            "total": 4
+          },
+          "next": {
+            "label": "Open the first lesson",
+            "href": "/first-lesson?subject=subject_0cc0d94419644068a891"
+          },
+          "created_at": "2026-10-22T17:19:49.543922"
+        },
+        "plan": {
+          "items": [
+            {
+              "item": {
+                "id": "itm_bio_photosynthesis_00",
+                "topic_id": "top_d7b4c258d3c444a08d43",
+                "topic_title": null,
+                "kind": "text",
+                "stem": "Name the green pigment in chloroplasts that traps light energy.",
+                "prompt_context": null,
+                "visual_spec": null,
+                "choices": null,
+                "experience_mode": "read",
+                "difficulty": 0.3,
+                "est_seconds": 50,
+                "hint_count": 3,
+                "has_worked_example": true,
+                "numbas_ref": null,
+                "teachback": false
+              },
+              "topic_id": "top_d7b4c258d3c444a08d43",
+              "reason": "p_know=0.20; expected success 39% vs target 78%; hard for you right now, so the worked example is open",
+              "reason_plain": "Picked because it should be stretching you for you right now.",
+              "utility": 0.9724,
+              "presentation": {
+                "attach_worked_example": true,
+                "feedback_delay_s": 0,
+                "max_words": null,
+                "require_teachback": false,
+                "hints_allowed": null,
+                "experience_mode": "worked_example",
+                "method": "worked_example",
+                "method_label": "Worked example first",
+                "method_assignment": {
+                  "method": "worked_example",
+                  "method_label": "Worked example first",
+                  "strategy": "worked_examples",
+                  "surface": "a fully solved, step labelled example",
+                  "arm": "explanation_first",
+                  "design": "randomised",
+                  "assigned_by": "rotation",
+                  "exposure": 0,
+                  "source_type": "controlled",
+                  "weight": 1,
+                  "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+                },
+                "teaching": {
+                  "method": "worked_example",
+                  "kind": "worked_example",
+                  "steps": [
+                    {
+                      "index": 1,
+                      "text": "Photosynthesis is how a plant makes its own food.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 2,
+                      "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                      "why": "this sentence carries a fact the rest depends on",
+                      "from_source": true
+                    },
+                    {
+                      "index": 3,
+                      "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                      "why": "this sentence carries a fact the rest depends on",
+                      "from_source": true
+                    },
+                    {
+                      "index": 4,
+                      "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 5,
+                      "text": "Oxygen is released as a waste product of the reaction.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 6,
+                      "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    }
+                  ],
+                  "from_source": true
+                },
+                "expected_success": 0.386
+              },
+              "decision_trace": {
+                "information_gain": 0.187,
+                "expected_success": 0.386,
+                "fit": 0.606,
+                "source": "bank",
+                "p_know": 0.2,
+                "method": "worked_example",
+                "method_design": "randomised",
+                "arm": "explanation_first",
+                "question_format": "typed_text",
+                "scaffolded": "below the success floor: the worked example is attached"
+              }
+            },
+            {
+              "item": {
+                "id": "itm_bio_photosynthesis_01",
+                "topic_id": "top_d7b4c258d3c444a08d43",
+                "topic_title": null,
+                "kind": "mcq",
+                "stem": "Which two substances does a plant take in for photosynthesis?",
+                "prompt_context": null,
+                "visual_spec": null,
+                "choices": [
+                  {
+                    "index": 0,
+                    "text": "Carbon dioxide and water"
+                  },
+                  {
+                    "index": 1,
+                    "text": "Oxygen and water"
+                  },
+                  {
+                    "index": 2,
+                    "text": "Glucose and oxygen"
+                  },
+                  {
+                    "index": 3,
+                    "text": "Carbon dioxide and glucose"
+                  }
+                ],
+                "experience_mode": "read",
+                "difficulty": 0.4,
+                "est_seconds": 70,
+                "hint_count": 3,
+                "has_worked_example": true,
+                "numbas_ref": null,
+                "teachback": false
+              },
+              "topic_id": "top_d7b4c258d3c444a08d43",
+              "reason": "p_know=0.20; expected success 36% vs target 78%; hard for you right now, so the worked example is open",
+              "reason_plain": "Picked because it should be stretching you for you right now.",
+              "utility": 0.9359,
+              "presentation": {
+                "attach_worked_example": true,
+                "feedback_delay_s": 0,
+                "max_words": null,
+                "require_teachback": false,
+                "hints_allowed": null,
+                "experience_mode": "worked_example",
+                "method": "worked_example",
+                "method_label": "Worked example first",
+                "method_assignment": {
+                  "method": "worked_example",
+                  "method_label": "Worked example first",
+                  "strategy": "worked_examples",
+                  "surface": "a fully solved, step labelled example",
+                  "arm": "explanation_first",
+                  "design": "randomised",
+                  "assigned_by": "rotation",
+                  "exposure": 0,
+                  "source_type": "controlled",
+                  "weight": 1,
+                  "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+                },
+                "teaching": {
+                  "method": "worked_example",
+                  "kind": "worked_example",
+                  "steps": [
+                    {
+                      "index": 1,
+                      "text": "Photosynthesis is how a plant makes its own food.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 2,
+                      "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                      "why": "this sentence carries a fact the rest depends on",
+                      "from_source": true
+                    },
+                    {
+                      "index": 3,
+                      "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                      "why": "this sentence carries a fact the rest depends on",
+                      "from_source": true
+                    },
+                    {
+                      "index": 4,
+                      "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 5,
+                      "text": "Oxygen is released as a waste product of the reaction.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 6,
+                      "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    }
+                  ],
+                  "from_source": true
+                },
+                "expected_success": 0.363
+              },
+              "decision_trace": {
+                "information_gain": 0.187,
+                "expected_success": 0.363,
+                "fit": 0.583,
+                "source": "bank",
+                "p_know": 0.2,
+                "method": "worked_example",
+                "method_design": "randomised",
+                "arm": "explanation_first",
+                "question_format": "choice",
+                "scaffolded": "below the success floor: the worked example is attached"
+              }
+            },
+            {
+              "item": {
+                "id": "itm_bio_photosynthesis_02",
+                "topic_id": "top_d7b4c258d3c444a08d43",
+                "topic_title": null,
+                "kind": "teachback",
+                "stem": "Explain how a plant makes its food out loud in your own words, as if to someone meeting it for the first time.",
+                "prompt_context": null,
+                "visual_spec": null,
+                "choices": null,
+                "experience_mode": "teachback",
+                "difficulty": 0.45,
+                "est_seconds": 150,
+                "hint_count": 3,
+                "has_worked_example": true,
+                "numbas_ref": null,
+                "teachback": true
+              },
+              "topic_id": "top_d7b4c258d3c444a08d43",
+              "reason": "p_know=0.20; expected success 35% vs target 78%; hard for you right now, so the worked example is open",
+              "reason_plain": "Picked because it should be stretching you for you right now.",
+              "utility": 0.4423,
+              "presentation": {
+                "attach_worked_example": true,
+                "feedback_delay_s": 0,
+                "max_words": null,
+                "require_teachback": false,
+                "hints_allowed": null,
+                "experience_mode": "worked_example",
+                "method": "worked_example",
+                "method_label": "Worked example first",
+                "method_assignment": {
+                  "method": "worked_example",
+                  "method_label": "Worked example first",
+                  "strategy": "worked_examples",
+                  "surface": "a fully solved, step labelled example",
+                  "arm": "explanation_first",
+                  "design": "randomised",
+                  "assigned_by": "rotation",
+                  "exposure": 0,
+                  "source_type": "controlled",
+                  "weight": 1,
+                  "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+                },
+                "teaching": {
+                  "method": "worked_example",
+                  "kind": "worked_example",
+                  "steps": [
+                    {
+                      "index": 1,
+                      "text": "Photosynthesis is how a plant makes its own food.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 2,
+                      "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                      "why": "this sentence carries a fact the rest depends on",
+                      "from_source": true
+                    },
+                    {
+                      "index": 3,
+                      "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                      "why": "this sentence carries a fact the rest depends on",
+                      "from_source": true
+                    },
+                    {
+                      "index": 4,
+                      "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 5,
+                      "text": "Oxygen is released as a waste product of the reaction.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    },
+                    {
+                      "index": 6,
+                      "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                      "why": "this is the definition to hold on to",
+                      "from_source": true
+                    }
+                  ],
+                  "from_source": true
+                },
+                "expected_success": 0.351
+              },
+              "decision_trace": {
+                "information_gain": 0.187,
+                "expected_success": 0.351,
+                "fit": 0.571,
+                "source": "bank",
+                "p_know": 0.2,
+                "method": "worked_example",
+                "method_design": "randomised",
+                "arm": "explanation_first",
+                "question_format": "explain",
+                "scaffolded": "below the success floor: the worked example is attached"
+              }
+            }
+          ],
+          "why": "selected for expected information gain, review due date and gap utility"
+        },
+        "text": "Practice\n\nOne question at a time, taught your way.\n\n1 of 3\nestimates\nFinish session\npractice\n\nWorked example first\n\nWorked example\nBEFORE THE QUESTION\nPhotosynthesis is how a plant makes its own food.\nthis is the definition to hold on to\nIt happens in the chloroplasts, which contain a green pigment called chlorophyll.\nthis sentence carries a fact the rest depends on\nThe plant takes in carbon dioxide through small openings in its leaves and water through its roots.\nthis sentence carries a fact the rest depends on\nChlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.\nthis is the definition to hold on to\nOxygen is released as a waste product of the reaction.\nthis is the definition to hold on to\nThe word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.\nthis is the definition to hold on to\n\nRead it, then close it: the question next is of the same kind, and the example is not on screen while you answer.\n\nName the green pigment in chloroplasts that traps light energy.\nYour answer\nwhy this question\nPicked because it should be stretching you for you right now.\nhow it is set up\nWorked example first\npractice · ~50s\nCheck it\nA hint\nWorked example\nReveal it\nEnter an answer to enable checking\nAsk\nPrevious\nNext question\nnothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice\nWhy this order\n\nselected for expected information gain, review due date and gap utility"
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "name": "practice draft survives refresh",
+      "expected": "unsubmitted text restored",
+      "actual": {
+        "restored": "draft not submitted"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "practice help returns real content",
+      "expected": "hint and worked example visible",
+      "actual": {
+        "hintVisible": 1,
+        "exampleVisible": 2
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "wrong practice answer gets server receipt and mastery evidence",
+      "expected": "Not yet plus grading method, observations and feedback",
+      "actual": {
+        "text": "Practice One question at a time, taught your way. 1 of 3 estimates Finish session practice Worked example first Worked example BEFORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Name the green pigment in chloroplasts that traps light energy. Your answer why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~50s Try again Another hint (2) Example open Reveal it hint 1It is what makes leaves green. Worked example opening this was recorded, on purpose Chlorophyll traps the light energy that drives the reaction. Not yet TEXT_MATCH Not yet. '0.999' does not satisfy what the question asks for. Try starting here: Chlorophyll traps the light energy that drives the reaction. no validated matched B question is available; no comparison was invented No method comparison was recorded. View your evidence band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Ask Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "practice back navigation preserves receipt",
+      "expected": "prior item still shows Not yet",
+      "actual": {
+        "preserved": true
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "simple-mode question answering is local and disclosed",
+      "expected": "answer plus nothing left this machine",
+      "actual": {
+        "text": "takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Name the green pigment in chloroplasts that traps light energy. Your answer why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~50s Try again A hint Worked example Reveal it Not yet TEXT_MATCH Not yet. '0.999' does not satisfy what the question asks for. Try starting here: Chlorophyll traps the light energy that drives the reaction. no validated matched B question is available; no comparison was invented No method comparison was recorded. View your evidence band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Ask Same idea, different angle: the last attempt shows where it went wrong. There is no note in your material about this exact question, so here is the question's own working, checked against its answer key: Key idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen. Why it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant. 1. Chlorophyll traps the light energy that drives the reaction. Try one: recall the key fact without looking, say it out loud, then check what you said. your own material · not grounded in your material · nothing left this machine Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "name": "finish and analyse reads real session",
+      "expected": "analysis report or honest insufficient-evidence note, no crash",
+      "actual": {
+        "text": "Practice One question at a time, taught your way. 1 of 3 estimates Finish session Nothing to propose 0 hypotheses on file. That is the expected state after a normal session. A proposal needs a consistent pattern across enough items, and inventing one to look clever is the failure mode the gate exists to stop. practice Worked example first Worked example BEFORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Name the green pigment in chloroplasts that traps light energy. Your answer why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~50s Try again A hint Worked example Reveal it Not yet TEXT_MATCH Not yet. '0.999' does not satisfy what the question asks for. Try starting here: Chlorophyll traps the light energy that drives the reaction. no validated matched B question is available; no comparison was invented No method comparison was recorded. View your evidence band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Ask Same idea, different angle: the last attempt shows where it went wrong. There is no note in your material about this exact question, so here is the question's own working, checked against its answer key: Key idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen. Why it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant. 1. Chlorophyll traps the light energy that drives the reaction. Try one: recall the key fact without looking, say it out loud, th"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "console": [],
+  "api": {
+    "setup": {
+      "chosen": {
+        "status": 200,
+        "body": {
+          "subject_id": "subject_0cc0d94419644068a891",
+          "plan": {
+            "tests": [
+              {
+                "id": "sci.cause_chains",
+                "title": "Cause chains",
+                "why": "Biology leans on this all the time (3 of 3)",
+                "level": 4
+              },
+              {
+                "id": "sci.prediction_models",
+                "title": "Prediction and models",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              },
+              {
+                "id": "sci.data_sense",
+                "title": "Data sense",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              },
+              {
+                "id": "sci.experimental_thinking",
+                "title": "Experimental thinking",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              }
+            ],
+            "source": "simple"
+          },
+          "subject": {
+            "id": "subject_0cc0d94419644068a891",
+            "text": "Biology",
+            "title": "Biology",
+            "family": "sciences",
+            "topic_id": "top_d7b4c258d3c444a08d43",
+            "source": "simple",
+            "stage": "tests",
+            "active": true,
+            "plan": {
+              "tests": [
+                {
+                  "id": "sci.cause_chains",
+                  "title": "Cause chains",
+                  "why": "Biology leans on this all the time (3 of 3)",
+                  "level": 4
+                },
+                {
+                  "id": "sci.prediction_models",
+                  "title": "Prediction and models",
+                  "why": "Biology leans on this often (2 of 3)",
+                  "level": 3
+                },
+                {
+                  "id": "sci.data_sense",
+                  "title": "Data sense",
+                  "why": "Biology leans on this often (2 of 3)",
+                  "level": 3
+                },
+                {
+                  "id": "sci.experimental_thinking",
+                  "title": "Experimental thinking",
+                  "why": "Biology leans on this often (2 of 3)",
+                  "level": 3
+                }
+              ],
+              "source": "simple"
+            },
+            "progress": {
+              "done": 0,
+              "total": 4
+            },
+            "next": {
+              "label": "Start the subject checks",
+              "href": "/journey?step=subject"
+            },
+            "created_at": "2026-10-22T17:19:49.543922"
+          }
+        }
+      },
+      "completed": {
+        "status": 200,
+        "body": {
+          "id": "subject_0cc0d94419644068a891",
+          "text": "Biology",
+          "title": "Biology",
+          "family": "sciences",
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "source": "simple",
+          "stage": "learning",
+          "active": true,
+          "plan": {
+            "tests": [
+              {
+                "id": "sci.cause_chains",
+                "title": "Cause chains",
+                "why": "Biology leans on this all the time (3 of 3)",
+                "level": 4
+              },
+              {
+                "id": "sci.prediction_models",
+                "title": "Prediction and models",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              },
+              {
+                "id": "sci.data_sense",
+                "title": "Data sense",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              },
+              {
+                "id": "sci.experimental_thinking",
+                "title": "Experimental thinking",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              }
+            ],
+            "source": "simple"
+          },
+          "progress": {
+            "done": 0,
+            "total": 4
+          },
+          "next": {
+            "label": "Open the first lesson",
+            "href": "/first-lesson?subject=subject_0cc0d94419644068a891"
+          },
+          "created_at": "2026-10-22T17:19:49.543922"
+        }
+      },
+      "subject": {
+        "status": 200,
+        "body": {
+          "id": "subject_0cc0d94419644068a891",
+          "text": "Biology",
+          "title": "Biology",
+          "family": "sciences",
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "source": "simple",
+          "stage": "learning",
+          "active": true,
+          "plan": {
+            "tests": [
+              {
+                "id": "sci.cause_chains",
+                "title": "Cause chains",
+                "why": "Biology leans on this all the time (3 of 3)",
+                "level": 4
+              },
+              {
+                "id": "sci.prediction_models",
+                "title": "Prediction and models",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              },
+              {
+                "id": "sci.data_sense",
+                "title": "Data sense",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              },
+              {
+                "id": "sci.experimental_thinking",
+                "title": "Experimental thinking",
+                "why": "Biology leans on this often (2 of 3)",
+                "level": 3
+              }
+            ],
+            "source": "simple"
+          },
+          "progress": {
+            "done": 0,
+            "total": 4
+          },
+          "next": {
+            "label": "Open the first lesson",
+            "href": "/first-lesson?subject=subject_0cc0d94419644068a891"
+          },
+          "created_at": "2026-10-22T17:19:49.543922"
+        }
+      }
+    },
+    "plan": {
+      "items": [
+        {
+          "item": {
+            "id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43",
+            "topic_title": null,
+            "kind": "text",
+            "stem": "Name the green pigment in chloroplasts that traps light energy.",
+            "prompt_context": null,
+            "visual_spec": null,
+            "choices": null,
+            "experience_mode": "read",
+            "difficulty": 0.3,
+            "est_seconds": 50,
+            "hint_count": 3,
+            "has_worked_example": true,
+            "numbas_ref": null,
+            "teachback": false
+          },
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "reason": "p_know=0.20; expected success 39% vs target 78%; hard for you right now, so the worked example is open",
+          "reason_plain": "Picked because it should be stretching you for you right now.",
+          "utility": 0.9724,
+          "presentation": {
+            "attach_worked_example": true,
+            "feedback_delay_s": 0,
+            "max_words": null,
+            "require_teachback": false,
+            "hints_allowed": null,
+            "experience_mode": "worked_example",
+            "method": "worked_example",
+            "method_label": "Worked example first",
+            "method_assignment": {
+              "method": "worked_example",
+              "method_label": "Worked example first",
+              "strategy": "worked_examples",
+              "surface": "a fully solved, step labelled example",
+              "arm": "explanation_first",
+              "design": "randomised",
+              "assigned_by": "rotation",
+              "exposure": 0,
+              "source_type": "controlled",
+              "weight": 1,
+              "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+            },
+            "teaching": {
+              "method": "worked_example",
+              "kind": "worked_example",
+              "steps": [
+                {
+                  "index": 1,
+                  "text": "Photosynthesis is how a plant makes its own food.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 2,
+                  "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 3,
+                  "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 4,
+                  "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 5,
+                  "text": "Oxygen is released as a waste product of the reaction.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 6,
+                  "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                }
+              ],
+              "from_source": true
+            },
+            "expected_success": 0.386
+          },
+          "decision_trace": {
+            "information_gain": 0.187,
+            "expected_success": 0.386,
+            "fit": 0.606,
+            "source": "bank",
+            "p_know": 0.2,
+            "method": "worked_example",
+            "method_design": "randomised",
+            "arm": "explanation_first",
+            "question_format": "typed_text",
+            "scaffolded": "below the success floor: the worked example is attached"
+          }
+        },
+        {
+          "item": {
+            "id": "itm_bio_photosynthesis_01",
+            "topic_id": "top_d7b4c258d3c444a08d43",
+            "topic_title": null,
+            "kind": "mcq",
+            "stem": "Which two substances does a plant take in for photosynthesis?",
+            "prompt_context": null,
+            "visual_spec": null,
+            "choices": [
+              {
+                "index": 0,
+                "text": "Carbon dioxide and water"
+              },
+              {
+                "index": 1,
+                "text": "Oxygen and water"
+              },
+              {
+                "index": 2,
+                "text": "Glucose and oxygen"
+              },
+              {
+                "index": 3,
+                "text": "Carbon dioxide and glucose"
+              }
+            ],
+            "experience_mode": "read",
+            "difficulty": 0.4,
+            "est_seconds": 70,
+            "hint_count": 3,
+            "has_worked_example": true,
+            "numbas_ref": null,
+            "teachback": false
+          },
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "reason": "p_know=0.20; expected success 36% vs target 78%; hard for you right now, so the worked example is open",
+          "reason_plain": "Picked because it should be stretching you for you right now.",
+          "utility": 0.9359,
+          "presentation": {
+            "attach_worked_example": true,
+            "feedback_delay_s": 0,
+            "max_words": null,
+            "require_teachback": false,
+            "hints_allowed": null,
+            "experience_mode": "worked_example",
+            "method": "worked_example",
+            "method_label": "Worked example first",
+            "method_assignment": {
+              "method": "worked_example",
+              "method_label": "Worked example first",
+              "strategy": "worked_examples",
+              "surface": "a fully solved, step labelled example",
+              "arm": "explanation_first",
+              "design": "randomised",
+              "assigned_by": "rotation",
+              "exposure": 0,
+              "source_type": "controlled",
+              "weight": 1,
+              "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+            },
+            "teaching": {
+              "method": "worked_example",
+              "kind": "worked_example",
+              "steps": [
+                {
+                  "index": 1,
+                  "text": "Photosynthesis is how a plant makes its own food.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 2,
+                  "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 3,
+                  "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 4,
+                  "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 5,
+                  "text": "Oxygen is released as a waste product of the reaction.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 6,
+                  "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                }
+              ],
+              "from_source": true
+            },
+            "expected_success": 0.363
+          },
+          "decision_trace": {
+            "information_gain": 0.187,
+            "expected_success": 0.363,
+            "fit": 0.583,
+            "source": "bank",
+            "p_know": 0.2,
+            "method": "worked_example",
+            "method_design": "randomised",
+            "arm": "explanation_first",
+            "question_format": "choice",
+            "scaffolded": "below the success floor: the worked example is attached"
+          }
+        },
+        {
+          "item": {
+            "id": "itm_bio_photosynthesis_02",
+            "topic_id": "top_d7b4c258d3c444a08d43",
+            "topic_title": null,
+            "kind": "teachback",
+            "stem": "Explain how a plant makes its food out loud in your own words, as if to someone meeting it for the first time.",
+            "prompt_context": null,
+            "visual_spec": null,
+            "choices": null,
+            "experience_mode": "teachback",
+            "difficulty": 0.45,
+            "est_seconds": 150,
+            "hint_count": 3,
+            "has_worked_example": true,
+            "numbas_ref": null,
+            "teachback": true
+          },
+          "topic_id": "top_d7b4c258d3c444a08d43",
+          "reason": "p_know=0.20; expected success 35% vs target 78%; hard for you right now, so the worked example is open",
+          "reason_plain": "Picked because it should be stretching you for you right now.",
+          "utility": 0.4423,
+          "presentation": {
+            "attach_worked_example": true,
+            "feedback_delay_s": 0,
+            "max_words": null,
+            "require_teachback": false,
+            "hints_allowed": null,
+            "experience_mode": "worked_example",
+            "method": "worked_example",
+            "method_label": "Worked example first",
+            "method_assignment": {
+              "method": "worked_example",
+              "method_label": "Worked example first",
+              "strategy": "worked_examples",
+              "surface": "a fully solved, step labelled example",
+              "arm": "explanation_first",
+              "design": "randomised",
+              "assigned_by": "rotation",
+              "exposure": 0,
+              "source_type": "controlled",
+              "weight": 1,
+              "why": "method worked_example for attempt 1 on this concept (seeded rotation per learner, so it differs from learner to learner)"
+            },
+            "teaching": {
+              "method": "worked_example",
+              "kind": "worked_example",
+              "steps": [
+                {
+                  "index": 1,
+                  "text": "Photosynthesis is how a plant makes its own food.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 2,
+                  "text": "It happens in the chloroplasts, which contain a green pigment called chlorophyll.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 3,
+                  "text": "The plant takes in carbon dioxide through small openings in its leaves and water through its roots.",
+                  "why": "this sentence carries a fact the rest depends on",
+                  "from_source": true
+                },
+                {
+                  "index": 4,
+                  "text": "Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 5,
+                  "text": "Oxygen is released as a waste product of the reaction.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                },
+                {
+                  "index": 6,
+                  "text": "The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen.",
+                  "why": "this is the definition to hold on to",
+                  "from_source": true
+                }
+              ],
+              "from_source": true
+            },
+            "expected_success": 0.351
+          },
+          "decision_trace": {
+            "information_gain": 0.187,
+            "expected_success": 0.351,
+            "fit": 0.571,
+            "source": "bank",
+            "p_know": 0.2,
+            "method": "worked_example",
+            "method_design": "randomised",
+            "arm": "explanation_first",
+            "question_format": "explain",
+            "scaffolded": "below the success floor: the worked example is attached"
+          }
+        }
+      ],
+      "why": "selected for expected information gain, review due date and gap utility"
+    },
+    "reveal": {
+      "status": 200,
+      "body": {
+        "steps": [
+          {
+            "text": "Chlorophyll traps the light energy that drives the reaction."
+          }
+        ],
+        "answer": null,
+        "correct_index": null,
+        "choices": null,
+        "why_it_is_ok_to_look": "you asked; nothing here is a persistent change"
+      }
+    },
+    "receiptText": "Practice One question at a time, taught your way. 1 of 3 estimates Finish session practice Worked example first Worked example BEFORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Name the green pigment in chloroplasts that traps light energy. Your answer why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~50s Try again Another hint (2) Example open Reveal it hint 1It is what makes leaves green. Worked example opening this was recorded, on purpose Chlorophyll traps the light energy that drives the reaction. Not yet TEXT_MATCH Not yet. '0.999' does not satisfy what the question asks for. Try starting here: Chlorophyll traps the light energy that drives the reaction. no validated matched B question is available; no comparison was invented No method comparison was recorded. View your evidence band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Ask Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility",
+    "finalText": "Practice One question at a time, taught your way. 1 of 3 estimates Finish session Nothing to propose 0 hypotheses on file. That is the expected state after a normal session. A proposal needs a consistent pattern across enough items, and inventing one to look clever is the failure mode the gate exists to stop. practice Worked example first Worked example BEFORE THE QUESTION Photosynthesis is how a plant makes its own food. this is the definition to hold on to It happens in the chloroplasts, which contain a green pigment called chlorophyll. this sentence carries a fact the rest depends on The plant takes in carbon dioxide through small openings in its leaves and water through its roots. this sentence carries a fact the rest depends on Chlorophyll traps light energy, and that energy is used to join the carbon dioxide and water into glucose, a sugar the plant uses for growth and which it stores as starch. this is the definition to hold on to Oxygen is released as a waste product of the reaction. this is the definition to hold on to The word equation is carbon dioxide plus water, in the presence of light and chlorophyll, giving glucose plus oxygen. this is the definition to hold on to Read it, then close it: the question next is of the same kind, and the example is not on screen while you answer. Name the green pigment in chloroplasts that traps light energy. Your answer why this question Picked because it should be stretching you for you right now. how it is set up Worked example first practice · ~50s Try again A hint Worked example Reveal it Not yet TEXT_MATCH Not yet. '0.999' does not satisfy what the question asks for. Try starting here: Chlorophyll traps the light energy that drives the reaction. no validated matched B question is available; no comparison was invented No method comparison was recorded. View your evidence band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Ask Same idea, different angle: the last attempt shows where it went wrong. There is no note in your material about this exact question, so here is the question's own working, checked against its answer key: Key idea: Photosynthesis uses light energy to turn carbon dioxide and water into glucose, releasing oxygen. Why it works: Chlorophyll captures light energy that drives the reaction building sugar for the plant. 1. Chlorophyll traps the light energy that drives the reaction. Try one: recall the key fact without looking, say it out loud, then check what you said. your own material · not grounded in your material · nothing left this machine Previous Next question nothing is timed and no streak breaks — leaving a question unanswered is a legitimate choice Why this order selected for expected information gain, review due date and gap utility"
+  },
+  "posts": [
+    {
+      "url": "http://127.0.0.1:3000/api/v1/sessions",
+      "body": {
+        "mode": "practice",
+        "device_hint": "2 cores"
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/items/itm_bio_photosynthesis_00/hint",
+      "body": {
+        "hints_used": 0,
+        "item_id": "itm_bio_photosynthesis_00"
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/items/itm_bio_photosynthesis_00/worked-example",
+      "body": {
+        "step": 1
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/sessions/lrs_2df5d7e312e342f0a7af/events",
+      "body": {
+        "session_id": "lrs_2df5d7e312e342f0a7af",
+        "events": [
+          {
+            "type": "question_shown",
+            "payload": {
+              "stem_words": 10,
+              "variant": "itm_bio_photosynthesis_00"
+            },
+            "item_id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          },
+          {
+            "type": "hint_opened",
+            "payload": {
+              "hint_no": 1
+            },
+            "item_id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          },
+          {
+            "type": "example_opened",
+            "payload": {
+              "step": 1
+            },
+            "item_id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          },
+          {
+            "type": "first_interaction",
+            "payload": {
+              "ms_since_shown": 2000
+            },
+            "item_id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          },
+          {
+            "type": "response_change",
+            "payload": {
+              "from": "draft not submitted",
+              "to": "0.999",
+              "ms_since_shown": 2000
+            },
+            "item_id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          }
+        ]
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/attempts",
+      "body": {
+        "session_id": "lrs_2df5d7e312e342f0a7af",
+        "item_id": "itm_bio_photosynthesis_00",
+        "answer": "0.999",
+        "attempt_no": 1
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/sessions/lrs_2df5d7e312e342f0a7af/events",
+      "body": {
+        "session_id": "lrs_2df5d7e312e342f0a7af",
+        "events": [
+          {
+            "type": "answer_submitted",
+            "payload": {
+              "correct": false,
+              "value": "0.999",
+              "changed_times": 1,
+              "ms_since_shown": 2099
+            },
+            "item_id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          }
+        ]
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/explain",
+      "body": {
+        "question": "Why is this answer wrong?",
+        "topic_id": "top_d7b4c258d3c444a08d43",
+        "item_id": "itm_bio_photosynthesis_00"
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/sessions/lrs_2df5d7e312e342f0a7af/events",
+      "body": {
+        "session_id": "lrs_2df5d7e312e342f0a7af",
+        "events": [
+          {
+            "type": "question_shown",
+            "payload": {
+              "stem_words": 10,
+              "variant": "itm_bio_photosynthesis_01"
+            },
+            "item_id": "itm_bio_photosynthesis_01",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          },
+          {
+            "type": "question_shown",
+            "payload": {
+              "stem_words": 10,
+              "variant": "itm_bio_photosynthesis_00"
+            },
+            "item_id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          },
+          {
+            "type": "explanation_opened",
+            "payload": {
+              "chars": 572
+            },
+            "item_id": "itm_bio_photosynthesis_00",
+            "topic_id": "top_d7b4c258d3c444a08d43"
+          }
+        ]
+      }
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/sessions/lrs_2df5d7e312e342f0a7af/finish",
+      "body": {}
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/v1/analyze?session_id=lrs_2df5d7e312e342f0a7af",
+      "body": {}
+    }
+  ]
+}

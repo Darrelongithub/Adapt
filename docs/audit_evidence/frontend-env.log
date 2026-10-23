@@ -1,0 +1,26 @@
+
+> adapt-frontend@0.1.0 test:env
+> node --test env.test.mjs
+
+TAP version 13
+# Subtest: the frontend parser accepts copyable dotenv values but ignores secrets
+ok 1 - the frontend parser accepts copyable dotenv values but ignores secrets
+  ---
+  duration_ms: 1.420853
+  type: 'test'
+  ...
+# Subtest: local frontend values override file defaults while process variables win
+ok 2 - local frontend values override file defaults while process variables win
+  ---
+  duration_ms: 1.569042
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 52.773049

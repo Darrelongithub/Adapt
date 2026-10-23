@@ -1,0 +1,7 @@
+
+> adapt-frontend@0.1.0 lint
+> node ../scripts/check-contract.mjs && tsc --noEmit
+
+checked 126 backend routes against 119 frontend calls
+note: 4 scene kinds: engine, stages and mock agree
+contract ok: every path the frontend calls exists, ?mock=1 covers them, the scene kinds agree across engine/stages/mock, route modules export what Next allows, no host or env misuse in browser code

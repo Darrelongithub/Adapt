@@ -1,0 +1,685 @@
+{
+  "steps": [
+    {
+      "name": "placement question 1 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 2 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 3 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 4 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 5 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 6 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 7 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement question 8 server grading",
+      "verdict": "PASS"
+    },
+    {
+      "name": "placement finish and analysis",
+      "verdict": "PASS"
+    }
+  ],
+  "responses": [
+    {
+      "question": 1,
+      "kind": "numeric",
+      "status": 200,
+      "body": {
+        "attempt_id": "att_33bb6fb7987e4f488011",
+        "item_id": "itm_integer_ops_00",
+        "topic_id": "top_b9a73f0f04004ef68bd0",
+        "correct": false,
+        "score": 0,
+        "grading_method": "numeric",
+        "feedback": "Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 19 - 1 = 18",
+        "mastery": {
+          "topic_id": "top_b9a73f0f04004ef68bd0",
+          "lag_hours_since_practice": null,
+          "p_know_before": 0.2,
+          "p_know": 0.08,
+          "delta": -0.12,
+          "band": "new",
+          "observations": 1,
+          "ci": [
+            0.001,
+            0.437
+          ],
+          "evidence": "early signal",
+          "n": 1,
+          "correct": 0,
+          "expected_recall": 0.0864,
+          "half_life_hours": null,
+          "due_at": "2026-10-22T20:42:31.204577",
+          "first_observation": true,
+          "params": {
+            "p_init": 0.2,
+            "p_learn": 0.2,
+            "p_guess": 0.02,
+            "p_slip": 0.15,
+            "p_forget": 0.02,
+            "n_observations": 0
+          },
+          "update": {
+            "from": 0.2,
+            "to": 0.08,
+            "unbounded": 0.0361,
+            "moved": -0.12,
+            "capped": true,
+            "p_guess_used": 0.02,
+            "p_slip_used": 0.15,
+            "max_step": 0.12,
+            "kind": "numeric"
+          }
+        },
+        "derived_metrics": {
+          "change_count": 1,
+          "first_answer": "",
+          "final_answer": "3/4",
+          "answer_changes": [
+            {
+              "at_ms": 73,
+              "ts": null,
+              "from": "",
+              "to": "3/4"
+            }
+          ]
+        },
+        "teachback": null,
+        "retention": null,
+        "flags": [
+          "changed from a first answer that was right"
+        ],
+        "proposals_expected": false,
+        "teaching": {
+          "method": "retrieval",
+          "design": "placement",
+          "label": "Retrieval first"
+        },
+        "next_step": null,
+        "method_compare": null
+      },
+      "receipt": " question 1 of 8 0 MIN IN Back Next stop here This placement puts you on each topic with a confidence band — not to grade you. No hints and no worked examples while it happens — placement has to measure what you can do unaided. Answers, timings, hint use and answer changes are recorded as events. They are turned into mastery estimates and possible explanations; a change is only proposed when the pattern is consistent, and nothing is applied until you agree to it. If you need longer, say so - time spent is evidence about the interaction, not a score. Integer operations · practice Work out 19 - 1 - 6. Your answer Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3). topic Integer operations how it is set up Structure shown visually practice · ~80s Try again Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 19 - 1 = 18 band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 19 - 1 = 18 band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC"
+    },
+    {
+      "question": 2,
+      "kind": "teachback",
+      "status": 200,
+      "body": {
+        "attempt_id": "att_1f7fe432b1aa46f29233",
+        "item_id": "itm_fractions_intro_02",
+        "topic_id": "top_acc81d340ec6460fb6fa",
+        "correct": true,
+        "score": 1,
+        "grading_method": "teachback_checklist",
+        "feedback": "Correct. What you did is step general: the same move works on the next two.",
+        "mastery": {
+          "topic_id": "top_acc81d340ec6460fb6fa",
+          "lag_hours_since_practice": null,
+          "p_know_before": 0.2,
+          "p_know": 0.32,
+          "delta": 0.12,
+          "band": "new",
+          "observations": 1,
+          "ci": [
+            0.048,
+            0.681
+          ],
+          "evidence": "early signal",
+          "n": 1,
+          "correct": 1,
+          "expected_recall": 0.306,
+          "half_life_hours": null,
+          "due_at": "2026-10-22T23:31:20.640269",
+          "first_observation": true,
+          "params": {
+            "p_init": 0.2,
+            "p_learn": 0.2,
+            "p_guess": 0.05,
+            "p_slip": 0.15,
+            "p_forget": 0.02,
+            "n_observations": 0
+          },
+          "update": {
+            "from": 0.2,
+            "to": 0.32,
+            "unbounded": 0.8476,
+            "moved": 0.12,
+            "capped": true,
+            "p_guess_used": 0.05,
+            "p_slip_used": 0.15,
+            "max_step": 0.12,
+            "kind": "teachback"
+          }
+        },
+        "derived_metrics": {
+          "change_count": 1,
+          "first_answer": "",
+          "final_answer": "The denominator says how many equal parts there are, so the ",
+          "answer_changes": [
+            {
+              "at_ms": 271,
+              "ts": null,
+              "from": "",
+              "to": "The denominator says how many equal parts there are, so the "
+            }
+          ]
+        },
+        "teachback": null,
+        "retention": null,
+        "flags": [
+          "changed from a first answer that was right"
+        ],
+        "proposals_expected": false,
+        "teaching": {
+          "method": "explanation",
+          "design": "placement",
+          "label": "Explanation first"
+        },
+        "next_step": null,
+        "method_compare": null
+      },
+      "receipt": "can do unaided. Answers, timings, hint use and answer changes are recorded as events. They are turned into mastery estimates and possible explanations; a change is only proposed when the pattern is consistent, and nothing is applied until you agree to it. If you need longer, say so - time spent is evidence about the interaction, not a score. What a fraction means · practice Explain what a fraction means out loud in your own words, as if to someone meeting it for the first time. Explain it out loud, then write what you said Ideas, not word count: the rubric looks for the pieces, and says which one is missing. Your explanation Scored on the ideas in it. Spelling and length are not the mark. topic What a fraction means how it is set up Worked example first practice · ~150s Try again That's it TEACHBACK_CHECKLIST Correct. What you did is step general: the same move works on the next two. band new[0.05, 0.68] 0.20 → 0.32 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC That's it TEACHBACK_CHECKLIST Correct. What you did is step general: the same move works on the next two. band new[0.05, 0.68] 0.20 → 0.32 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC"
+    },
+    {
+      "question": 3,
+      "kind": "numeric",
+      "status": 200,
+      "body": {
+        "attempt_id": "att_7738156014064a44bc42",
+        "item_id": "itm_order_of_operations_02",
+        "topic_id": "top_92a3735f985c4772bf9b",
+        "correct": false,
+        "score": 0,
+        "grading_method": "numeric",
+        "feedback": "Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 2 x 4 = 8 This looks like Integer operations underneath, not Order of operations.",
+        "mastery": {
+          "topic_id": "top_92a3735f985c4772bf9b",
+          "lag_hours_since_practice": null,
+          "p_know_before": 0.2,
+          "p_know": 0.08,
+          "delta": -0.12,
+          "band": "new",
+          "observations": 1,
+          "ci": [
+            0.001,
+            0.437
+          ],
+          "evidence": "early signal",
+          "n": 1,
+          "correct": 0,
+          "expected_recall": 0.0864,
+          "half_life_hours": null,
+          "due_at": "2026-10-22T20:42:32.234031",
+          "first_observation": true,
+          "params": {
+            "p_init": 0.2,
+            "p_learn": 0.2,
+            "p_guess": 0.02,
+            "p_slip": 0.15,
+            "p_forget": 0.02,
+            "n_observations": 0
+          },
+          "update": {
+            "from": 0.2,
+            "to": 0.08,
+            "unbounded": 0.0361,
+            "moved": -0.12,
+            "capped": true,
+            "p_guess_used": 0.02,
+            "p_slip_used": 0.15,
+            "max_step": 0.12,
+            "kind": "numeric"
+          }
+        },
+        "derived_metrics": {
+          "change_count": 1,
+          "first_answer": "",
+          "final_answer": "3/4",
+          "answer_changes": [
+            {
+              "at_ms": 265,
+              "ts": null,
+              "from": "",
+              "to": "3/4"
+            }
+          ]
+        },
+        "teachback": null,
+        "retention": null,
+        "flags": [
+          "changed from a first answer that was right"
+        ],
+        "proposals_expected": false,
+        "teaching": {
+          "method": "visual",
+          "design": "placement",
+          "label": "Structure shown visually"
+        },
+        "next_step": null,
+        "method_compare": null
+      },
+      "receipt": "d no worked examples while it happens — placement has to measure what you can do unaided. Answers, timings, hint use and answer changes are recorded as events. They are turned into mastery estimates and possible explanations; a change is only proposed when the pattern is consistent, and nothing is applied until you agree to it. If you need longer, say so - time spent is evidence about the interaction, not a score. Order of operations · practice Work out 2 x 4 + 9 div 3. Your answer Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3). topic Order of operations how it is set up Retrieval first practice · ~75s Try again Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 2 x 4 = 8 This looks like Integer operations underneath, not Order of operations. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 2 x 4 = 8 This looks like Integer operations underneath, not Order of operations. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC"
+    },
+    {
+      "question": 4,
+      "kind": "numeric",
+      "status": 200,
+      "body": {
+        "attempt_id": "att_08279a32ce9b44a0bca7",
+        "item_id": "itm_equivalent_fractions_00",
+        "topic_id": "top_6cfb191f1e5e4f5c9a8d",
+        "correct": false,
+        "score": 0,
+        "grading_method": "numeric",
+        "feedback": "Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 2 x 3 = 6, so the scale factor is 3 This looks like What a fraction means underneath, not Equivalent fractions.",
+        "mastery": {
+          "topic_id": "top_6cfb191f1e5e4f5c9a8d",
+          "lag_hours_since_practice": null,
+          "p_know_before": 0.2,
+          "p_know": 0.08,
+          "delta": -0.12,
+          "band": "new",
+          "observations": 1,
+          "ci": [
+            0.001,
+            0.437
+          ],
+          "evidence": "early signal",
+          "n": 1,
+          "correct": 0,
+          "expected_recall": 0.0864,
+          "half_life_hours": null,
+          "due_at": "2026-10-22T20:42:32.688319",
+          "first_observation": true,
+          "params": {
+            "p_init": 0.2,
+            "p_learn": 0.2,
+            "p_guess": 0.02,
+            "p_slip": 0.15,
+            "p_forget": 0.02,
+            "n_observations": 0
+          },
+          "update": {
+            "from": 0.2,
+            "to": 0.08,
+            "unbounded": 0.0361,
+            "moved": -0.12,
+            "capped": true,
+            "p_guess_used": 0.02,
+            "p_slip_used": 0.15,
+            "max_step": 0.12,
+            "kind": "numeric"
+          }
+        },
+        "derived_metrics": {
+          "change_count": 1,
+          "first_answer": "",
+          "final_answer": "3/4",
+          "answer_changes": [
+            {
+              "at_ms": 264,
+              "ts": null,
+              "from": "",
+              "to": "3/4"
+            }
+          ]
+        },
+        "teachback": null,
+        "retention": null,
+        "flags": [
+          "changed from a first answer that was right"
+        ],
+        "proposals_expected": false,
+        "teaching": {
+          "method": "visual",
+          "design": "placement",
+          "label": "Structure shown visually"
+        },
+        "next_step": null,
+        "method_compare": null
+      },
+      "receipt": "and answer changes are recorded as events. They are turned into mastery estimates and possible explanations; a change is only proposed when the pattern is consistent, and nothing is applied until you agree to it. If you need longer, say so - time spent is evidence about the interaction, not a score. Equivalent fractions · practice Write 4/2 as an equivalent fraction with denominator 6. Give the numerator only. Your answer Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3). topic Equivalent fractions how it is set up Retrieval first practice · ~80s Try again Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 2 x 3 = 6, so the scale factor is 3 This looks like What a fraction means underneath, not Equivalent fractions. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 2 x 3 = 6, so the scale factor is 3 This looks like What a fraction means underneath, not Equivalent fractions. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC"
+    },
+    {
+      "question": 5,
+      "kind": "numeric",
+      "status": 200,
+      "body": {
+        "attempt_id": "att_01a60c2cb79d4ae5aef5",
+        "item_id": "itm_statistical_mean_00",
+        "topic_id": "top_ccf3ea0d4e5744e1af7b",
+        "correct": false,
+        "score": 0,
+        "grading_method": "numeric",
+        "feedback": "Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 16 + 12 + 13 = 41",
+        "mastery": {
+          "topic_id": "top_ccf3ea0d4e5744e1af7b",
+          "lag_hours_since_practice": null,
+          "p_know_before": 0.2,
+          "p_know": 0.08,
+          "delta": -0.12,
+          "band": "new",
+          "observations": 1,
+          "ci": [
+            0.001,
+            0.437
+          ],
+          "evidence": "early signal",
+          "n": 1,
+          "correct": 0,
+          "expected_recall": 0.0864,
+          "half_life_hours": null,
+          "due_at": "2026-10-22T20:42:33.156829",
+          "first_observation": true,
+          "params": {
+            "p_init": 0.2,
+            "p_learn": 0.2,
+            "p_guess": 0.02,
+            "p_slip": 0.15,
+            "p_forget": 0.02,
+            "n_observations": 0
+          },
+          "update": {
+            "from": 0.2,
+            "to": 0.08,
+            "unbounded": 0.0361,
+            "moved": -0.12,
+            "capped": true,
+            "p_guess_used": 0.02,
+            "p_slip_used": 0.15,
+            "max_step": 0.12,
+            "kind": "numeric"
+          }
+        },
+        "derived_metrics": {
+          "change_count": 1,
+          "first_answer": "",
+          "final_answer": "3/4",
+          "answer_changes": [
+            {
+              "at_ms": 267,
+              "ts": null,
+              "from": "",
+              "to": "3/4"
+            }
+          ]
+        },
+        "teachback": null,
+        "retention": null,
+        "flags": [
+          "changed from a first answer that was right"
+        ],
+        "proposals_expected": false,
+        "teaching": {
+          "method": "worked_example",
+          "design": "placement",
+          "label": "Worked example first"
+        },
+        "next_step": null,
+        "method_compare": null
+      },
+      "receipt": " Back Next stop here This placement puts you on each topic with a confidence band — not to grade you. No hints and no worked examples while it happens — placement has to measure what you can do unaided. Answers, timings, hint use and answer changes are recorded as events. They are turned into mastery estimates and possible explanations; a change is only proposed when the pattern is consistent, and nothing is applied until you agree to it. If you need longer, say so - time spent is evidence about the interaction, not a score. Mean, median and range · practice The mean of 16, 12 and 13 is what? Your answer Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3). topic Mean, median and range how it is set up Retrieval first practice · ~80s Try again Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 16 + 12 + 13 = 41 band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 16 + 12 + 13 = 41 band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC"
+    },
+    {
+      "question": 6,
+      "kind": "numeric",
+      "status": 200,
+      "body": {
+        "attempt_id": "att_74dea1f93451402da828",
+        "item_id": "itm_area_perimeter_01",
+        "topic_id": "top_cad64ab13367494ba1a9",
+        "correct": false,
+        "score": 0,
+        "grading_method": "numeric",
+        "feedback": "Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 12 x 3 = 36 This looks like Order of operations underneath, not Area and perimeter.",
+        "mastery": {
+          "topic_id": "top_cad64ab13367494ba1a9",
+          "lag_hours_since_practice": null,
+          "p_know_before": 0.2,
+          "p_know": 0.08,
+          "delta": -0.12,
+          "band": "new",
+          "observations": 1,
+          "ci": [
+            0.001,
+            0.437
+          ],
+          "evidence": "early signal",
+          "n": 1,
+          "correct": 0,
+          "expected_recall": 0.0864,
+          "half_life_hours": null,
+          "due_at": "2026-10-22T20:42:33.602708",
+          "first_observation": true,
+          "params": {
+            "p_init": 0.2,
+            "p_learn": 0.2,
+            "p_guess": 0.02,
+            "p_slip": 0.15,
+            "p_forget": 0.02,
+            "n_observations": 0
+          },
+          "update": {
+            "from": 0.2,
+            "to": 0.08,
+            "unbounded": 0.0361,
+            "moved": -0.12,
+            "capped": true,
+            "p_guess_used": 0.02,
+            "p_slip_used": 0.15,
+            "max_step": 0.12,
+            "kind": "numeric"
+          }
+        },
+        "derived_metrics": {
+          "change_count": 1,
+          "first_answer": "",
+          "final_answer": "3/4",
+          "answer_changes": [
+            {
+              "at_ms": 265,
+              "ts": null,
+              "from": "",
+              "to": "3/4"
+            }
+          ]
+        },
+        "teachback": null,
+        "retention": null,
+        "flags": [
+          "changed from a first answer that was right"
+        ],
+        "proposals_expected": true,
+        "teaching": {
+          "method": "explanation",
+          "design": "placement",
+          "label": "Explanation first"
+        },
+        "next_step": null,
+        "method_compare": null
+      },
+      "receipt": " you agree to it. If you need longer, say so - time spent is evidence about the interaction, not a score. Area and perimeter · practice A triangle has base 12 cm and height 3 cm. Give its area in cm^2. Your answer Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3). topic Area and perimeter how it is set up Retrieval first practice · ~80s Try again Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 12 x 3 = 36 This looks like Order of operations underneath, not Area and perimeter. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Something in this session also looks like a pattern worth checking. Nothing has been changed — see the Changes screen when you finish. Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: 12 x 3 = 36 This looks like Order of operations underneath, not Area and perimeter. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Something in this session also looks like a pattern worth checking. Nothing has been changed — see the Changes screen when you finish."
+    },
+    {
+      "question": 7,
+      "kind": "numeric",
+      "status": 200,
+      "body": {
+        "attempt_id": "att_8d1ace25ed6c41c9bc83",
+        "item_id": "itm_decimals_00",
+        "topic_id": "top_b930364a9cc34841b419",
+        "correct": false,
+        "score": 0,
+        "grading_method": "numeric",
+        "feedback": "Not yet. '3/4' does not satisfy what the question asks for. Try starting here: The first column after the point is tenths This looks like What a fraction means underneath, not Decimals and place value.",
+        "mastery": {
+          "topic_id": "top_b930364a9cc34841b419",
+          "lag_hours_since_practice": null,
+          "p_know_before": 0.2,
+          "p_know": 0.08,
+          "delta": -0.12,
+          "band": "new",
+          "observations": 1,
+          "ci": [
+            0.001,
+            0.437
+          ],
+          "evidence": "early signal",
+          "n": 1,
+          "correct": 0,
+          "expected_recall": 0.0864,
+          "half_life_hours": null,
+          "due_at": "2026-10-22T20:42:34.091807",
+          "first_observation": true,
+          "params": {
+            "p_init": 0.2,
+            "p_learn": 0.2,
+            "p_guess": 0.02,
+            "p_slip": 0.15,
+            "p_forget": 0.02,
+            "n_observations": 0
+          },
+          "update": {
+            "from": 0.2,
+            "to": 0.08,
+            "unbounded": 0.0361,
+            "moved": -0.12,
+            "capped": true,
+            "p_guess_used": 0.02,
+            "p_slip_used": 0.15,
+            "max_step": 0.12,
+            "kind": "numeric"
+          }
+        },
+        "derived_metrics": {
+          "change_count": 1,
+          "first_answer": "",
+          "final_answer": "3/4",
+          "answer_changes": [
+            {
+              "at_ms": 267,
+              "ts": null,
+              "from": "",
+              "to": "3/4"
+            }
+          ]
+        },
+        "teachback": null,
+        "retention": null,
+        "flags": [
+          "changed from a first answer that was right"
+        ],
+        "proposals_expected": true,
+        "teaching": {
+          "method": "worked_example",
+          "design": "placement",
+          "label": "Worked example first"
+        },
+        "next_step": null,
+        "method_compare": null
+      },
+      "receipt": "e. Decimals and place value · practice What is the value of the digit 7 in 4.71? Give the place value as a decimal. Your answer Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3). topic Decimals and place value how it is set up Explanation first practice · ~80s Try again Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: The first column after the point is tenths This looks like What a fraction means underneath, not Decimals and place value. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Something in this session also looks like a pattern worth checking. Nothing has been changed — see the Changes screen when you finish. Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: The first column after the point is tenths This looks like What a fraction means underneath, not Decimals and place value. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Something in this session also looks like a pattern worth checking. Nothing has been changed — see the Changes screen when you finish."
+    },
+    {
+      "question": 8,
+      "kind": "numeric",
+      "status": 200,
+      "body": {
+        "attempt_id": "att_2bc35bfc68dd4c718ddb",
+        "item_id": "itm_negative_numbers_00",
+        "topic_id": "top_b449f78f5f364eab908e",
+        "correct": false,
+        "score": 0,
+        "grading_method": "numeric",
+        "feedback": "Not yet. '3/4' does not satisfy what the question asks for. Try starting here: start at -7 This looks like Integer operations underneath, not Negative numbers.",
+        "mastery": {
+          "topic_id": "top_b449f78f5f364eab908e",
+          "lag_hours_since_practice": null,
+          "p_know_before": 0.2,
+          "p_know": 0.08,
+          "delta": -0.12,
+          "band": "new",
+          "observations": 1,
+          "ci": [
+            0.001,
+            0.437
+          ],
+          "evidence": "early signal",
+          "n": 1,
+          "correct": 0,
+          "expected_recall": 0.0864,
+          "half_life_hours": null,
+          "due_at": "2026-10-22T20:42:34.564561",
+          "first_observation": true,
+          "params": {
+            "p_init": 0.2,
+            "p_learn": 0.2,
+            "p_guess": 0.02,
+            "p_slip": 0.15,
+            "p_forget": 0.02,
+            "n_observations": 0
+          },
+          "update": {
+            "from": 0.2,
+            "to": 0.08,
+            "unbounded": 0.0361,
+            "moved": -0.12,
+            "capped": true,
+            "p_guess_used": 0.02,
+            "p_slip_used": 0.15,
+            "max_step": 0.12,
+            "kind": "numeric"
+          }
+        },
+        "derived_metrics": {
+          "change_count": 1,
+          "first_answer": "",
+          "final_answer": "3/4",
+          "answer_changes": [
+            {
+              "at_ms": 264,
+              "ts": null,
+              "from": "",
+              "to": "3/4"
+            }
+          ]
+        },
+        "teachback": null,
+        "retention": null,
+        "flags": [
+          "changed from a first answer that was right"
+        ],
+        "proposals_expected": true,
+        "teaching": {
+          "method": "worked_example",
+          "design": "placement",
+          "label": "Worked example first"
+        },
+        "next_step": null,
+        "method_compare": null
+      },
+      "receipt": "hen the pattern is consistent, and nothing is applied until you agree to it. If you need longer, say so - time spent is evidence about the interaction, not a score. Negative numbers · practice Work out -7 - 2. Your answer Fractions, decimals and simple expressions are all fine (2/3, 0.67, 12/4*3). topic Negative numbers how it is set up Retrieval first practice · ~80s Try again Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: start at -7 This looks like Integer operations underneath, not Negative numbers. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Something in this session also looks like a pattern worth checking. Nothing has been changed — see the Changes screen when you finish. Not yet NUMERIC Not yet. '3/4' does not satisfy what the question asks for. Try starting here: start at -7 This looks like Integer operations underneath, not Negative numbers. band new[0.00, 0.44] 0.20 → 0.08 n=1 EARLY SIGNAL review 10/22/2026 FIRST DATA POINT ON THIS TOPIC Something in this session also looks like a pattern worth checking. Nothing has been changed — see the Changes screen when you finish."
+    }
+  ],
+  "console": [],
+  "total": 8,
+  "finalText": "Placement done 1 change waiting for your answer test — what the learner just answered (8 topic traces) observe — metrics derived from the event log (1 evidence rows) understand — hypotheses with status and disproof conditions (1 hypotheses) personalize — proposals awaiting a decision - not applied (1 proposals) learn — measured effect of what was approved before (0 evaluated) proposals awaiting a decision - not applied answer the proposal: yes, no, change it, or later Start practising Changes waiting See the estimates"
+}

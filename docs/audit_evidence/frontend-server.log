@@ -1,0 +1,26 @@
+
+> adapt-frontend@0.1.0 test:server
+> node --test server.test.mjs
+
+TAP version 13
+# Subtest: ADAPT_API=offline answers 503 and stays up, and the UI still serves
+ok 1 - ADAPT_API=offline answers 503 and stays up, and the UI still serves
+  ---
+  duration_ms: 15536.020622
+  type: 'test'
+  ...
+# Subtest: a LAN Host header reaches the API as 127.0.0.1, and the 101 keeps its own headers
+ok 2 - a LAN Host header reaches the API as 127.0.0.1, and the 101 keeps its own headers
+  ---
+  duration_ms: 9942.785226
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 25548.198747
