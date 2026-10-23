@@ -54,6 +54,8 @@ type Props = {
   excludeItemIds?: string[];
   excludeQuestions?: string[];
   onUpgrade?: (value: LessonValue) => void;
+  reflection?: string;
+  onReflectionChange?: (text: string) => void;
 };
 
 function textValues(value: unknown): string[] {
@@ -67,7 +69,7 @@ function textValues(value: unknown): string[] {
   return [];
 }
 
-function BlockBody({ block, onPick, verdicts, selected, disabled }: { block: Block } & Pick<Props, "onPick" | "verdicts" | "selected" | "disabled">) {
+function BlockBody({ block, onPick, verdicts, selected, disabled, reflection, onReflectionChange }: { block: Block } & Pick<Props, "onPick" | "verdicts" | "selected" | "disabled" | "reflection" | "onReflectionChange">) {
   const body = block.body;
   const object = typeof body === "string" ? { text: body } : body;
   if (block.type === "visual") {
@@ -99,7 +101,7 @@ function BlockBody({ block, onPick, verdicts, selected, disabled }: { block: Blo
             {options.map(option => <li key={option.id} className="rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-sm">{option.text}</li>)}
           </ul>
         ) : (
-          <input aria-label="Your reflection (not marked)" className="mt-2 w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm" type="text" autoComplete="off" />
+          <input aria-label="Your reflection (not marked)" className="mt-2 w-full rounded-[2px] border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm" type="text" autoComplete="off" maxLength={200} disabled={disabled} value={reflection} onChange={event => onReflectionChange?.(event.target.value)} />
         )}
         {verdict ? <p role="status" className="mt-3 text-sm">{verdict === "correct" ? "Right. Practice keeps it in rotation." : "Not quite — the explanation below starts with your choice."}</p> : null}
       </fieldset>
@@ -127,11 +129,11 @@ function BlockBody({ block, onPick, verdicts, selected, disabled }: { block: Blo
   return <p className="whitespace-pre-wrap text-sm leading-6">{content}</p>;
 }
 
-function BlockCard({ block, ...controls }: { block: Block } & Pick<Props, "onPick" | "verdicts" | "selected" | "disabled">) {
+function BlockCard({ block, ...controls }: { block: Block } & Pick<Props, "onPick" | "verdicts" | "selected" | "disabled" | "reflection" | "onReflectionChange">) {
   return <article className="lesson-block rounded-[2px] border border-[var(--line)] bg-[var(--bg)] p-4"><BlockBody block={block} {...controls} /></article>;
 }
 
-export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, className = "", collapseBlockWhy = false, onPick, verdicts, selected, disabled, excludeItemIds = [], excludeQuestions = [], onUpgrade }: Props) {
+export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, className = "", collapseBlockWhy = false, onPick, verdicts, selected, disabled, excludeItemIds = [], excludeQuestions = [], onUpgrade, reflection, onReflectionChange }: Props) {
   const [lesson, setLesson] = useState(value);
   const controls = useRef({ selected, onUpgrade });
   controls.current = { selected, onUpgrade };
@@ -195,7 +197,7 @@ export function LessonRenderer({ value, upgradeJobId, contrastLabel = false, cla
           if (seen.has(id)) return false;
           seen.add(id);
           return true;
-        }).map((block, index) => <BlockCard key={`${index}-${block.type}`} block={block} onPick={onPick} verdicts={verdicts} selected={selected} disabled={disabled} />);
+        }).map((block, index) => <BlockCard key={`${index}-${block.type}`} block={block} onPick={onPick} verdicts={verdicts} selected={selected} disabled={disabled} reflection={reflection} onReflectionChange={onReflectionChange} />);
       })()}
       {!collapseBlockWhy ? <details className="lesson-info text-xs text-[var(--muted)]" data-testid="block-why">
         <summary>ⓘ About this lesson</summary>

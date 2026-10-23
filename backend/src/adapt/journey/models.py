@@ -63,6 +63,7 @@ class JourneyStage(Base):
         return {
             "stage": self.stage,
             "status": self.status,
+            "note": self.note,
             "updated_at": (
                 (self.updated_at or self.created_at).isoformat()
                 if (self.updated_at or self.created_at)
