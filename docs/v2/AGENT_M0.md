@@ -146,6 +146,38 @@ CREATE INDEX ON learners (tenant_id);                     -- policy predicates n
 value is not the key and cannot be reversed; another asserts `last_used_at` write amplification is
 bounded.
 
+### Resolving a key before the tenant is known
+
+A key must be looked up before `adapt.tenant_id` exists, so the lookup cannot run under tenant RLS.
+Measured on the increment 2 schema: a `SECURITY DEFINER` function owned by the table owner sees
+**1 row with `ENABLE` alone, 0 rows with `ENABLE + FORCE`**. Forced RLS therefore makes a
+tenant-scoped key table unreadable by its own resolver. The resolution is not to weaken RLS but to
+stop relying on it for this table:
+
+* The resolver is `SECURITY DEFINER`, owned by `adapt_owner`, `SET search_path = pg_catalog, public`,
+  `REVOKE ALL … FROM PUBLIC`, `GRANT EXECUTE … TO adapt_app`. Exact match on the indexed prefix — no
+  `LIKE`, no prefix scan, so it cannot be used to enumerate keys.
+* **`adapt_app` holds no table privilege on `api_keys` at all** — no `SELECT`, no `INSERT`, no
+  `UPDATE`, no `DELETE`. The resolver is the only reader and the only writer of `last_used_at`.
+  Asserted by `has_table_privilege`.
+* `api_keys` keeps `ENABLE ROW LEVEL SECURITY` and a tenant policy without `FORCE`, as defence in
+  depth for a future grant. With no app-role privileges this is belt-and-braces, not the boundary.
+* **The stated principle:** RLS keeps tenants apart; grants keep key material from everyone. Two
+  mechanisms, two problems. Do not let one stand in for the other.
+
+Consequences to implement, not to defer:
+
+* An `admin` key may issue only keys whose scopes are a **subset of its own**, and may never mint
+  another `admin` key — admin keys are created by provisioning or the console session, not over the
+  API. Otherwise scope escalation is one call away.
+* `expires_at` exists on every key: required for `admin`, default 90 days for the rest, nullable only
+  by explicit decision. Rotation is issue-new-then-revoke-old, and the console shows `last_used_at`.
+* Key issue, revoke and failed authentication write `audit_log` rows **now**. Retro-fitting an audit
+  trail leaves the first months of a security-sensitive table with no trail at all.
+* The failed-auth limiter counts **failures only, after** validation — a shared NAT with many valid
+  keys must never be blocked by other tenants' failures. Per process until Redis exists, with the
+  multiplier (`N processes = N× budget`) stated in the code and in `KNOWN_GAPS.md`.
+
 ## 4. Increment 4 — credits
 
 Three tables, per `METERING.md` §4 — grants have identities, because a monthly allowance and a

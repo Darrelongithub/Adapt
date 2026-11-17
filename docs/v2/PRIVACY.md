@@ -79,7 +79,7 @@ Rules that follow from the map:
 
 | Control | Implementation |
 |---|---|
-| Tenant isolation | Postgres RLS, forced, `USING` + `WITH CHECK`, tenant set with `SET LOCAL` per transaction |
+| Tenant isolation | Postgres RLS, forced, `USING` + `WITH CHECK`, tenant set with `SET LOCAL` per transaction. Exception: `api_keys` is reachable only through one `SECURITY DEFINER` resolver and the runtime role holds **no** privilege on the table — key material is protected by grants, not by RLS |
 | Encryption at rest | per-tenant data key, envelope-encrypted, AAD bound to `tenant_id`; rotation supported |
 | Encryption in transit | TLS 1.3 only; HSTS; no plaintext fallback |
 | Least privilege | app role is not owner, not superuser, no `BYPASSRLS`; migrations run as a separate role |
