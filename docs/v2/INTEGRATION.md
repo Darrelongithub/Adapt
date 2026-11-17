@@ -193,6 +193,17 @@ Codes are **lowercase snake_case and this table is authoritative** — not the H
 without a code here is a gap to report, not a licence to invent one; `check_openapi.py` fails the build
 if the implementation emits a code that is not in this list.
 
+Three rules that follow from the table and are not negotiable:
+
+* **401 is always `unauthorized`.** There is no `invalid_api_key`, no `key_expired`, no
+  `key_revoked` — a host that is authenticating correctly never needs the distinction, and an attacker
+  does not get to learn which part of a key was wrong. Scope failures are 403 `not_entitled`.
+* **403 has two codes and the caller must choose.** A bare `403` means `not_entitled`; a paused
+  connection is `connection_paused` and must be raised explicitly. Never infer one from the other.
+* **404 has two codes and the caller must choose.** Framework route-miss is `route_unknown`; a
+  domain lookup that found no such learner is `learner_unknown`. Answering "register the learner first"
+  to a typo'd URL is a support ticket waiting to happen.
+
 | Status | Code | Retry? | What it means for the host |
 |---|---|---|---|
 | 200 | — | — | serve `recommendations`, or run the fallback if `abstain` |
@@ -200,7 +211,8 @@ if the implementation emits a code that is not in this list.
 | 401 | `unauthorized` | no | rotate the key |
 | 403 | `not_entitled` | no | `tier_required` says what to buy; **not** a quota problem |
 | 403 | `connection_paused` | later | someone paused this connection deliberately |
-| 404 | `learner_unknown` | no | register the learner first |
+| 404 | `learner_unknown` | no | the route exists but this learner id does not — register the learner first |
+| 404 | `route_unknown` | no | no such route — a typo'd URL or path version, not a learner problem |
 | 406 | `instrument_not_renderable` | no | the host's declared capabilities do not cover it |
 | 501 | `not_capable` | no | the capability is not built yet — our gap, not the request's |
 | 409 | `conflict` | no | duplicate resource, e.g. too many open probe sessions |

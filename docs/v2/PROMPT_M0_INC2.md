@@ -124,6 +124,25 @@ next and it depends on increment 2 being trustworthy.
 
 ---
 
+## IF DOCKER IS UNAVAILABLE
+
+If the build environment cannot run Docker, do **not** skip increment 2 and do **not** fake it. Stand
+up a real PostgreSQL as a **test fixture** and run the same suite against it:
+
+* Pin a bundled-Postgres wheel (e.g. `pgserver`) as a **dev-only** extra. Never a runtime dependency.
+* The suite reads `ADAPT_TEST_DATABASE_URL`. The fixture is one provider; `docker compose` is another.
+  Hard-coding a server into the tests is a rejection.
+* Report `SELECT version()` and the server's auth model. If it is not 16, say so — RLS semantics have
+  been stable since 9.5, so the isolation tests remain valid, but the compose target is still 16.
+* Two roles still apply (`adapt_owner`, `adapt_app`), created by the fixture exactly as the migration
+  would.
+
+`docker compose up` then stays an **open verified-later item**, recorded in the repo
+(`engine/KNOWN_GAPS.md`) until someone with Docker runs it. An unverified acceptance line that nobody
+wrote down becomes a false claim in a month.
+
+---
+
 ## Why 1.5 comes first, and why the red-then-green demand matters
 
 **1.5 is not tidying.** Three of those seven unblock or invalidate increment 2: no Postgres means the
