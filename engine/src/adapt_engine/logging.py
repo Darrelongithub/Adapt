@@ -16,6 +16,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from adapt_engine.clock import Clock
+from adapt_engine.errors import code_for_status
 
 _ALLOWED_FIELDS = frozenset(
     {"request_id", "tenant_id", "route", "method", "status", "duration_ms", "error_code"}
@@ -60,11 +61,11 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             status = response.status_code
             if status >= 400:
-                error_code = _code_for_status(status)
+                error_code = code_for_status(status, warn=False)
             response.headers["X-Request-Id"] = request_id
             return response
         except Exception:
-            error_code = "INTERNAL_ERROR"
+            error_code = code_for_status(500)
             raise
         finally:
             end = self._clock.now()
@@ -89,18 +90,3 @@ def _route_of(request: Request) -> str:
     if isinstance(path, str) and path:
         return path
     return request.url.path
-
-
-def _code_for_status(status_code: int) -> str:
-    mapping: dict[int, str] = {
-        400: "BAD_REQUEST",
-        401: "UNAUTHORIZED",
-        403: "FORBIDDEN",
-        404: "NOT_FOUND",
-        405: "METHOD_NOT_ALLOWED",
-        422: "VALIDATION_ERROR",
-        429: "RATE_LIMITED",
-        500: "INTERNAL_ERROR",
-        503: "SERVICE_UNAVAILABLE",
-    }
-    return mapping.get(status_code, "ERROR")

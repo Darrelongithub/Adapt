@@ -1,8 +1,13 @@
-"""Single error shape for every HTTP error.
+"""Single error shape and the documented error-code vocabulary.
 
-Every error response is exactly::
+Every HTTP error response is exactly::
 
     {"error": {"code": ..., "message": ..., "request_id": ..., "retryable": ...}}
+
+Codes are lowercase snake_case. The authoritative list is the table in
+``docs/v2/INTEGRATION.md`` §6. A status that has no code there is a gap to
+report, not a licence to invent a name: such responses carry ``unmapped_status``
+and a warning is logged.
 
 Handlers never echo request bodies, keys, or exception tracebacks.
 """
@@ -10,11 +15,51 @@ Handlers never echo request bodies, keys, or exception tracebacks.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
+import structlog
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+#: Status -> code, transcribed from INTEGRATION.md §6. The doc is the source
+#: of truth; engine/scripts/check_openapi.py fails the build when this mapping
+#: and the doc disagree, so the two cannot drift silently.
+DOCUMENTED_STATUS_CODES: dict[int, str] = {
+    400: "payload_invalid",
+    401: "unauthorized",
+    402: "quota_exhausted",
+    403: "not_entitled",
+    404: "learner_unknown",
+    406: "instrument_not_renderable",
+    409: "conflict",
+    410: "gone",
+    413: "payload_too_large",
+    422: "payload_invalid",
+    429: "rate_limited",
+    500: "internal",
+    501: "not_capable",
+    502: "internal",
+    503: "internal",
+}
+
+#: The sentinel emitted when a status has no documented code. It is not in
+#: the §6 table by design; the checker treats it as known.
+UNMAPPED_CODE = "unmapped_status"
+
+#: Every code this module can emit.
+EMITTED_CODES: frozenset[str] = frozenset(DOCUMENTED_STATUS_CODES.values()) | {
+    UNMAPPED_CODE,
+}
+
+#: Statuses the doc marks as retryable (429, and 500/502/503).
+RETRYABLE_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503})
+
+#: Statuses whose semantics are "the caller may retry once the condition
+#: clears" (403 connection_paused is raised explicitly, not by status alone).
+CONDITIONAL_RETRY_STATUSES: frozenset[int] = frozenset({403})
 
 
 class ConfigError(Exception):
@@ -27,7 +72,11 @@ class ConfigError(Exception):
 
 
 class AdaptError(Exception):
-    """Base for HTTP errors that use the single envelope."""
+    """Base for HTTP errors that use the single envelope.
+
+    ``code`` must be a documented code, so a handler cannot introduce a name
+    that is absent from INTEGRATION.md §6.
+    """
 
     def __init__(
         self,
@@ -37,11 +86,59 @@ class AdaptError(Exception):
         status_code: int,
         retryable: bool,
     ) -> None:
+        if code not in EMITTED_CODES:
+            raise ValueError(
+                f"error code {code!r} is not in INTEGRATION.md §6; "
+                f"use a documented code or {UNMAPPED_CODE!r}"
+            )
         self.code = code
         self.message = message
         self.status_code = status_code
         self.retryable = retryable
         super().__init__(message)
+
+
+class ErrorDetail(BaseModel):
+    """The inner error object."""
+
+    code: str
+    message: str
+    request_id: str
+    retryable: bool
+
+
+class ErrorEnvelope(BaseModel):
+    """The one error shape, documented for every route in OpenAPI."""
+
+    error: ErrorDetail
+
+
+def _logger() -> Any:
+    return structlog.get_logger("adapt_engine")
+
+
+def code_for_status(status_code: int, *, warn: bool = True) -> str:
+    """Return the documented code for ``status_code``.
+
+    Emits ``unmapped_status`` and logs a warning when the doc has no code for
+    the status, rather than inventing a name. The middleware passes
+    ``warn=False`` so a single response produces a single warning.
+    """
+    code: str | None = DOCUMENTED_STATUS_CODES.get(status_code)
+    if code is not None:
+        return code
+    if warn:
+        _logger().warning(
+            "error_code_unmapped",
+            status=status_code,
+            error_code=UNMAPPED_CODE,
+        )
+    return UNMAPPED_CODE
+
+
+def retryable_for_status(status_code: int) -> bool:
+    """Return whether the doc marks this status as retryable."""
+    return status_code in RETRYABLE_STATUSES
 
 
 def _request_id(request: Request) -> str:
@@ -69,25 +166,16 @@ def error_body(
     }
 
 
-def _code_for_status(status_code: int) -> str:
-    mapping: dict[int, str] = {
-        400: "BAD_REQUEST",
-        401: "UNAUTHORIZED",
-        403: "FORBIDDEN",
-        404: "NOT_FOUND",
-        405: "METHOD_NOT_ALLOWED",
-        409: "CONFLICT",
-        422: "VALIDATION_ERROR",
-        429: "RATE_LIMITED",
-        500: "INTERNAL_ERROR",
-        502: "BAD_GATEWAY",
-        503: "SERVICE_UNAVAILABLE",
-    }
-    return mapping.get(status_code, "ERROR")
+def responses_with_envelope(statuses: list[int]) -> dict[int | str, dict[str, Any]]:
+    """Build a FastAPI ``responses`` mapping that documents the envelope."""
+    described: str = "Single error envelope: code, message, request_id, retryable"
+    return {status: {"model": ErrorEnvelope, "description": described} for status in statuses}
 
 
-def _retryable_for_status(status_code: int) -> bool:
-    return status_code in (429, 500, 502, 503, 504)
+#: Declared on every /v1 route so the envelope is part of the contract.
+ERROR_RESPONSES: dict[int | str, dict[str, Any]] = responses_with_envelope(
+    sorted({400, 401, 402, 403, 404, 406, 409, 410, 413, 422, 429, 500, 501, 502, 503})
+)
 
 
 async def adapt_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -110,12 +198,16 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
     detail = exc.detail
     message = detail if isinstance(detail, str) and detail else "Request failed"
     body = error_body(
-        code=_code_for_status(exc.status_code),
+        code=code_for_status(exc.status_code),
         message=message,
         request_id=_request_id(request),
-        retryable=_retryable_for_status(exc.status_code),
+        retryable=retryable_for_status(exc.status_code),
     )
-    return JSONResponse(status_code=exc.status_code, content=body)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=body,
+        headers=getattr(exc, "headers", None),
+    )
 
 
 async def validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -133,10 +225,10 @@ async def validation_exception_handler(request: Request, exc: Exception) -> JSON
     else:
         message = "Request validation failed"
     body = error_body(
-        code="VALIDATION_ERROR",
+        code=code_for_status(422),
         message=message,
         request_id=_request_id(request),
-        retryable=False,
+        retryable=retryable_for_status(422),
     )
     return JSONResponse(status_code=422, content=body)
 
@@ -144,9 +236,9 @@ async def validation_exception_handler(request: Request, exc: Exception) -> JSON
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Render unexpected failures as a generic 500 without leaking detail."""
     body = error_body(
-        code="INTERNAL_ERROR",
+        code=code_for_status(500),
         message="Internal server error",
         request_id=_request_id(request),
-        retryable=True,
+        retryable=retryable_for_status(500),
     )
     return JSONResponse(status_code=500, content=body)

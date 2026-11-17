@@ -41,6 +41,10 @@ _DEV_PEPPERS = frozenset(
 )
 
 
+# Build identities that are placeholders, never a production release.
+_DEV_BUILD_IDENTITIES = frozenset({"unknown", "local", "dev", "test", "development"})
+
+
 class Settings(BaseModel):
     """Runtime settings. Required fields have no defaults."""
 
@@ -96,9 +100,16 @@ class Settings(BaseModel):
         key_pepper = _required("ADAPT_KEY_PEPPER")
 
         redis_url = (source.get("ADAPT_REDIS_URL") or "redis://localhost:6379/0").strip()
-        commit = (source.get("ADAPT_COMMIT") or "unknown").strip() or "unknown"
+
+        # Build identity is required in production: a health check that cannot
+        # say which build is running is not an incident tool.
+        if env_value == "production":
+            commit = _required("ADAPT_COMMIT")
+            version = _required("ADAPT_VERSION")
+        else:
+            commit = (source.get("ADAPT_COMMIT") or "unknown").strip() or "unknown"
+            version = (source.get("ADAPT_VERSION") or "0.1.0").strip() or "0.1.0"
         build_time = (source.get("ADAPT_BUILD_TIME") or "unknown").strip() or "unknown"
-        version = (source.get("ADAPT_VERSION") or "0.1.0").strip() or "0.1.0"
 
         settings = cls(
             env=env_value,
@@ -136,4 +147,15 @@ class Settings(BaseModel):
             raise ConfigError(
                 "ADAPT_KEY_PEPPER",
                 "must not use a development default when ADAPT_ENV=production",
+            )
+        if self.commit in _DEV_BUILD_IDENTITIES:
+            raise ConfigError(
+                "ADAPT_COMMIT",
+                "must be a real commit identifier, not a development placeholder, "
+                "when ADAPT_ENV=production",
+            )
+        if self.version in _DEV_BUILD_IDENTITIES:
+            raise ConfigError(
+                "ADAPT_VERSION",
+                "must be a real version, not a development placeholder, when ADAPT_ENV=production",
             )

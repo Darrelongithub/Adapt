@@ -1,0 +1,23 @@
+# Build context: only what the image needs (pyproject.toml + src/).
+# Everything else is excluded so the context stays small and no local
+# environment, history or unrelated tree is shipped to the daemon.
+.venv
+node_modules
+.git
+.gitignore
+frontend
+docs
+var
+*.zip
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+.env.*
+*.egg-info
+build
+dist
+.coverage
+htmlcov
+*.py[cod]

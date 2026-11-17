@@ -26,6 +26,19 @@ VALID_ENV = {
     "ADAPT_VERSION": "0.1.0",
 }
 
+# A production-shaped environment: real hosts, strong secrets, real build
+# identity. Used to prove that production-only requirements fail closed.
+PROD_ENV = {
+    "ADAPT_ENV": "production",
+    "ADAPT_DATABASE_URL": "postgresql://adapt:secret@db.internal:5432/adapt",
+    "ADAPT_MASTER_KEY": "prod-master-key-synthetic-0123456789abcdef",
+    "ADAPT_KEY_PEPPER": "prod-key-pepper-synthetic-0123456789",
+    "ADAPT_REDIS_URL": "redis://cache.internal:6379/0",
+    "ADAPT_COMMIT": "abc1234",
+    "ADAPT_VERSION": "2.0.0",
+    "ADAPT_BUILD_TIME": "2026-11-17T00:00:00Z",
+}
+
 REQUIRED_VARS = [
     "ADAPT_ENV",
     "ADAPT_DATABASE_URL",
@@ -100,3 +113,28 @@ def test_settings_from_env_accepts_valid() -> None:
     settings = Settings.from_env(dict(VALID_ENV))
     assert settings.env == "test"
     assert settings.commit == "test-commit-synthetic"
+
+
+@pytest.mark.parametrize("missing", ["ADAPT_COMMIT", "ADAPT_VERSION"])
+def test_production_requires_build_identity(missing: str) -> None:
+    env = dict(PROD_ENV)
+    del env[missing]
+    result = _run_entrypoint(env)
+    assert result.returncode != 0
+    assert missing in (result.stderr + result.stdout)
+
+
+@pytest.mark.parametrize("variable", ["ADAPT_COMMIT", "ADAPT_VERSION"])
+def test_production_rejects_placeholder_build_identity(variable: str) -> None:
+    env = dict(PROD_ENV)
+    env[variable] = "local"
+    result = _run_entrypoint(env)
+    assert result.returncode != 0
+    assert variable in (result.stderr + result.stdout)
+
+
+def test_production_accepts_real_build_identity() -> None:
+    settings = Settings.from_env(dict(PROD_ENV))
+    assert settings.env == "production"
+    assert settings.commit == "abc1234"
+    assert settings.version == "2.0.0"
