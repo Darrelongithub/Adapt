@@ -173,6 +173,28 @@ credit_reservations(id, tenant_id, amount, state: held|settled|released, operati
   reservations against a balance of 10 must yield exactly 10 successes.
 * Every ledger row joins back to the request that caused it. That is the point.
 
+### The accounting identity — four terms, not three
+
+```
+granted = available + held + consumed + forfeited
+```
+
+`forfeited` is the unused remainder of a grant that expired: `sum(remaining)` over grants whose
+`expires_at` has passed. Without that term the identity **breaks the moment any allowance expires** —
+the credits are simply missing from the books, which is both a reconciliation failure and a number the
+customer is entitled to see. It is derivable, so no sweeper is needed, but the identity must be
+asserted *after* an expiry, not only on the happy path.
+
+* `available` counts **non-expired** grants only. Expired credits are never resurrected by a partial
+  settlement: what was used is consumed, the remainder is forfeited.
+* `sum(delta)` over the whole ledger is **not** a consumption figure — reserve and release rows carry
+  `delta = 0` because they bind an idempotency key without moving a credit. Every row carries
+  `entry_type`, and **billing reads `entry_type = 'settle'` only**. A `credit_consumption` view exists
+  so that nobody has to remember this at the call site.
+* Two commercial invariants live in the schema, not in intent: `kind = 'included'` **must** have an
+  expiry, and `kind = 'purchased'` **must not** — "paid credits never expire" is rule 6 above, and a
+  column that permits the opposite will eventually be used to do it.
+
 ## 5. The commercial unit
 
 **80 credits = one reference learner-month bundle.**

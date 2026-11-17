@@ -180,6 +180,24 @@ Consequences to implement, not to defer:
 
 ## 4. Increment 4 — credits
 
+**Corrections found in review, apply before increment 5** (see `METERING.md` §4):
+
+* **The balance identity has four terms** — `granted = available + held + consumed + forfeited`. A
+  three-term identity is false the moment an allowance expires, and the forfeited credits disappear
+  from the books. Assert it after an expiry, not only on the happy path.
+* **Hashes never leave the database.** The resolver returns `key_id, tenant_id, scopes, revoked_at,
+  expires_at` — never `hash`. It takes the client-computed digest as a parameter and returns a row
+  only on an exact match. Otherwise the runtime holds every hash *and* the pepper, and the pepper's
+  whole purpose is defeated by one memory disclosure.
+* **`kind = 'purchased'` must not have an `expires_at`.** Rule 6 in `METERING.md` says paid credits
+  never expire; a column that allows it will be used to do it.
+* **`entry_type` on every ledger row**, and billing reads `entry_type = 'settle'` only, behind a
+  `credit_consumption` view. `sum(delta)` over the ledger is not a consumption figure.
+* **Credit mutations are provisioning, not runtime.** No host key moves credits: granting is
+  control-plane (`admin` scope, classified with `/v1/admin/*`), and reservations never appear on the
+  HTTP surface at all.
+
+
 Three tables, per `METERING.md` §4 — grants have identities, because a monthly allowance and a
 purchased pack behave differently and must be drawable in a published order:
 
