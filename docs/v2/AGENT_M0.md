@@ -58,9 +58,27 @@ engine/
   `ADAPT_DATABASE_URL`, `ADAPT_MASTER_KEY` (≥32 bytes) or `ADAPT_KEY_PEPPER` are missing, or if
   `ADAPT_ENV=production` with any development default.
 
+* **Error codes are lowercase snake_case, exactly as tabulated in `INTEGRATION.md` §6**
+  (`payload_invalid`, `rate_limited`, `quota_exhausted`, `not_entitled`, `learner_unknown`, …).
+  `VALIDATION_ERROR` is not a code in this system. If a status has no documented code, that is a gap in
+  the table — report it rather than inventing a name.
+* **`engine/scripts/check_openapi.py`** — fails CI if any route lacks an auth requirement, if any
+  response schema omits the error envelope, or if any emitted code is absent from the documented
+  vocabulary.
+* **`engine/.dockerignore`** — the build context must exclude `.venv`, `node_modules`, `.git`,
+  `frontend`, `docs`, `var`, `*.zip`. Without it the context is gigabytes and may carry secrets.
+* **Health checks are bounded and non-blocking** — dependency probes have an explicit timeout (~1 s)
+  and do not block the event loop; a hung database must produce a 503, not a hung health endpoint.
+* **In production, build identity is required** — `ADAPT_COMMIT` and `ADAPT_VERSION` must not default
+  to `unknown` when `ADAPT_ENV=production`, or `/v1/version` cannot identify a deployment during an
+  incident.
+
 **Acceptance:** `test_config_fail_closed` — one parametrised case per required variable asserting a
 non-zero exit and a message naming it. `test_error_envelope` — every registered handler returns the
-one shape, including 404, 422 and an unhandled 500.
+one shape, including 404, 405, 422 and an unhandled 500, **and every emitted code appears in the
+documented vocabulary**. `test_health` — a dependency timeout returns 503 rather than hanging. A live
+server check: `/v1/health`, `/v1/version`, one 404 and one 405 envelope, and one allowlist log line per
+request with no query string and no client address.
 
 ## 2. Increment 2 — tenancy and RLS
 

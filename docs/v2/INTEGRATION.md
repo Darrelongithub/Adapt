@@ -189,6 +189,10 @@ and Widgit are paid (`UI.md` §6). Adapt ships no symbol assets.
 
 ## 6. Errors — all of them, and what to do
 
+Codes are **lowercase snake_case and this table is authoritative** — not the HTTP status. A status
+without a code here is a gap to report, not a licence to invent one; `check_openapi.py` fails the build
+if the implementation emits a code that is not in this list.
+
 | Status | Code | Retry? | What it means for the host |
 |---|---|---|---|
 | 200 | — | — | serve `recommendations`, or run the fallback if `abstain` |
