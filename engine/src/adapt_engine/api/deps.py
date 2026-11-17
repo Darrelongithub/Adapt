@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from fastapi import Request
+from sqlalchemy.engine import Engine
 
 from adapt_engine.clock import Clock
 from adapt_engine.config import Settings
@@ -18,6 +19,12 @@ def get_settings(request: Request) -> Settings:
     """Return the app settings."""
     settings: Settings = request.app.state.settings
     return settings
+
+
+def get_engine(request: Request) -> Engine:
+    """Return the database engine (a pool; callers must not close it)."""
+    engine: Engine = request.app.state.engine
+    return engine
 
 
 def get_clock(request: Request) -> Clock:

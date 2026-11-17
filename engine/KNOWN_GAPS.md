@@ -80,33 +80,53 @@ There is no whitelist in the checker; the document is the only allowlist.
 
 ## 6. The rate limiter is per process, not per cluster
 
-`FailureLimiter` is in-memory (DECISIONS.md §6). With N replicas, an attacker
-gets N × 20 failures per minute per IP, and a restart clears every window.
-Redis is not reachable here (gap 3), so a shared limiter could not be tested.
-The check runs before the key is validated, so a shared client IP (an office
-NAT, a CI runner) that trips the window also blocks *valid* keys from that IP
-until the window drains — fail-closed, and worth revisiting when the limiter
-becomes per-key as well as per-IP. **What closes it:** a Redis-backed window,
-once gap 3 closes and the credit ledger needs the same infrastructure.
+`FailureLimiter` is in-memory (DECISIONS.md §6), so **N processes = N× the
+budget**: with three replicas an attacker gets 60 failures per minute per
+address instead of 20, and a restart clears every window. The budget is per
+address, not per key, so one busy NAT shares it — but validation runs first, so
+a valid key from that address is never refused (DECISIONS.md §6).
 
-## 7. Keys cannot be rotated on a schedule and never expire
+No `X-Forwarded-For` handling: behind a load balancer every request looks like
+it came from the balancer, and one attacker's failures would then be charged to
+everyone. Trusting that header without a configured trusted proxy would be
+worse (any client could set it).
 
-`api_keys` has `revoked_at` but no `expires_at`, no rotation route and no
-"issue → overlap → revoke old" workflow. Revocation is immediate
-(`test_revoked_key_fails_immediately_not_at_cache_expiry`), which is the
-property that matters for a compromised key, but nothing prompts a tenant to
-rotate a key that is merely old.
+**What closes it:** a shared window in Redis, once gap 3 closes, plus a
+trusted-proxy configuration for client-address extraction.
 
-## 8. Issuing and revoking keys is admin-only over HTTP, and there is no audit trail
+## 7. Keys expire, but nothing rotates them and nothing sweeps them
 
-`POST /v1/admin/keys` requires the `admin` scope, and the key it issues can
-itself carry `admin` — so authority is transitive and not separable. Key
-issuance and revocation do not write to `audit_log`: the table exists and is
-tenant-scoped, but its first writer arrives with the decision/observation
-pipeline in a later increment. Until then, a tenant cannot see who issued or
-revoked a key.
+`expires_at` is `NOT NULL` and enforced at authentication, so an expired key is
+dead. What does not exist: a rotation workflow (issue-new-then-revoke-old is
+described, not implemented), a scheduled job that revokes keys nearing expiry,
+and a console view of "keys expiring in 14 days". A tenant finds out a key
+expired when a request fails.
 
-## 9. `last_used_at` granularity is a minute, and it is coarse on purpose
+## 8. The credits ledger records consumption; nothing lists it back
 
-The debounce means `last_used_at` can lag reality by up to 60 seconds. It is a
-"was this key in use" signal, not an audit log. See DECISIONS.md §5.
+`GET /v1/credits/balance` answers "how much is there", not "where did it go".
+There is no ledger endpoint, no statement, no `period_start` writer (the column
+exists and is always NULL), and the `expire` reason in the ledger CHECK is
+never emitted — expiry is enforced by query filters, so expired credits are
+invisible rather than debited. A tenant cannot reconcile its invoice against
+our rows.
+
+Also unbuilt: granting credits over the API (grants are provisioning-side,
+created by `tests/pg.py` and later by billing), and any link between a
+reservation and an actual `decide` operation — `operation_ref` is a caller's
+string, not a foreign key.
+
+## 9. System audit rows are readable only by the owner
+
+Failed-authentication rows have `tenant_id IS NULL` and are visible to
+`adapt_owner` only (DECISIONS.md §7). There is no console screen, no endpoint
+and no alerting on them: spotting a credential-stuffing run currently means
+`psql` as the owner. The aggregation bound (11 rows per source per minute) also
+means the count in the aggregate row is a *lower bound* for that minute — it
+records the count at the moment of the eleventh failure, not the total.
+
+## 10. `last_used_at` is approximate, and nothing reads it yet
+
+The flush interval (15 s) and the debounce (60 s) mean `last_used_at` can lag
+reality by a minute (DECISIONS.md §5). No route or console surface exposes it
+yet, so the only reader is a test.

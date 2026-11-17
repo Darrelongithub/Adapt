@@ -299,3 +299,70 @@ def seed_two_tenants(database: Database, *, role: str = "app") -> SeededTenants:
         )
     finally:
         engine.dispose()
+
+
+TEST_PEPPER = "test-pepper-synthetic-only"
+
+
+def bootstrap_key(
+    database: Database,
+    tenant_id: uuid.UUID,
+    *,
+    scopes: tuple[str, ...] = ("observe", "admin"),
+    env: str = "test",
+    expires_in_days: int | None = None,
+) -> object:
+    """Create the tenant's first key as the owner: provisioning, not the API.
+
+    Every later key in the tests is minted by this one through the real
+    ``adapt_issue_api_key`` path, with its scope-subset rules in force. A test
+    that minted keys as the app role would be testing a privilege the runtime
+    does not have.
+    """
+    from adapt_engine.auth import keys as key_service
+
+    engine = engine_for(database, "owner")
+    try:
+        return key_service.issue_api_key(
+            engine,
+            tenant_id=tenant_id,
+            scopes=list(scopes),
+            env=env,
+            pepper=TEST_PEPPER,
+            expires_in_days=expires_in_days,
+        )
+    finally:
+        engine.dispose()
+
+
+def grant_credits(
+    database: Database,
+    tenant_id: uuid.UUID,
+    *,
+    kind: str,
+    amount: int,
+    expires_at: object | None = None,
+    source_ref: str | None = None,
+    role: str = "app",
+) -> uuid.UUID:
+    """Create a credit grant for a tenant, inside that tenant's context."""
+    from adapt_engine.credits import service as credits
+
+    engine = engine_for(database, role)
+    try:
+        with tenant_transaction(engine, tenant_id) as conn:
+            return credits.grant_credits(
+                conn,
+                tenant_id=tenant_id,
+                kind=kind,  # type: ignore[arg-type]
+                amount=amount,
+                expires_at=expires_at,  # type: ignore[arg-type]
+                source_ref=source_ref,
+            )
+    finally:
+        engine.dispose()
+
+
+def test_database_engine(database: Database, **kwargs: object) -> Engine:
+    """An app-role engine with an explicit pool, for concurrency tests."""
+    return engine_for(database, "app", **kwargs)

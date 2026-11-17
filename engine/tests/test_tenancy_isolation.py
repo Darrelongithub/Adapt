@@ -60,7 +60,15 @@ def test_no_tenant_variable_sees_zero_rows(role_engine: Engine, seeded: SeededTe
 
         assert conn.execute(text("SELECT count(*) FROM learners")).scalar_one() == 0
         assert conn.execute(text("SELECT count(*) FROM tenants")).scalar_one() == 0
-        assert conn.execute(text("SELECT count(*) FROM audit_log")).scalar_one() == 0
+        # `audit_log` is the one table with a legitimate tenant-less row
+        # (a failed authentication has no tenant — migration 0004). The
+        # property under test is that no *tenant's* rows appear.
+        assert (
+            conn.execute(
+                text("SELECT count(*) FROM audit_log WHERE tenant_id IS NOT NULL")
+            ).scalar_one()
+            == 0
+        )
 
 
 def test_insert_with_foreign_tenant_is_rejected(role_engine: Engine, seeded: SeededTenants) -> None:

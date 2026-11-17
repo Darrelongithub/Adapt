@@ -114,11 +114,68 @@ api_keys = sa.Table(
     sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
 )
 
+credit_grants = sa.Table(
+    "credit_grants",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("amount", sa.Integer, nullable=False),
+    sa.Column("remaining", sa.Integer, nullable=False),
+    sa.Column("granted_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("source_ref", sa.Text, nullable=True),
+)
+
+credit_ledger = sa.Table(
+    "credit_ledger",
+    metadata,
+    sa.Column("id", sa.BigInteger, primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
+    sa.Column("grant_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("delta", sa.Integer, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    sa.Column("ref", sa.Text, nullable=True),
+    sa.Column("idempotency_key", sa.Text, nullable=False),
+    sa.Column("period_start", sa.Date, nullable=True),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+)
+
+credit_reservations = sa.Table(
+    "credit_reservations",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
+    sa.Column("amount", sa.Integer, nullable=False),
+    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("operation_ref", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
+)
+
+credit_reservation_draws = sa.Table(
+    "credit_reservation_draws",
+    metadata,
+    sa.Column("id", sa.BigInteger, primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
+    sa.Column("reservation_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("grant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("amount", sa.Integer, nullable=False),
+)
+
 #: Every table that carries ``tenant_id`` and therefore needs forced RLS.
 #: ``api_keys`` is the one deliberate exception: RLS is enabled but not forced,
 #: because the SECURITY DEFINER resolver is owned by the table owner and FORCE
 #: would make it blind (see DECISIONS.md and tests/test_api_keys.py).
-TENANT_SCOPED_TABLES: Final = ("learners", "audit_log", "api_keys")
+TENANT_SCOPED_TABLES: Final = (
+    "learners",
+    "audit_log",
+    "api_keys",
+    "credit_grants",
+    "credit_ledger",
+    "credit_reservations",
+    "credit_reservation_draws",
+)
 
 #: Tables with RLS enabled but not forced, and why.
 RLS_NOT_FORCED: Final = {

@@ -23,7 +23,15 @@ from tests.pg import Database
 
 #: Tables carrying tenant_id (from the schema module, so this cannot drift).
 TENANT_SCOPED = tuple(SCHEMA_TENANT_TABLES)
-RLS_FORCED = ("tenants", "learners", "audit_log")
+RLS_FORCED = (
+    "tenants",
+    "learners",
+    "audit_log",
+    "credit_grants",
+    "credit_ledger",
+    "credit_reservations",
+    "credit_reservation_draws",
+)
 #: Derived from the schema module: a table added there cannot quietly skip the
 #: FORCE assertion below without being named as an exception in code.
 RLS_ENABLED_ONLY = tuple(RLS_NOT_FORCED)
@@ -234,20 +242,91 @@ def test_resolver_matches_the_prefix_exactly(owner_engine: Engine) -> None:
     assert ">=" not in lowered
 
 
-def test_app_role_cannot_see_api_keys_without_tenant_context(app_engine: Engine) -> None:
-    """No tenant set: the policy yields nothing, so a route cannot leak keys."""
-    with app_engine.connect() as conn:
-        conn.execute(text("BEGIN"))
-        count = conn.execute(text("SELECT count(*) FROM api_keys")).scalar_one()
-        conn.execute(text("ROLLBACK"))
-    assert count == 0
+@pytest.mark.parametrize("privilege", ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"])
+def test_app_role_holds_no_privilege_on_api_keys(owner_engine: Engine, privilege: str) -> None:
+    """Key material is protected by grants, not by RLS.
+
+    RLS keeps tenants apart; grants keep key material from everyone. The app
+    role holds **nothing** on `api_keys` — it cannot read a hash, cannot write
+    one, cannot delete one. Every path is a SECURITY DEFINER function.
+    """
+    with owner_engine.connect() as conn:
+        held = conn.execute(
+            text("SELECT has_table_privilege('adapt_app', 'api_keys', :privilege)"),
+            {"privilege": privilege},
+        ).scalar_one()
+    assert held is False, f"adapt_app holds {privilege} on api_keys"
 
 
-def test_app_role_cannot_delete_api_keys(app_engine: Engine) -> None:
-    """Only SELECT/INSERT/UPDATE are granted; DELETE is withheld."""
+def test_app_role_keeps_execute_on_the_key_functions(owner_engine: Engine) -> None:
+    """No table privilege, but the four functions are the sanctioned path."""
+    expected = (
+        "adapt_resolve_api_key(text)",
+        "adapt_touch_api_key(uuid,integer)",
+        "adapt_issue_api_key(uuid,text,bytea,text[],timestamptz,uuid)",
+        "adapt_revoke_api_key(uuid,uuid)",
+        "adapt_note_auth_failure(text,timestamptz,integer,boolean)",
+    )
+    with owner_engine.connect() as conn:
+        for signature in expected:
+            granted = conn.execute(
+                text("SELECT has_function_privilege('adapt_app', :signature, 'EXECUTE')"),
+                {"signature": signature},
+            ).scalar_one()
+            public = conn.execute(
+                text("SELECT has_function_privilege('public', :signature, 'EXECUTE')"),
+                {"signature": signature},
+            ).scalar_one()
+            assert granted is True, signature
+            assert public is False, f"{signature} is executable by PUBLIC"
+
+
+def test_nothing_but_the_key_functions_touches_api_keys_as_adapt_app(app_engine: Engine) -> None:
+    """A direct read is a permission error, reported as such."""
+    with pytest.raises(DBAPIError):
+        with app_engine.connect() as conn:
+            conn.execute(text("SELECT count(*) FROM api_keys"))
+
+
+def test_expiry_is_not_null_and_defaults_to_ninety_days(owner_engine: Engine) -> None:
+    with owner_engine.connect() as conn:
+        nullable, default = conn.execute(
+            text(
+                "SELECT is_nullable, column_default FROM information_schema.columns "
+                "WHERE table_name = 'api_keys' AND column_name = 'expires_at'"
+            )
+        ).one()
+    assert nullable == "NO"
+    assert "90 days" in default, default
+
+
+def test_audit_log_allows_tenant_less_auth_failure_rows_only(owner_engine: Engine) -> None:
+    """The system policies are narrow: NULL tenant *and* action = auth_failed."""
+    with owner_engine.connect() as conn:
+        policies = dict(
+            conn.execute(
+                text(
+                    "SELECT policyname, coalesce(qual, with_check) FROM pg_policies "
+                    "WHERE tablename = 'audit_log'"
+                )
+            ).all()
+        )
+    system = policies.get("audit_system_insert")
+    assert system is not None, sorted(policies)
+    assert "tenant_id IS NULL" in system
+    assert "auth_failed" in system
+
+
+def test_app_role_cannot_write_a_tenant_less_audit_row(app_engine: Engine) -> None:
+    """The system policy is granted to the owner role, so the app role is out."""
     with pytest.raises(DBAPIError):
         with app_engine.begin() as conn:
-            conn.execute(text("DELETE FROM api_keys"))
+            conn.execute(
+                text(
+                    "INSERT INTO audit_log (tenant_id, actor, action) "
+                    "VALUES (NULL, 'attacker', 'auth_failed')"
+                )
+            )
 
 
 @pytest.mark.parametrize("table", TENANT_SCOPED)

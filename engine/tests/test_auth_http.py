@@ -20,13 +20,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from adapt_engine.auth import keys as key_service
 from adapt_engine.auth.rate_limit import FailureLimiter
 from adapt_engine.clock import SystemClock
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.main import create_app
 from tests.conftest import TEST_PEPPER, make_settings
-from tests.pg import SeededTenants
+from tests.pg import SeededTenants, bootstrap_key
 
 PEPPER = TEST_PEPPER
 
@@ -39,22 +38,12 @@ def tenants(database) -> SeededTenants:
 
 
 @pytest.fixture
-def clients(app_engine: Engine, tenants: SeededTenants) -> tuple[TestClient, str, str]:
+def clients(
+    database, app_engine: Engine, tenants: SeededTenants
+) -> tuple[TestClient, str, str]:
     """One app, two keys — one per tenant — and the key strings."""
-    a_key = key_service.issue_api_key(
-        app_engine,
-        tenant_id=tenants.a_id,
-        scopes=["observe", "admin"],
-        env="test",
-        pepper=PEPPER,
-    )
-    b_key = key_service.issue_api_key(
-        app_engine,
-        tenant_id=tenants.b_id,
-        scopes=["observe", "admin"],
-        env="test",
-        pepper=PEPPER,
-    )
+    a_key = bootstrap_key(database, tenants.a_id, scopes=("observe", "admin"))
+    b_key = bootstrap_key(database, tenants.b_id, scopes=("observe", "admin"))
     app = create_app(
         make_settings(),
         clock=SystemClock(),
@@ -131,7 +120,7 @@ def test_created_learner_belongs_to_the_calling_tenant(
 
 
 def test_an_admin_only_key_can_ask_who_it_is(
-    clients: tuple[TestClient, str, str], tenants: SeededTenants, app_engine: Engine
+    clients: tuple[TestClient, str, str], tenants: SeededTenants, database
 ) -> None:
     """Identity is not a capability: any valid key may call /v1/whoami.
 
@@ -139,9 +128,7 @@ def test_an_admin_only_key_can_ask_who_it_is(
     endpoint is not a way around scope checks.
     """
     client, _, _ = clients
-    admin_only = key_service.issue_api_key(
-        app_engine, tenant_id=tenants.a_id, scopes=["admin"], env="test", pepper=PEPPER
-    )
+    admin_only = bootstrap_key(database, tenants.a_id, scopes=("admin",))
     resp = client.get("/v1/whoami", headers=_auth(admin_only.full_key))
     assert resp.status_code == 200
     assert resp.json()["scopes"] == ["admin"]
@@ -166,16 +153,12 @@ def test_missing_auth_never_touches_the_database(app_engine: Engine) -> None:
     assert resp.json()["error"]["code"] == "unauthorized"
 
 
-def test_scope_failure_is_403_not_404(clients: tuple[TestClient, str, str], tenants) -> None:
+def test_scope_failure_is_403_not_404(
+    clients: tuple[TestClient, str, str], tenants, database
+) -> None:
     """A key without the scope is refused as not_entitled, before the lookup."""
     client, _, _ = clients
-    observe_only = key_service.issue_api_key(
-        client.app.state.engine,
-        tenant_id=tenants.a_id,
-        scopes=["observe"],
-        env="test",
-        pepper=PEPPER,
-    )
+    observe_only = bootstrap_key(database, tenants.a_id, scopes=("observe",))
     resp = client.post(
         "/v1/learners", headers=_auth(observe_only.full_key), json={"learner_id": "learner-x-01"}
     )

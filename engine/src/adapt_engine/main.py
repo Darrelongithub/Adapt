@@ -18,10 +18,14 @@ from fastapi.openapi.utils import get_openapi
 from sqlalchemy.engine import Engine
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from adapt_engine.api.credits import router as credits_router
 from adapt_engine.api.health import router as health_router
 from adapt_engine.api.keys import router as keys_router
 from adapt_engine.api.learners import router as learners_router
+from adapt_engine.auth.audit import AuthFailureAuditor
 from adapt_engine.auth.rate_limit import FailureLimiter
+from adapt_engine.auth.touch import DEFAULT_FLUSH_INTERVAL_SECONDS as DEFAULT_FLUSH_INTERVAL
+from adapt_engine.auth.touch import LastUsedRecorder
 from adapt_engine.clock import Clock, SystemClock
 from adapt_engine.config import Settings
 from adapt_engine.db import check_database, create_db_engine
@@ -62,16 +66,44 @@ def create_app(
     redis_check: Callable[[], bool] | None = None,
     engine: Engine | None = None,
     auth_limiter: FailureLimiter | None = None,
+    auth_auditor: AuthFailureAuditor | None = None,
+    last_used: LastUsedRecorder | None = None,
+    flush_interval: float | None = None,
+    start_background: bool = True,
 ) -> FastAPI:
     """Build the FastAPI app with injected clock, engine and dependency checks."""
     active_clock: Clock = clock if clock is not None else SystemClock()
     configure_logging()
-    app = FastAPI(title="Adapt Engine", version=settings.version)
+    active_engine = engine if engine is not None else create_db_engine(settings.database_url)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI) -> Any:
+        """Start the `last_used_at` flush loop; drain it on shutdown."""
+        recorder: LastUsedRecorder = app.state.last_used
+        if start_background:
+            recorder.start()
+        try:
+            yield
+        finally:
+            await recorder.stop()
+
+    app = FastAPI(title="Adapt Engine", version=settings.version, lifespan=lifespan)
     app.state.settings = settings
     app.state.clock = active_clock
-    app.state.engine = engine if engine is not None else create_db_engine(settings.database_url)
+    app.state.engine = active_engine
     app.state.auth_limiter = (
         auth_limiter if auth_limiter is not None else FailureLimiter(clock=active_clock)
+    )
+    app.state.auth_auditor = (
+        auth_auditor
+        if auth_auditor is not None
+        else AuthFailureAuditor(active_engine, active_clock)
+    )
+    interval = flush_interval if flush_interval is not None else DEFAULT_FLUSH_INTERVAL
+    app.state.last_used = (
+        last_used
+        if last_used is not None
+        else LastUsedRecorder(active_engine, flush_interval=interval)
     )
     app.state.db_check = db_check if db_check is not None else _default_db_check(settings)
     app.state.redis_check = (
@@ -85,6 +117,7 @@ def create_app(
     app.include_router(health_router)
     app.include_router(keys_router)
     app.include_router(learners_router)
+    app.include_router(credits_router)
     _install_openapi(app)
     return app
 

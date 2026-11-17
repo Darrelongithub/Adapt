@@ -1,0 +1,39 @@
+--- a/docs/v2/INTEGRATION.md
++++ b/docs/v2/INTEGRATION.md
+@@ -402,3 +402,36 @@
+ * Not a UI kit. The console is ours; the learner UI is theirs.
+ * Not a data export pipeline. If a host needs their events elsewhere, that is
+   `GET /v1/learners/{id}/export`, on demand, not a nightly sync of learner records out of the engine.
++
++---
++
++## 15. Endpoint inventory
++
++Two classes of route, and the distinction is load-bearing: **host-facing** routes are part of the
++contract a host integrates against and are covered by the conformance suite (§11); **control-plane**
++routes belong to the console and to onboarding, and a host never calls them.
++
++| Route | Class | Auth | Scope | Notes |
++|---|---|---|---|---|
++| `GET /v1/health` | operational | none | — | liveness/readiness; no auth by design |
++| `GET /v1/version` | operational | none | — | build identity; no auth by design |
++| `GET /v1/whoami` | **host-facing** | API key | any of `observe`, `decide`, `read_model`, `admin` | identity of the calling key; never returns key material |
++| `GET /v1/learners` | **host-facing** | API key | `observe` | the caller's learners only |
++| `GET /v1/learners/{learner_id}` | **host-facing** | API key | `observe` | another tenant's id is `404 learner_unknown`, not 403 |
++| `POST /v1/learners` | **host-facing** | API key | `admin` | tenant comes from the key, never from the body |
++| `GET /v1/credits/balance` | **host-facing** | API key | `observe` | a query over grants, never a stored balance |
++| `POST /v1/credits/reservations` | **host-facing** | API key | `admin` | holds credits; `Idempotency-Key` required; 402 `quota_exhausted` |
++| `POST /v1/credits/reservations/{id}/settle` | **host-facing** | API key | `admin` | consumption ≤ held; overdraw is `409 conflict`, never clamped |
++| `POST /v1/credits/reservations/{id}/release` | **host-facing** | API key | `admin` | idempotent; a release never debits |
++| `POST /v1/admin/keys` | **control-plane** | API key | `admin` | excluded from §11; may only mint a subset of itself, never `admin` |
++| `POST /v1/admin/keys/{id}/revoke` | **control-plane** | API key | `admin` | excluded from §11; revocation is immediate and idempotent |
++
++**The rule, stated once.** Everything under `/v1/admin/*` is control-plane: it requires the `admin`
++scope and is out of scope for the host-facing conformance list, because a host does not manage its
++own keys — onboarding does, and the console is where it happens. `/v1/whoami` is host-facing and
++stays: a host needs to know which key it is holding and when it expires, and that answer is not a
++capability, so any valid key may ask.
++
++Conformance check 1 (§11, "auth works; scopes enforced per endpoint") applies to the host-facing
++routes in this table and to nothing else. A conformance run that fails on `/v1/admin/*` is
++misconfigured, not a broken connection.

@@ -10,7 +10,16 @@ from sqlalchemy import create_engine, text
 
 from tests import pg
 
-TABLES = ("api_keys", "audit_log", "learners", "tenants")
+TABLES = (
+    "api_keys",
+    "audit_log",
+    "credit_grants",
+    "credit_ledger",
+    "credit_reservation_draws",
+    "credit_reservations",
+    "learners",
+    "tenants",
+)
 
 
 def _tables(database: pg.Database) -> list[str]:
@@ -80,8 +89,22 @@ def test_up_down_up_on_a_clean_database() -> None:
         pg.drop_database(database)
 
 
+def _strip_function_bodies(source: str) -> str:
+    """Remove dollar-quoted bodies: a function body is schema, not data.
+
+    The rule below exists to keep migrations free of data manipulation —
+    a backfill, a seed row, a DELETE written as an afterthought. A SQL function
+    that *contains* an INSERT is schema: the statement only runs when the
+    function is called at runtime, long after the migration. So the bodies go,
+    and what is left has to be clean.
+    """
+    import re
+
+    return re.sub(r"\$\w*\$.*?\$\w*\$", "", source, flags=re.DOTALL)
+
+
 def test_migration_contains_no_data_statements() -> None:
-    """No INSERT/UPDATE/DELETE/COPY in a migration: schema only."""
+    """No INSERT/UPDATE/DELETE/COPY in a migration body: schema only."""
     import re
     from pathlib import Path
 
@@ -89,7 +112,8 @@ def test_migration_contains_no_data_statements() -> None:
     for path in sorted(versions.glob("*.py")):
         source = path.read_text(encoding="utf-8")
         code_only = "\n".join(
-            line for line in source.splitlines() if not line.strip().startswith("#")
+            line for line in _strip_function_bodies(source).splitlines()
+            if not line.strip().startswith("#")
         )
         for pattern in (
             r"\bINSERT\s+INTO\b",

@@ -1,22 +1,29 @@
-"""API-key administration and identity.
+"""API-key administration and identity — the control plane.
+
+`/v1/admin/*` is the console's surface, not the host's: it requires the `admin`
+scope, and it is excluded from the host-facing conformance list in
+INTEGRATION.md §11. Hosts receive their keys at onboarding; they do not mint
+them.
 
 Issuing returns the full key exactly once. There is no route that reads a key
-back, and none that lists hashes: a tenant can see its own key prefixes,
-scopes and timestamps, and nothing that could be replayed.
+back, and none that lists hashes. Revocation writes the row, so the next
+resolution — which goes through the SECURITY DEFINER function every request,
+with no cache in front of it — sees it immediately.
 
-Revocation is a write to the row, so the next resolution — which goes through
-the SECURITY DEFINER function every request, with no cache in front of it —
-sees it immediately.
+An `admin` key may issue only keys whose scopes are a subset of its own, and
+may never mint another `admin` key. That rule lives in `adapt_issue_api_key`,
+so there is one implementation of it, and the handler translates the refusal
+into `not_entitled` rather than re-deriving it.
 """
 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from adapt_engine.api.deps import get_settings
@@ -29,22 +36,37 @@ from adapt_engine.auth.deps import (
     security_requirement_any,
     tenant_connection,
 )
-from adapt_engine.auth.keys import SCOPES
+from adapt_engine.auth.keys import MAX_EXPIRY_DAYS, SCOPES
 from adapt_engine.config import Settings
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 
 router = APIRouter(prefix="/v1", tags=["keys"], responses=ERROR_RESPONSES)
+
+#: The refusal reasons the database raises, and how they are reported.
+_ESCALATION_REASONS = {
+    "admin_not_mintable": "admin keys are provisioned at onboarding, never minted over the API",
+    "scope_escalation": "a key may only issue keys whose scopes are a subset of its own",
+    "issuer_not_admin": "only an admin key may issue keys",
+    "issuer_unknown": "the issuing key is not valid for this tenant",
+    "issuer_required": "no issuer; provisioning requires the owner role",
+}
+_PAYLOAD_REASONS = {
+    "scopes_required": "a key needs at least one scope",
+    "expires_at_required": "expires_at must be in the future",
+}
 
 
 class WhoAmI(BaseModel):
     tenant_id: uuid.UUID
     key_id: uuid.UUID
     scopes: list[str]
+    expires_at: datetime
 
 
 class KeyIssueRequest(BaseModel):
     scopes: list[str] = Field(default_factory=lambda: ["observe"])
     env: str = Field(default="test")
+    expires_in_days: int | None = Field(default=None, ge=1, le=MAX_EXPIRY_DAYS)
 
 
 class KeyIssued(BaseModel):
@@ -55,6 +77,7 @@ class KeyIssued(BaseModel):
     full_key: str
     scopes: list[str]
     env: str
+    expires_at: datetime
 
 
 class KeyRevoked(BaseModel):
@@ -78,6 +101,7 @@ def whoami(auth: Annotated[AuthContext, Depends(require_any_scope(*SCOPES))]) ->
         tenant_id=auth.tenant_id,
         key_id=auth.key_id,
         scopes=list(auth.scopes),
+        expires_at=auth.expires_at,
     )
 
 
@@ -93,7 +117,7 @@ def issue_key(
     conn: Annotated[Connection, Depends(tenant_connection)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> KeyIssued:
-    """Issue another key for the caller's tenant. Shown once."""
+    """Issue another key for the caller's tenant. Shown once, then gone."""
     try:
         issued = key_service.insert_api_key(
             conn,
@@ -101,7 +125,23 @@ def issue_key(
             scopes=body.scopes,
             env=body.env,
             pepper=settings.key_pepper.get_secret_value(),
+            issuer_key_id=auth.key_id,
+            expires_in_days=body.expires_in_days,
         )
+    except key_service.KeyIssueRefused as exc:
+        if exc.reason in _ESCALATION_REASONS:
+            raise AdaptError(
+                code="not_entitled",
+                message=f"tier_required: {_ESCALATION_REASONS[exc.reason]}",
+                status_code=403,
+                retryable=False,
+            ) from exc
+        raise AdaptError(
+            code="payload_invalid",
+            message=_PAYLOAD_REASONS.get(exc.reason, exc.reason),
+            status_code=422,
+            retryable=False,
+        ) from exc
     except ValueError as exc:
         raise AdaptError(
             code="payload_invalid",
@@ -115,6 +155,7 @@ def issue_key(
         full_key=issued.full_key,
         scopes=list(issued.scopes),
         env=issued.env,
+        expires_at=issued.expires_at,
     )
 
 
@@ -129,21 +170,14 @@ def revoke_key(
     auth: Annotated[AuthContext, Depends(require_scope("admin"))],
     conn: Annotated[Connection, Depends(tenant_connection)],
 ) -> KeyRevoked:
-    result = conn.execute(
-        text("UPDATE api_keys SET revoked_at = now() WHERE id = :id AND revoked_at IS NULL"),
-        {"id": key_id},
+    """Revoke immediately. Idempotent: the key is unusable afterwards.
+
+    A key that is already revoked, expired, or was never this tenant's is not
+    distinguishable from here — the app role holds no privilege on ``api_keys``
+    and the revoke function is tenant-addressed. That is deliberate: an
+    "unknown vs already revoked" answer would be an oracle.
+    """
+    key_service.revoke_api_key(
+        conn, tenant_id=auth.tenant_id, key_id=key_id, actor_key_id=auth.key_id
     )
-    if result.rowcount == 0:
-        # Already revoked or not this tenant's key. Both are "not found" from
-        # the caller's point of view; RLS means it cannot tell which.
-        exists = conn.execute(
-            text("SELECT 1 FROM api_keys WHERE id = :id"), {"id": key_id}
-        ).scalar_one_or_none()
-        if exists is None:
-            raise AdaptError(
-                code="route_unknown",
-                message="no such key for this tenant",
-                status_code=404,
-                retryable=False,
-            )
     return KeyRevoked(key_id=key_id, revoked=True)

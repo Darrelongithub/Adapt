@@ -19,10 +19,10 @@ Every path therefore performs one HMAC, one lookup and one comparison.
 
 from __future__ import annotations
 
-import contextlib
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Annotated, Any, NoReturn
 
 from fastapi import Depends, Request, Security
@@ -30,7 +30,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.engine import Connection
 
 from adapt_engine.auth import keys
+from adapt_engine.auth.audit import AuthFailureAuditor, ip_hash
 from adapt_engine.auth.rate_limit import FailureLimiter
+from adapt_engine.auth.touch import LastUsedRecorder
 from adapt_engine.config import Settings
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.errors import AdaptError
@@ -72,6 +74,7 @@ class AuthContext:
     key_id: uuid.UUID
     scopes: tuple[str, ...]
     key_env: str
+    expires_at: datetime
 
     def require(self, scope: str) -> None:
         """Scope failures are 403 not_entitled, per INTEGRATION.md §6."""
@@ -84,15 +87,6 @@ class AuthContext:
             )
 
 
-def _unauthorized() -> AdaptError:
-    return AdaptError(
-        code="unauthorized",
-        message=UNAUTHORIZED_MESSAGE,
-        status_code=401,
-        retryable=False,
-    )
-
-
 def expected_key_env(settings: Settings) -> str:
     """Production accepts live keys; every other environment accepts test keys."""
     return keys.KEY_ENV_LIVE if settings.env == "production" else keys.KEY_ENV_TEST
@@ -102,68 +96,103 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _fail(request: Request, limiter: FailureLimiter) -> NoReturn:
-    limiter.record_failure(_client_ip(request))
-    raise _unauthorized()
+def _unauthorized() -> AdaptError:
+    return AdaptError(
+        code="unauthorized",
+        message=UNAUTHORIZED_MESSAGE,
+        status_code=401,
+        retryable=False,
+    )
+
+
+def _rate_limited(limiter: FailureLimiter, source: str) -> AdaptError:
+    return AdaptError(
+        code="rate_limited",
+        message="too many failed authentication attempts",
+        status_code=429,
+        retryable=True,
+        headers={"Retry-After": str(limiter.retry_after_seconds(source))},
+    )
 
 
 def resolve_auth(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
 ) -> AuthContext:
-    """Resolve the caller from the bearer token, or fail as unauthorized."""
+    """Resolve the caller from the bearer token, or fail as unauthorized.
+
+    The order is the point. Validation happens first, failures are counted
+    afterwards, and the rate-limit answer is only reachable from a failure —
+    so a valid key is never refused because other tenants' bad guesses share
+    its egress address.
+    """
     settings: Settings = request.app.state.settings
     engine = request.app.state.engine
     limiter: FailureLimiter = request.app.state.auth_limiter
-    client = _client_ip(request)
+    auditor: AuthFailureAuditor = request.app.state.auth_auditor
+    recorder: LastUsedRecorder = request.app.state.last_used
+    pepper = settings.key_pepper.get_secret_value()
+    source = ip_hash(pepper, _client_ip(request))
 
-    if limiter.is_blocked(client):
-        raise AdaptError(
-            code="rate_limited",
-            message="too many failed authentication attempts",
-            status_code=429,
-            retryable=True,
-            headers={"Retry-After": str(limiter.retry_after_seconds(client))},
-        )
+    def failed() -> NoReturn:
+        """Count one failure, audit it, and answer 401 — or 429 once blocked.
+
+        The budget is checked *before* this failure is counted, so
+        `max_failures` is a real allowance: N failures answer 401 and the
+        next one answers 429. Both branches count and audit, because the
+        window has to keep moving for the block to expire.
+        """
+        blocked = limiter.is_blocked(source)
+        limiter.record_failure(source)
+        auditor.record(source)
+        if blocked:
+            raise _rate_limited(limiter, source)
+        raise _unauthorized()
 
     if credentials is None or not credentials.credentials:
-        _fail(request, limiter)
+        failed()
 
     presented = credentials.credentials.strip()
     if not keys.looks_like_key(presented):
-        _fail(request, limiter)
+        failed()
 
     # Always computed, so a malformed-but-shaped key costs the same as a real
     # one that fails to match.
-    pepper = settings.key_pepper.get_secret_value()
     computed = keys.hash_key(pepper, presented)
 
     presented_env = keys.key_env(presented)
     if presented_env != expected_key_env(settings):
-        _fail(request, limiter)
+        failed()
 
     resolved = keys.resolve_api_key(engine, presented[: keys.PREFIX_LENGTH])
     stored = resolved.stored_hash if resolved is not None else keys.DUMMY_HASH
     matched = keys.hashes_match(stored, computed)
 
-    if resolved is None or not matched or resolved.revoked:
-        _fail(request, limiter)
+    if resolved is None or not matched or resolved.revoked or _expired(resolved):
+        failed()
 
-    # Narrowed by the guard above: _fail never returns.
+    # Narrowed by the guard above: failed() never returns.
     assert resolved is not None and presented_env is not None
 
-    # Bounded and debounced in SQL (at most one row write per key per
-    # minute), in its own short transaction. A failure here must not fail a
-    # request that already authenticated, nor change what the caller sees.
-    with contextlib.suppress(Exception):
-        keys.touch_last_used(engine, tenant_id=resolved.tenant_id, key_id=resolved.key_id)
+    # In memory only. The flush loop writes `last_used_at` off the request
+    # path, debounced in SQL; see auth/touch.py and DECISIONS.md §5.
+    recorder.note(resolved.key_id)
 
     return AuthContext(
         tenant_id=resolved.tenant_id,
         key_id=resolved.key_id,
         scopes=resolved.scopes,
         key_env=presented_env,
+        expires_at=resolved.expires_at,
     )
+
+
+def _expired(resolved: keys.ResolvedKey) -> bool:
+    """An expired key is a wrong key: same status, same body, same timing."""
+    expires_at = resolved.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at <= datetime.now(UTC)
 
 
 def tenant_connection(

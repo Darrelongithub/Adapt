@@ -13,6 +13,7 @@ import json
 import statistics
 import time
 import uuid
+from datetime import UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,7 +27,7 @@ from adapt_engine.config import Settings
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.main import create_app
 from tests.conftest import TEST_PEPPER, make_settings
-from tests.pg import provision_tenant
+from tests.pg import bootstrap_key, provision_tenant
 
 PEPPER = TEST_PEPPER
 
@@ -49,10 +50,27 @@ def _client(
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _key(engine: Engine, tenant_id: uuid.UUID, scopes=("observe", "admin"), env="test"):
-    return key_service.issue_api_key(
-        engine, tenant_id=tenant_id, scopes=list(scopes), env=env, pepper=PEPPER
-    )
+#: Bound per test by the autouse fixture below. Bootstrapping a key needs the
+#: owner connection, and threading `database` through every test signature
+#: said less than this does.
+_DATABASE = None
+
+
+@pytest.fixture(autouse=True)
+def _bind_database(database):
+    global _DATABASE
+    _DATABASE = database
+    yield
+
+
+def _key(tenant_id: uuid.UUID, scopes=("observe", "admin"), env="test"):
+    """A key for ``tenant_id``, minted by provisioning (issuer = NULL)."""
+    return bootstrap_key(_DATABASE, tenant_id, scopes=scopes, env=env)
+
+
+def _revoke(engine: Engine, tenant_id: uuid.UUID, key_id: uuid.UUID) -> bool:
+    with tenant_transaction(engine, tenant_id) as conn:
+        return key_service.revoke_api_key(conn, tenant_id=tenant_id, key_id=key_id)
 
 
 def _auth(full_key: str) -> dict[str, str]:
@@ -60,29 +78,26 @@ def _auth(full_key: str) -> dict[str, str]:
 
 
 @pytest.fixture
-def tenant(app_engine: Engine, database) -> uuid.UUID:
-    return provision_tenant(
-        database, slug=f"keys-{uuid.uuid4().hex[:10]}", name="Key Tenant"
-    )
+def tenant(database) -> uuid.UUID:
+    return provision_tenant(database, slug=f"keys-{uuid.uuid4().hex[:10]}", name="Key Tenant")
 
 
 @pytest.fixture
-def admin_key(app_engine: Engine, tenant: uuid.UUID):
-    return _key(app_engine, tenant)
+def admin_key(database, tenant: uuid.UUID):
+    """The tenant's first key: minted by provisioning, not over the API."""
+    return bootstrap_key(database, tenant)
 
 
 def test_issued_key_works_then_revoked_key_fails(app_engine: Engine, tenant: uuid.UUID) -> None:
     """The §3 acceptance sequence: issue → authorised call → revoke → 401."""
-    issued = _key(app_engine, tenant)
+    issued = _key(tenant)
     client = _client(app_engine)
 
     resp = client.get("/v1/whoami", headers=_auth(issued.full_key))
     assert resp.status_code == 200
     assert resp.json()["tenant_id"] == str(tenant)
 
-    assert key_service.revoke_api_key(
-        app_engine, tenant_id=tenant, key_id=issued.key_id
-    )
+    assert _revoke(app_engine, tenant, issued.key_id)
 
     # No cache: the very next request is rejected.
     resp = client.get("/v1/whoami", headers=_auth(issued.full_key))
@@ -90,10 +105,12 @@ def test_issued_key_works_then_revoked_key_fails(app_engine: Engine, tenant: uui
     assert resp.json()["error"]["code"] == "unauthorized"
 
 
-def test_stored_value_is_not_the_key(app_engine: Engine, tenant: uuid.UUID) -> None:
+def test_stored_value_is_not_the_key(owner_engine: Engine, tenant: uuid.UUID) -> None:
     """The database holds a prefix and an HMAC, never the key."""
-    issued = _key(app_engine, tenant)
-    with tenant_transaction(app_engine, tenant) as conn:
+    issued = _key(tenant)
+    # The app role holds no privilege on api_keys (migration 0004), so the
+    # stored bytes are inspected — as an operator would — through the owner.
+    with owner_engine.connect() as conn:
         row = conn.execute(
             text("SELECT prefix, hash, scopes FROM api_keys WHERE id = :id"),
             {"id": issued.key_id},
@@ -111,8 +128,8 @@ def test_stored_value_is_not_the_key(app_engine: Engine, tenant: uuid.UUID) -> N
 
 
 def test_key_format(app_engine: Engine, tenant: uuid.UUID) -> None:
-    live = _key(app_engine, tenant, env="live")
-    test = _key(app_engine, tenant, env="test")
+    live = _key(tenant, env="live")
+    test = _key(tenant, env="test")
     assert live.full_key.startswith("ak_live_")
     assert test.full_key.startswith("ak_test_")
     assert len(live.full_key) == len("ak_live_") + 32
@@ -123,11 +140,11 @@ def test_key_format(app_engine: Engine, tenant: uuid.UUID) -> None:
 def test_revoked_key_fails_immediately_not_at_cache_expiry(
     app_engine: Engine, tenant: uuid.UUID
 ) -> None:
-    issued = _key(app_engine, tenant)
+    issued = _key(tenant)
     client = _client(app_engine)
     assert client.get("/v1/whoami", headers=_auth(issued.full_key)).status_code == 200
 
-    key_service.revoke_api_key(app_engine, tenant_id=tenant, key_id=issued.key_id)
+    _revoke(app_engine, tenant, issued.key_id)
 
     for _ in range(3):
         resp = client.get("/v1/whoami", headers=_auth(issued.full_key))
@@ -136,7 +153,7 @@ def test_revoked_key_fails_immediately_not_at_cache_expiry(
 
 def test_test_env_key_is_rejected_by_a_live_endpoint(app_engine: Engine, tenant: uuid.UUID) -> None:
     """A test key on a production-shaped app is unauthorized, not 403."""
-    test_key = _key(app_engine, tenant, env="test")
+    test_key = _key(tenant, env="test")
     production_settings = make_settings(
         env="production",
         commit="abc1234",
@@ -151,14 +168,14 @@ def test_test_env_key_is_rejected_by_a_live_endpoint(app_engine: Engine, tenant:
 
 
 def test_live_key_is_rejected_by_a_test_endpoint(app_engine: Engine, tenant: uuid.UUID) -> None:
-    live_key = _key(app_engine, tenant, env="live")
+    live_key = _key(tenant, env="live")
     client = _client(app_engine)  # make_settings() is env=test
     resp = client.get("/v1/whoami", headers=_auth(live_key.full_key))
     assert resp.status_code == 401
 
 
 def test_scopes_are_enforced_as_not_entitled(app_engine: Engine, tenant: uuid.UUID) -> None:
-    observe_only = _key(app_engine, tenant, scopes=("observe",))
+    observe_only = _key(tenant, scopes=("observe",))
     client = _client(app_engine)
 
     assert client.get("/v1/learners", headers=_auth(observe_only.full_key)).status_code == 200
@@ -191,9 +208,9 @@ def test_failure_body_is_identical_across_failure_modes(
     app_engine: Engine, tenant: uuid.UUID
 ) -> None:
     """Same status, same code, same message, same keys — only request_id differs."""
-    issued = _key(app_engine, tenant)
-    revoked = _key(app_engine, tenant)
-    key_service.revoke_api_key(app_engine, tenant_id=tenant, key_id=revoked.key_id)
+    issued = _key(tenant)
+    revoked = _key(tenant)
+    _revoke(app_engine, tenant, revoked.key_id)
     client = _client(app_engine, max_failures=1000)
 
     unknown_prefix = "ak_test_" + "b" * 32            # shaped, never issued
@@ -223,7 +240,7 @@ def test_unknown_prefix_and_wrong_secret_are_time_equivalent(
     comparison. If the lookup short-circuited on "not found", the difference
     would be visible here.
     """
-    issued = _key(app_engine, tenant)
+    issued = _key(tenant)
     client = _client(app_engine, max_failures=100_000)
 
     unknown = "ak_test_" + "c" * 32
@@ -253,6 +270,7 @@ def test_failed_auth_is_rate_limited_per_ip(app_engine: Engine, tenant: uuid.UUI
     client = _client(app_engine, max_failures=3)
     bad = {"Authorization": "Bearer ak_test_" + "z" * 32}
 
+    # max_failures is an allowance: three 401s, then 429s.
     for _ in range(3):
         assert client.get("/v1/whoami", headers=bad).status_code == 401
 
@@ -263,35 +281,63 @@ def test_failed_auth_is_rate_limited_per_ip(app_engine: Engine, tenant: uuid.UUI
     assert int(blocked.headers["Retry-After"]) >= 1
 
 
-def test_last_used_at_write_amplification_is_bounded(
+def test_a_valid_key_is_never_rate_limited_by_other_tenants_failures(
     app_engine: Engine, tenant: uuid.UUID
 ) -> None:
-    issued = _key(app_engine, tenant)
-    client = _client(app_engine)
+    """A shared NAT full of bad guesses must not lock out a good key.
 
-    for _ in range(20):
-        assert client.get("/v1/whoami", headers=_auth(issued.full_key)).status_code == 200
+    This is why validation runs first and counting runs after: the limiter
+    can only ever change the answer to a *failed* authentication.
+    """
+    issued = _key(tenant)
+    client = _client(app_engine, max_failures=2)
+    bad = {"Authorization": "Bearer ak_test_" + "y" * 32}
 
-    with tenant_transaction(app_engine, tenant) as conn:
-        first = conn.execute(
-            text("SELECT last_used_at FROM api_keys WHERE id = :id"), {"id": issued.key_id}
-        ).scalar_one()
-    assert first is not None, "the first successful use should record last_used_at"
+    for _ in range(6):
+        client.get("/v1/whoami", headers=bad)
+    assert client.get("/v1/whoami", headers=bad).status_code == 429
 
-    # The debounce means the next burst inside the window writes nothing.
-    for _ in range(20):
-        assert client.get("/v1/whoami", headers=_auth(issued.full_key)).status_code == 200
-    with tenant_transaction(app_engine, tenant) as conn:
-        second = conn.execute(
-            text("SELECT last_used_at FROM api_keys WHERE id = :id"), {"id": issued.key_id}
-        ).scalar_one()
-    assert second == first, "last_used_at was rewritten inside the debounce window"
+    # Same client address, valid key: still 200.
+    for _ in range(5):
+        allowed = client.get("/v1/whoami", headers=_auth(issued.full_key))
+        assert allowed.status_code == 200, allowed.text
+
+
+def test_last_used_at_is_written_off_the_request_path(
+    app_engine: Engine, owner_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """Forty requests, zero writes on the hot path, one write per flush window."""
+    issued = _key(tenant)
+    app = _client(app_engine)
+    recorder = app.app.state.last_used
+
+    def stored() -> object:
+        with owner_engine.connect() as conn:
+            return conn.execute(
+                text("SELECT last_used_at FROM api_keys WHERE id = :id"), {"id": issued.key_id}
+            ).scalar_one()
+
+    for _ in range(40):
+        assert app.get("/v1/whoami", headers=_auth(issued.full_key)).status_code == 200
+
+    assert stored() is None, "the request path wrote last_used_at"
+    assert recorder.pending() == 1, "forty requests should be one pending key"
+
+    assert recorder.flush() == 1
+    first = stored()
+    assert first is not None
+
+    # Inside the debounce window the flush is a no-op, however many requests.
+    for _ in range(40):
+        assert app.get("/v1/whoami", headers=_auth(issued.full_key)).status_code == 200
+    assert recorder.flush() == 0
+    assert stored() == first
 
 
 def test_key_material_never_reaches_the_log(
     app_engine: Engine, tenant: uuid.UUID, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    issued = _key(app_engine, tenant)
+    issued = _key(tenant)
     client = _client(app_engine, max_failures=1000)
     client.get("/v1/whoami", headers=_auth(issued.full_key))
     client.get("/v1/whoami", headers=_auth("ak_test_" + "q" * 32))
@@ -337,3 +383,140 @@ def test_unknown_scope_is_rejected_at_issue(app_engine: Engine, tenant: uuid.UUI
         key_service.issue_api_key(
             app_engine, tenant_id=tenant, scopes=["observe", "root"], env="test", pepper=PEPPER
         )
+
+
+# --- increment 3 fixes: minting rules, expiry, and what gets audited ---------
+
+
+def test_an_admin_key_may_mint_a_subset_of_itself(
+    database, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    wide = bootstrap_key(database, tenant, scopes=("observe", "decide", "admin"))
+    client = _client(app_engine)
+    resp = client.post(
+        "/v1/admin/keys",
+        headers=_auth(wide.full_key),
+        json={"scopes": ["observe", "decide"], "env": "test"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["scopes"] == ["decide", "observe"]
+
+
+def test_an_admin_key_may_never_mint_admin(
+    app_engine: Engine, tenant: uuid.UUID, admin_key
+) -> None:
+    """Otherwise admin is one call away, and the scope means nothing."""
+    client = _client(app_engine)
+    resp = client.post(
+        "/v1/admin/keys",
+        headers=_auth(admin_key.full_key),
+        json={"scopes": ["admin"], "env": "test"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "not_entitled"
+    assert "provisioned" in resp.json()["error"]["message"]
+
+
+def test_an_admin_key_may_not_mint_a_scope_it_lacks(
+    database, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    narrow_admin = bootstrap_key(database, tenant, scopes=("observe", "admin"))
+    client = _client(app_engine)
+    resp = client.post(
+        "/v1/admin/keys",
+        headers=_auth(narrow_admin.full_key),
+        json={"scopes": ["observe", "read_model"], "env": "test"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "not_entitled"
+    assert "subset" in resp.json()["error"]["message"]
+
+
+def test_the_provisioning_path_is_closed_to_the_app_role(tenant: uuid.UUID, app_engine: Engine) -> None:
+    """No issuer means provisioning, and provisioning means the owner session."""
+    with pytest.raises(key_service.KeyIssueRefused) as refused:
+        key_service.issue_api_key(
+            app_engine, tenant_id=tenant, scopes=["observe"], env="test", pepper=PEPPER
+        )
+    assert refused.value.reason == "issuer_required"
+
+
+def test_every_key_expires_and_the_default_is_ninety_days(
+    app_engine: Engine, tenant: uuid.UUID, admin_key
+) -> None:
+    from datetime import datetime, timedelta
+
+    issued = _key(tenant)
+    horizon = issued.expires_at - datetime.now(UTC)
+    assert timedelta(days=89) < horizon < timedelta(days=91)
+
+    resp = _client(app_engine).post(
+        "/v1/admin/keys",
+        headers=_auth(admin_key.full_key),
+        json={"scopes": ["observe"], "env": "test", "expires_in_days": 7},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert 6 <= (
+        datetime.fromisoformat(body["expires_at"]) - datetime.now(UTC)
+    ).days <= 7
+
+
+def test_an_expired_key_fails_exactly_like_a_wrong_one(
+    database, app_engine: Engine, owner_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """Expiry is not an oracle: same status, same body, same code."""
+    short = bootstrap_key(database, tenant, expires_in_days=1)
+    client = _client(app_engine)
+
+    assert client.get("/v1/whoami", headers=_auth(short.full_key)).status_code == 200
+
+    # Move the expiry into the past — no clock control at the SQL boundary.
+    with owner_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE api_keys SET expires_at = now() - interval '1 minute' WHERE id = :id"),
+            {"id": short.key_id},
+        )
+
+    expired = client.get("/v1/whoami", headers=_auth(short.full_key))
+    unknown = client.get("/v1/whoami", headers=_auth("ak_test_" + "m" * 32))
+    assert expired.status_code == unknown.status_code == 401
+    a, b = expired.json()["error"], unknown.json()["error"]
+    a.pop("request_id")
+    b.pop("request_id")
+    assert a == b
+
+
+def test_the_flush_loop_runs_under_the_app_lifespan(
+    app_engine: Engine, owner_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """The app starts the loop, and the loop writes what the requests noted.
+
+    This is the one test that exercises the background task rather than
+    calling `flush()` by hand: if the lifespan is ever dropped, `last_used_at`
+    stops moving and nothing else notices.
+    """
+    import time
+
+    issued = _key(tenant)
+    app = create_app(
+        make_settings(),
+        clock=SystemClock(),
+        db_check=lambda: True,
+        redis_check=lambda: True,
+        engine=app_engine,
+        flush_interval=0.05,
+    )
+
+    with TestClient(app) as client:
+        assert client.get("/v1/whoami", headers=_auth(issued.full_key)).status_code == 200
+        for _ in range(40):
+            time.sleep(0.02)
+            with owner_engine.connect() as conn:
+                seen = conn.execute(
+                    text("SELECT last_used_at FROM api_keys WHERE id = :id"),
+                    {"id": issued.key_id},
+                ).scalar_one()
+            if seen is not None:
+                break
+    assert seen is not None, "the flush loop never wrote last_used_at"
