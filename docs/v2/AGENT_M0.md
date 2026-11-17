@@ -104,8 +104,8 @@ RLS, exactly this shape per tenant-scoped table:
 ALTER TABLE learners ENABLE ROW LEVEL SECURITY;
 ALTER TABLE learners FORCE  ROW LEVEL SECURITY;          -- without FORCE the owner bypasses it
 CREATE POLICY tenant_isolation ON learners
-  USING      (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
-  WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+  USING      (tenant_id = nullif(current_setting('adapt.tenant_id', true), '')::uuid)
+  WITH CHECK (tenant_id = nullif(current_setting('adapt.tenant_id', true), '')::uuid);
 CREATE INDEX ON learners (tenant_id);                     -- policy predicates need the index
 ```
 
@@ -124,8 +124,11 @@ CREATE INDEX ON learners (tenant_id);                     -- policy predicates n
 **Acceptance — `tests/test_tenancy_isolation.py`, and it must be adversarial:**
 
 1. tenant A's session reads only A's rows; B's id is invisible even when queried by primary key.
-2. A raw connection with no `app.tenant_id` sees zero rows from the table.
-3. `INSERT` with a foreign `tenant_id` is rejected by `WITH CHECK`.
+2. A raw connection with no `adapt.tenant_id` sees zero rows from the table.
+3. `INSERT` with a foreign `tenant_id` is rejected. **Note the mechanism:** when `WITH CHECK` is
+   omitted, PostgreSQL applies `USING` to new rows, so simply dropping the clause does not open a
+   write hole. The hole appears when the check is non-constraining — sabotage with
+   `WITH CHECK (true)`, which is the case this test actually proves.
 4. `UPDATE ... WHERE tenant_id = <B>` affects zero rows.
 5. A filter value containing SQL does not cross tenants.
 6. Dropping to a fresh transaction on a recycled connection shows no residual tenant context.

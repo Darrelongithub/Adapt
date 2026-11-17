@@ -220,8 +220,9 @@ Three rules that follow from the table and are not negotiable:
 | 422 | `payload_invalid` | no | allowlisted keys only; no PII |
 | 429 | `rate_limited` | yes, honour `Retry-After` | free — no credits |
 | 402 | `quota_exhausted` | no | credits/events exhausted; `resets_at` given; free |
-| 500/502/503 | `internal` | yes, backoff | free — never billed |
 | 410 | `gone` | no | the version was retired; read the `Link` header |
+| any other | `unmapped_status` | no | an engine bug: a status with no code above. Report it with `request_id` |
+| 500/502/503 | `internal` | yes, backoff | free — never billed |
 
 One case is deliberately **not** an error: `not_validated` returns **200** with the lower `served` level
 and `limited_by: "validation"` (`ADR-002`). The capability exists and the contract allows it; we have not

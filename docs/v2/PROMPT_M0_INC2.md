@@ -62,7 +62,10 @@ Non-negotiable details — these are the traps, not preferences:
   ALTER TABLE learners ENABLE ROW LEVEL SECURITY;
   ALTER TABLE learners FORCE  ROW LEVEL SECURITY;   -- FORCE: the owner is subject too
   ```
-* Policy with **both** clauses — `USING` alone permits writes *into* another tenant:
+* Policy with **both** clauses. `WITH CHECK` is not decoration and its absence is not automatically a
+  hole — PostgreSQL applies `USING` to new rows when the clause is omitted — but it is the only way to
+  make the write rule explicit, and to keep it *narrower* than the read rule when a read reason later
+  broadens `USING`:
   ```sql
   CREATE POLICY tenant_isolation ON learners
     USING      (tenant_id = nullif(current_setting('adapt.tenant_id', true), '')::uuid)
@@ -97,10 +100,13 @@ Non-negotiable details — these are the traps, not preferences:
 
 `test_migrations.py`: up → down → up on a clean database.
 
-**Red-then-green is mandatory.** For each of the six, demonstrate the test can fail:
-temporarily drop `FORCE`, then drop `WITH CHECK`, then set the tenant with session-level `SET` — paste
-the output showing the relevant test going red each time, then restore and show green. A test that
-cannot fail is not evidence. Include the command and the output in the report.
+**Red-then-green is mandatory.** For each of the six, demonstrate the test can fail: temporarily
+`NO FORCE` the table, recreate the policy `WITH CHECK (true)`, then set the tenant with session-level
+`set_config(…, false)` — paste the output showing the relevant test going red each time, then restore
+and show green. Dropping the `WITH CHECK` clause entirely will **stay green**, because PostgreSQL uses
+`USING` as the write check when it is absent; that is a property of the server, not a passing test, and
+it must not be reported as one. A test that cannot fail is not evidence. Include the command and the
+output in the report.
 
 Also add: `learners.learner_id` format validation (reject `@`, `+`, and runs of 7+ digits) with its
 test, since this is the table where it belongs.
@@ -121,6 +127,24 @@ choose — ambiguity found now is cheaper than ambiguity found in increment 4.
 DO NOT add domain tables, auth middleware, routes or tenancy to `backend/`. Increment 3 (API keys) is
 next and it depends on increment 2 being trustworthy.
 ```
+
+---
+
+## FOLLOW-UP FROM INCREMENT 2 (apply before increment 3)
+
+1. **`unmapped_status` is now a documented row in §6**, and `410 gone` is restored. Earlier it was
+   missing because of a botched edit on my side, not a decision — the guard was right to fail.
+2. **Derive documented codes from every row of the §6 table, not only rows with a numeric status.**
+   The sentinel's status cell reads `any other`. Keep rule (c) absolute and whitelist-free: the doc is
+   the only allowlist. Update `parse_doc_codes` (or add a `documented_codes` pass) and its tests.
+3. **`adapt.tenant_id` is the canonical setting name.** `AGENT_M0.md` said `app.tenant_id` in one
+   place; that was a documentation error and is now corrected.
+4. **Tenant creation is provisioning, not runtime.** `adapt_app` holds `SELECT` on `tenants` only —
+   remove the `INSERT`/`UPDATE` grants. A tenant is created by the operator or control plane as the
+   owner role, never by the request-serving role. Add a schema test asserting the grant set.
+5. `learner_id` unique per `(tenant_id, learner_id)` is correct — two tenants may each have `L-42`.
+6. CI must fetch the docs ref or pass `--doc`; the checker's exit 2 is correct behaviour and the four
+   checker tests will otherwise read as red.
 
 ---
 
