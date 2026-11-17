@@ -1,0 +1,64 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      ADAPT_ENV: development
+      ADAPT_DATABASE_URL: postgresql://adapt:adapt@postgres:5432/adapt
+      ADAPT_MASTER_KEY: dev-master-key-for-local-compose-only-32b
+      ADAPT_KEY_PEPPER: dev-key-pepper-for-local-compose-only
+      ADAPT_REDIS_URL: redis://redis:6379/0
+      ADAPT_COMMIT: local
+      ADAPT_BUILD_TIME: "2026-11-17T00:00:00Z"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    # Placeholder in increment 1: no queue consumer exists yet. Later
+    # milestones replace this command with the real worker entrypoint.
+    command: ["python", "-c", "import time; time.sleep(3600)"]
+    environment:
+      ADAPT_ENV: development
+      ADAPT_DATABASE_URL: postgresql://adapt:adapt@postgres:5432/adapt
+      ADAPT_MASTER_KEY: dev-master-key-for-local-compose-only-32b
+      ADAPT_KEY_PEPPER: dev-key-pepper-for-local-compose-only
+      ADAPT_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: adapt
+      POSTGRES_PASSWORD: adapt
+      POSTGRES_DB: adapt
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adapt -d adapt"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
