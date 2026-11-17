@@ -1,36 +1,59 @@
+# Local stack. Migration runs as adapt_owner; api and worker run as adapt_app,
+# which is not an owner, not superuser and has no BYPASSRLS.
+#
+# The passwords here are dev-only values. Nothing in this file is a production
+# deployment: production supplies every secret from the environment.
+
 services:
+  migrate:
+    build: .
+    command:
+      - sh
+      - -c
+      - python scripts/bootstrap_db.py && python -m alembic upgrade head
+    environment:
+      ADAPT_BOOTSTRAP_DATABASE_URL: postgresql://adapt:adapt@postgres:5432/adapt
+      ADAPT_DATABASE_NAME: adapt
+      ADAPT_OWNER_PASSWORD: dev-owner-password
+      ADAPT_APP_PASSWORD: dev-app-password
+      ADAPT_MIGRATION_DATABASE_URL: postgresql://adapt_owner:dev-owner-password@postgres:5432/adapt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build: .
     ports:
       - "8000:8000"
     environment:
       ADAPT_ENV: development
-      ADAPT_DATABASE_URL: postgresql://adapt:adapt@postgres:5432/adapt
+      ADAPT_DATABASE_URL: postgresql://adapt_app:dev-app-password@postgres:5432/adapt
       ADAPT_MASTER_KEY: dev-master-key-for-local-compose-only-32b
       ADAPT_KEY_PEPPER: dev-key-pepper-for-local-compose-only
       ADAPT_REDIS_URL: redis://redis:6379/0
       ADAPT_COMMIT: local
       ADAPT_BUILD_TIME: "2026-11-17T00:00:00Z"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
   worker:
     build: .
-    # Placeholder in increment 1: no queue consumer exists yet. Later
-    # milestones replace this command with the real worker entrypoint.
+    # Placeholder in M0: no queue consumer exists yet. Later milestones replace
+    # this command with the real worker entrypoint.
     command: ["python", "-c", "import time; time.sleep(3600)"]
     environment:
       ADAPT_ENV: development
-      ADAPT_DATABASE_URL: postgresql://adapt:adapt@postgres:5432/adapt
+      ADAPT_DATABASE_URL: postgresql://adapt_app:dev-app-password@postgres:5432/adapt
       ADAPT_MASTER_KEY: dev-master-key-for-local-compose-only-32b
       ADAPT_KEY_PEPPER: dev-key-pepper-for-local-compose-only
       ADAPT_REDIS_URL: redis://redis:6379/0
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 

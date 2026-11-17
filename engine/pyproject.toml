@@ -26,6 +26,10 @@ dev = [
   "httpx>=0.28,<1.0",
   "mypy>=1.14",
   "ruff>=0.9",
+  # Dev-only bundled PostgreSQL for the tenancy tests. Never a runtime
+  # dependency and never installed in the image: the suite reads
+  # ADAPT_TEST_DATABASE_URL and any PostgreSQL 16 will do.
+  "pgserver==0.1.4",
 ]
 
 [project.scripts]
@@ -45,6 +49,11 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["B008", "RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests favour readable arrange/act blocks: long URLs and nested `with` for
+# `pytest.raises(...) as excinfo` are clearer than the compressed forms.
+"tests/*" = ["E501", "SIM117"]
 
 [tool.mypy]
 python_version = "3.12"

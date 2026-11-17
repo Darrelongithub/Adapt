@@ -24,15 +24,39 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-#: Status -> code, transcribed from INTEGRATION.md §6. The doc is the source
-#: of truth; engine/scripts/check_openapi.py fails the build when this mapping
-#: and the doc disagree, so the two cannot drift silently.
-DOCUMENTED_STATUS_CODES: dict[int, str] = {
+#: Every code documented in INTEGRATION.md §6. Two statuses have two codes
+#: each (403 not_entitled / connection_paused, 404 route_unknown /
+#: learner_unknown); the second of each pair is only reachable by raising
+#: AdaptError, so it cannot be derived from a bare status and is listed here.
+DOCUMENTED_CODES: frozenset[str] = frozenset(
+    {
+        "payload_invalid",
+        "unauthorized",
+        "not_entitled",
+        "connection_paused",
+        "learner_unknown",
+        "route_unknown",
+        "instrument_not_renderable",
+        "not_capable",
+        "conflict",
+        "payload_too_large",
+        "rate_limited",
+        "quota_exhausted",
+        "internal",
+        "gone",
+    }
+)
+
+#: Default code for a bare status. A framework route-miss is 404
+#: route_unknown; a domain miss raises learner_unknown explicitly. A bare 403
+#: is not_entitled; connection_paused is raised explicitly. 401 is always
+#: unauthorized.
+STATUS_DEFAULT_CODES: dict[int, str] = {
     400: "payload_invalid",
     401: "unauthorized",
     402: "quota_exhausted",
     403: "not_entitled",
-    404: "learner_unknown",
+    404: "route_unknown",
     406: "instrument_not_renderable",
     409: "conflict",
     410: "gone",
@@ -45,20 +69,21 @@ DOCUMENTED_STATUS_CODES: dict[int, str] = {
     503: "internal",
 }
 
-#: The sentinel emitted when a status has no documented code. It is not in
-#: the §6 table by design; the checker treats it as known.
+#: The sentinel emitted when a status has no documented code. §6 says such a
+#: status is "a gap to report, not a licence to invent one"; this sentinel is
+#: that report, paired with a warning. It is deliberately *not* exempted from
+#: the checker: an emitted code missing from §6 fails the build.
 UNMAPPED_CODE = "unmapped_status"
 
 #: Every code this module can emit.
-EMITTED_CODES: frozenset[str] = frozenset(DOCUMENTED_STATUS_CODES.values()) | {
-    UNMAPPED_CODE,
-}
+EMITTED_CODES: frozenset[str] = DOCUMENTED_CODES | {UNMAPPED_CODE}
 
 #: Statuses the doc marks as retryable (429, and 500/502/503).
 RETRYABLE_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503})
 
 #: Statuses whose semantics are "the caller may retry once the condition
-#: clears" (403 connection_paused is raised explicitly, not by status alone).
+#: clears" (403 connection_paused is raised explicitly, not by status alone,
+#: and carries retryable=True at the raise site).
 CONDITIONAL_RETRY_STATUSES: frozenset[int] = frozenset({403})
 
 
@@ -120,11 +145,18 @@ def _logger() -> Any:
 def code_for_status(status_code: int, *, warn: bool = True) -> str:
     """Return the documented code for ``status_code``.
 
+    A bare 404 is a framework route-miss and maps to ``route_unknown``; a
+    domain lookup that found no learner raises ``AdaptError`` with
+    ``learner_unknown`` instead, so neither defaults to the other. A bare 403
+    maps to ``not_entitled``; ``connection_paused`` is only ever raised
+    explicitly. 401 is always ``unauthorized`` — there is no key-level
+    variant.
+
     Emits ``unmapped_status`` and logs a warning when the doc has no code for
     the status, rather than inventing a name. The middleware passes
     ``warn=False`` so a single response produces a single warning.
     """
-    code: str | None = DOCUMENTED_STATUS_CODES.get(status_code)
+    code: str | None = STATUS_DEFAULT_CODES.get(status_code)
     if code is not None:
         return code
     if warn:

@@ -137,15 +137,37 @@ def test_rule_c_flags_undocumented_code() -> None:
     assert "invented_code" in str(findings[0])
 
 
-def test_rule_c_allows_the_unmapped_sentinel() -> None:
+def test_rule_c_has_no_exemptions() -> None:
+    """The doc is the only allowlist — including for our own sentinel."""
     findings = check_emitted_codes(
         frozenset({"internal", "unmapped_status"}), frozenset({"internal"})
     )
-    assert findings == []
+    assert [f.rule for f in findings] == ["c:code-documented"]
+    assert "unmapped_status" in str(findings[0])
 
 
-def test_entrypoint_passes_against_the_real_table() -> None:
-    assert main([]) == 0
+def test_entrypoint_reports_only_the_documented_gap() -> None:
+    """At dc3195b the only missing row is the unmapped_status sentinel.
+
+    This is a documentation gap, recorded in KNOWN_GAPS.md §5. The moment the
+    row is added to §6 this test must be updated to expect 0 — the guard is
+    not allowed to grow an exemption instead.
+    """
+    assert main([]) == 1
+
+
+def test_entrypoint_passes_once_the_missing_row_is_documented(tmp_path: Path) -> None:
+    """Adding the documented row is the whole fix; no code change needed."""
+    doc = tmp_path / "INTEGRATION.md"
+    row = (
+        "| 405 | `unmapped_status` | no | the status has no documented code; "
+        "a warning was logged |\n"
+    )
+    text = _doc()
+    marker = "| 406 | `instrument_not_renderable` |"
+    assert marker in text
+    doc.write_text(text.replace(marker, row + marker), encoding="utf-8")
+    assert main(["--doc", str(doc)]) == 0
 
 
 def test_entrypoint_fails_when_table_and_code_disagree(tmp_path: Path) -> None:

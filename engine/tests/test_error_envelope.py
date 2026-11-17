@@ -6,14 +6,15 @@ import json
 from datetime import UTC, datetime
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from adapt_engine.clock import FixedClock
 from adapt_engine.errors import (
-    DOCUMENTED_STATUS_CODES,
+    DOCUMENTED_CODES,
     EMITTED_CODES,
+    STATUS_DEFAULT_CODES,
     AdaptError,
     code_for_status,
 )
@@ -52,6 +53,32 @@ def _test_app() -> FastAPI:
             retryable=False,
         )
 
+    @app.get("/v1/test-paused")
+    def _paused_route() -> dict[str, str]:
+        raise AdaptError(
+            code="connection_paused",
+            message="connection paused by the host",
+            status_code=403,
+            retryable=True,
+        )
+
+    @app.get("/v1/test-learner-missing")
+    def _learner_missing_route() -> dict[str, str]:
+        raise AdaptError(
+            code="learner_unknown",
+            message="no such learner",
+            status_code=404,
+            retryable=False,
+        )
+
+    @app.get("/v1/test-bare-403")
+    def _bare_403_route() -> dict[str, str]:
+        raise HTTPException(status_code=403, detail="bare forbidden")
+
+    @app.get("/v1/test-bare-401")
+    def _bare_401_route() -> dict[str, str]:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
     return app
 
 
@@ -69,13 +96,42 @@ def _assert_envelope(body: object, *, code: str, retryable: bool) -> None:
     assert err["retryable"] is retryable
 
 
-def test_404_envelope() -> None:
+def test_404_route_miss_is_route_unknown() -> None:
+    """A typo'd URL is route_unknown, not a statement about a learner."""
     client = TestClient(_test_app(), raise_server_exceptions=False)
     resp = client.get("/v1/does-not-exist-synthetic")
     assert resp.status_code == 404
-    # INTEGRATION.md §6 maps every 404 to learner_unknown, including an
-    # unknown route; see the increment 1.5 report for that ambiguity.
+    _assert_envelope(resp.json(), code="route_unknown", retryable=False)
+
+
+def test_404_learner_lookup_is_learner_unknown() -> None:
+    """A domain miss says learner_unknown; the two 404 codes never default."""
+    client = TestClient(_test_app(), raise_server_exceptions=False)
+    resp = client.get("/v1/test-learner-missing")
+    assert resp.status_code == 404
     _assert_envelope(resp.json(), code="learner_unknown", retryable=False)
+
+
+def test_bare_403_is_not_entitled() -> None:
+    client = TestClient(_test_app(), raise_server_exceptions=False)
+    resp = client.get("/v1/test-bare-403")
+    assert resp.status_code == 403
+    _assert_envelope(resp.json(), code="not_entitled", retryable=False)
+
+
+def test_connection_paused_is_explicit_only() -> None:
+    client = TestClient(_test_app(), raise_server_exceptions=False)
+    resp = client.get("/v1/test-paused")
+    assert resp.status_code == 403
+    _assert_envelope(resp.json(), code="connection_paused", retryable=True)
+
+
+def test_401_is_always_unauthorized() -> None:
+    client = TestClient(_test_app(), raise_server_exceptions=False)
+    resp = client.get("/v1/test-bare-401")
+    assert resp.status_code == 401
+    _assert_envelope(resp.json(), code="unauthorized", retryable=False)
+    assert "invalid_api_key" not in resp.text
 
 
 def test_422_envelope() -> None:
@@ -141,9 +197,11 @@ def test_no_screaming_snake_codes() -> None:
 
 
 def test_documented_codes_are_snake_case_and_lowercase() -> None:
-    assert set(DOCUMENTED_STATUS_CODES.values()) <= EMITTED_CODES
-    for status, code in DOCUMENTED_STATUS_CODES.items():
+    assert set(STATUS_DEFAULT_CODES.values()) <= DOCUMENTED_CODES
+    assert DOCUMENTED_CODES <= EMITTED_CODES
+    for status in STATUS_DEFAULT_CODES:
         assert 400 <= status <= 599, f"{status} is not a client/server error status"
+    for code in DOCUMENTED_CODES:
         assert code.islower(), f"{code} is not lowercase"
 
 

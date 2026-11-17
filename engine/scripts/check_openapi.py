@@ -39,10 +39,6 @@ AUTH_EXEMPT_PATHS = frozenset({"/v1/health", "/v1/version"})
 #: The schema every documented error response must reference.
 ENVELOPE_SCHEMA = "ErrorEnvelope"
 
-#: The sentinel mandated for statuses the doc does not map. Not a documented
-#: code, so it is allowed alongside the table rather than inside it.
-SENTINEL_CODE = "unmapped_status"
-
 #: An OpenAPI document, and one operation inside it. Values stay loose: this
 #: is foreign JSON, not something the engine owns.
 OpenAPI = dict[str, Any]
@@ -165,9 +161,14 @@ def check_openapi(openapi: OpenAPI) -> list[Finding]:
 
 
 def check_emitted_codes(emitted: frozenset[str], doc_codes: frozenset[str]) -> list[Finding]:
-    """Rule (c): every code the engine can emit must come from the table."""
+    """Rule (c): every code the engine can emit must come from the table.
+
+    There is no exemption list here. The table is the only allowlist, so a
+    code the doc has not documented fails the build even if it is our own
+    sentinel for "no documented code".
+    """
     findings: list[Finding] = []
-    for code in sorted(emitted - doc_codes - {SENTINEL_CODE}):
+    for code in sorted(emitted - doc_codes):
         findings.append(
             Finding(
                 "c:code-documented",
