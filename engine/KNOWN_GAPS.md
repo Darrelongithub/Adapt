@@ -60,25 +60,53 @@ behaviour observed so far.
 available. The probe is bounded and its failure mode is tested; a successful
 `PING` path is not. Closes with gap 1 (`docker compose up` brings `redis:7`).
 
-## 4. No HTTP surface is tenant-scoped yet
+## 4. ~~No HTTP surface is tenant-scoped yet~~ — closed by increment 3
 
-`tenant_transaction` is the only way tenant context is set, and it is exercised
-directly by the tests. No route or dependency calls it yet, because no
-tenant-scoped route exists until increment 3. The first route that does will be
-the first test of the wiring, not just of the mechanism.
+`/v1/learners` and `/v1/learners/{learner_id}` are the first routes to run under
+`tenant_transaction`, reached through an API key. `tests/test_auth_http.py`
+covers the wiring: a key for tenant A gets a 404 for tenant B's learner id (not
+403 — that would confirm the id exists elsewhere), and a learner created with
+`tenant_id` in the body still lands in the caller's tenant. The mechanism was
+already exercised directly in increment 2; what was untested was the path from
+`Authorization` header to `SET LOCAL adapt.tenant_id`.
 
-## 5. The error-code guard fails on `unmapped_status`
+## 5. The error-code guard now passes, and only because the doc says so
 
-`scripts/check_openapi.py` rule (c) is absolute: every code `errors.py` can
-emit must appear in `docs/v2/INTEGRATION.md` §6. At commit `dc3195b` the table
-does not contain `unmapped_status`, so the guard reports one violation and
-exits 1. The emission is deliberate (it is the "report the gap, do not invent
-a name" sentinel), so this is a documentation gap, not a code defect.
+Rule (c) of `scripts/check_openapi.py` parses **every** row of the §6 table,
+including the `any other | unmapped_status` sentinel, so the guard exits 0 with
+16 documented codes at docs ref `9d1739d`. It is still absolute: remove the
+sentinel row and the guard fails (`test_entrypoint_fails_when_the_sentinel_row_is_removed`).
+There is no whitelist in the checker; the document is the only allowlist.
 
-**What closes it:** add the row to the §6 table on the docs branch:
+## 6. The rate limiter is per process, not per cluster
 
-```
-| 405 | `unmapped_status` | no | the status has no documented code; a server-side warning was logged |
-```
+`FailureLimiter` is in-memory (DECISIONS.md §6). With N replicas, an attacker
+gets N × 20 failures per minute per IP, and a restart clears every window.
+Redis is not reachable here (gap 3), so a shared limiter could not be tested.
+The check runs before the key is validated, so a shared client IP (an office
+NAT, a CI runner) that trips the window also blocks *valid* keys from that IP
+until the window drains — fail-closed, and worth revisiting when the limiter
+becomes per-key as well as per-IP. **What closes it:** a Redis-backed window,
+once gap 3 closes and the credit ledger needs the same infrastructure.
 
-and the guard goes green with no code change.
+## 7. Keys cannot be rotated on a schedule and never expire
+
+`api_keys` has `revoked_at` but no `expires_at`, no rotation route and no
+"issue → overlap → revoke old" workflow. Revocation is immediate
+(`test_revoked_key_fails_immediately_not_at_cache_expiry`), which is the
+property that matters for a compromised key, but nothing prompts a tenant to
+rotate a key that is merely old.
+
+## 8. Issuing and revoking keys is admin-only over HTTP, and there is no audit trail
+
+`POST /v1/admin/keys` requires the `admin` scope, and the key it issues can
+itself carry `admin` — so authority is transitive and not separable. Key
+issuance and revocation do not write to `audit_log`: the table exists and is
+tenant-scoped, but its first writer arrives with the decision/observation
+pipeline in a later increment. Until then, a tenant cannot see who issued or
+revoked a key.
+
+## 9. `last_used_at` granularity is a minute, and it is coarse on purpose
+
+The debounce means `last_used_at` can lag reality by up to 60 seconds. It is a
+"was this key in use" signal, not an audit log. See DECISIONS.md §5.

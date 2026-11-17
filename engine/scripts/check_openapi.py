@@ -62,13 +62,14 @@ class DocError(Exception):
     """The authoritative document could not be located or parsed."""
 
 
-def parse_doc_codes(text: str) -> dict[int, set[str]]:
-    """Parse the status->code table out of INTEGRATION.md §6.
+def _table_rows(text: str) -> list[tuple[str, str]]:
+    """Every (status cell, code cell) pair in the §6 table.
 
-    Returns every status the table maps to a code. Rows whose status or code
-    cell is a dash (200, and the "no error" row) are skipped.
+    Status cells are not always numeric: the sentinel row reads ``any other``,
+    and the "no error" row reads ``200``. Rule (c) cares about the code cell
+    of *every* row, so the two are parsed separately.
     """
-    codes: dict[int, set[str]] = {}
+    rows: list[tuple[str, str]] = []
     for line in text.splitlines():
         if not line.startswith("|"):
             continue
@@ -81,10 +82,20 @@ def parse_doc_codes(text: str) -> dict[int, set[str]]:
             continue
         if set(status_cell) <= set("-: "):
             continue
-        if not code_cell or set(code_cell) <= set("-— "):
+        if not re.fullmatch(r"[a-z0-9_]+", code_cell):
             continue
-        if not re.fullmatch(r"[a-z0-9_/]+", code_cell):
-            continue
+        rows.append((status_cell, code_cell))
+    return rows
+
+
+def parse_doc_codes(text: str) -> dict[int, set[str]]:
+    """Status -> code(s), for the rows whose status cell is numeric.
+
+    A row whose status is not numeric (``any other``) contributes to
+    :func:`documented_codes` but not here: it has no status to map from.
+    """
+    codes: dict[int, set[str]] = {}
+    for status_cell, code_cell in _table_rows(text):
         for part in status_cell.split("/"):
             part = part.strip()
             if part.isdigit():
@@ -95,8 +106,11 @@ def parse_doc_codes(text: str) -> dict[int, set[str]]:
 
 
 def documented_codes(text: str) -> frozenset[str]:
-    """Every code in the table."""
-    return frozenset(code for codes in parse_doc_codes(text).values() for code in codes)
+    """Every code in the table, from every row — numeric status or not."""
+    rows = _table_rows(text)
+    if not rows:
+        raise DocError("no status/code rows found in the error table")
+    return frozenset(code for _, code in rows)
 
 
 def _operations(openapi: OpenAPI) -> list[tuple[str, str, Operation]]:
@@ -118,14 +132,21 @@ def _schema_ref(response: Operation) -> str | None:
 
 
 def check_openapi(openapi: OpenAPI) -> list[Finding]:
-    """Apply rules (a) and (b) to a generated OpenAPI document."""
+    """Apply rules (a) and (b) to a generated OpenAPI document.
+
+    Rule (a) has three parts: a security requirement exists, it names a scheme
+    the document declares, and at least one requirement names a scope. "Auth
+    required" with no scope says nothing about what the key may do.
+    """
     findings: list[Finding] = []
+    schemes = set(((openapi.get("components") or {}).get("securitySchemes") or {}).keys())
     for path, method, operation in _operations(openapi):
         if not path.startswith("/v1"):
             continue
         if path in AUTH_EXEMPT_PATHS:
             continue
-        if not operation.get("security"):
+        security = operation.get("security") or []
+        if not security:
             findings.append(
                 Finding(
                     "a:auth-required",
@@ -133,6 +154,28 @@ def check_openapi(openapi: OpenAPI) -> list[Finding]:
                     f"excepted route (excepted: {', '.join(sorted(AUTH_EXEMPT_PATHS))})",
                 )
             )
+        else:
+            unknown = sorted(
+                scheme
+                for requirement in security
+                for scheme in requirement
+                if scheme not in schemes
+            )
+            if unknown:
+                findings.append(
+                    Finding(
+                        "a:auth-required",
+                        f"{method} {path} references undeclared security scheme(s): "
+                        f"{', '.join(unknown)}",
+                    )
+                )
+            if not any(scopes for requirement in security for scopes in requirement.values()):
+                findings.append(
+                    Finding(
+                        "a:auth-required",
+                        f"{method} {path} requires auth but names no scope",
+                    )
+                )
         responses: dict[str, Operation] = operation.get("responses") or {}
         error_statuses = [
             status

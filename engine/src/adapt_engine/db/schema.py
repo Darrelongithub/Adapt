@@ -86,8 +86,44 @@ audit_log = sa.Table(
     sa.Column("metadata", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
 )
 
+api_keys = sa.Table(
+    "api_keys",
+    metadata,
+    sa.Column(
+        "id",
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    ),
+    sa.Column(
+        "tenant_id",
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("prefix", sa.Text, nullable=False, unique=True),
+    sa.Column("hash", sa.LargeBinary, nullable=False),
+    sa.Column("scopes", sa.ARRAY(sa.Text), nullable=False),
+    sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+)
+
 #: Every table that carries ``tenant_id`` and therefore needs forced RLS.
-TENANT_SCOPED_TABLES: Final = ("learners", "audit_log")
+#: ``api_keys`` is the one deliberate exception: RLS is enabled but not forced,
+#: because the SECURITY DEFINER resolver is owned by the table owner and FORCE
+#: would make it blind (see DECISIONS.md and tests/test_api_keys.py).
+TENANT_SCOPED_TABLES: Final = ("learners", "audit_log", "api_keys")
+
+#: Tables with RLS enabled but not forced, and why.
+RLS_NOT_FORCED: Final = {
+    "api_keys": "SECURITY DEFINER resolver owned by adapt_owner must read by prefix",
+}
 
 
 class LearnerIdInvalid(ValueError):

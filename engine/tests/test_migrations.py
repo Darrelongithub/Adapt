@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 
 from tests import pg
 
-TABLES = ("audit_log", "learners", "tenants")
+TABLES = ("api_keys", "audit_log", "learners", "tenants")
 
 
 def _tables(database: pg.Database) -> list[str]:

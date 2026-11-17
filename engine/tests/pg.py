@@ -260,13 +260,33 @@ def create_learner(
     return learner_pk
 
 
+def provision_tenant(
+    database: Database, *, slug: str, name: str, profile: str = "adult_general"
+) -> uuid.UUID:
+    """Create a tenant as adapt_owner: provisioning, not a runtime action.
+
+    ``adapt_app`` holds SELECT only on ``tenants`` (migration 0002), so a test
+    that created tenants as the app role would be testing a privilege the
+    runtime does not have.
+    """
+    engine = engine_for(database, "owner")
+    try:
+        return create_tenant(engine, slug=slug, name=name, profile=profile)
+    finally:
+        engine.dispose()
+
+
 def seed_two_tenants(database: Database, *, role: str = "app") -> SeededTenants:
-    """Two tenants, one learner each. Synthetic identifiers only."""
+    """Two tenants, one learner each. Synthetic identifiers only.
+
+    Tenants are provisioned as the owner; learners are created with the role
+    serving requests, which is what the runtime actually does.
+    """
+    suffix = synthetic_suffix()
+    a_id = provision_tenant(database, slug=f"tenant-a-{suffix}", name="Synthetic Tenant A")
+    b_id = provision_tenant(database, slug=f"tenant-b-{suffix}", name="Synthetic Tenant B")
     engine = engine_for(database, role)
     try:
-        suffix = synthetic_suffix()
-        a_id = create_tenant(engine, slug=f"tenant-a-{suffix}", name="Synthetic Tenant A")
-        b_id = create_tenant(engine, slug=f"tenant-b-{suffix}", name="Synthetic Tenant B")
         a_learner = create_learner(engine, a_id, f"learner-a-{suffix}")
         b_learner = create_learner(engine, b_id, f"learner-b-{suffix}")
         return SeededTenants(

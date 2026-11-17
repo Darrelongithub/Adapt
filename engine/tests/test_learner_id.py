@@ -17,7 +17,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from adapt_engine.db.schema import LearnerIdInvalid, validate_learner_id
 from adapt_engine.db.tenant import tenant_transaction
-from tests.pg import create_tenant
+from tests.pg import provision_tenant
 
 VALID = [
     "learner-0a1b2c3d",
@@ -58,8 +58,8 @@ def test_database_check_rejects_the_same_values(
     app_engine: Engine, label: str, value: str, database
 ) -> None:
     """The CHECK constraint is the layer a script cannot skip."""
-    tenant_id = create_tenant(
-        app_engine, slug=f"lid-{uuid.uuid4().hex[:10]}", name=f"Learner Id {label}"
+    tenant_id = provision_tenant(
+        database, slug=f"lid-{uuid.uuid4().hex[:10]}", name=f"Learner Id {label}"
     )
     with pytest.raises((IntegrityError, DBAPIError)) as excinfo:
         with tenant_transaction(app_engine, tenant_id) as conn:
@@ -73,9 +73,9 @@ def test_database_check_rejects_the_same_values(
     assert "learners_learner_id_format" in str(excinfo.value)
 
 
-def test_database_accepts_a_valid_learner_id(app_engine: Engine) -> None:
-    tenant_id = create_tenant(
-        app_engine, slug=f"lid-ok-{uuid.uuid4().hex[:8]}", name="Learner Id Ok"
+def test_database_accepts_a_valid_learner_id(app_engine: Engine, database) -> None:
+    tenant_id = provision_tenant(
+        database, slug=f"lid-ok-{uuid.uuid4().hex[:8]}", name="Learner Id Ok"
     )
     with tenant_transaction(app_engine, tenant_id) as conn:
         conn.execute(

@@ -110,6 +110,7 @@ class AdaptError(Exception):
         message: str,
         status_code: int,
         retryable: bool,
+        headers: dict[str, str] | None = None,
     ) -> None:
         if code not in EMITTED_CODES:
             raise ValueError(
@@ -120,6 +121,7 @@ class AdaptError(Exception):
         self.message = message
         self.status_code = status_code
         self.retryable = retryable
+        self.headers = headers
         super().__init__(message)
 
 
@@ -220,7 +222,7 @@ async def adapt_error_handler(request: Request, exc: Exception) -> JSONResponse:
         request_id=_request_id(request),
         retryable=exc.retryable,
     )
-    return JSONResponse(status_code=exc.status_code, content=body)
+    return JSONResponse(status_code=exc.status_code, content=body, headers=exc.headers)
 
 
 async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
