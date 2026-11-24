@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adapt 2.0 — Blueprint</title>
+<style>
+  :root{
+    --cream:#F7F2E7;
+    --cream-2:#FDFBF6;
+    --ink:#12283F;
+    --blue:#0E3A63;
+    --blue-deep:#08243F;
+    --accent:#2C6CA8;
+    --rule:#DDD3BE;
+    --muted:#6E7C8B;
+    --good:#2F6B4F;
+    --warn:#8A5A2B;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--cream);
+    color:var(--ink);
+    font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+    font-feature-settings:"kern" 1,"liga" 1;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:56px 28px 96px}
+
+  /* ---------- masthead ---------- */
+  .mast{border-bottom:2px solid var(--blue);padding-bottom:26px;margin-bottom:44px}
+  .eyebrow{
+    font-size:12px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);font-weight:700;margin:0 0 14px
+  }
+  h1{
+    font-family:Georgia,"Iowan Old Style","Times New Roman",serif;
+    font-size:46px;line-height:1.08;letter-spacing:-.02em;
+    color:var(--blue-deep);margin:0 0 18px;font-weight:600
+  }
+  .lede{
+    font-family:Georgia,serif;font-size:20px;line-height:1.55;
+    color:#28425C;max-width:44em;margin:0
+  }
+
+  /* ---------- sections ---------- */
+  section{margin:0 0 52px}
+  h2{
+    font-family:Georgia,serif;font-size:13px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);font-weight:700;margin:0 0 18px;
+    padding-bottom:8px;border-bottom:1px solid var(--rule)
+  }
+  h3{
+    font-family:Georgia,serif;font-size:21px;line-height:1.3;color:var(--blue-deep);
+    margin:0 0 10px;font-weight:600;letter-spacing:-.01em
+  }
+  p{margin:0 0 14px;max-width:46em}
+  .muted{color:var(--muted)}
+  strong{color:var(--blue-deep);font-weight:650}
+  em{font-style:italic}
+
+  /* ---------- pull quote ---------- */
+  .pull{
+    background:var(--cream-2);border-left:4px solid var(--accent);
+    padding:22px 26px;margin:0 0 22px;
+    font-family:Georgia,serif;font-size:19px;line-height:1.5;color:var(--blue-deep)
+  }
+  .pull span{display:block;font-family:-apple-system,sans-serif;font-size:13px;color:var(--muted);margin-top:10px;letter-spacing:.02em}
+
+  /* ---------- cards ---------- */
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:0 0 22px}
+  .card{
+    background:var(--cream-2);border:1px solid var(--rule);border-radius:10px;
+    padding:20px 18px
+  }
+  .card .k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:8px}
+  .card .q{font-family:Georgia,serif;font-size:17px;color:var(--blue-deep);margin-bottom:6px;line-height:1.35}
+  .card .a{font-size:13.5px;color:var(--muted);line-height:1.5}
+
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14.5px}
+  caption{caption-side:top;text-align:left;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding-bottom:8px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--blue);font-weight:700;border-bottom:1.5px solid var(--blue)}
+  tr:last-child td{border-bottom:none}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:650;color:var(--blue-deep)}
+
+  /* ---------- loop diagram ---------- */
+  .loop{
+    display:grid;grid-template-columns:1fr 64px 1fr;gap:14px;align-items:center;
+    background:var(--cream-2);border:1px solid var(--rule);border-radius:10px;
+    padding:26px 24px;margin:0 0 18px
+  }
+  .loop .box{border:1px solid var(--rule);border-radius:8px;padding:16px;background:#fff}
+  .loop .box .t{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:6px}
+  .loop .box .d{font-size:13.5px;color:#3A4E63;line-height:1.5}
+  .loop .arrow{text-align:center;color:var(--accent);font-size:22px;line-height:1}
+  .loop .stack{display:flex;flex-direction:column;gap:14px}
+
+  /* ---------- status pill ---------- */
+  .pill{
+    display:inline-block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    padding:4px 9px;border-radius:999px;border:1px solid currentColor
+  }
+  .pill.built{color:var(--good)}
+  .pill.next{color:var(--accent)}
+  .pill.plan{color:var(--muted)}
+  .pill.gap{color:var(--warn)}
+
+  /* ---------- metric strip ---------- */
+  .strip{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
+    border:1px solid var(--rule);border-radius:10px;overflow:hidden;margin:0 0 20px
+  }
+  .strip div{background:var(--cream-2);padding:18px 16px}
+  .strip .v{font-family:Georgia,serif;font-size:26px;color:var(--blue-deep);line-height:1.1}
+  .strip .l{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+
+  ul{margin:0 0 16px;padding-left:20px}
+  li{margin:0 0 8px;max-width:44em}
+  li::marker{color:var(--accent)}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:34px}
+  .foot{border-top:1px solid var(--rule);margin-top:56px;padding-top:22px;font-size:13px;color:var(--muted)}
+  .foot code{background:#EFE7D6;padding:1px 5px;border-radius:4px;font-size:12px}
+
+  @media (max-width:760px){
+    h1{font-size:34px}
+    .cards,.strip,.two,.loop{grid-template-columns:1fr}
+    .loop .arrow{transform:rotate(90deg)}
+  }
+  @media print{
+    body{background:#fff}
+    .wrap{padding:0;max-width:none}
+    section{page-break-inside:avoid}
+    h1{font-size:34px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">Adapt 2.0 · product blueprint</p>
+    <h1>An engine that learns a person,<br>and knows when it doesn't.</h1>
+    <p class="lede">Adapt decides what a person should do next, and tells you how sure it is — or
+    abstains and says what it would need to know. Hosts embed it through an API. We sell the
+    institution access to an engine we keep maintaining, not tokens and not coverage.</p>
+  </header>
+
+  <section>
+    <h2>Three things that must never be confused</h2>
+    <p>Every capability is described on three separate axes, each on the same L0–L3 scale. What a
+    customer actually receives is the <strong>minimum</strong> of the three, and the binding
+    constraint is always named in the response.</p>
+    <div class="cards">
+      <div class="card">
+        <div class="k">Entitlement</div>
+        <div class="q">Have they bought it?</div>
+        <div class="a">Commercial. Set by contract and tier.</div>
+      </div>
+      <div class="card">
+        <div class="k">Capability</div>
+        <div class="q">Have we built it?</div>
+        <div class="a">Engineering. Set by the release.</div>
+      </div>
+      <div class="card">
+        <div class="k">Validation</div>
+        <div class="q">Have we earned the claim?</div>
+        <div class="a">Evidence. Set by the gates, on their own learners.</div>
+      </div>
+    </div>
+    <p class="muted">A tenant can own Deep and still be served L1 with <code>limited_by: "validation"</code>,
+    because their learners have not accumulated the evidence yet. That is the difference between selling a
+    capability and overstating one.</p>
+  </section>
+
+  <section>
+    <h2>The loop</h2>
+    <div class="loop">
+      <div class="box">
+        <div class="t">Host product</div>
+        <div class="d">“What should this person do next?” — asked with a learner id, a construct and
+        whatever history exists.</div>
+      </div>
+      <div class="arrow">⇄</div>
+      <div class="stack">
+        <div class="box">
+          <div class="t">Enough evidence?</div>
+          <div class="d">If yes: serve a recommendation, with the interval that justifies it.<br>
+          If no: <strong>abstain</strong>, name the reason, and say how many observations would change
+          the answer.</div>
+        </div>
+        <div class="box">
+          <div class="t">Observe</div>
+          <div class="d">The host reports what actually happened. The model gets sharper for that
+          learner, that construct, that cohort.</div>
+        </div>
+      </div>
+    </div>
+    <p><strong>Abstention is a feature, not a failure.</strong> A brand-new learner gets
+    <em>insufficient evidence</em> plus the number of trials that would fix it — never a confident guess,
+    never a canned default. It is never billed, at any tier, and never counted as an error.</p>
+    <p>But abstention alone can hide an empty product: a system that abstains on everything looks
+    honest and serves nothing. So the headline metric is a <strong>pair</strong> — abstention rate
+    <em>and</em> served rate, same screen, same denominator. Careful engine or unfinished engine;
+    the pair is how you tell.</p>
+  </section>
+
+  <section>
+    <h2>Tiers buy capacity and capability — never coverage</h2>
+    <table>
+      <thead>
+        <tr><th></th><th>Core</th><th>Plus</th><th>Deep</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>What it is</td>
+          <td>The loop, with calibrated confidence</td>
+          <td>+ strategy identification, diagnostic probes</td>
+          <td>+ prospective calibration, longitudinal validation</td>
+        </tr>
+        <tr>
+          <td>Abstention visibility</td>
+          <td class="num">always — never paywalled</td>
+          <td class="num">yes</td>
+          <td class="num">yes</td>
+        </tr>
+        <tr>
+          <td>Probes</td>
+          <td>—</td>
+          <td class="num">included</td>
+          <td class="num">included</td>
+        </tr>
+        <tr>
+          <td>Who can buy it</td>
+          <td>any tenant</td>
+          <td>any tenant</td>
+          <td>any <em>eligible</em> tenant — still gated by evidence</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted">No tier ever buys a better answer about a learner. Deep is a tier, not a
+    partnership and not a bespoke engagement.</p>
+  </section>
+
+  <section>
+    <h2>The economics, as measured</h2>
+    <div class="strip">
+      <div><div class="v">26.2 µs</div><div class="l">one decide</div></div>
+      <div><div class="v">18 min</div><div class="l">CPU / 2,000 learners / month</div></div>
+      <div><div class="v">99%</div><div class="l">of that is model refits</div></div>
+      <div><div class="v">~1%</div><div class="l">model math as share of cost of service</div></div>
+    </div>
+    <p>The pricing unit is a bundle, not a token: <strong>80 credits ≈ one reference learner-month</strong>,
+    priced from willingness to pay, operating cost and margin — never derived from compute. Monthly
+    included allowance per tier, usage packs on top, no surprise overage, customer-set caps. Included
+    allowances expire; purchased packs never do.</p>
+    <div class="pull">
+      “Customers pay for capabilities and capacity. They don’t pay extra because Adapt honestly admits
+      uncertainty.”
+      <span>Pricing principle — an abstention is never charged, at any tier</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where the build actually is</h2>
+    <table>
+      <thead><tr><th>Milestone</th><th>Content</th><th>State</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>M0</strong> foundations</td>
+          <td>Tenancy and forced row-level security, API keys, append-only credit ledger,
+          encryption at rest, migrations, CI</td>
+          <td><span class="pill built">built · inc 5/6</span><br>
+          <span class="muted">68 files · 7 migrations · 243 tests · PostgreSQL 16.2</span></td>
+        </tr>
+        <tr>
+          <td><strong>M1</strong> the loop</td>
+          <td>decide → serve or abstain with citation → observe → learn; thin TS/Python SDK; console
+          shell; sandbox demo</td>
+          <td><span class="pill next">next</span></td>
+        </tr>
+        <tr>
+          <td><strong>M2</strong> evidence</td>
+          <td>Calibration gates, claims surface, abstention economics</td>
+          <td><span class="pill plan">planned</span></td>
+        </tr>
+        <tr>
+          <td><strong>M3 · M3.5</strong> depth &amp; profile</td>
+          <td>Probes, strategy identification, longitudinal validation; cognitive-support profile with
+          prompting, fading and consent</td>
+          <td><span class="pill plan">planned</span></td>
+        </tr>
+        <tr>
+          <td><strong>M4–M6</strong> scale</td>
+          <td>Metering at scale, conformance suite, integration surfaces</td>
+          <td><span class="pill plan">planned</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted">Foundations first is deliberate. Tenant isolation, an append-only ledger and
+    encryption at rest are the three things that are ruinous to retrofit — a model built on a database
+    that cannot prove who sees what is a demo, not a product.</p>
+  </section>
+
+  <section>
+    <h2>What “done” means for a host</h2>
+    <ul>
+      <li><strong>Under 15 minutes</strong> from docs to a first successful call — tested with a
+      developer who has never seen them.</li>
+      <li><strong>A demo they can watch:</strong> a learner with zero history abstains, earns its
+      evidence in six interactions, then serves a recommendation with a visible interval. Nothing
+      fabricated.</li>
+      <li><strong>A conformance suite in their CI</strong> — 15 checks; the reference host scores 100%
+      or the build fails.</li>
+      <li><strong>Byte-identical replay</strong> of any decision, from its id.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Risks worth naming</h2>
+    <table>
+      <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td>The coverage matrix goes stale and the honesty claim becomes decoration</td>
+            <td>Regenerated on every release; it is load-bearing, not marketing</td></tr>
+        <tr><td>Claims outrun evidence under sales pressure</td>
+            <td>Claims boundary enforced in code — the surface refuses to publish an ungated claim</td></tr>
+        <tr><td>Integration friction: a good engine nobody adopts</td>
+            <td>Five ways in, thin SDKs, and a measured time-to-first-call gate</td></tr>
+        <tr><td>New tenants get less than they paid for while evidence accumulates</td>
+            <td>Served level is explicit, the binding constraint is named, the path to more is shown</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="foot">
+    Detail lives beside this page: <code>SPEC.md</code> · <code>MEASUREMENT.md</code> ·
+    <code>METRICS.md</code> · <code>METERING.md</code> · <code>PRIVACY.md</code> ·
+    <code>CLAIMS.md</code> · <code>INTEGRATION.md</code> · <code>UI.md</code> ·
+    <code>ADR-001</code> · <code>ADR-002</code> · <code>AUDIT.md</code>.
+    <br>Foundations built and tested on branch <code>arena/48488ec8-adapt</code>;
+    specification and review on <code>arena/cb97052d-adapt</code>.
+  </footer>
+
+</div>
+</body>
+</html>
