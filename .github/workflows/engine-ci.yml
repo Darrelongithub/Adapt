@@ -43,10 +43,13 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
+      # setup-python's interpreter; ci.sh falls back to .venv/bin/python, which
+      # does not exist on a runner.
+      PYTHON: python3
       ADAPT_TEST_DATABASE_URL: postgresql://postgres:adapt@localhost:5432/postgres
       ADAPT_MIGRATION_DATABASE_URL: postgresql://adapt_owner:adapt-owner-dev-password@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -56,7 +59,7 @@ jobs:
           git fetch origin "$DOCS_BRANCH:refs/remotes/origin/$DOCS_BRANCH"
           git rev-parse --verify "refs/remotes/origin/$DOCS_BRANCH"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -93,11 +96,13 @@ jobs:
       run:
         working-directory: engine
     env:
+      # setup-python's interpreter; ci.sh's .venv default does not exist here.
+      PYTHON: python3
       # A real 16.x from the PGDG repository, not a 14 or a sqlite stand-in.
       ADAPT_TEST_DATABASE_URL: postgresql://postgres:adapt@127.0.0.1:5432/postgres
       ADAPT_MIGRATION_DATABASE_URL: postgresql://adapt_owner:adapt-owner-dev-password@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -135,7 +140,7 @@ jobs:
           psql --version
           psql "postgresql://postgres:adapt@127.0.0.1:5432/postgres" -c "SHOW server_version;"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip

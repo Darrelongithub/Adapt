@@ -24,7 +24,25 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
-PYTHON="${PYTHON:-.venv/bin/python}"
+
+# The interpreter: an explicit $PYTHON wins, then the local venv, then whatever
+# python3 is on PATH — CI installs the package into the setup-python interpreter
+# and has no venv at all.
+if [ -z "${PYTHON:-}" ]; then
+    if [ -x ".venv/bin/python" ]; then
+        PYTHON=".venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        PYTHON="python3"
+    else
+        echo "no python interpreter: create .venv (make venv) or set PYTHON" >&2
+        exit 2
+    fi
+fi
+if [ ! -x "$PYTHON" ] && ! command -v "$PYTHON" >/dev/null 2>&1; then
+    echo "PYTHON=$PYTHON does not exist: create .venv (make venv) or set PYTHON" >&2
+    exit 2
+fi
+echo "interpreter: $PYTHON"
 STEP_LOG="$(mktemp)"
 CURRENT_STEP="startup"
 DOC=""
