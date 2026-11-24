@@ -23,7 +23,6 @@ has never been reachable.
 | **Data-key rotation unsupported**: one data key per tenant, no version history | increment 5 | a single tenant's key cannot be rotated without orphaning rows | §14 |
 | **Console screens owed**: credit usage, ledger listing, key management, learner inspector, failure review | increment 4 | operators work from `psql` and a CLI | §8, §9, §11 |
 | **Per-process limiter** and in-memory auth cache: nothing is shared | increment 3 | two replicas allow twice the failures | §6 |
-| The **contract doc is not on `main`**: CI fetches `arena/cb97052d-adapt` | increment 6 | a host cloning `main` has no contract, and the guard fails if that ref goes stale | §5 |
 
 ## 1. `docker compose up` has never been run
 
@@ -115,10 +114,19 @@ allowlist, read as written (DECISIONS §14). Remove `minor_not_supported` from a
 copy and the guard exits 1 — measured against the doc as it stood before
 `855d74a`, which is how we know the row is the document owner's, not ours.
 
-**Still open:** the doc lives on `arena/cb97052d-adapt`, not on `main`. Until it
-merges, CI fetches that ref and fails if it has gone stale (the
-`contract doc (resolve as written)` step greps for `minor_not_supported`). A
-host reading `main` sees no contract at all.
+**Closed in M1 pre-work.** The document is now in-tree at `docs/v2/INTEGRATION.md`,
+and the guard resolves it there: no `FALLBACK_DOC_REFS`, no `ADAPT_DOCS_REF`, no
+`git show`, no branch name anywhere in `check_openapi.py`, `ci.sh` or the
+workflow. `--doc` / `ADAPT_INTEGRATION_DOC` remain as explicit escape hatches for
+a document under review, and a tree without the contract fails closed (exit 2,
+naming the path) rather than reaching for a branch.
+
+Measured, because it is the failure this removes: against a worktree at
+`b008b45` — M0's tree, no `docs/v2/` — the old guard printed
+`table read from origin/arena/cb97052d-adapt:docs/v2/INTEGRATION.md (17 codes) /
+no violations` and exited **0**, i.e. it built against a branch that was not in
+the tree it was compiling. The same tree with the new guard exits **2** with
+`the contract is not in this tree: no file at …/docs/v2/INTEGRATION.md`.
 
 ## 6. The rate limiter is per process, not per cluster
 

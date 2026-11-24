@@ -88,7 +88,7 @@ Each of these is enforced by something that fails, not by a comment:
 
 ```bash
 make check          # lint + format + types + contract + tests (what CI runs)
-make ci             # the whole gate, including migrations and the contract doc fetch
+make ci             # the whole gate, including migrations and the in-tree contract
 make test           # pytest only
 make migrate        # alembic upgrade head (owner URL)
 make roundtrip      # alembic up → down → up on a scratch database

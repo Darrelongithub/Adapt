@@ -508,3 +508,34 @@ app was given: the column is ciphertext (§12) and a CHECK cannot read it. The
 pure part (`age_on`) has boundary tests — a birthday that falls today is a
 birthday, not a year — and the route test asserts that nothing was written when
 the gate refuses.
+
+## 15. The contract is a file in this tree, and the guard fails closed without it
+
+**Decision.** `check_openapi.py` resolves `docs/v2/INTEGRATION.md` in the
+working tree and nowhere else. `--doc PATH` and `ADAPT_INTEGRATION_DOC` are
+explicit escape hatches for a document under review; if neither is given and the
+in-tree file is absent or empty, the guard exits 2 naming the path. There is no
+`FALLBACK_DOC_REFS`, no `ADAPT_DOCS_REF`, no `git show`, and no branch name in
+`check_openapi.py`, `scripts/ci.sh` or `.github/workflows/engine-ci.yml`.
+
+**Why.** M1's premise is that the contract and the engine are in one tree. A
+guard that can read the document from a branch silently decouples them: the tree
+compiles against a document nobody checked out, so a reviewer diffing the branch
+sees nothing, and branch cleanup turns a green build into a red one for a reason
+that has nothing to do with the code. Failure mode, measured rather than
+imagined: on a worktree at `b008b45` — M0's tree, which has no `docs/v2/` — the
+old guard printed `table read from
+origin/arena/cb97052d-adapt:docs/v2/INTEGRATION.md (17 codes)` / `no violations`
+and exited **0**. It was checking the engine against a document that was not in
+the tree it was building.
+
+**What "fail closed" means here.** The tempting middle ground is to fall back to
+the last ref that has the file and warn. That is the same bug with a log line:
+the build still succeeds on a document outside the tree. Exit 2, name the path,
+name the escape hatch, and let a human decide — that is the only version of this
+that stays honest when the file goes missing for a real reason.
+
+**Not patched, not fetched, not generated.** The guard reads the file's bytes and
+parses the §6 table out of them (DECISIONS §14). `test_the_contract_is_resolved_
+in_tree_and_read_verbatim` asserts byte equality with the file, and
+`test_the_guard_knows_no_branch` fails if any of the strings above reappear.

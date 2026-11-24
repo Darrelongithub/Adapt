@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,10 +36,6 @@ from typing import Any
 ENGINE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ENGINE_ROOT.parent
 DEFAULT_DOC_PATH = REPO_ROOT / "docs" / "v2" / "INTEGRATION.md"
-
-#: Refs searched with ``git show`` when the doc is not in the working tree.
-#: The planning docs live on their own branch until they are merged.
-FALLBACK_DOC_REFS = ("origin/arena/cb97052d-adapt",)
 
 #: Routes that carry no auth requirement, by design. Everything else under
 #: /v1 must declare one.
@@ -232,34 +227,37 @@ def check_emitted_codes(emitted: frozenset[str], doc_codes: frozenset[str]) -> l
 
 
 def load_doc_text(path: str | None) -> tuple[str, str]:
-    """Return (text, source description), searching the working tree then git."""
+    """Return (text, source description) for the contract in this checkout.
+
+    Resolution has exactly two inputs: an explicit ``--doc`` (or
+    ``ADAPT_INTEGRATION_DOC``), and the in-tree ``docs/v2/INTEGRATION.md``.
+    There is no branch fallback and no ``git`` lookup at all: the tree contains
+    the contract it implements, and a build that reaches for somebody's branch
+    is a build that breaks the day that branch is cleaned up. Missing means missing —
+    the guard exits 2 and says which path it wanted and how to point it
+    elsewhere. It never guesses.
+    """
     candidate = path or os.environ.get("ADAPT_INTEGRATION_DOC")
     if candidate:
         doc_path = Path(candidate)
         if not doc_path.is_file():
-            raise DocError(f"document not found at {doc_path}")
-        return doc_path.read_text(encoding="utf-8"), str(doc_path)
-    if DEFAULT_DOC_PATH.is_file():
-        return DEFAULT_DOC_PATH.read_text(encoding="utf-8"), str(DEFAULT_DOC_PATH)
-    refs = [os.environ["ADAPT_DOCS_REF"]] if os.environ.get("ADAPT_DOCS_REF") else FALLBACK_DOC_REFS
-    for ref in refs:
-        try:
-            proc = subprocess.run(
-                ["git", "show", f"{ref}:docs/v2/INTEGRATION.md"],
-                cwd=str(REPO_ROOT),
-                capture_output=True,
-                text=True,
-                check=False,
+            raise DocError(
+                f"document not found at {doc_path} (from --doc or ADAPT_INTEGRATION_DOC)"
             )
-        except OSError:  # pragma: no cover - git missing
-            break
-        if proc.returncode == 0 and proc.stdout.strip():
-            return proc.stdout, f"{ref}:docs/v2/INTEGRATION.md"
-    raise DocError(
-        "could not read docs/v2/INTEGRATION.md: not in the working tree and not "
-        f"readable from any of {', '.join(refs)}. Pass --doc PATH or set "
-        "ADAPT_INTEGRATION_DOC / ADAPT_DOCS_REF."
-    )
+        source = str(doc_path)
+    else:
+        if not DEFAULT_DOC_PATH.is_file():
+            raise DocError(
+                f"the contract is not in this tree: no file at {DEFAULT_DOC_PATH}. "
+                "The guard fails closed rather than reaching for a branch; pass "
+                "--doc PATH or set ADAPT_INTEGRATION_DOC to point at it."
+            )
+        doc_path = DEFAULT_DOC_PATH
+        source = str(DEFAULT_DOC_PATH)
+    text = doc_path.read_text(encoding="utf-8")
+    if not text.strip():
+        raise DocError(f"the contract at {doc_path} is empty")
+    return text, source
 
 
 def build_openapi() -> OpenAPI:
