@@ -1,0 +1,160 @@
+name: engine
+
+# Two jobs, both on a real PostgreSQL 16.x and both on Python 3.12:
+#
+#   engine            uses the runner's Docker to start `postgres:16.4`
+#   engine-no-docker  installs PostgreSQL 16 from the PGDG apt repo, for the
+#                     runner (or the reviewer) that has no Docker at all
+#
+# The suite never hard-codes a server: it reads ADAPT_TEST_DATABASE_URL and
+# provisions its own databases, so both jobs run exactly the same gate
+# (`engine/scripts/ci.sh`) and neither is special-cased in test code.
+
+on:
+  push:
+    paths: ["engine/**", ".github/workflows/engine-ci.yml"]
+  pull_request:
+    paths: ["engine/**", ".github/workflows/engine-ci.yml"]
+
+env:
+  # The contract doc lives on another branch of this repository. The checker
+  # exits 2 rather than guessing when it cannot read it, so CI must fetch it.
+  ADAPT_DOCS_REF: origin/arena/cb97052d-adapt
+  DOCS_BRANCH: arena/cb97052d-adapt
+
+jobs:
+  engine:
+    name: engine (python 3.12, postgres 16 via docker)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_PASSWORD: adapt
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # setup-python's interpreter; ci.sh falls back to .venv/bin/python, which
+      # does not exist on a runner.
+      PYTHON: python3
+      ADAPT_TEST_DATABASE_URL: postgresql://postgres:adapt@localhost:5432/postgres
+      ADAPT_MIGRATION_DATABASE_URL: postgresql://adapt_owner:adapt-owner-dev-password@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the contract doc branch
+        working-directory: .
+        run: |
+          git fetch origin "$DOCS_BRANCH:refs/remotes/origin/$DOCS_BRANCH"
+          git rev-parse --verify "refs/remotes/origin/$DOCS_BRANCH"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Assert the interpreter is 3.12
+        run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Bootstrap roles
+        env:
+          ADAPT_BOOTSTRAP_DATABASE_URL: postgresql://postgres:adapt@localhost:5432/postgres
+          ADAPT_DATABASE_NAME: postgres
+        run: python scripts/bootstrap_db.py
+
+      - name: Verify the server is 16.x
+        run: |
+          python -c "import os; from sqlalchemy import create_engine, text; \
+          conn = create_engine(os.environ['ADAPT_TEST_DATABASE_URL'], future=True).connect(); \
+          version = conn.execute(text('SHOW server_version_num')).scalar_one(); \
+          print('server_version_num:', version); \
+          assert int(version) // 10000 == 16, f'expected PostgreSQL 16.x, got {version}'"
+
+      - name: Gate (lint, format, types, contract, migrations, tests)
+        run: ./scripts/ci.sh
+
+  engine-no-docker:
+    name: engine (python 3.12, postgres 16 from apt, no docker)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    env:
+      # setup-python's interpreter; ci.sh's .venv default does not exist here.
+      PYTHON: python3
+      # A real 16.x from the PGDG repository, not a 14 or a sqlite stand-in.
+      ADAPT_TEST_DATABASE_URL: postgresql://postgres:adapt@127.0.0.1:5432/postgres
+      ADAPT_MIGRATION_DATABASE_URL: postgresql://adapt_owner:adapt-owner-dev-password@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the contract doc branch
+        working-directory: .
+        run: |
+          git fetch origin "$DOCS_BRANCH:refs/remotes/origin/$DOCS_BRANCH"
+          git rev-parse --verify "refs/remotes/origin/$DOCS_BRANCH"
+
+      - name: Make sure nothing here needs Docker
+        run: |
+          # This job exists for the runner (or reviewer) with no Docker at all.
+          # If Docker happens to be present, put a `docker` that always fails
+          # first on PATH, so a step that quietly started relying on it would
+          # fail here rather than on somebody's laptop.
+          mkdir -p "$RUNNER_TEMP/no-docker"
+          printf '#!/bin/sh\necho "docker is not available in this job" >&2\nexit 127\n' \
+            > "$RUNNER_TEMP/no-docker/docker"
+          chmod +x "$RUNNER_TEMP/no-docker/docker"
+          echo "$RUNNER_TEMP/no-docker" >> "$GITHUB_PATH"
+
+      - name: Install PostgreSQL 16 (PGDG)
+        working-directory: .
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            > /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16 postgresql-client-16
+          sudo pg_ctlcluster 16 main start || sudo service postgresql start
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'adapt';"
+          psql --version
+          psql "postgresql://postgres:adapt@127.0.0.1:5432/postgres" -c "SHOW server_version;"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Bootstrap roles
+        env:
+          ADAPT_BOOTSTRAP_DATABASE_URL: postgresql://postgres:adapt@127.0.0.1:5432/postgres
+          ADAPT_DATABASE_NAME: postgres
+        run: python scripts/bootstrap_db.py
+
+      - name: Gate (same script, different server)
+        run: ./scripts/ci.sh
