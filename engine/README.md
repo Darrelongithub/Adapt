@@ -81,14 +81,14 @@ Each of these is enforced by something that fails, not by a comment:
 | Personal data is ciphertext at rest, bound to its cell | AES-GCM, AAD = tenant + row + column | `tests/test_crypto.py` (swap, move, AAD mismatch all raise) |
 | A master key can actually be retired | header carries a data key version; `kid` lives on the wrapped-key row | `tests/test_crypto.py::test_a_master_key_can_be_retired_after_rewrap` |
 | A retired key cannot be dropped too early | startup refuses when a kid in use has no key | `tests/test_crypto.py::test_startup_still_refuses_when_a_key_is_dropped_before_rewrap` |
-| Errors carry one shape and only documented codes | one handler; `scripts/check_openapi.py` against the contract doc | `tests/test_check_openapi.py` |
+| Errors carry one shape and only documented codes | one handler; `scripts/check_openapi.py` against the contract doc, read as written | `tests/test_check_openapi.py` |
 | Migrations are reversible and schema-only | `up → down → up` in CI; no `INSERT`/`UPDATE` in a migration | `tests/test_migrations.py` |
 
 ## Routine operations
 
 ```bash
 make check          # lint + format + types + contract + tests (what CI runs)
-make ci             # the whole gate, including migrations and the docs patch
+make ci             # the whole gate, including migrations and the contract doc fetch
 make test           # pytest only
 make migrate        # alembic upgrade head (owner URL)
 make roundtrip      # alembic up → down → up on a scratch database

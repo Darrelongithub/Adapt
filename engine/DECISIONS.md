@@ -471,7 +471,7 @@ product is most careful about), takes an outage or a dual-write path, and turns
 a compromise into a race against a rewrite. Wrapping keys once is the standard
 shape for the same reason.
 
-## 14. One error code for adults-only, and why the contract table needed a patch
+## 14. One error code for adults-only, and why the contract guard never patches the doc
 
 **Decision.** A date of birth implying a minor is refused at creation with
 `422 minor_not_supported`, not `payload_invalid`.
@@ -483,12 +483,25 @@ apart will rewrite the payload forever or file a bug. A distinct code also makes
 the boundary measurable: counting `minor_not_supported` tells us whether a host
 has misunderstood its audience.
 
-**Why a doc patch.** `docs/v2/INTEGRATION.md` §6 is the authoritative table and
-it did not have the row. The rule is that every emitted code appears there, with
-no whitelist (KNOWN_GAPS §5), so we ship the row as a diff
-(`docs-patches/0002-minor-not-supported.diff`) and the checker applies our
-patches when it reads the doc from git. An explicit `--doc` path is used
-unpatched, which is what keeps the guard's own tests honest.
+**Why the doc owner added the row, not us.** `docs/v2/INTEGRATION.md` §6 is the
+authoritative table, and the rule is that every emitted code appears there with
+no whitelist (KNOWN_GAPS §5). The first version of this increment shipped the row
+as a diff and had `check_openapi.py` apply `docs-patches/*.diff` before
+comparing — which was wrong, and the document's owner said so: a guard that
+patches the table it checks can be satisfied by the code it is supposed to
+police (write the patch, amend the table, rule (c) passes). The table would
+follow the implementation instead of the implementation following the table.
+The row is now in §6 because the document's owner added it (docs commit
+`855d74a`), and the guard reads the document **as written**: no patch step, no
+`docs_with_patches.py`, no fallback that quietly edits what it is grading. A new
+code means a reviewed doc change in the same change set. `docs-patches/` stays as
+a review artefact — the change the code needs, as a diff, applied by a human.
+
+The guard proves this about itself: `test_the_guard_never_patches_the_contract`
+fails if a patch step reappears, and
+`test_entrypoint_fails_when_the_age_gate_code_leaves_the_doc` shows that deleting
+the row from a copy turns the guard red — which is what would have happened had
+we shipped the code first and the document never.
 
 **Where the check runs.** In the route, before the write, against the clock the
 app was given: the column is ciphertext (§12) and a CHECK cannot read it. The

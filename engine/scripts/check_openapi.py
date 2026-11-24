@@ -11,6 +11,16 @@ Fails the build when:
 
 The code list is read from the document, never copied here, so the two cannot
 drift. Exit codes: 0 clean, 1 violations, 2 the document could not be read.
+
+The document is read **as written**. This guard never applies
+``docs-patches/*.diff``: if it did, the implementation could write the patch
+that amends the authoritative table and then pass rule (c) against its own
+edit — "the doc is authoritative" would quietly become "the code is
+authoritative and the doc follows". A new code is a doc change reviewed by the
+document's owner. ``docs-patches/`` stays as a review artefact: the change the
+code needs, expressed as a diff, applied by a human. ``--print-doc`` exists so
+CI can assert that the document it fetched is the current one — it prints the
+resolved text, unmodified.
 """
 
 from __future__ import annotations
@@ -221,23 +231,6 @@ def check_emitted_codes(emitted: frozenset[str], doc_codes: frozenset[str]) -> l
     return findings
 
 
-SCRIPTS_DIR = Path(__file__).resolve().parent
-
-
-def _apply_patches(text: str) -> str:
-    """Apply `docs-patches/*.diff`, whichever way this module was imported."""
-    import importlib.util
-
-    module_path = SCRIPTS_DIR / "docs_with_patches.py"
-    spec = importlib.util.spec_from_file_location("docs_with_patches", module_path)
-    if spec is None or spec.loader is None:  # pragma: no cover - file is ours
-        raise DocError(f"cannot load {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    patched: str = module.apply_patches(text)
-    return patched
-
-
 def load_doc_text(path: str | None) -> tuple[str, str]:
     """Return (text, source description), searching the working tree then git."""
     candidate = path or os.environ.get("ADAPT_INTEGRATION_DOC")
@@ -261,13 +254,7 @@ def load_doc_text(path: str | None) -> tuple[str, str]:
         except OSError:  # pragma: no cover - git missing
             break
         if proc.returncode == 0 and proc.stdout.strip():
-            # The doc we implement is the doc plus this repo's corrections:
-            # docs-patches/ holds reviewable diffs, and CI fails if one stops
-            # applying. An explicit --doc path is authoritative and is used
-            # unpatched, which is what the guard's own tests rely on.
-            patched = _apply_patches(proc.stdout)
-            note = "" if patched == proc.stdout else " + docs-patches/*.diff"
-            return patched, f"{ref}:docs/v2/INTEGRATION.md{note}"
+            return proc.stdout, f"{ref}:docs/v2/INTEGRATION.md"
     raise DocError(
         "could not read docs/v2/INTEGRATION.md: not in the working tree and not "
         f"readable from any of {', '.join(refs)}. Pass --doc PATH or set "
@@ -301,10 +288,25 @@ def build_openapi() -> OpenAPI:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--doc", help="path to INTEGRATION.md (default: docs/v2/INTEGRATION.md)")
+    parser.add_argument(
+        "--print-doc",
+        action="store_true",
+        help="print the resolved document verbatim and exit (CI checks it is current)",
+    )
     args = parser.parse_args(argv)
 
     try:
         text, source = load_doc_text(args.doc)
+    except DocError as exc:
+        print(f"openapi-check: cannot read the authoritative table: {exc}", file=sys.stderr)
+        return 2
+
+    if args.print_doc:
+        sys.stdout.write(text)
+        print(f"openapi-check: doc read from {source}", file=sys.stderr)
+        return 0
+
+    try:
         codes = documented_codes(text)
     except DocError as exc:
         print(f"openapi-check: cannot read the authoritative table: {exc}", file=sys.stderr)

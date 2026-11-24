@@ -5,7 +5,8 @@ environment it claims to be for. They are listed rather than implied: an
 unverified acceptance line that nobody wrote down becomes a false claim in a
 month.
 
-Last updated: increment 6 (migrations, CI, docs).
+Last updated: increment 6 (migrations, CI, docs), plus the contract-guard
+correction from docs commit `855d74a` (the guard may not patch the contract).
 
 ## Standing gaps at a glance
 
@@ -22,6 +23,7 @@ has never been reachable.
 | **Data-key rotation unsupported**: one data key per tenant, no version history | increment 5 | a single tenant's key cannot be rotated without orphaning rows | §14 |
 | **Console screens owed**: credit usage, ledger listing, key management, learner inspector, failure review | increment 4 | operators work from `psql` and a CLI | §8, §9, §11 |
 | **Per-process limiter** and in-memory auth cache: nothing is shared | increment 3 | two replicas allow twice the failures | §6 |
+| The **contract doc is not on `main`**: CI fetches `arena/cb97052d-adapt` | increment 6 | a host cloning `main` has no contract, and the guard fails if that ref goes stale | §5 |
 
 ## 1. `docker compose up` has never been run
 
@@ -95,9 +97,17 @@ already exercised directly in increment 2; what was untested was the path from
 
 Rule (c) of `scripts/check_openapi.py` parses **every** row of the §6 table,
 including the `any other | unmapped_status` sentinel, so the guard exits 0 with
-16 documented codes at docs ref `9d1739d`. It is still absolute: remove the
+17 documented codes at docs ref `855d74a`. It is still absolute: remove the
 sentinel row and the guard fails (`test_entrypoint_fails_when_the_sentinel_row_is_removed`).
-There is no whitelist in the checker; the document is the only allowlist.
+There is no whitelist in the checker and no patch step: the document is the only
+allowlist, read as written (DECISIONS §14). Remove `minor_not_supported` from a
+copy and the guard exits 1 — measured against the doc as it stood before
+`855d74a`, which is how we know the row is the document owner's, not ours.
+
+**Still open:** the doc lives on `arena/cb97052d-adapt`, not on `main`. Until it
+merges, CI fetches that ref and fails if it has gone stale (the
+`contract doc (resolve as written)` step greps for `minor_not_supported`). A
+host reading `main` sees no contract at all.
 
 ## 6. The rate limiter is per process, not per cluster
 

@@ -15,6 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import scripts.check_openapi as guard
 from scripts.check_openapi import (
     DocError,
     _table_rows,
@@ -219,9 +220,43 @@ def test_rule_c_has_no_exemptions() -> None:
     assert "unmapped_status" in str(findings[0])
 
 
-def test_entrypoint_passes_against_the_table_at_9d1739d() -> None:
-    """The sentinel is documented now, so the absolute rule is green."""
+def test_entrypoint_passes_against_the_current_doc() -> None:
+    """The sentinel and the age-gate code are documented, so rule (c) is green."""
     assert main([]) == 0
+
+
+def test_the_guard_never_patches_the_contract() -> None:
+    """The document is authoritative as written — AGENT_M0 §6.
+
+    A guard that applied ``docs-patches/*.diff`` before comparing could be made
+    to pass by the implementation it is supposed to police: write the patch,
+    patch the table, rule (c) satisfied. So there is no patch step at all, and
+    the tooling that materialised one is gone.
+    """
+    source = Path(guard.__file__).read_text(encoding="utf-8")
+    assert "apply_patches" not in source
+    assert not hasattr(guard, "_apply_patches")
+    scripts_dir = Path(guard.__file__).resolve().parent
+    assert not (scripts_dir / "docs_with_patches.py").exists()
+    assert "minor_not_supported" not in source
+
+
+def test_entrypoint_fails_when_the_age_gate_code_leaves_the_doc(tmp_path: Path) -> None:
+    """Red for the rule above: drop the row and the guard refuses to pass.
+
+    This is the code we added in increment 6. It is green only because the
+    document's owner documented it; delete the row from a copy and the guard
+    exits 1, which is what would have happened if we had shipped it alone.
+    """
+    text = _doc()
+    row = next(
+        line
+        for line in text.splitlines()
+        if line.startswith("| 422 |") and "minor_not_supported" in line
+    )
+    doc = tmp_path / "INTEGRATION.md"
+    doc.write_text(text.replace(row + "\n", ""), encoding="utf-8")
+    assert main(["--doc", str(doc)]) == 1
 
 
 def test_entrypoint_fails_when_the_sentinel_row_is_removed(tmp_path: Path) -> None:
