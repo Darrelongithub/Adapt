@@ -177,6 +177,12 @@ and runs the script, which is a rehearsal-free process.
 The startup refusal is the safety net for a premature removal, not a substitute
 for a schedule.
 
+The script itself has no test: `rewrap_all`, `preflight`, `assert_retirable` and
+`provision_data_key` are covered through the library, and the argparse surface
+is type-checked, but nobody has executed `rotate_master_key.py` against a real
+cluster in CI. It is a thin wrapper, which is exactly the kind of thing that
+breaks quietly for a year.
+
 ## 13. The crypto path logs nothing, which is a property of not writing code
 
 `test_no_plaintext_or_key_material_reaches_a_log_line` proves the encrypt,
