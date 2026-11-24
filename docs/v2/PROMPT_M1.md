@@ -1,8 +1,9 @@
 # Paste-ready prompt — Milestone 1 kickoff (against `main`)
 
-Everything is in one tree now: `main` = `e3a8436`, engine (79 files, 9 migrations, 548 tests) **and**
-`docs/v2/` (20 files). Verified on a clean checkout: `bash scripts/ci.sh --allow-unsupported-python`
-is green end to end, contract guard included.
+Everything is in one tree now: `main` = `10191a9`, engine (79 files, 9 migrations, 548 tests) **and**
+`docs/v2/` (21 files). Verified on a clean worktree of `main`: `bash scripts/ci.sh
+--allow-unsupported-python` is green end to end — ruff, mypy strict, contract guard ("resolve as
+written"), migration round-trip, 548 tests.
 
 ```
 You are starting Adapt 2.0 **Milestone 1** on `main` (`e3a8436`). M0 is complete and verified;
