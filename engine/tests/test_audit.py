@@ -66,8 +66,7 @@ def _tenant_rows(engine: Engine, tenant_id: uuid.UUID) -> list[object]:
 
 def _system_rows(owner_engine: Engine, *, ip_hash: str | None = None) -> list[object]:
     query = (
-        "SELECT tenant_id, actor, action, target, metadata FROM audit_log "
-        "WHERE tenant_id IS NULL"
+        "SELECT tenant_id, actor, action, target, metadata FROM audit_log WHERE tenant_id IS NULL"
     )
     params: dict[str, str] = {}
     if ip_hash is not None:
@@ -101,9 +100,7 @@ def test_issuing_writes_an_audit_row_naming_the_key_id(
     assert resp.json()["prefix"] not in json.dumps(dict(row._mapping))
 
 
-def test_revoking_writes_an_audit_row(
-    app_engine: Engine, tenant: uuid.UUID, admin_key
-) -> None:
+def test_revoking_writes_an_audit_row(app_engine: Engine, tenant: uuid.UUID, admin_key) -> None:
     client = _client(app_engine)
     created = client.post(
         "/v1/admin/keys",

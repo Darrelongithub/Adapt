@@ -14,6 +14,8 @@ address, a phone number or anything else that re-identifies on sight
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from datetime import date
 from typing import Final
 
 import sqlalchemy as sa
@@ -32,6 +34,46 @@ LEARNER_ID_SQL_CHECK: Final = (
 )
 
 PROFILES: Final = ("adult_general", "cognitive_support")
+
+#: Adults only (NOTES.md "standing decisions"). A date of birth that implies a
+#: younger learner is refused at creation with `minor_not_supported`: it is a
+#: scope decision, not a validation detail, and an integrator needs to be told
+#: which it is.
+MINIMUM_AGE: Final = 18
+
+
+class ProfileMismatch(ValueError):
+    """A code path meant for one learner profile was handed another."""
+
+
+def assert_profile(learner: object, expected: str) -> None:
+    """Assert a learner row is of ``expected`` profile, or say why not.
+
+    `ADR-001` makes the two profiles different products of one engine; code
+    that only applies to one of them (a `cognitive_support` pacing rule, say)
+    must not silently run for the other. Works on a mapping row or an object,
+    because both shapes reach this code from the API and from tests.
+    """
+    if isinstance(learner, Mapping):
+        profile = learner.get("profile")
+    else:
+        profile = getattr(learner, "profile", None)
+    if profile is None:
+        raise ProfileMismatch("this learner row has no profile to assert against")
+    if profile not in PROFILES:
+        raise ProfileMismatch(f"{profile!r} is not one of {', '.join(PROFILES)}")
+    if profile != expected:
+        raise ProfileMismatch(f"expected a {expected!r} learner, this one is {profile!r}")
+
+
+def age_on(date_of_birth: date, today: date) -> int:
+    """Completed years, the birthday-adjusted way nobody gets wrong twice."""
+    return (
+        today.year
+        - date_of_birth.year
+        - ((today.month, today.day) < (date_of_birth.month, date_of_birth.day))
+    )
+
 
 metadata = sa.MetaData()
 

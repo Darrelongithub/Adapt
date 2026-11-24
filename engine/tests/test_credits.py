@@ -51,7 +51,9 @@ def _reserve(engine: Engine, tenant_id: uuid.UUID, amount: int, ref: str, key: s
     )
 
 
-def _settle(engine: Engine, tenant_id: uuid.UUID, reservation_id, amount: int, key: str | None = None):
+def _settle(
+    engine: Engine, tenant_id: uuid.UUID, reservation_id, amount: int, key: str | None = None
+):
     key = key or f"settle-{uuid.uuid4()}"
     return credits.run_idempotent(
         engine,
@@ -227,7 +229,9 @@ def test_replaying_a_reserve_five_times_writes_one_row_and_one_body(
 
     with tenant_transaction(app_engine, tenant) as conn:
         rows = conn.execute(
-            text("SELECT entry_type, delta FROM credit_ledger WHERE idempotency_key = 'fixed-key-1'")
+            text(
+                "SELECT entry_type, delta FROM credit_ledger WHERE idempotency_key = 'fixed-key-1'"
+            )
         ).all()
     assert len(rows) == 1
     assert rows[0].entry_type == "reserve"
@@ -267,9 +271,7 @@ def test_settlement_after_a_grant_expires_debits_the_rest_and_forfeits_the_remai
     app_engine: Engine, owner_engine: Engine, database, tenant: uuid.UUID
 ) -> None:
     """§4's mid-flight case: the settled amount is debited, the rest does not come back."""
-    grant_id = grant_credits(
-        database, tenant, kind="included", amount=5, expires_at=_days(1)
-    )
+    grant_id = grant_credits(database, tenant, kind="included", amount=5, expires_at=_days(1))
     held = _reserve(app_engine, tenant, 5, "op-expiring")
     assert _balance(app_engine, tenant).held == 5
 
@@ -277,7 +279,9 @@ def test_settlement_after_a_grant_expires_debits_the_rest_and_forfeits_the_remai
     # tables are FORCEd, so even the owner writes inside tenant context.
     with tenant_transaction(owner_engine, tenant) as conn:
         conn.execute(
-            text("UPDATE credit_grants SET expires_at = now() - interval '1 minute' WHERE id = :id"),
+            text(
+                "UPDATE credit_grants SET expires_at = now() - interval '1 minute' WHERE id = :id"
+            ),
             {"id": grant_id},
         )
 
@@ -307,7 +311,9 @@ def test_release_is_idempotent_and_never_debits(
 
     with tenant_transaction(app_engine, tenant) as conn:
         rows = conn.execute(
-            text("SELECT delta, entry_type FROM credit_ledger WHERE idempotency_key = 'release-key-1'")
+            text(
+                "SELECT delta, entry_type FROM credit_ledger WHERE idempotency_key = 'release-key-1'"
+            )
         ).all()
     assert len(rows) == 1
     assert rows[0].delta == 0, "a release debited"
@@ -380,7 +386,9 @@ def test_invariant_holds_after_an_allowance_expires(
     # expiry at all any more (credit_grants_purchased_never_expires).
     with tenant_transaction(app_engine, tenant) as conn:
         conn.execute(
-            text("UPDATE credit_grants SET expires_at = now() - interval '1 minute' WHERE id = :id"),
+            text(
+                "UPDATE credit_grants SET expires_at = now() - interval '1 minute' WHERE id = :id"
+            ),
             {"id": allowance},
         )
 
@@ -398,9 +406,7 @@ def test_invariant_holds_after_an_allowance_expires(
     assert settled.invariant_holds
 
 
-def test_a_purchased_grant_cannot_have_an_expiry(
-    database, tenant: uuid.UUID
-) -> None:
+def test_a_purchased_grant_cannot_have_an_expiry(database, tenant: uuid.UUID) -> None:
     """Paid credits never expire: the column refuses, not the documentation."""
     from sqlalchemy.exc import IntegrityError
 
@@ -452,14 +458,14 @@ def test_reserve_and_release_rows_are_zero_and_billing_uses_the_view(
     _release(app_engine, tenant, second.id)
 
     with tenant_transaction(app_engine, tenant) as conn:
-        rows = conn.execute(
-            text("SELECT entry_type, delta FROM credit_ledger ORDER BY id")
-        ).all()
+        rows = conn.execute(text("SELECT entry_type, delta FROM credit_ledger ORDER BY id")).all()
         by_type = {row.entry_type: row.delta for row in rows}
         view = conn.execute(
             text("SELECT coalesce(sum(consumed), 0) FROM credit_consumption")
         ).scalar_one()
-        unfiltered = conn.execute(text("SELECT coalesce(-sum(delta), 0) FROM credit_ledger")).scalar_one()
+        unfiltered = conn.execute(
+            text("SELECT coalesce(-sum(delta), 0) FROM credit_ledger")
+        ).scalar_one()
 
     assert by_type["reserve"] == 0
     assert by_type["release"] == 0

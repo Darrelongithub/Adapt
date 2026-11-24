@@ -177,9 +177,7 @@ def _audited_expiry() -> None:
         """
     )
     op.execute("ALTER FUNCTION adapt_set_key_expiry(uuid, uuid, timestamptz) OWNER TO adapt_owner")
-    op.execute(
-        "REVOKE ALL ON FUNCTION adapt_set_key_expiry(uuid, uuid, timestamptz) FROM PUBLIC"
-    )
+    op.execute("REVOKE ALL ON FUNCTION adapt_set_key_expiry(uuid, uuid, timestamptz) FROM PUBLIC")
     op.execute(
         "GRANT EXECUTE ON FUNCTION adapt_set_key_expiry(uuid, uuid, timestamptz) TO adapt_app"
     )

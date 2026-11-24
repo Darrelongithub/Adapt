@@ -36,6 +36,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, Engine, make_url
 
 from adapt_engine.crypto.keyring import Keyring
+from adapt_engine.crypto.provisioning import provision_data_key
 from adapt_engine.crypto.store import DataKeyStore
 from adapt_engine.db.roles import ensure_roles
 from adapt_engine.db.tenant import tenant_transaction
@@ -53,7 +54,7 @@ TEST_KEYRING = Keyring.from_secrets([("k1", TEST_MASTER_KEY)])
 
 #: A well-formed v1 envelope that authenticates against nothing. Only for
 #: tests that assert a constraint's *shape* and never decrypt the value.
-PLACEHOLDER_ENVELOPE = "v1:k1:AAAAAAAAAAAAAAAA:" + "A" * 32
+PLACEHOLDER_ENVELOPE = "v1:dk1:AAAAAAAAAAAAAAAA:" + "A" * 32
 
 #: Set by the fallback provider so it is stopped at session end.
 _STARTED_SERVER: object | None = None
@@ -244,12 +245,23 @@ def create_tenant(
             ),
             {"id": tenant_id, "slug": slug, "name": name, "profile": profile, "status": status},
         )
+        # Provisioning includes the tenant's data key: the runtime may only
+        # read one (migration 0008), so a provisioned tenant without this row
+        # would fail its first write instead of its first read.
+        provision_data_key(conn, tenant_id, TEST_KEYRING)
     return tenant_id
 
 
-def encrypt_profile(conn: object, tenant_id: uuid.UUID, value: str = "adult_general") -> str:
+def encrypt_profile(
+    conn: object,
+    tenant_id: uuid.UUID,
+    row_id: uuid.UUID,
+    value: str = "adult_general",
+) -> str:
     """Encrypt a profile value the way the API does, inside a tenant transaction."""
-    return DataKeyStore(keyring=TEST_KEYRING).encrypt(conn, tenant_id, value)  # type: ignore[arg-type]
+    return DataKeyStore(keyring=TEST_KEYRING).encrypt(  # type: ignore[arg-type]
+        conn, tenant_id, row_id, "profile", value
+    )
 
 
 def create_learner(
@@ -267,7 +279,7 @@ def create_learner(
     """
     learner_pk = uuid.uuid4()
     with tenant_transaction(engine, tenant_id) as conn:
-        stored_profile = encrypt_profile(conn, tenant_id, profile)
+        stored_profile = encrypt_profile(conn, tenant_id, learner_pk, profile)
         conn.execute(
             text(
                 "INSERT INTO learners (id, tenant_id, learner_id, profile) "

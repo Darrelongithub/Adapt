@@ -63,6 +63,7 @@ def security_requirement(scope: str) -> dict[str, list[dict[str, list[str]]]]:
     """
     return {"security": [{"APIKeyAuth": [scope]}]}
 
+
 UNAUTHORIZED_MESSAGE = "Invalid or missing API key"
 
 
@@ -166,9 +167,7 @@ def resolve_auth(
 
     # The digest goes to the database, which answers a row only on an exact
     # match. Nothing that could be replayed — and no stored hash — comes back.
-    resolved = keys.resolve_api_key(
-        engine, presented[: keys.PREFIX_LENGTH], computed
-    )
+    resolved = keys.resolve_api_key(engine, presented[: keys.PREFIX_LENGTH], computed)
 
     if resolved is None or resolved.revoked or _expired(resolved):
         failed()

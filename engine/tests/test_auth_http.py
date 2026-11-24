@@ -36,9 +36,7 @@ def tenants(database) -> SeededTenants:
 
 
 @pytest.fixture
-def clients(
-    database, app_engine: Engine, tenants: SeededTenants
-) -> tuple[TestClient, str, str]:
+def clients(database, app_engine: Engine, tenants: SeededTenants) -> tuple[TestClient, str, str]:
     """One app, two keys — one per tenant — and the key strings."""
     a_key = bootstrap_key(database, tenants.a_id, scopes=("observe", "admin"))
     b_key = bootstrap_key(database, tenants.b_id, scopes=("observe", "admin"))

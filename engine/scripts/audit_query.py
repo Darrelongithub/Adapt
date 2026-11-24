@@ -24,14 +24,15 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Engine
 
 
-def _engine():  # type: ignore[no-untyped-def]
+def _engine() -> Engine:
     url = os.environ.get("ADAPT_MIGRATION_DATABASE_URL") or os.environ.get("ADAPT_DATABASE_URL")
     if not url:
         print(
@@ -46,7 +47,7 @@ def _read_only(conn: Connection) -> None:
     conn.execute(text("SET TRANSACTION READ ONLY"))
 
 
-def auth_failures(conn: Connection, *, minutes: int, limit: int = 50) -> list[Any]:
+def auth_failures(conn: Connection, *, minutes: int, limit: int = 50) -> Sequence[Any]:
     """Recent failures by source hash, newest first, with the aggregate flag."""
     since = datetime.now(UTC) - timedelta(minutes=minutes)
     return conn.execute(
@@ -69,7 +70,7 @@ def auth_failures(conn: Connection, *, minutes: int, limit: int = 50) -> list[An
     ).all()
 
 
-def key_events(conn: Connection, *, tenant_id: str | None, limit: int = 50) -> list[Any]:
+def key_events(conn: Connection, *, tenant_id: str | None, limit: int = 50) -> Sequence[Any]:
     """Key issuance, revocation and expiry changes, newest first."""
     query = """
         SELECT occurred_at, tenant_id, action, actor, target
@@ -87,17 +88,15 @@ def key_events(conn: Connection, *, tenant_id: str | None, limit: int = 50) -> l
 def system_count(conn: Connection) -> int:
     """How many tenant-less audit rows exist, by action."""
     return int(
-        conn.execute(
-            text("SELECT count(*) FROM audit_log WHERE tenant_id IS NULL")
-        ).scalar_one()
+        conn.execute(text("SELECT count(*) FROM audit_log WHERE tenant_id IS NULL")).scalar_one()
     )
 
 
-def _print_rows(rows: list[Any]) -> None:
+def _print_rows(rows: Sequence[Any]) -> None:
     if not rows:
         print("(no rows)")
         return
-    print(" | ".join(rows[0]._fields))  # type: ignore[attr-defined]
+    print(" | ".join(rows[0]._fields))
     print("-" * 72)
     for row in rows:
         print(" | ".join(str(value) for value in row))

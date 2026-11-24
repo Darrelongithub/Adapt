@@ -217,7 +217,7 @@ def test_failure_body_is_identical_across_failure_modes(
     _revoke(app_engine, tenant, revoked.key_id)
     client = _client(app_engine, max_failures=1000)
 
-    unknown_prefix = "ak_test_" + "b" * 32            # shaped, never issued
+    unknown_prefix = "ak_test_" + "b" * 32  # shaped, never issued
     wrong_secret = issued.full_key[:-1] + ("a" if issued.full_key[-1] != "a" else "b")
 
     bodies = {}
@@ -436,7 +436,9 @@ def test_an_admin_key_may_not_mint_a_scope_it_lacks(
     assert "subset" in resp.json()["error"]["message"]
 
 
-def test_the_provisioning_path_is_closed_to_the_app_role(tenant: uuid.UUID, app_engine: Engine) -> None:
+def test_the_provisioning_path_is_closed_to_the_app_role(
+    tenant: uuid.UUID, app_engine: Engine
+) -> None:
     """No issuer means provisioning, and provisioning means the owner session."""
     with pytest.raises(key_service.KeyIssueRefused) as refused:
         key_service.issue_api_key(
@@ -461,9 +463,7 @@ def test_every_key_expires_and_the_default_is_ninety_days(
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert 6 <= (
-        datetime.fromisoformat(body["expires_at"]) - datetime.now(UTC)
-    ).days <= 7
+    assert 6 <= (datetime.fromisoformat(body["expires_at"]) - datetime.now(UTC)).days <= 7
 
 
 def test_an_expired_key_fails_exactly_like_a_wrong_one(
@@ -554,19 +554,14 @@ def test_shortening_a_key_expiry_is_audited(
 
     with _tx(audit_conn, tenant_id) as conn:
         rows = conn.execute(
-            _text(
-                "SELECT actor, action, target FROM audit_log "
-                "WHERE action = 'api_key_expiry_set'"
-            )
+            _text("SELECT actor, action, target FROM audit_log WHERE action = 'api_key_expiry_set'")
         ).all()
     assert len(rows) == 1
     assert rows[0].target == created["key_id"]
     assert rows[0].actor == f"key:{admin_key.key_id}"
 
 
-def test_an_expiry_in_the_past_is_refused(
-    app_engine: Engine, tenant: uuid.UUID, admin_key
-) -> None:
+def test_an_expiry_in_the_past_is_refused(app_engine: Engine, tenant: uuid.UUID, admin_key) -> None:
     from datetime import datetime, timedelta
 
     client = _client(app_engine)

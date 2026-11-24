@@ -168,9 +168,7 @@ class Settings(BaseModel):
             database_url=database_url,
             master_key=SecretStr(master_key),
             master_key_id=master_key_id,
-            master_key_previous=(
-                SecretStr(master_key_previous) if master_key_previous else None
-            ),
+            master_key_previous=(SecretStr(master_key_previous) if master_key_previous else None),
             master_key_previous_id=master_key_previous_id,
             key_pepper=SecretStr(key_pepper),
             redis_url=redis_url,
@@ -198,9 +196,7 @@ class Settings(BaseModel):
         for secret in (self.master_key, self.master_key_previous):
             if secret is not None and secret.get_secret_value() in _DEV_MASTER_KEYS:
                 name = (
-                    "ADAPT_MASTER_KEY"
-                    if secret is self.master_key
-                    else "ADAPT_MASTER_KEY_PREVIOUS"
+                    "ADAPT_MASTER_KEY" if secret is self.master_key else "ADAPT_MASTER_KEY_PREVIOUS"
                 )
                 raise ConfigError(
                     name,

@@ -1,34 +1,39 @@
-"""Per-tenant data keys, and the two operations the rest of the engine needs.
+"""Per-tenant data keys: read for the runtime, provisioned and re-wrapped by the owner.
 
-A tenant gets one data key, generated lazily on first write and stored wrapped
-by the current master key::
+A tenant gets one data key, created when the tenant is provisioned and stored
+wrapped by the master key named on its row::
 
-    tenant_data_keys(tenant_id PK, kid, wrapped, created_at, rotated_at)
+    tenant_data_keys(tenant_id PK, kid, dkv, wrapped, created_at, rotated_at)
 
 The wrapper is itself a ``v1`` envelope whose AAD is the tenant id, so a
 wrapped key lifted out of tenant A's row cannot be unwrapped in tenant B's.
 
 Encrypting a value:
 
-1. read (or create) the tenant's data key — one row, one lookup;
-2. seal the plaintext with the data key, AAD = tenant id, header kid = the
-   master key id that currently wraps the data key.
+1. read the tenant's data key row — one lookup, one unwrap (cached per process);
+2. seal the plaintext with the data key, AAD = tenant + row id + column, header
+   ``dkv`` = the data key version.
 
-Rotating the master key re-wraps step 1 only. The data key does not change, so
-rows written yesterday still open after the rotation: that is the whole reason
-the header exists.
+**The runtime cannot write any of this.** ``adapt_app`` holds ``SELECT`` on
+``tenant_data_keys`` and ``data_key_ids`` and nothing else: a request-serving
+role that could insert a data key row could register a master key id the
+startup check then trusts. Creation and re-wrap are provisioning operations,
+run as the owner, and they are the only writers of both tables.
+
+Master-key rotation re-wraps this row and touches no learner data. Retirement
+is the point: ``data_key_ids`` is pruned when its last referring row moves to a
+new key, so a master key can actually be deleted — see ``rotate.py`` for the
+preflight query that answers "is k1 still referenced?".
 
 What is *not* here: encrypting identifiers. ``tenant_id`` and ``learner_id``
 stay in clear because they are lookups — a unique constraint, an index and an
 RLS predicate all read them — and because a pseudonymous id is still personal
-data, so encrypting it would not make it anonymous. See DECISIONS §9.
+data, so encrypting it would not make it anonymous. See DECISIONS §12.
 """
 
 from __future__ import annotations
 
-import os
 import uuid
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from fastapi import Request
@@ -39,9 +44,10 @@ from adapt_engine.crypto.envelope import (
     DecryptionFailed,
     Envelope,
     MalformedEnvelope,
-    aad_for,
+    data_key_aad,
     seal,
     unseal,
+    value_aad,
 )
 from adapt_engine.crypto.keyring import Keyring
 
@@ -49,116 +55,96 @@ from adapt_engine.crypto.keyring import Keyring
 DATA_KEY_BYTES = 32
 
 
+class DataKeyMissing(RuntimeError):
+    """The tenant has no data key row; provisioning did not run."""
+
+
 @dataclass
 class DataKeyStore:
     """Encrypt and decrypt one tenant's personal columns."""
 
     keyring: Keyring
-    #: kid -> data key, per tenant, for the life of the process. A rotation
-    #: changes the *wrapper*, not this; the refusal-on-unknown-kid at startup
-    #: is what keeps a cache from outliving its key.
+    #: tenant -> (dkv, data key), for the life of the process. A rotation
+    #: changes the *wrapper* and the kid, not the data key, so this stays
+    #: valid; a data key version the tenant does not hold is refused, not
+    #: guessed.
     _cache: dict[uuid.UUID, tuple[str, bytes]] = field(default_factory=dict, repr=False)
 
     # -- data keys -------------------------------------------------------
-    def _record_kid(self, conn: Connection, kid: str) -> None:
-        """Catalogue a kid once. Append-only: this is the startup check's data."""
-        conn.execute(
-            text("INSERT INTO data_key_ids (kid) VALUES (:kid) ON CONFLICT DO NOTHING"),
-            {"kid": kid},
-        )
-
     def _load(self, conn: Connection, tenant_id: uuid.UUID) -> tuple[str, bytes]:
         cached = self._cache.get(tenant_id)
         if cached is not None:
             return cached
         row = conn.execute(
-            text("SELECT kid, wrapped FROM tenant_data_keys WHERE tenant_id = :tenant_id"),
+            text("SELECT kid, dkv, wrapped FROM tenant_data_keys WHERE tenant_id = :tenant_id"),
             {"tenant_id": tenant_id},
         ).one_or_none()
         if row is None:
-            kid, wrapped = self.keyring.current, seal(
-                self.keyring.key(self.keyring.current),
-                os.urandom(DATA_KEY_BYTES),
-                aad=aad_for(tenant_id),
-                kid=self.keyring.current,
+            raise DataKeyMissing(
+                f"tenant {tenant_id} has no data key; provision it as the owner "
+                "(scripts/provision_tenant.py) before serving writes"
             )
-            conn.execute(
-                text(
-                    "INSERT INTO tenant_data_keys (tenant_id, kid, wrapped) "
-                    "VALUES (:tenant_id, :kid, :wrapped) "
-                    "ON CONFLICT (tenant_id) DO NOTHING"
-                ),
-                {"tenant_id": tenant_id, "kid": kid, "wrapped": wrapped},
-            )
-            self._record_kid(conn, kid)
-            row = conn.execute(
-                text("SELECT kid, wrapped FROM tenant_data_keys WHERE tenant_id = :tenant_id"),
-                {"tenant_id": tenant_id},
-            ).one()
-        kid, wrapped = row.kid, row.wrapped
-        data_key = self._unwrap(tenant_id, kid, wrapped)
-        self._cache[tenant_id] = (kid, data_key)
-        return kid, data_key
+        data_key = self._unwrap(tenant_id, row.kid, row.wrapped)
+        self._cache[tenant_id] = (row.dkv, data_key)
+        return row.dkv, data_key
 
     def _unwrap(self, tenant_id: uuid.UUID, kid: str, wrapped: str) -> bytes:
+        """Unwrap with the master key the row names — the header no longer does."""
         envelope = Envelope.parse(wrapped)
-        master = self.keyring.key(envelope.kid)
+        master = self.keyring.key(kid)
         try:
-            return unseal(master, envelope, aad=aad_for(tenant_id))
+            return unseal(master, envelope, aad=data_key_aad(tenant_id))
         except DecryptionFailed as exc:
-            raise DecryptionFailed(
-                "the wrapped data key does not belong to this tenant"
-            ) from exc
+            raise DecryptionFailed("the wrapped data key does not belong to this tenant") from exc
 
     # -- values ----------------------------------------------------------
-    def encrypt(self, conn: Connection, tenant_id: uuid.UUID, plaintext: str | None) -> str | None:
-        """Encrypt one value. ``None`` stays ``None``: absent is not empty."""
+    def encrypt(
+        self,
+        conn: Connection,
+        tenant_id: uuid.UUID,
+        row_id: uuid.UUID,
+        column: str,
+        plaintext: str | None,
+    ) -> str | None:
+        """Encrypt one cell. ``None`` stays ``None``: absent is not empty."""
         if plaintext is None:
             return None
-        kid, data_key = self._load(conn, tenant_id)
-        return seal(data_key, plaintext.encode("utf-8"), aad=aad_for(tenant_id), kid=kid)
+        dkv, data_key = self._load(conn, tenant_id)
+        return seal(
+            data_key,
+            plaintext.encode("utf-8"),
+            aad=value_aad(tenant_id, row_id, column),
+            dkv=dkv,
+        )
 
-    def decrypt(self, conn: Connection, tenant_id: uuid.UUID, envelope: str | None) -> str | None:
-        """Decrypt one value, refusing anything that does not authenticate."""
+    def decrypt(
+        self,
+        conn: Connection,
+        tenant_id: uuid.UUID,
+        row_id: uuid.UUID,
+        column: str,
+        envelope: str | None,
+    ) -> str | None:
+        """Decrypt one cell, refusing anything not authenticated for that cell."""
         if envelope is None:
             return None
         parsed = Envelope.parse(envelope)
-        if parsed.kid not in self.keyring:
+        dkv, data_key = self._load(conn, tenant_id)
+        if parsed.dkv != dkv:
             raise MalformedEnvelope(
-                f"ciphertext names master key id {parsed.kid!r}, which is not configured"
+                f"ciphertext is data key version {parsed.dkv!r} but this tenant holds "
+                f"{dkv!r}; data-key rotation is not supported, so this row is unreadable"
             )
-        _, data_key = self._load(conn, tenant_id)
-        return unseal(data_key, parsed, aad=aad_for(tenant_id)).decode("utf-8")
+        return unseal(data_key, parsed, aad=value_aad(tenant_id, row_id, column)).decode("utf-8")
 
-    # -- rotation --------------------------------------------------------
-    def rewrap(self, conn: Connection, tenant_id: uuid.UUID) -> str:
-        """Re-wrap this tenant's data key under the current master key.
-
-        Rows are untouched. Returns the kid now in use.
-        """
-        _, data_key = self._load(conn, tenant_id)
-        new_kid = self.keyring.current
-        wrapped = seal(
-            self.keyring.key(new_kid), data_key, aad=aad_for(tenant_id), kid=new_kid
-        )
-        conn.execute(
-            text(
-                "UPDATE tenant_data_keys "
-                "SET kid = :kid, wrapped = :wrapped, rotated_at = now() "
-                "WHERE tenant_id = :tenant_id"
-            ),
-            {"kid": new_kid, "wrapped": wrapped, "tenant_id": tenant_id},
-        )
-        self._record_kid(conn, new_kid)
-        self._cache[tenant_id] = (new_kid, data_key)
-        return new_kid
-
+    # -- what the startup check reads ------------------------------------
     def kids_in_use(self, engine: Engine) -> set[str]:
-        """Every master key id that has wrapped a data key, ever.
+        """Master key ids referenced by data key rows, across tenants.
 
-        `data_key_ids` is append-only, so this includes ids that only appear in
-        the headers of old rows — which is exactly the set the keyring must
-        cover.
+        ``data_key_rows`` is maintained by provisioning and by re-wrap, both of
+        which run as the owner; the runtime only reads it. A kid disappears
+        from it when its last data key row is re-wrapped away, which is what
+        makes retirement possible at all.
         """
         with engine.connect() as conn:
             rows = conn.execute(text("SELECT kid FROM data_key_ids")).all()
@@ -175,17 +161,4 @@ def crypto_store(request: Request) -> DataKeyStore:
     return store
 
 
-def rewrap_all(engine: Engine, keyring: Keyring, tenant_ids: Iterable[uuid.UUID]) -> int:
-    """Re-wrap every listed tenant's data key; returns how many changed."""
-    store = DataKeyStore(keyring=keyring)
-    changed = 0
-    for tenant_id in tenant_ids:
-        from adapt_engine.db.tenant import tenant_transaction
-
-        with tenant_transaction(engine, tenant_id) as conn:
-            store.rewrap(conn, tenant_id)
-        changed += 1
-    return changed
-
-
-__all__ = ["DATA_KEY_BYTES", "DataKeyStore", "crypto_store", "rewrap_all"]
+__all__ = ["DATA_KEY_BYTES", "DataKeyMissing", "DataKeyStore", "crypto_store"]

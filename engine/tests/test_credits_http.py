@@ -102,9 +102,7 @@ def test_the_balance_shows_forfeited_after_an_allowance_expires(
 
     engine = client.app.state.engine
     with tenant_transaction(engine, tenant) as conn:
-        conn.execute(
-            text("UPDATE credit_grants SET expires_at = now() - interval '1 minute'")
-        )
+        conn.execute(text("UPDATE credit_grants SET expires_at = now() - interval '1 minute'"))
 
     body = client.get("/v1/credits/balance", headers=_auth(admin_key)).json()
     # The allowance is gone: what was held is now forfeited, not available.

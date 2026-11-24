@@ -221,6 +221,23 @@ def check_emitted_codes(emitted: frozenset[str], doc_codes: frozenset[str]) -> l
     return findings
 
 
+SCRIPTS_DIR = Path(__file__).resolve().parent
+
+
+def _apply_patches(text: str) -> str:
+    """Apply `docs-patches/*.diff`, whichever way this module was imported."""
+    import importlib.util
+
+    module_path = SCRIPTS_DIR / "docs_with_patches.py"
+    spec = importlib.util.spec_from_file_location("docs_with_patches", module_path)
+    if spec is None or spec.loader is None:  # pragma: no cover - file is ours
+        raise DocError(f"cannot load {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    patched: str = module.apply_patches(text)
+    return patched
+
+
 def load_doc_text(path: str | None) -> tuple[str, str]:
     """Return (text, source description), searching the working tree then git."""
     candidate = path or os.environ.get("ADAPT_INTEGRATION_DOC")
@@ -244,7 +261,13 @@ def load_doc_text(path: str | None) -> tuple[str, str]:
         except OSError:  # pragma: no cover - git missing
             break
         if proc.returncode == 0 and proc.stdout.strip():
-            return proc.stdout, f"{ref}:docs/v2/INTEGRATION.md"
+            # The doc we implement is the doc plus this repo's corrections:
+            # docs-patches/ holds reviewable diffs, and CI fails if one stops
+            # applying. An explicit --doc path is authoritative and is used
+            # unpatched, which is what the guard's own tests rely on.
+            patched = _apply_patches(proc.stdout)
+            note = "" if patched == proc.stdout else " + docs-patches/*.diff"
+            return patched, f"{ref}:docs/v2/INTEGRATION.md{note}"
     raise DocError(
         "could not read docs/v2/INTEGRATION.md: not in the working tree and not "
         f"readable from any of {', '.join(refs)}. Pass --doc PATH or set "

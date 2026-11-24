@@ -57,6 +57,7 @@ _LIVE_GRANT = "(expires_at IS NULL OR expires_at > now())"
 
 T = TypeVar("T")
 
+
 @dataclass(frozen=True)
 class Grant:
     id: uuid.UUID
@@ -78,10 +79,7 @@ class Balance:
     @property
     def invariant_holds(self) -> bool:
         """Four terms, not three: expired credits are forfeited, not missing."""
-        return (
-            self.granted
-            == self.available + self.held + self.consumed + self.forfeited
-        )
+        return self.granted == self.available + self.held + self.consumed + self.forfeited
 
 
 @dataclass(frozen=True)
@@ -121,8 +119,7 @@ def balance(conn: Connection, tenant_id: uuid.UUID) -> Balance:
     # `sum(delta)` over the ledger is not a consumption figure (METERING.md §4).
     consumed = conn.execute(
         text(
-            "SELECT coalesce(sum(consumed), 0) FROM credit_consumption "
-            "WHERE tenant_id = :tenant_id"
+            "SELECT coalesce(sum(consumed), 0) FROM credit_consumption WHERE tenant_id = :tenant_id"
         ),
         {"tenant_id": tenant_id},
     ).scalar_one()
@@ -489,9 +486,7 @@ def _is_idempotency_conflict(exc: DBAPIError) -> bool:
     return "idempotency" in constraint
 
 
-def _replay(
-    conn: Connection, *, tenant_id: uuid.UUID, idempotency_key: str, expect: str
-) -> Any:
+def _replay(conn: Connection, *, tenant_id: uuid.UUID, idempotency_key: str, expect: str) -> Any:
     """The original ledger row for this key, if this is a replay."""
     row = conn.execute(
         text(

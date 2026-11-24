@@ -18,14 +18,16 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
+from adapt_engine.api.deps import get_clock
 from adapt_engine.auth.deps import (
     AuthContext,
     require_scope,
     security_requirement,
     tenant_connection,
 )
+from adapt_engine.clock import Clock
 from adapt_engine.crypto.store import DataKeyStore, crypto_store
-from adapt_engine.db.schema import PROFILES, validate_learner_id
+from adapt_engine.db.schema import MINIMUM_AGE, PROFILES, age_on, validate_learner_id
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 
 router = APIRouter(prefix="/v1", tags=["learners"], responses=ERROR_RESPONSES)
@@ -53,10 +55,13 @@ def _row_to_learner(
 
     ``profile`` and ``date_of_birth`` are ciphertext at rest, so this is the
     only place they become plaintext again — and the only place that could log
-    them, which it does not.
+    them, which it does not. Each value is authenticated against its own row id
+    and column name, so a ciphertext copied into a neighbouring cell raises
+    here instead of decrypting into somebody else's data.
     """
-    profile = store.decrypt(conn, tenant_id, row.profile)  # type: ignore[attr-defined]
-    dob = store.decrypt(conn, tenant_id, row.date_of_birth)  # type: ignore[attr-defined]
+    row_id = row.id  # type: ignore[attr-defined]
+    profile = store.decrypt(conn, tenant_id, row_id, "profile", row.profile)  # type: ignore[attr-defined]
+    dob = store.decrypt(conn, tenant_id, row_id, "date_of_birth", row.date_of_birth)  # type: ignore[attr-defined]
     return Learner(
         id=row.id,  # type: ignore[attr-defined]
         learner_id=row.learner_id,  # type: ignore[attr-defined]
@@ -132,6 +137,7 @@ def create_learner(
     auth: Annotated[AuthContext, Depends(require_scope("admin"))],
     conn: Annotated[Connection, Depends(tenant_connection)],
     store: Annotated[DataKeyStore, Depends(crypto_store)],
+    clock: Annotated[Clock, Depends(get_clock)],
 ) -> Learner:
     """Register a learner for the caller's tenant.
 
@@ -145,6 +151,22 @@ def create_learner(
             status_code=422,
             retryable=False,
         )
+    # Adults only, enforced where the date is still plaintext: the column is
+    # ciphertext and a CHECK cannot read it. `minor_not_supported` rather than
+    # `payload_invalid` because this is a scope decision, and the integrator
+    # needs to be able to tell the difference in code.
+    if body.date_of_birth is not None:
+        age = age_on(body.date_of_birth, clock.now().date())
+        if age < MINIMUM_AGE:
+            raise AdaptError(
+                code="minor_not_supported",
+                message=(
+                    f"this engine serves adults only; a date of birth implying age {age} "
+                    f"is refused (minimum {MINIMUM_AGE})"
+                ),
+                status_code=422,
+                retryable=False,
+            )
     try:
         learner_id = validate_learner_id(body.learner_id)
     except ValueError as exc:
@@ -155,20 +177,26 @@ def create_learner(
             retryable=False,
         ) from exc
 
+    # The row id is chosen here, not by the column default: the AAD binds each
+    # value to this row, so it has to exist before the ciphertext does.
+    row_id = uuid.uuid4()
     try:
         row = conn.execute(
             text(
-                "INSERT INTO learners (tenant_id, learner_id, profile, date_of_birth) "
-                "VALUES (:tenant_id, :learner_id, :profile, :date_of_birth) "
+                "INSERT INTO learners (id, tenant_id, learner_id, profile, date_of_birth) "
+                "VALUES (:id, :tenant_id, :learner_id, :profile, :date_of_birth) "
                 "RETURNING id, learner_id, profile, date_of_birth"
             ),
             {
+                "id": row_id,
                 "tenant_id": auth.tenant_id,
                 "learner_id": learner_id,
-                "profile": store.encrypt(conn, auth.tenant_id, body.profile),
+                "profile": store.encrypt(conn, auth.tenant_id, row_id, "profile", body.profile),
                 "date_of_birth": store.encrypt(
                     conn,
                     auth.tenant_id,
+                    row_id,
+                    "date_of_birth",
                     body.date_of_birth.isoformat() if body.date_of_birth else None,
                 ),
             },

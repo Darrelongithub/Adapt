@@ -370,13 +370,39 @@ was restored.
 ## 12. Encryption at rest: envelope, keyring, and what is deliberately not encrypted
 
 **Decision.** Personal-data columns are encrypted with AES-GCM under a
-per-tenant data key, stored as `v1:<kid>:<nonce>:<ct>`. The data key is
-generated on first write, wrapped by the current master key (`ADAPT_MASTER_KEY`,
-or that plus `ADAPT_MASTER_KEY_PREVIOUS`), and kept in `tenant_data_keys`. The
-wrapped key's AAD is the tenant id, and the value's AAD is the tenant id: a
-ciphertext moved into another tenant's row fails the tag check and raises —
-it does not decrypt to garbage we then store
-(`test_tenant_a_ciphertext_does_not_open_for_tenant_b`).
+per-tenant data key. The stored form is `v1:<dkv>:<nonce>:<ct>`, where `dkv` is
+a **data key version** (`dk1`), not a master key id. The data key is created
+when the tenant is provisioned, wrapped by the master key named on its row
+(`ADAPT_MASTER_KEY`, or that plus `ADAPT_MASTER_KEY_PREVIOUS`), and kept in
+`tenant_data_keys(tenant_id, kid, dkv, wrapped)`.
+
+Two AADs, because the two things being protected are not the same kind of
+object:
+
+* a **wrapped data key** — `adapt/tenant/v1:{tenant_id}`. It belongs to a
+  tenant.
+* a **value** — `adapt/v1:{tenant_id}:{learner_row_id}:{column}`. It belongs to
+  one cell of one row.
+
+The row id is the internal uuid, not the host's `learner_id`, which the host may
+change. With AAD of the tenant alone, a ciphertext swapped between two learners
+of one tenant, or between two columns of one row, decrypted cleanly into wrong
+data — silently, in the fields the product makes claims about. All three swaps
+raise now (`tests/test_crypto.py`), and the red step for that claim was
+performed: reverting `value_aad` to tenant-only turns both same-tenant tests
+red.
+
+**Why the header carries no master key id.** The first implementation wrote
+`v1:<kid>:...` where `kid` was the master key that wrapped the data key at
+*write* time. Re-wrapping does not rewrite rows, so every row stayed pinned to
+the key it was born under: the retired key could never be dropped, startup had
+to keep accepting it, and the kid catalogue had to grow forever. Rotation worked
+in one direction — forward, never to completion. Putting a data key version in
+field 2 and the master kid on the wrapped-key row (which re-wrap updates) is
+what makes *retirement* possible, and retirement is the only thing rotation is
+for. The acceptance test is the one the old design failed: write under k1,
+re-wrap everything, delete k1 from the keyring, restart, read the old row
+(`test_a_master_key_can_be_retired_after_rewrap`).
 
 **Encrypted:** `learners.profile`, `learners.date_of_birth` — the two columns
 that are personal data and are never queried by value. **Not encrypted:**
@@ -387,15 +413,13 @@ held to. Encrypting them would buy a false sense of anonymity and cost every
 index. What the design buys instead is that a database dump, a backup or a
 stolen replica shows no profile and no date of birth.
 
-**Rotation re-wraps keys and touches no rows.** One `UPDATE` per tenant, no
-ciphertext rewritten, and old rows keep their header so the kid they name still
-resolves. That is only safe while every referenced kid has a key, so the
-keyring holds N-1 keys and startup *refuses to run* otherwise — the lifespan
-asks `data_key_ids` for every kid ever used and raises `RuntimeError` naming
-the gap. `data_key_ids` is the one table with no tenant column, because it
-holds key ids and nothing else; it is append-only by grant, so a kid that
-wrote a row yesterday is still there to stop an operator dropping its key
-today.
+**Who may write key material.** `adapt_app` holds `SELECT` on
+`tenant_data_keys` and `data_key_ids` and nothing else: a role that serves
+requests must not be able to register a master key id that the startup check
+then trusts. Creation is provisioning (`scripts/provision_tenant.py`), re-wrap is
+rotation (`scripts/rotate_master_key.py`), both as the owner. `data_key_ids` is a
+derived index of "kids referenced by a data key row", pruned when its last row
+moves away; without pruning there is no retirement (KNOWN_GAPS §12, §15).
 
 **`date_of_birth` changed type, and the profile allowlist left the database.**
 A `date` column is plaintext by definition, and a CHECK that enforces
@@ -408,3 +432,66 @@ does, and `test_the_profile_column_stores_an_envelope_not_a_literal` shows the
 column refusing plaintext. No deployment held learner rows at this revision, so
 the type change discarded nothing — and the downgrade says so by dropping the
 column rather than pretending to restore dates.
+
+
+---
+
+## 13. What "rotation" means operationally
+
+**Decision.** A master-key rotation is four owner-run steps, and the repository
+contains the command for each:
+
+| Step | Command | What it touches |
+|---|---|---|
+| 1. look | `rotate_master_key.py status` | nothing; prints every kid and how many data key rows name it |
+| 2. re-wrap | `rotate_master_key.py rewrap` | `tenant_data_keys.kid`, `.wrapped`, `.rotated_at`, and `data_key_ids` — **no learner row, no ciphertext** |
+| 3. ask | `rotate_master_key.py preflight k1` | nothing; answers "how many data key rows still name k1?", which must be 0 |
+| 4. retire | `rotate_master_key.py retire k1`, then drop `ADAPT_MASTER_KEY_PREVIOUS` and restart | the environment, and the keyring |
+
+The changeover is served by `ADAPT_MASTER_KEY_PREVIOUS` / `_PREVIOUS_ID`: both
+keys are in the keyring while values written under the old one are still being
+read, and the keyring only ever *unwraps* with the old key — new wraps use the
+current one.
+
+**When a master key may be retired: when no data key row references it.** Not
+"when no value references it" — values no longer carry a master key id at all
+(§12). The preflight query is the authority, and `retire` refuses while the
+answer is non-zero (`assert_retirable`). Deleting a key early is not a subtle
+failure: startup refuses to boot and names the kids it is missing.
+
+**What rotation does not do.** It does not rotate *data* keys: one data key per
+tenant, no version history, so `dkv` is always `dk1` today (KNOWN_GAPS §14).
+Field 2 exists for the day that changes, and a row naming a version the tenant
+does not hold is refused rather than guessed. It also does not re-encrypt
+anything, which is why it is fast, boring, and safe to rehearse.
+
+**Rejected alternative:** rotating by re-encrypting every row with a new master
+key. It rewrites every personal-data column (a bulk operation over the data the
+product is most careful about), takes an outage or a dual-write path, and turns
+a compromise into a race against a rewrite. Wrapping keys once is the standard
+shape for the same reason.
+
+## 14. One error code for adults-only, and why the contract table needed a patch
+
+**Decision.** A date of birth implying a minor is refused at creation with
+`422 minor_not_supported`, not `payload_invalid`.
+
+**Why a distinct code.** `payload_invalid` means "fix the request"; a minor is
+not a malformed request, it is a product boundary (`NOTES.md`: adults only,
+reopening needs an ADR and legal review). An integrator that cannot tell those
+apart will rewrite the payload forever or file a bug. A distinct code also makes
+the boundary measurable: counting `minor_not_supported` tells us whether a host
+has misunderstood its audience.
+
+**Why a doc patch.** `docs/v2/INTEGRATION.md` §6 is the authoritative table and
+it did not have the row. The rule is that every emitted code appears there, with
+no whitelist (KNOWN_GAPS §5), so we ship the row as a diff
+(`docs-patches/0002-minor-not-supported.diff`) and the checker applies our
+patches when it reads the doc from git. An explicit `--doc` path is used
+unpatched, which is what keeps the guard's own tests honest.
+
+**Where the check runs.** In the route, before the write, against the clock the
+app was given: the column is ciphertext (§12) and a CHECK cannot read it. The
+pure part (`age_on`) has boundary tests — a birthday that falls today is a
+birthday, not a year — and the route test asserts that nothing was written when
+the gate refuses.

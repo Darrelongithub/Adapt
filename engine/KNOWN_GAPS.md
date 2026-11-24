@@ -5,7 +5,23 @@ environment it claims to be for. They are listed rather than implied: an
 unverified acceptance line that nobody wrote down becomes a false claim in a
 month.
 
-Last updated: increment 2 (tenancy and RLS).
+Last updated: increment 6 (migrations, CI, docs).
+
+## Standing gaps at a glance
+
+Every gap below is described in a section further down. This table exists
+because a reader should not have to read twelve sections to learn that Redis
+has never been reachable.
+
+| Gap | Since | Risk if ignored | Tracked in |
+|---|---|---|---|
+| `docker compose up postgres` has **never been run** — the compose file and `Dockerfile` are written, not exercised | increment 1 | the documented path to a running database may not work | §1 |
+| No **3.12 image**: CI runs a 3.12 *interpreter*, and the `Dockerfile` is unbuilt | increment 1 | the container is unverified; the local interpreter is 3.11 | §2 |
+| **No Redis** has ever answered: the limiter falls back to in-process state | increment 1 | rate limits do not hold across replicas | §3 |
+| No **rotation command or job**: `scripts/rotate_master_key.py` exists, nothing schedules or verifies a rotation | increment 5 | a compromised master key has no dated, rehearsed response | §12 |
+| **Data-key rotation unsupported**: one data key per tenant, no version history | increment 5 | a single tenant's key cannot be rotated without orphaning rows | §14 |
+| **Console screens owed**: credit usage, ledger listing, key management, learner inspector, failure review | increment 4 | operators work from `psql` and a CLI | §8, §9, §11 |
+| **Per-process limiter** and in-memory auth cache: nothing is shared | increment 3 | two replicas allow twice the failures | §6 |
 
 ## 1. `docker compose up` has never been run
 
@@ -53,6 +69,11 @@ host outside the sandbox allowlist), and there are no C headers in the image
 `python -V` in the output. `pyproject.toml` declares `requires-python >= 3.12`,
 so a 3.11 install is refused — that refusal is the only 3.12-specific
 behaviour observed so far.
+
+**Partial cover now:** `.github/workflows/engine-ci.yml` runs the whole gate on
+a 3.12 interpreter and asserts `sys.version_info[:2] == (3, 12)` before it
+starts. That covers the *interpreter*, which is the part that would break, and
+it has not run yet; the image is still unbuilt.
 
 ## 3. Redis has never been reachable
 
@@ -143,13 +164,18 @@ path is a route. No console calls it yet, so in practice an operator with the
 owner credential can still reach the table — but not through the app role,
 which holds no `UPDATE` on `api_keys`. The gap is the caller, not the door.
 
-## 12. Rotation has no command; it has a function
+## 12. Rotation has a command; it has no schedule
 
-`DataKeyStore.rewrap` and `rewrap_all` exist and are tested, and
-`ADAPT_MASTER_KEY_PREVIOUS` makes the keyring accept both keys during the
-changeover. What does not exist is an operator entry point: no script, no CLI,
-no scheduled job. Rotation today means writing the loop by hand. The startup
-refusal is the safety net for that, not a substitute for it.
+`scripts/rotate_master_key.py` answers the operational questions — `status`,
+`rewrap`, `preflight <kid>`, `retire <kid>` — and `ADAPT_MASTER_KEY_PREVIOUS`
+makes the keyring accept both keys during the changeover. What does not exist is
+a *job*: nothing rotates on a schedule, nothing verifies that a rotation was
+finished (old key actually removed), and nothing would notice that a key has
+been current for two years. Rotation happens when somebody reads DECISIONS §13
+and runs the script, which is a rehearsal-free process.
+
+The startup refusal is the safety net for a premature removal, not a substitute
+for a schedule.
 
 ## 13. The crypto path logs nothing, which is a property of not writing code
 

@@ -80,7 +80,6 @@ def _data_keys() -> None:
     op.execute("GRANT SELECT, INSERT, UPDATE ON tenant_data_keys TO adapt_app")
 
 
-
 def _data_key_id_catalogue() -> None:
     """Every master key id that has ever wrapped a data key.
 
@@ -122,9 +121,7 @@ def _encrypted_learner_columns() -> None:
     # date -> text. USING NULL is deliberate and documented above: there is no
     # plaintext date that could be preserved as ciphertext here, and inventing
     # one would need an application key inside a migration.
-    op.execute(
-        "ALTER TABLE learners ALTER COLUMN date_of_birth TYPE text USING NULL::text"
-    )
+    op.execute("ALTER TABLE learners ALTER COLUMN date_of_birth TYPE text USING NULL::text")
     op.execute(
         f"""
         ALTER TABLE learners
@@ -136,9 +133,7 @@ def _encrypted_learner_columns() -> None:
 
 def downgrade() -> None:
     op.execute("ALTER TABLE learners DROP CONSTRAINT IF EXISTS learners_date_of_birth_is_envelope")
-    op.execute(
-        "ALTER TABLE learners ALTER COLUMN date_of_birth TYPE date USING NULL::date"
-    )
+    op.execute("ALTER TABLE learners ALTER COLUMN date_of_birth TYPE date USING NULL::date")
     op.execute("ALTER TABLE learners DROP CONSTRAINT IF EXISTS learners_profile_is_envelope")
     op.execute(
         """

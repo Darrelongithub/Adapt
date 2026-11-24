@@ -114,7 +114,8 @@ def test_migration_contains_no_data_statements() -> None:
     for path in sorted(versions.glob("*.py")):
         source = path.read_text(encoding="utf-8")
         code_only = "\n".join(
-            line for line in _strip_function_bodies(source).splitlines()
+            line
+            for line in _strip_function_bodies(source).splitlines()
             if not line.strip().startswith("#")
         )
         for pattern in (

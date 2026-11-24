@@ -1,0 +1,12 @@
+--- a/docs/v2/INTEGRATION.md
++++ b/docs/v2/INTEGRATION.md
+@@ -217,8 +217,9 @@
+ | 501 | `not_capable` | no | the capability is not built yet — our gap, not the request's |
+ | 409 | `conflict` | no | duplicate resource, e.g. too many open probe sessions |
+ | 413 | `payload_too_large` | no | batch ≤500 events / ≤1 MB |
+ | 422 | `payload_invalid` | no | allowlisted keys only; no PII |
++| 422 | `minor_not_supported` | no | adults only: a date of birth implying a minor is refused (NOTES.md) |
+ | 429 | `rate_limited` | yes, honour `Retry-After` | free — no credits |
+ | 402 | `quota_exhausted` | no | credits/events exhausted; `resets_at` given; free |
+ | 410 | `gone` | no | the version was retired; read the `Link` header |
+ | any other | `unmapped_status` | no | an engine bug: a status with no code above. Report it with `request_id` |

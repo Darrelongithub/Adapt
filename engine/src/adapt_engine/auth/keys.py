@@ -385,9 +385,7 @@ def note_auth_failure(
     """Audit one failed authentication. No key, no prefix, no address."""
     with engine.begin() as conn:
         conn.execute(
-            text(
-                "SELECT adapt_note_auth_failure(:ip_hash, :window_start, :count, :aggregated)"
-            ),
+            text("SELECT adapt_note_auth_failure(:ip_hash, :window_start, :count, :aggregated)"),
             {
                 "ip_hash": ip_hash,
                 "window_start": window_start,

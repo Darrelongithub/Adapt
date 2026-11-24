@@ -44,6 +44,9 @@ DOCUMENTED_CODES: frozenset[str] = frozenset(
         "quota_exhausted",
         "internal",
         "gone",
+        # Added with the age gate (increment 6); documented in
+        # docs-patches/0002-minor-not-supported.diff until the doc catches up.
+        "minor_not_supported",
     }
 )
 

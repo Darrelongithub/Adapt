@@ -117,9 +117,7 @@ def test_rule_b_flags_missing_error_response() -> None:
         "components": SCHEMES,
         "paths": {
             "/v1/learners": {
-                "post": _operation(
-                    security=[{"APIKeyAuth": ["observe"]}], responses={"200": {}}
-                )
+                "post": _operation(security=[{"APIKeyAuth": ["observe"]}], responses={"200": {}})
             }
         },
     }
@@ -146,7 +144,7 @@ def test_rule_b_flags_framework_validation_schema() -> None:
                     },
                 )
             }
-        }
+        },
     }
     findings = check_openapi(openapi)
     assert [f.rule for f in findings] == ["b:envelope-documented"]
@@ -232,9 +230,7 @@ def test_entrypoint_fails_when_the_sentinel_row_is_removed(tmp_path: Path) -> No
     This is the follow-up-2 proof — no whitelist, no exemption, only the doc.
     """
     text = _doc()
-    sentinel_line = next(
-        line for line in text.splitlines() if "`unmapped_status`" in line
-    )
+    sentinel_line = next(line for line in text.splitlines() if "`unmapped_status`" in line)
     doc = tmp_path / "INTEGRATION.md"
     doc.write_text(text.replace(sentinel_line + "\n", ""), encoding="utf-8")
     assert main(["--doc", str(doc)]) == 1

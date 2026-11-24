@@ -173,9 +173,7 @@ def test_resolver_pins_search_path(owner_engine: Engine) -> None:
     """Without a pinned search_path, a caller's path can shadow the objects."""
     with owner_engine.connect() as conn:
         config = conn.execute(
-            text(
-                "SELECT proconfig FROM pg_proc WHERE proname = 'adapt_resolve_api_key'"
-            )
+            text("SELECT proconfig FROM pg_proc WHERE proname = 'adapt_resolve_api_key'")
         ).scalar_one()
     assert config is not None, "proconfig is null: search_path is not pinned"
     assert "search_path=pg_catalog, public" in config, config
@@ -301,9 +299,7 @@ def test_the_resolver_takes_the_digest_as_an_argument(owner_engine: Engine) -> N
 def test_the_resolver_matches_prefix_and_hash_exactly(owner_engine: Engine) -> None:
     with owner_engine.connect() as conn:
         source = " ".join(
-            conn.execute(
-                text("SELECT prosrc FROM pg_proc WHERE proname = 'adapt_resolve_api_key'")
-            )
+            conn.execute(text("SELECT prosrc FROM pg_proc WHERE proname = 'adapt_resolve_api_key'"))
             .scalar_one()
             .lower()
             .split()
@@ -317,7 +313,9 @@ def test_shortening_an_expiry_is_a_function_not_a_raw_update(owner_engine: Engin
     """`adapt_app` cannot UPDATE api_keys, so the audited path is the only path."""
     with owner_engine.connect() as conn:
         granted = conn.execute(
-            text("SELECT has_function_privilege('adapt_app', 'adapt_set_key_expiry(uuid,uuid,timestamptz)', 'EXECUTE')")
+            text(
+                "SELECT has_function_privilege('adapt_app', 'adapt_set_key_expiry(uuid,uuid,timestamptz)', 'EXECUTE')"
+            )
         ).scalar_one()
         update = conn.execute(
             text("SELECT has_table_privilege('adapt_app', 'api_keys', 'UPDATE')")
@@ -514,8 +512,12 @@ def test_app_role_cannot_create_a_tenant(app_engine: Engine) -> None:
     assert "permission denied" in str(excinfo.value).lower()
 
 
-def test_the_kid_catalogue_is_append_only_for_the_app_role(owner_engine: Engine) -> None:
-    """A kid that was used once must stay: the startup check reads this table."""
+def test_the_kid_catalogue_is_read_only_for_the_app_role(owner_engine: Engine) -> None:
+    """Provisioning and re-wrap write it (as the owner); the app may only read.
+
+    A role that serves requests must not be able to register a master key id
+    that the startup check then trusts.
+    """
     with owner_engine.connect() as conn:
         privileges = {
             verb: conn.execute(
@@ -524,11 +526,16 @@ def test_the_kid_catalogue_is_append_only_for_the_app_role(owner_engine: Engine)
             ).scalar_one()
             for verb in ("SELECT", "INSERT", "UPDATE", "DELETE")
         }
-    assert privileges == {"SELECT": True, "INSERT": True, "UPDATE": False, "DELETE": False}
+    assert privileges == {"SELECT": True, "INSERT": False, "UPDATE": False, "DELETE": False}
 
 
 def test_tenant_data_keys_is_scoped_and_forced(owner_engine: Engine) -> None:
-    """Key material gets the same isolation as the rows it protects."""
+    """Key material gets the same isolation as the rows it protects.
+
+    Two owner policies are added in 0008 — a tenant-scoped write policy and the
+    one cross-tenant read in the schema, which reaches wrapped keys and nothing
+    else — so the assertion names the full set rather than a single policy.
+    """
     with owner_engine.connect() as conn:
         flags = conn.execute(
             text(
@@ -536,12 +543,14 @@ def test_tenant_data_keys_is_scoped_and_forced(owner_engine: Engine) -> None:
                 "WHERE relname = 'tenant_data_keys'"
             )
         ).one()
-        policy = conn.execute(
-            text("SELECT polname FROM pg_policy WHERE polrelid = 'tenant_data_keys'::regclass")
-        ).scalar_one()
+        policies = sorted(
+            conn.execute(
+                text("SELECT polname FROM pg_policy WHERE polrelid = 'tenant_data_keys'::regclass")
+            ).scalars()
+        )
     assert flags.relrowsecurity is True
     assert flags.relforcerowsecurity is True
-    assert policy == "tenant_isolation"
+    assert policies == ["data_key_owner_read", "data_key_owner_write", "tenant_isolation"]
 
 
 def test_the_learner_columns_only_accept_envelopes(owner_engine: Engine) -> None:
@@ -560,3 +569,27 @@ def test_the_learner_columns_only_accept_envelopes(owner_engine: Engine) -> None
     assert "learners_profile_check" not in checks
     assert "learners_date_of_birth_is_envelope" in checks
     assert "^v1:" in checks["learners_profile_is_envelope"]
+
+
+def test_tenants_have_a_tier_with_a_default_and_a_check(owner_engine: Engine, database) -> None:
+    """Entitlement is contract state: a value, a default, and a refusal of junk."""
+    from sqlalchemy.exc import IntegrityError
+
+    with owner_engine.connect() as conn:
+        column = conn.execute(
+            text(
+                "SELECT is_nullable, column_default FROM information_schema.columns "
+                "WHERE table_name = 'tenants' AND column_name = 'tier'"
+            )
+        ).one()
+    assert column.is_nullable == "NO"
+    assert "'core'" in column.column_default
+
+    from tests.pg import create_tenant
+
+    tenant_id = create_tenant(owner_engine, slug=f"tier-{uuid.uuid4().hex[:8]}", name="Tier")
+    with tenant_transaction(owner_engine, tenant_id) as conn:
+        assert conn.execute(text("SELECT tier FROM tenants")).scalar_one() == "core"
+        with pytest.raises(IntegrityError) as refused:
+            conn.execute(text("UPDATE tenants SET tier = 'platinum'"))
+    assert "tenants_tier_known" in str(refused.value)
