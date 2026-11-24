@@ -21,9 +21,9 @@ from sqlalchemy.exc import IntegrityError
 from adapt_engine.api.deps import get_clock
 from adapt_engine.auth.deps import (
     AuthContext,
+    ingest_connection,
     require_scope,
     security_requirement,
-    tenant_connection,
 )
 from adapt_engine.clock import Clock
 from adapt_engine.crypto.store import DataKeyStore, crypto_store
@@ -79,7 +79,7 @@ def _row_to_learner(
 def get_learner(
     learner_id: str,
     auth: Annotated[AuthContext, Depends(require_scope("observe"))],
-    conn: Annotated[Connection, Depends(tenant_connection)],
+    conn: Annotated[Connection, Depends(ingest_connection)],
     store: Annotated[DataKeyStore, Depends(crypto_store)],
 ) -> Learner:
     """Read one learner, scoped to the caller's tenant by RLS.
@@ -113,7 +113,7 @@ def get_learner(
 )
 def list_learners(
     auth: Annotated[AuthContext, Depends(require_scope("observe"))],
-    conn: Annotated[Connection, Depends(tenant_connection)],
+    conn: Annotated[Connection, Depends(ingest_connection)],
     store: Annotated[DataKeyStore, Depends(crypto_store)],
 ) -> list[Learner]:
     rows = conn.execute(
@@ -135,7 +135,7 @@ def list_learners(
 def create_learner(
     body: LearnerCreate,
     auth: Annotated[AuthContext, Depends(require_scope("admin"))],
-    conn: Annotated[Connection, Depends(tenant_connection)],
+    conn: Annotated[Connection, Depends(ingest_connection)],
     store: Annotated[DataKeyStore, Depends(crypto_store)],
     clock: Annotated[Clock, Depends(get_clock)],
 ) -> Learner:

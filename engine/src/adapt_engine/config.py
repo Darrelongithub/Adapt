@@ -71,6 +71,10 @@ class Settings(BaseModel):
     commit: str = Field(default="unknown", description="ADAPT_COMMIT")
     build_time: str = Field(default="unknown", description="ADAPT_BUILD_TIME")
     version: str = Field(default="0.1.0", description="ADAPT_VERSION")
+    #: Outbound webhook delivery. Off by default: AGENT_M1 §0 forbids network
+    #: egress and §1 requires webhooks, so the switch is how both are true at
+    #: once — deliveries are recorded either way, attempted only when enabled.
+    webhook_delivery: str = Field(default="disabled", description="ADAPT_WEBHOOK_DELIVERY")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -153,6 +157,13 @@ class Settings(BaseModel):
 
         redis_url = (source.get("ADAPT_REDIS_URL") or "redis://localhost:6379/0").strip()
 
+        webhook_delivery = (source.get("ADAPT_WEBHOOK_DELIVERY") or "disabled").strip().lower()
+        if webhook_delivery not in ("disabled", "enabled"):
+            raise ConfigError(
+                "ADAPT_WEBHOOK_DELIVERY",
+                "must be 'disabled' or 'enabled'",
+            )
+
         # Build identity is required in production: a health check that cannot
         # say which build is running is not an incident tool.
         if env_value == "production":
@@ -172,6 +183,7 @@ class Settings(BaseModel):
             master_key_previous_id=master_key_previous_id,
             key_pepper=SecretStr(key_pepper),
             redis_url=redis_url,
+            webhook_delivery=webhook_delivery,
             commit=commit,
             build_time=build_time,
             version=version,

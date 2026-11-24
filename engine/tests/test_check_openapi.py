@@ -63,6 +63,23 @@ def test_parses_the_authoritative_table() -> None:
     assert "—" not in codes
 
 
+def test_only_the_error_section_defines_codes() -> None:
+    """A code documented in another table is not documented.
+
+    §6A (the endpoint inventory) has a table whose second column is a *class* —
+    ``operational``, ``host-facing``, ``control-plane``. Reading the whole file
+    made ``operational`` a documented error code, which is the guard quietly
+    widening its own allowlist as the document grows.
+    """
+    text = (
+        _doc() + "\n## 6B. Another table\n\n| Field | Value |\n|---|---|\n| invented_code | yes |\n"
+    )
+    assert "invented_code" not in documented_codes(text)
+    assert "operational" not in documented_codes(text)
+    # And the real section is still read.
+    assert "payload_invalid" in documented_codes(text)
+
+
 def test_sentinel_row_is_a_documented_code() -> None:
     """Follow-up 2: the row's status cell reads `any other`, not a number."""
     text = _doc()

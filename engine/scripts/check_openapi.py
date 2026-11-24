@@ -67,6 +67,29 @@ class DocError(Exception):
     """The authoritative document could not be located or parsed."""
 
 
+#: The one section whose tables are the error vocabulary. Other sections have
+#: tables too — §6A is an endpoint inventory whose second column is a *class*
+#: (``operational``, ``host-facing``, ``control-plane``) and would otherwise be
+#: parsed as documented codes, which is how a guard starts passing on prose.
+_ERROR_HEADING = re.compile(r"^##\s*6\..*$", re.MULTILINE)
+_NEXT_HEADING = re.compile(r"^##\s", re.MULTILINE)
+
+
+def error_section(text: str) -> str:
+    """The §6 body, or the whole text when there is no §6 heading.
+
+    Narrowing by heading is not cosmetic: a code that appears only in another
+    table must not count as documented. The fallback keeps the parser usable on
+    a snippet, which is what most of its own tests pass it.
+    """
+    start = _ERROR_HEADING.search(text)
+    if start is None:
+        return text
+    rest = text[start.end() :]
+    end = _NEXT_HEADING.search(rest)
+    return rest if end is None else rest[: end.start()]
+
+
 def _table_rows(text: str) -> list[tuple[str, str]]:
     """Every (status cell, code cell) pair in the §6 table.
 
@@ -75,7 +98,7 @@ def _table_rows(text: str) -> list[tuple[str, str]]:
     of *every* row, so the two are parsed separately.
     """
     rows: list[tuple[str, str]] = []
-    for line in text.splitlines():
+    for line in error_section(text).splitlines():
         if not line.startswith("|"):
             continue
         match = _ROW.match(line)

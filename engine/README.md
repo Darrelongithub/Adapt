@@ -83,6 +83,10 @@ Each of these is enforced by something that fails, not by a comment:
 | A retired key cannot be dropped too early | startup refuses when a kid in use has no key | `tests/test_crypto.py::test_startup_still_refuses_when_a_key_is_dropped_before_rewrap` |
 | Errors carry one shape and only documented codes | one handler; `scripts/check_openapi.py` against the contract doc, read as written | `tests/test_check_openapi.py` |
 | Migrations are reversible and schema-only | `up → down → up` in CI; no `INSERT`/`UPDATE` in a migration | `tests/test_migrations.py` |
+| A paused connection says so, and a revoked one stops authenticating | `403 connection_paused` raised in `ingest_connection`; revoke revokes the key in the same transaction | `tests/test_connections.py::test_pause_is_an_explicit_403_and_resume_lifts_it` |
+| A webhook signature cannot be forged or replayed | Standard Webhooks HMAC + a five-minute window + a bounded seen-set | `tests/test_webhooks.py` (forged, other-secret, stale, duplicate) |
+| One event is delivered once | derived `webhook-id` + `UNIQUE (tenant_id, webhook_id)` | `tests/test_connections.py::test_a_duplicate_enqueue_is_a_no_op` |
+| A delivery log never holds a payload | no body column exists | `tests/test_connections.py::test_the_delivery_log_has_no_place_for_a_payload` |
 
 ## Routine operations
 
@@ -92,6 +96,21 @@ make ci             # the whole gate, including migrations and the in-tree contr
 make test           # pytest only
 make migrate        # alembic upgrade head (owner URL)
 make roundtrip      # alembic up → down → up on a scratch database
+```
+
+**Create a connection.** Control-plane: an `admin` key, not a host runtime key.
+
+```bash
+curl -s -X POST localhost:8000/v1/admin/connections \
+  -H "Authorization: Bearer $ADMIN_KEY" -H 'content-type: application/json' \
+  -d '{"host_name":"acme-web","environment":"test","event_quota_monthly":250000,
+       "webhook_url":"https://hooks.example.test/adapt"}' | jq
+# 201: {connection, key{full_key shown once}, webhook_secret{shown once}}
+curl -s -X PATCH localhost:8000/v1/admin/connections/$ID \
+  -H "Authorization: Bearer $ADMIN_KEY" -H 'content-type: application/json' \
+  -d '{"status":"paused"}'        # ingest now answers 403 connection_paused
+curl -s -X DELETE localhost:8000/v1/admin/connections/$ID \
+  -H "Authorization: Bearer $ADMIN_KEY"   # its key now answers 401
 ```
 
 **Add a migration.** `migrations/versions/` is hand-written: autogenerate
@@ -129,4 +148,5 @@ never by a migration.
 See `KNOWN_GAPS.md` for the table and the detail. The short version: Redis has
 never been reachable, the rate limiter is per process, the console screens are
 owed, rotation has a command but no scheduler, data-key rotation does not exist,
-and nothing in this milestone does learning science yet.
+webhooks have never reached a real receiver and nothing schedules the dispatcher
+(§1a), and the learning model itself is increment 3.

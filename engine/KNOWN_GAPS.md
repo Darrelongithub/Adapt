@@ -23,6 +23,29 @@ has never been reachable.
 | **Data-key rotation unsupported**: one data key per tenant, no version history | increment 5 | a single tenant's key cannot be rotated without orphaning rows | §14 |
 | **Console screens owed**: credit usage, ledger listing, key management, learner inspector, failure review | increment 4 | operators work from `psql` and a CLI | §8, §9, §11 |
 | **Per-process limiter** and in-memory auth cache: nothing is shared | increment 3 | two replicas allow twice the failures | §6 |
+| **Webhooks have never reached a real receiver**: the transport is exercised against a fake | increment 1 (M1) | TLS, DNS, a receiver's real behaviour, and a proxy in the way are unverified | §1 |
+| **Nothing schedules the dispatcher**: `run(now=...)` is called by tests, not by a worker | increment 1 (M1) | deliveries sit pending until a worker exists | §1 |
+| **Webhook delivery is off by default** (`ADAPT_WEBHOOK_DELIVERY`) | increment 1 (M1) | turning it on is the untested path | §1 |
+
+## 1a. Webhook delivery has never left the process
+
+**What is claimed:** a webhook reaches the customer's endpoint, signed with
+Standard Webhooks, retried five times.
+
+**What was actually verified:** the outbox, the retry schedule, the signature
+(ours verifying ours), dedupe in both layers, and the delivery log — all against
+a fake transport that counts calls and returns a chosen status. No DNS lookup,
+no TLS handshake and no real receiver has ever been involved, because
+`ADAPT_WEBHOOK_DELIVERY` defaults to `disabled` and this sandbox has no egress.
+
+**What closes it:** a receiver under our control (the sandbox demo in increment
+7 can host one), one real 2xx, one real 500, and one timeout — with the
+`webhook-*` headers captured and verified.
+
+**Also open:** nothing calls `Dispatcher.run` on a schedule yet. It is a method
+that takes `now`, which is what makes the retry schedule testable; a worker that
+calls it every few seconds is later work, and until it exists a delivery stays
+`pending`.
 
 ## 1. `docker compose up` has never been run
 

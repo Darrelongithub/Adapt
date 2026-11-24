@@ -539,3 +539,76 @@ that stays honest when the file goes missing for a real reason.
 parses the §6 table out of them (DECISIONS §14). `test_the_contract_is_resolved_
 in_tree_and_read_verbatim` asserts byte equality with the file, and
 `test_the_guard_knows_no_branch` fails if any of the strings above reappear.
+
+## 16. Webhooks: one egress switch, five attempts, one message id, no payload at rest
+
+**Decision.** Deliveries are recorded in the database and attempted by a
+dispatcher, not sent from the request path. Five attempts with 1s / 4s / 16s /
+64s between them, then `failed`. Every attempt carries the same `webhook-id`.
+A duplicate enqueue returns the existing row and sends nothing. The delivery log
+stores the event type, an opaque subject id, the attempt count and the last
+status code — there is no column for a body.
+
+**The egress contradiction, stated plainly.** `AGENT_M1.md` §0 carries "no
+network egress outside `/v1`" from M0; §1 requires webhooks with five retries.
+Both cannot be literally true. The resolution is one switch and one choke point:
+`ADAPT_WEBHOOK_DELIVERY` defaults to `disabled`, in which case rows are still
+written (so the log, the dedupe and the retry schedule are all testable and
+observable) and nothing leaves the process. `enabled` constructs exactly one
+`UrllibTransport`, an https-only POST with a 5s timeout that refuses redirects.
+This is *not* a fourth exception to an invariant (the rule review asked about):
+no invariant says "the engine never speaks to a customer endpoint" — the
+invariant is that nothing calls a model provider or an unrelated host from the
+request path, and this calls a URL the customer configured, from a worker, when
+a human turns it on. I have flagged the wording conflict rather than quietly
+picking a side.
+
+**Why an outbox.** A webhook is a notification that something happened, and the
+something is already committed. Sending inline makes the customer's uptime our
+latency and turns a receiver outage into lost events. The row is the record; the
+attempt is a consequence.
+
+**Why five attempts and not "until it works".** An unbounded retry is a queue
+with no bound and a delivery log nobody can read. Five attempts over 85 seconds
+covers a deploy and a restart; a receiver down for longer than that has a
+different problem, and the row says `failed` so a human can look.
+
+**Why the same message id on every attempt.** Standard Webhooks puts it in a
+header so the receiver can recognise a retry. A fresh id per attempt turns one
+event into five at the far end, which is the same bug as double delivery with
+more steps.
+
+**Two layers of duplicate suppression, and both are tested.** The derived
+message id (tenant, connection, type, dedupe key) plus the application check
+returns the existing row; `UNIQUE (tenant_id, webhook_id)` is the last line. The
+red-then-green shows what each is worth: with the app check removed the second
+enqueue raises `UniqueViolation`; with the constraint dropped as well, one event
+becomes `rows=2 same_id=True deliveries=2` — the same message delivered twice.
+
+**Why no payload at rest.** A webhook is a doorbell. Storing the body would make
+the delivery log a second copy of learner data with its own retention question,
+its own access policy and its own breach surface. The schema has no column for
+it, so this is a property rather than a habit.
+
+## 17. `connection_paused` is raised, never inferred
+
+**Decision.** A paused connection answers **403 `connection_paused`** on the
+host-facing data routes and keeps answering `200` on `/v1/whoami`. A bare 403 is
+`not_entitled` and nothing else; `connection_paused` is only reachable by raising
+it explicitly.
+
+**Why it is not `unauthorized`.** The key is fine — the customer paused the
+connection themselves. Answering `401` sends an integrator to rotate a key that
+works. Why it is not `not_entitled`: nothing needs to be bought. Why identity
+still answers: telling a caller who it is, is not ingest.
+
+**Where the check lives.** `auth.deps.ingest_connection`, used by the
+host-facing data routes. Admin routes deliberately use the plain
+`tenant_connection`, because the console has to be able to resume a connection
+that is paused — a key blocked from fixing its own mistake is a support ticket.
+A key with no connection row (the onboarding key) is never paused: it is not a
+host app.
+
+**Revoking is different.** `DELETE` sets `revoked` and revokes the key in the
+same transaction, so the next request is a plain `401`. There is no
+`connection_revoked` code, because there is no window in which it would be true.

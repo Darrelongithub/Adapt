@@ -34,6 +34,7 @@ from adapt_engine.auth.audit import AuthFailureAuditor, ip_hash
 from adapt_engine.auth.rate_limit import FailureLimiter
 from adapt_engine.auth.touch import LastUsedRecorder
 from adapt_engine.config import Settings
+from adapt_engine.connections import service as connections
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.errors import AdaptError
 
@@ -208,6 +209,37 @@ def tenant_connection(
     engine = request.app.state.engine
     with tenant_transaction(engine, auth.tenant_id) as conn:
         yield conn
+
+
+def ingest_connection(
+    auth: Annotated[AuthContext, Depends(resolve_auth)],
+    conn: Annotated[Connection, Depends(tenant_connection)],
+) -> Connection:
+    """A tenant connection whose *connection* is allowed to serve data.
+
+    A paused connection keeps its key — pausing stops ingest and keeps data —
+    so the key still authenticates and this is where the refusal happens. It is
+    an explicit ``403 connection_paused``: the integrator has to be able to tell
+    "someone paused this on purpose" from ``not_entitled`` ("buy something") and
+    from ``unauthorized`` ("your key is wrong"), because the fix is different in
+    each case.
+
+    Admin routes deliberately do *not* use this. The console has to be able to
+    resume a paused connection, and a key that is paused for ingest but blocked
+    from the console is a key that cannot fix its own mistake.
+
+    A key with no connection (the onboarding/console key) is never paused: it is
+    not a host app, so there is nothing to pause.
+    """
+    status = connections.status_for_key(conn, auth.key_id)
+    if status == "paused":
+        raise AdaptError(
+            code="connection_paused",
+            message="this connection is paused; resume it from the console to continue",
+            status_code=403,
+            retryable=True,
+        )
+    return conn
 
 
 def require_any_scope(*scopes: str) -> Any:
