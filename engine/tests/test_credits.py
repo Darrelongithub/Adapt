@@ -82,7 +82,13 @@ def test_balance_is_a_query_over_grants(app_engine: Engine, database, tenant: uu
     grant_credits(database, tenant, kind="purchased", amount=5, expires_at=None)
 
     current = _balance(app_engine, tenant)
-    assert (current.available, current.held, current.consumed, current.granted) == (15, 0, 0, 15)
+    assert (
+        current.available,
+        current.held,
+        current.consumed,
+        current.forfeited,
+        current.granted,
+    ) == (15, 0, 0, 0, 15)
     assert current.invariant_holds
 
 
@@ -221,10 +227,10 @@ def test_replaying_a_reserve_five_times_writes_one_row_and_one_body(
 
     with tenant_transaction(app_engine, tenant) as conn:
         rows = conn.execute(
-            text("SELECT reason, delta FROM credit_ledger WHERE idempotency_key = 'fixed-key-1'")
+            text("SELECT entry_type, delta FROM credit_ledger WHERE idempotency_key = 'fixed-key-1'")
         ).all()
     assert len(rows) == 1
-    assert rows[0].reason == "reserve"
+    assert rows[0].entry_type == "reserve"
 
     final = _balance(app_engine, tenant)
     assert (final.available, final.held) == (7, 3)
@@ -301,7 +307,7 @@ def test_release_is_idempotent_and_never_debits(
 
     with tenant_transaction(app_engine, tenant) as conn:
         rows = conn.execute(
-            text("SELECT delta, reason FROM credit_ledger WHERE idempotency_key = 'release-key-1'")
+            text("SELECT delta, entry_type FROM credit_ledger WHERE idempotency_key = 'release-key-1'")
         ).all()
     assert len(rows) == 1
     assert rows[0].delta == 0, "a release debited"
@@ -349,3 +355,138 @@ def test_a_reservation_is_invisible_to_another_tenant(
     with pytest.raises(Exception) as refused:
         _settle(app_engine, other, held.id, 1)
     assert getattr(refused.value, "code", None) == "route_unknown"
+
+
+# --- increment-4 corrections ------------------------------------------------
+
+
+def test_invariant_holds_after_an_allowance_expires(
+    app_engine: Engine, database, tenant: uuid.UUID
+) -> None:
+    """Four terms, not three: expired credits are forfeited, not missing.
+
+    With a three-term identity this is the assertion that fails — granted 15,
+    available 5, held 0, consumed 0 leaves 10 credits unaccounted for, which is
+    exactly the number a customer would ask about.
+    """
+    allowance = grant_credits(database, tenant, kind="included", amount=10, expires_at=_days(1))
+    grant_credits(database, tenant, kind="purchased", amount=5, expires_at=None)
+
+    held = _reserve(app_engine, tenant, 4, "op-before-expiry")
+    assert _balance(app_engine, tenant).invariant_holds
+
+    # The allowance expires while 4 of its credits are held by a live
+    # reservation. Only the allowance: a purchased pack cannot be given an
+    # expiry at all any more (credit_grants_purchased_never_expires).
+    with tenant_transaction(app_engine, tenant) as conn:
+        conn.execute(
+            text("UPDATE credit_grants SET expires_at = now() - interval '1 minute' WHERE id = :id"),
+            {"id": allowance},
+        )
+
+    after = _balance(app_engine, tenant)
+    assert after.granted == 15
+    assert after.available == 5, "the purchased pack is still available"
+    assert after.held == 4
+    assert after.forfeited == 6, "the expired allowance's unheld remainder"
+    assert after.invariant_holds
+
+    # Settling now consumes from the hold and forfeits the rest of the dead grant.
+    _settle(app_engine, tenant, held.id, 4)
+    settled = _balance(app_engine, tenant)
+    assert (settled.consumed, settled.held, settled.available, settled.forfeited) == (4, 0, 5, 6)
+    assert settled.invariant_holds
+
+
+def test_a_purchased_grant_cannot_have_an_expiry(
+    database, tenant: uuid.UUID
+) -> None:
+    """Paid credits never expire: the column refuses, not the documentation."""
+    from sqlalchemy.exc import IntegrityError
+
+    engine = test_database_engine(database)
+    try:
+        with pytest.raises(IntegrityError), tenant_transaction(engine, tenant) as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO credit_grants (tenant_id, kind, amount, remaining, expires_at) "
+                    "VALUES (:t, 'purchased', 5, 5, now() + interval '30 days')"
+                ),
+                {"t": tenant},
+            )
+    finally:
+        engine.dispose()
+
+
+def test_an_included_grant_must_have_an_expiry(database, tenant: uuid.UUID) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    engine = test_database_engine(database)
+    try:
+        with pytest.raises(IntegrityError), tenant_transaction(engine, tenant) as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO credit_grants (tenant_id, kind, amount, remaining, expires_at) "
+                    "VALUES (:t, 'included', 5, 5, NULL)"
+                ),
+                {"t": tenant},
+            )
+    finally:
+        engine.dispose()
+
+
+def test_reserve_and_release_rows_are_zero_and_billing_uses_the_view(
+    app_engine: Engine, database, tenant: uuid.UUID
+) -> None:
+    """`sum(delta)` is not consumption; `credit_consumption` is.
+
+    The two agree today only because reserve and release carry delta 0. The
+    test pins both halves: the zero rows, and the fact that the number the
+    service reports comes from the view (entry_type = 'settle'), not from an
+    unfiltered sum.
+    """
+    grant_credits(database, tenant, kind="purchased", amount=10, expires_at=None)
+    held = _reserve(app_engine, tenant, 4, "op-entry-types")
+    _settle(app_engine, tenant, held.id, 3)
+    second = _reserve(app_engine, tenant, 2, "op-entry-types-2")
+    _release(app_engine, tenant, second.id)
+
+    with tenant_transaction(app_engine, tenant) as conn:
+        rows = conn.execute(
+            text("SELECT entry_type, delta FROM credit_ledger ORDER BY id")
+        ).all()
+        by_type = {row.entry_type: row.delta for row in rows}
+        view = conn.execute(
+            text("SELECT coalesce(sum(consumed), 0) FROM credit_consumption")
+        ).scalar_one()
+        unfiltered = conn.execute(text("SELECT coalesce(-sum(delta), 0) FROM credit_ledger")).scalar_one()
+
+    assert by_type["reserve"] == 0
+    assert by_type["release"] == 0
+    assert by_type["settle"] == -3
+    assert view == 3
+    assert unfiltered == 3  # equal only because the zero rows are zero
+    assert _balance(app_engine, tenant).consumed == view
+
+
+def test_consumption_is_never_computed_from_an_unfiltered_sum() -> None:
+    """A source-level guard: every `sum(delta)` in the engine carries the filter.
+
+    `sum(delta)` over the ledger is not a consumption figure (METERING.md §4).
+    The view is the one place allowed to aggregate it, and it filters
+    `entry_type = 'settle'`; anything else would be billing arithmetic by
+    accident.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "src"
+    offenders: list[str] = []
+    for path in root.rglob("*.py"):
+        lines = path.read_text().splitlines()
+        for index, line in enumerate(lines):
+            if "sum(delta)" not in line and "sum(-delta)" not in line:
+                continue
+            window = "\n".join(lines[max(0, index - 15) : index + 2])
+            if "entry_type = 'settle'" not in window:
+                offenders.append(f"{path.relative_to(root)}:{index + 1}")
+    assert offenders == [], f"sum(delta) without the settle filter at {offenders}"

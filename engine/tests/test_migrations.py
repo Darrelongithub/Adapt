@@ -17,7 +17,9 @@ TABLES = (
     "credit_ledger",
     "credit_reservation_draws",
     "credit_reservations",
+    "data_key_ids",
     "learners",
+    "tenant_data_keys",
     "tenants",
 )
 

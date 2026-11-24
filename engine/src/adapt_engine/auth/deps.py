@@ -164,11 +164,13 @@ def resolve_auth(
     if presented_env != expected_key_env(settings):
         failed()
 
-    resolved = keys.resolve_api_key(engine, presented[: keys.PREFIX_LENGTH])
-    stored = resolved.stored_hash if resolved is not None else keys.DUMMY_HASH
-    matched = keys.hashes_match(stored, computed)
+    # The digest goes to the database, which answers a row only on an exact
+    # match. Nothing that could be replayed — and no stored hash — comes back.
+    resolved = keys.resolve_api_key(
+        engine, presented[: keys.PREFIX_LENGTH], computed
+    )
 
-    if resolved is None or not matched or resolved.revoked or _expired(resolved):
+    if resolved is None or resolved.revoked or _expired(resolved):
         failed()
 
     # Narrowed by the guard above: failed() never returns.

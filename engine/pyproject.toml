@@ -17,6 +17,9 @@ dependencies = [
   "psycopg[binary]>=3.2,<4.0",
   "redis>=5.0,<6.0",
   "structlog>=24.4,<25.0",
+  # AES-GCM for encryption at rest (increment 5). The one crypto dependency:
+  # nothing hand-rolled, and no other part of the engine imports it.
+  "cryptography>=42,<46",
   "uvicorn[standard]>=0.34,<1.0",
 ]
 

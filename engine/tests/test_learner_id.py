@@ -17,7 +17,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from adapt_engine.db.schema import LearnerIdInvalid, validate_learner_id
 from adapt_engine.db.tenant import tenant_transaction
-from tests.pg import provision_tenant
+from tests.pg import PLACEHOLDER_ENVELOPE, provision_tenant
 
 VALID = [
     "learner-0a1b2c3d",
@@ -66,9 +66,9 @@ def test_database_check_rejects_the_same_values(
             conn.execute(
                 text(
                     "INSERT INTO learners (tenant_id, learner_id, profile) "
-                    "VALUES (:t, :lid, 'adult_general')"
+                    "VALUES (:t, :lid, :profile)"
                 ),
-                {"t": tenant_id, "lid": value},
+                {"t": tenant_id, "lid": value, "profile": PLACEHOLDER_ENVELOPE},
             )
     assert "learners_learner_id_format" in str(excinfo.value)
 
@@ -81,8 +81,8 @@ def test_database_accepts_a_valid_learner_id(app_engine: Engine, database) -> No
         conn.execute(
             text(
                 "INSERT INTO learners (tenant_id, learner_id, profile) "
-                "VALUES (:t, 'learner-0a1b2c3d', 'adult_general')"
+                "VALUES (:t, 'learner-0a1b2c3d', :profile)"
             ),
-            {"t": tenant_id},
+            {"t": tenant_id, "profile": PLACEHOLDER_ENVELOPE},
         )
         assert conn.execute(text("SELECT count(*) FROM learners")).scalar_one() == 1

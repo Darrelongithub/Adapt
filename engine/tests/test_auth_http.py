@@ -13,8 +13,6 @@ authentication — a different, visible break.
 
 from __future__ import annotations
 
-import uuid
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -25,7 +23,7 @@ from adapt_engine.clock import SystemClock
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.main import create_app
 from tests.conftest import TEST_PEPPER, make_settings
-from tests.pg import SeededTenants, bootstrap_key
+from tests.pg import SeededTenants, bootstrap_key, synthetic_suffix
 
 PEPPER = TEST_PEPPER
 
@@ -96,7 +94,9 @@ def test_created_learner_belongs_to_the_calling_tenant(
 ) -> None:
     """The tenant comes from the key; the body cannot name one."""
     client, a_key, _ = clients
-    new_id = f"learner-new-{uuid.uuid4().hex[:8]}"
+    # `synthetic_suffix` is letters-only: a hex suffix can be all digits, and
+    # seven of those in a row is the id-number pattern the column refuses.
+    new_id = f"learner-new-{synthetic_suffix()}"
     resp = client.post(
         "/v1/learners",
         headers=_auth(a_key),

@@ -85,6 +85,15 @@ class KeyRevoked(BaseModel):
     revoked: bool
 
 
+class KeyExpiryRequest(BaseModel):
+    expires_at: datetime
+
+
+class KeyExpirySet(BaseModel):
+    key_id: uuid.UUID
+    expires_at: datetime
+
+
 @router.get(
     "/whoami",
     response_model=WhoAmI,
@@ -157,6 +166,42 @@ def issue_key(
         env=issued.env,
         expires_at=issued.expires_at,
     )
+
+
+@router.post(
+    "/admin/keys/{key_id}/expiry",
+    response_model=KeyExpirySet,
+    dependencies=[Depends(require_scope("admin"))],
+    openapi_extra=security_requirement("admin"),
+)
+def set_key_expiry(
+    key_id: uuid.UUID,
+    body: KeyExpiryRequest,
+    auth: Annotated[AuthContext, Depends(require_scope("admin"))],
+    conn: Annotated[Connection, Depends(tenant_connection)],
+) -> KeyExpirySet:
+    """Shorten (or extend) a key's life — as an audited operation.
+
+    The app role holds no UPDATE on ``api_keys``, so this is the only path a
+    request can take, and it writes an audit row naming the key id. A raw
+    ``UPDATE`` from a request connection would fail on privileges, not on
+    review.
+    """
+    changed = key_service.set_key_expiry(
+        conn,
+        tenant_id=auth.tenant_id,
+        key_id=key_id,
+        expires_at=body.expires_at,
+        actor_key_id=auth.key_id,
+    )
+    if not changed:
+        raise AdaptError(
+            code="route_unknown",
+            message="no such key for this tenant, or it is revoked",
+            status_code=404,
+            retryable=False,
+        )
+    return KeyExpirySet(key_id=key_id, expires_at=body.expires_at)
 
 
 @router.post(

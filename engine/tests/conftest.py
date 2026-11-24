@@ -16,7 +16,8 @@ from adapt_engine.clock import FixedClock
 from adapt_engine.config import Settings
 from adapt_engine.main import create_app
 
-TEST_MASTER_KEY = "test-master-key-32-bytes-long-xxxx"
+#: Single source of truth: `tests.pg` encrypts fixture rows with this key.
+TEST_MASTER_KEY = pg.TEST_MASTER_KEY
 TEST_PEPPER = "test-pepper-synthetic-only"
 
 

@@ -7,20 +7,21 @@ enforcement mechanism.
 
 ---
 
-## 1. `adapt_app` holds no privilege on `api_keys`; five functions are the only path
+## 1. `adapt_app` holds no privilege on `api_keys`; six functions are the only path
 
 **Decision.** `REVOKE ALL ON api_keys FROM adapt_app` (migration 0004). Not
-SELECT, not INSERT, not UPDATE, not DELETE. Every access is one of five
+SELECT, not INSERT, not UPDATE, not DELETE. Every access is one of six
 `SECURITY DEFINER` functions owned by `adapt_owner`, each granted to
 `adapt_app` and to nobody else, each with
 `SET search_path = pg_catalog, public` pinned and `PUBLIC` revoked:
 
 | Function | What it does |
 |---|---|
-| `adapt_resolve_api_key(text)` | read one row by exact prefix (`STABLE`, no writes) |
+| `adapt_resolve_api_key(text, bytea)` | compare prefix and digest, return no hash (increment 4, §11) |
 | `adapt_touch_api_key(uuid, int)` | debounced `last_used_at` write, `WHERE`-guarded |
 | `adapt_issue_api_key(...)` | insert, enforcing the mint rules (§4) |
 | `adapt_revoke_api_key(uuid, uuid)` | set `revoked_at`, tenant-addressed |
+| `adapt_set_key_expiry(uuid, uuid, timestamptz)` | shorten/extend an expiry, past refused, audited (§10) |
 | `adapt_note_auth_failure(...)` | one tenant-less `audit_log` row, nothing else |
 
 **Why.** RLS keeps *tenants* apart; a key table also has to keep *key material*
@@ -241,10 +242,28 @@ a prefix or a key.
   they came from, and a drawdown order nobody recorded is a drawdown order
   nobody tested.
 
-**The invariant.** `granted = available + held + consumed`, where
-`available = sum(remaining)` over live grants, `held` is the sum of open
-reservations and `consumed = -sum(delta)`. Every test that moves money asserts
-it.
+**The invariant is four terms, not three.** `granted = available + held +
+consumed + forfeited`, where `available = sum(remaining)` over live grants,
+`held` is the sum of open reservations, `consumed = -sum(delta WHERE
+entry_type = 'settle')`, and `forfeited = sum(remaining)` over grants that have
+expired. The fourth term is the correction that matters: an allowance that
+lapses is credits the tenant was granted and never spent, and a three-term
+identity reports that as "gone" — or, worse, silently widens `available`. It is
+derived on read from the expiry timestamps, so no sweeper has to run for the
+books to balance; `test_invariant_holds_after_an_allowance_expires` asserts it
+after an allowance lapses *and* after one lapses while a reservation still
+holds part of it. Every test that moves money asserts the four-term identity.
+
+**`entry_type`, not `reason`.** Every ledger row names its operation —
+`grant`, `reserve`, `release`, `settle`, `expire` — and consumption is read
+from `entry_type = 'settle'` only, never from `sum(delta)`. The distinction is
+the whole point: `reserve` and `release` write `delta = 0` because they move
+nothing, so an unfiltered `sum(delta)` happens to equal consumption today and
+would stop equalling it the moment anybody recorded movement. The rule is
+enforced the way the codebase enforces things it cares about: a
+`security_invoker` view `credit_consumption` is the only sanctioned
+aggregation, and `test_consumption_is_never_computed_from_an_unfiltered_sum`
+scans `src/` for any `sum(delta)` without the filter.
 
 **Drawdown order: expiring-first, then oldest granted.** The credits that are
 about to evaporate are spent before the ones that never expire — the order that
@@ -286,3 +305,106 @@ that another tenant's reservation id is a `404`.
 **The stated exceptions.** The five key functions (§1) and, for the credits
 path, nothing: credit tables are ordinary tenant-scoped tables with grants.
 `adapt_resolve_api_key` is the only read without tenant context.
+
+
+---
+
+## 10. The two CHECK constraints that left, and what replaced each
+
+`expiry_after_creation` and `expiry_after_grant` were dropped in increment 4.
+A constraint that was right when written can become the wrong tool; what is not
+acceptable is dropping it and trusting a comment.
+
+**`expiry_after_creation` (`expires_at > created_at`) — replaced by
+`adapt_set_key_expiry`.** The intent was "a key cannot be born expired or
+extend itself". The constraint did not hold that intent under `UPDATE`: it
+checked the new row against `created_at`, not the old row, so a shortened
+expiry and an extended one were indistinguishable to it. Expiry now changes
+through one function, which refuses a timestamp in the past (`22023` →
+`422 payload_invalid`), refuses a `NULL`, touches only the caller's tenant, and
+writes an `api_key_expiry_set` audit row naming the actor and the target key.
+The enforcement moved from "the arithmetic looked right" to "there is exactly
+one door, and it is audited". `adapt_app` holds no `UPDATE` on `api_keys`
+(`test_shortening_an_expiry_is_a_function_not_a_raw_update`), so the door is
+the only way in, not merely the preferred one.
+
+**`expiry_after_grant` (`expires_at > granted_at`) — replaced by
+`credit_grants_purchased_never_expires` plus the 90-day default.** The original
+constraint allowed a purchased pack to carry an expiry, which is the failure
+the business cares about: money that evaporates. The pair of CHECKs that
+replaced it states the two commercial invariants directly —
+`kind <> 'purchased' OR expires_at IS NULL` and `kind <> 'included' OR
+expires_at IS NOT NULL` — so "purchased credits never expire" and "included
+credits always do" are facts about the schema rather than conventions about the
+grant path. Both directions are tested, including the case where a test's own
+blanket `UPDATE` tried to expire a purchased pack and was refused.
+
+---
+
+## 11. No hash leaves the database
+
+**Decision.** `adapt_resolve_api_key(p_prefix text, p_hash bytea)` takes the
+digest *in* and returns `key_id, tenant_id, scopes, revoked_at,
+expires_at` — no hash, no prefix, no row. The Python-side comparison is gone:
+the database compares, and the runtime never holds a stored digest next to the
+pepper that makes it useful.
+
+**Why it was wrong before.** The old resolver returned the stored hash for the
+runtime to compare. That is a small thing with a large consequence: any read of
+process memory, any traceback, any careless `repr` in a log line yields a value
+that, combined with the pepper (also in the process), authenticates as that
+key. Comparing inside the database means the only thing that ever crosses the
+boundary is a yes/no.
+
+**How it is held.** Two assertions, both against the catalogue rather than
+against intent: `test_no_definer_function_returns_a_hash` reads
+`pg_get_function_result` for every function the owner owns and fails if the
+signature mentions `hash`; `test_the_resolver_takes_the_digest_as_an_argument`
+pins the argument list and the returned columns. The red step was performed —
+the resolver was edited to return `key_hash` again and both tests failed with
+`these functions return a hash: ['adapt_resolve_api_key']` — before the change
+was restored.
+
+---
+
+## 12. Encryption at rest: envelope, keyring, and what is deliberately not encrypted
+
+**Decision.** Personal-data columns are encrypted with AES-GCM under a
+per-tenant data key, stored as `v1:<kid>:<nonce>:<ct>`. The data key is
+generated on first write, wrapped by the current master key (`ADAPT_MASTER_KEY`,
+or that plus `ADAPT_MASTER_KEY_PREVIOUS`), and kept in `tenant_data_keys`. The
+wrapped key's AAD is the tenant id, and the value's AAD is the tenant id: a
+ciphertext moved into another tenant's row fails the tag check and raises —
+it does not decrypt to garbage we then store
+(`test_tenant_a_ciphertext_does_not_open_for_tenant_b`).
+
+**Encrypted:** `learners.profile`, `learners.date_of_birth` — the two columns
+that are personal data and are never queried by value. **Not encrypted:**
+`tenant_id`, `learner_id`. That is a lookup decision, not an anonymity claim: a
+unique constraint, an index and an RLS predicate all read those columns, and a
+pseudonymous identifier is still personal data under every regime we would be
+held to. Encrypting them would buy a false sense of anonymity and cost every
+index. What the design buys instead is that a database dump, a backup or a
+stolen replica shows no profile and no date of birth.
+
+**Rotation re-wraps keys and touches no rows.** One `UPDATE` per tenant, no
+ciphertext rewritten, and old rows keep their header so the kid they name still
+resolves. That is only safe while every referenced kid has a key, so the
+keyring holds N-1 keys and startup *refuses to run* otherwise — the lifespan
+asks `data_key_ids` for every kid ever used and raises `RuntimeError` naming
+the gap. `data_key_ids` is the one table with no tenant column, because it
+holds key ids and nothing else; it is append-only by grant, so a kid that
+wrote a row yesterday is still there to stop an operator dropping its key
+today.
+
+**`date_of_birth` changed type, and the profile allowlist left the database.**
+A `date` column is plaintext by definition, and a CHECK that enforces
+`profile IN ('adult_general', 'cognitive_support')` has to read the column — so
+it cannot coexist with encrypting it. `date_of_birth` is now `text` holding an
+envelope, and both columns carry a CHECK that the value *is* an envelope. The
+allowlist moved to `db/schema.PROFILES`, checked before encryption. The honest
+trade-off: the database no longer constrains the profile vocabulary; the API
+does, and `test_the_profile_column_stores_an_envelope_not_a_literal` shows the
+column refusing plaintext. No deployment held learner rows at this revision, so
+the type change discarded nothing — and the downgrade says so by dropping the
+column rather than pretending to restore dates.

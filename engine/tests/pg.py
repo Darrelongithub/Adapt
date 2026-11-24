@@ -35,6 +35,8 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, Engine, make_url
 
+from adapt_engine.crypto.keyring import Keyring
+from adapt_engine.crypto.store import DataKeyStore
 from adapt_engine.db.roles import ensure_roles
 from adapt_engine.db.tenant import tenant_transaction
 
@@ -42,6 +44,16 @@ ENGINE_ROOT = Path(__file__).resolve().parents[1]
 
 TEST_DATABASE = "adapt_test"
 MIGRATIONS_DATABASE = "adapt_migrations_test"
+
+#: The one synthetic master key the suite uses. It lives here because this
+#: module encrypts learner rows for the fixtures below, and `conftest` imports
+#: `tests.pg` — not the other way round.
+TEST_MASTER_KEY = "test-master-key-32-bytes-long-xxxx"
+TEST_KEYRING = Keyring.from_secrets([("k1", TEST_MASTER_KEY)])
+
+#: A well-formed v1 envelope that authenticates against nothing. Only for
+#: tests that assert a constraint's *shape* and never decrypt the value.
+PLACEHOLDER_ENVELOPE = "v1:k1:AAAAAAAAAAAAAAAA:" + "A" * 32
 
 #: Set by the fallback provider so it is stopped at session end.
 _STARTED_SERVER: object | None = None
@@ -235,6 +247,11 @@ def create_tenant(
     return tenant_id
 
 
+def encrypt_profile(conn: object, tenant_id: uuid.UUID, value: str = "adult_general") -> str:
+    """Encrypt a profile value the way the API does, inside a tenant transaction."""
+    return DataKeyStore(keyring=TEST_KEYRING).encrypt(conn, tenant_id, value)  # type: ignore[arg-type]
+
+
 def create_learner(
     engine: Engine,
     tenant_id: uuid.UUID,
@@ -242,9 +259,15 @@ def create_learner(
     *,
     profile: str = "adult_general",
 ) -> uuid.UUID:
-    """Insert a learner for ``tenant_id`` inside that tenant's context."""
+    """Insert a learner for ``tenant_id`` inside that tenant's context.
+
+    ``profile`` arrives as plaintext because every caller thinks in plaintext;
+    it is encrypted here, so a fixture row is a real ciphertext and a test may
+    read it back through the API.
+    """
     learner_pk = uuid.uuid4()
     with tenant_transaction(engine, tenant_id) as conn:
+        stored_profile = encrypt_profile(conn, tenant_id, profile)
         conn.execute(
             text(
                 "INSERT INTO learners (id, tenant_id, learner_id, profile) "
@@ -254,7 +277,7 @@ def create_learner(
                 "id": learner_pk,
                 "tenant_id": tenant_id,
                 "learner_id": learner_id,
-                "profile": profile,
+                "profile": stored_profile,
             },
         )
     return learner_pk

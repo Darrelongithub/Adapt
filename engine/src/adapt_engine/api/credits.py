@@ -1,18 +1,27 @@
-"""Credit routes: the balance, and the three moves.
+"""Credits over HTTP: a balance to read, and a grant that only provisioning may write.
 
-`Idempotency-Key` is a header on every mutating call (INTEGRATION.md §7), not a
-body field: the SDK derives it from the logical operation, and the same key
-replayed must return the original result rather than charge twice.
+Correction from review: **credit mutations are provisioning, not runtime.** A
+host key moves no credits over the API. Reservations, settlement and release
+happen inside the engine, next to the work they pay for, and have no HTTP
+surface at all — a route that holds credits would be a route a compromised host
+key could use to block its own account, and a route a bug could use to hold
+credits that never settle.
 
-These are host-facing billing routes. Reading the balance needs `observe`;
-moving credits needs `admin`, because a reservation is a commitment to spend.
+So this module has exactly two routes:
+
+* ``GET /v1/credits/balance`` — host-facing, `observe`.
+* ``POST /v1/admin/credits/grants`` — control-plane, `admin`, excluded from the
+  host-facing conformance list, classified with the rest of ``/v1/admin/*``.
+
+The balance reports four terms, because three is wrong the moment an allowance
+expires: ``granted = available + held + consumed + forfeited``.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import Annotated
+from datetime import UTC, date, datetime
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, Field
@@ -28,7 +37,7 @@ from adapt_engine.auth.deps import (
 from adapt_engine.credits import service as credits
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 
-router = APIRouter(prefix="/v1/credits", tags=["credits"], responses=ERROR_RESPONSES)
+router = APIRouter(prefix="/v1", tags=["credits"], responses=ERROR_RESPONSES)
 
 IdempotencyKey = Annotated[
     str,
@@ -53,26 +62,24 @@ class BalanceOut(BaseModel):
     available: int
     held: int
     consumed: int
+    forfeited: int
     granted: int
     grants: list[GrantOut]
 
 
-class ReserveRequest(BaseModel):
-    amount: int = Field(ge=1, le=10_000)
-    operation_ref: str = Field(min_length=1, max_length=200)
+class GrantRequest(BaseModel):
+    kind: Literal["included", "purchased", "promo"]
+    amount: int = Field(ge=1, le=1_000_000)
+    expires_at: datetime | None = None
+    source_ref: str | None = Field(default=None, max_length=200)
+    period_start: date | None = None
 
 
-class ReservationOut(BaseModel):
-    """Deliberately excludes the live balance: a replay must be byte-identical."""
-
-    reservation_id: uuid.UUID
+class GrantedOut(BaseModel):
+    grant_id: uuid.UUID
+    kind: str
     amount: int
-    state: str
-    operation_ref: str
-
-
-class SettleRequest(BaseModel):
-    amount: int = Field(ge=1, le=10_000)
+    expires_at: datetime | None
 
 
 def _require_key(key: str) -> str:
@@ -87,7 +94,7 @@ def _require_key(key: str) -> str:
 
 
 @router.get(
-    "/balance",
+    "/credits/balance",
     response_model=BalanceOut,
     dependencies=[Depends(require_scope("observe"))],
     openapi_extra=security_requirement("observe"),
@@ -102,6 +109,7 @@ def get_balance(
         available=current.available,
         held=current.held,
         consumed=current.consumed,
+        forfeited=current.forfeited,
         granted=current.granted,
         grants=[
             GrantOut(
@@ -117,100 +125,69 @@ def get_balance(
 
 
 @router.post(
-    "/reservations",
-    response_model=ReservationOut,
+    "/admin/credits/grants",
+    response_model=GrantedOut,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_scope("admin"))],
     openapi_extra=security_requirement("admin"),
 )
-def create_reservation(
-    body: ReserveRequest,
+def create_grant(
+    body: GrantRequest,
     idempotency_key: IdempotencyKey,
     auth: Annotated[AuthContext, Depends(require_scope("admin"))],
     engine: Annotated[Engine, Depends(get_engine)],
-) -> ReservationOut:
-    """Hold credits for an operation. 402 when the balance cannot cover it."""
+) -> GrantedOut:
+    """Provision credits. Control-plane: a host key never calls this in anger."""
     key = _require_key(idempotency_key)
-    reservation = credits.run_idempotent(
+    _validate_terms(body)
+
+    grant_id = credits.run_idempotent(
         engine,
         auth.tenant_id,
-        lambda conn: credits.reserve(
+        lambda conn: credits.grant_credits(
             conn,
             tenant_id=auth.tenant_id,
+            kind=body.kind,
             amount=body.amount,
-            operation_ref=body.operation_ref,
+            expires_at=body.expires_at,
+            source_ref=body.source_ref,
             idempotency_key=key,
+            period_start=body.period_start,
         ),
     )
-    return ReservationOut(
-        reservation_id=reservation.id,
-        amount=reservation.amount,
-        state=reservation.state,
-        operation_ref=reservation.operation_ref,
+    return GrantedOut(
+        grant_id=grant_id,
+        kind=body.kind,
+        amount=body.amount,
+        expires_at=body.expires_at,
     )
 
 
-@router.post(
-    "/reservations/{reservation_id}/settle",
-    response_model=ReservationOut,
-    dependencies=[Depends(require_scope("admin"))],
-    openapi_extra=security_requirement("admin"),
-)
-def settle_reservation(
-    reservation_id: uuid.UUID,
-    body: SettleRequest,
-    idempotency_key: IdempotencyKey,
-    auth: Annotated[AuthContext, Depends(require_scope("admin"))],
-    engine: Annotated[Engine, Depends(get_engine)],
-) -> ReservationOut:
-    """Consume up to the held amount. Over-settlement is refused, not clamped."""
-    key = _require_key(idempotency_key)
-    reservation = credits.run_idempotent(
-        engine,
-        auth.tenant_id,
-        lambda conn: credits.settle(
-            conn,
-            tenant_id=auth.tenant_id,
-            reservation_id=reservation_id,
-            amount=body.amount,
-            idempotency_key=key,
-        ),
-    )
-    return ReservationOut(
-        reservation_id=reservation.id,
-        amount=reservation.amount,
-        state=reservation.state,
-        operation_ref=reservation.operation_ref,
-    )
+def _validate_terms(body: GrantRequest) -> None:
+    """The two commercial invariants, checked before the schema has to.
 
-
-@router.post(
-    "/reservations/{reservation_id}/release",
-    response_model=ReservationOut,
-    dependencies=[Depends(require_scope("admin"))],
-    openapi_extra=security_requirement("admin"),
-)
-def release_reservation(
-    reservation_id: uuid.UUID,
-    idempotency_key: IdempotencyKey,
-    auth: Annotated[AuthContext, Depends(require_scope("admin"))],
-    engine: Annotated[Engine, Depends(get_engine)],
-) -> ReservationOut:
-    """Return the held credits. Idempotent, and never debits."""
-    key = _require_key(idempotency_key)
-    reservation = credits.run_idempotent(
-        engine,
-        auth.tenant_id,
-        lambda conn: credits.release(
-            conn,
-            tenant_id=auth.tenant_id,
-            reservation_id=reservation_id,
-            idempotency_key=key,
-        ),
-    )
-    return ReservationOut(
-        reservation_id=reservation.id,
-        amount=reservation.amount,
-        state=reservation.state,
-        operation_ref=reservation.operation_ref,
-    )
+    The columns enforce them too (`included` must expire, `purchased` must
+    not); saying so here turns a constraint violation into an answer the caller
+    can act on.
+    """
+    if body.kind == "included" and body.expires_at is None:
+        raise AdaptError(
+            code="payload_invalid",
+            message="an included allowance must have an expires_at",
+            status_code=422,
+            retryable=False,
+        )
+    if body.kind == "purchased" and body.expires_at is not None:
+        raise AdaptError(
+            code="payload_invalid",
+            message="paid credits never expire; expires_at must be omitted",
+            status_code=422,
+            retryable=False,
+        )
+    if body.expires_at is not None and body.expires_at <= datetime.now(UTC):
+        raise AdaptError(
+            code="payload_invalid",
+            message="expires_at must be in the future",
+            status_code=422,
+            retryable=False,
+        )

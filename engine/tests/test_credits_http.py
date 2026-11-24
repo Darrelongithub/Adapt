@@ -1,15 +1,13 @@
-"""The credit routes over HTTP: the shapes, the codes, and the replays.
+"""Credits over HTTP: one read for hosts, one write for provisioning.
 
-The interesting assertions are about sameness. A replay must return the body
-the first call returned — not a freshly computed balance that happens to look
-similar — and an exhausted balance must answer with the documented code from
-INTEGRATION.md §6 (`quota_exhausted`, 402), because the host's error handling
-is written against that table.
+The route surface is the review's correction, so it is asserted rather than
+described: reservations, settlement and release have **no** HTTP route (they
+are engine-internal), and granting lives at `/v1/admin/credits/grants` with the
+`admin` scope. A 404 on `/v1/credits/reservations` is a passing test.
 """
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -20,6 +18,7 @@ from sqlalchemy.engine import Engine
 
 from adapt_engine.auth.rate_limit import FailureLimiter
 from adapt_engine.clock import SystemClock
+from adapt_engine.credits import service as credits
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.main import create_app
 from tests.conftest import make_settings
@@ -55,178 +54,155 @@ def _auth(key) -> dict[str, str]:
     return {"Authorization": f"Bearer {key.full_key}"}
 
 
-def _reserve(client, key, amount: int, idem: str, ref: str = "op-1"):
-    return client.post(
-        "/v1/credits/reservations",
-        headers={**_auth(key), "Idempotency-Key": idem},
-        json={"amount": amount, "operation_ref": ref},
-    )
-
-
-def test_a_reservation_needs_a_key(client: TestClient) -> None:
-    resp = client.post(
-        "/v1/credits/reservations",
-        headers={"Idempotency-Key": "no-key-here"},
-        json={"amount": 1, "operation_ref": "op"},
-    )
-    assert resp.status_code == 401
-    assert resp.json()["error"]["code"] == "unauthorized"
-
-
-def test_an_exhausted_balance_is_402_quota_exhausted(
-    client: TestClient, database, tenant: uuid.UUID, admin_key
-) -> None:
-    grant_credits(database, tenant, kind="purchased", amount=2, expires_at=None)
-    resp = _reserve(client, admin_key, 5, "idem-quota")
-    assert resp.status_code == 402
-    assert resp.json()["error"]["code"] == "quota_exhausted"
-    assert resp.json()["error"]["retryable"] is False
-
-
-def test_the_balance_route_reports_the_invariant(
-    client: TestClient, database, tenant: uuid.UUID, admin_key
-) -> None:
-    grant_credits(database, tenant, kind="included", amount=10, expires_at=_days(30))
-    _reserve(client, admin_key, 3, "idem-balance")
-
-    body = client.get("/v1/credits/balance", headers=_auth(admin_key)).json()
-    assert (body["available"], body["held"], body["consumed"], body["granted"]) == (7, 3, 0, 10)
-    assert body["granted"] == body["available"] + body["held"] + body["consumed"]
-    assert body["grants"][0]["kind"] == "included"
-
-
 def _days(n: int) -> datetime:
     return datetime.now(UTC) + timedelta(days=n)
 
 
-def test_five_replays_return_one_body_and_one_ledger_row(
+def _reserve_via_service(client: TestClient, tenant: uuid.UUID, amount: int) -> object:
+    """Reservations are engine-internal now, so the test drives the service."""
+    engine = client.app.state.engine
+    return credits.run_idempotent(
+        engine,
+        tenant,
+        lambda conn: credits.reserve(
+            conn,
+            tenant_id=tenant,
+            amount=amount,
+            operation_ref=f"op-{uuid.uuid4()}",
+            idempotency_key=f"res-{uuid.uuid4()}",
+        ),
+    )
+
+
+def test_the_balance_needs_a_key(client: TestClient) -> None:
+    resp = client.get("/v1/credits/balance")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "unauthorized"
+
+
+def test_the_balance_reports_four_terms(
     client: TestClient, database, tenant: uuid.UUID, admin_key
 ) -> None:
-    grant_credits(database, tenant, kind="purchased", amount=10, expires_at=None)
+    grant_credits(database, tenant, kind="included", amount=10, expires_at=_days(30))
+    _reserve_via_service(client, tenant, 3)
 
-    first = _reserve(client, admin_key, 4, "idem-fixed", ref="op-replay")
-    assert first.status_code == 201, first.text
-    body = first.json()
-
-    for _ in range(4):
-        again = _reserve(client, admin_key, 4, "idem-fixed", ref="op-replay")
-        assert again.status_code == 201
-        assert again.json() == body, "a replay returned a different body"
-
-    with tenant_transaction(client.app.state.engine, tenant) as conn:
-        rows = conn.execute(
-            text("SELECT count(*) FROM credit_ledger WHERE idempotency_key = 'idem-fixed'")
-        ).scalar_one()
-    assert rows == 1
-
-    balance = client.get("/v1/credits/balance", headers=_auth(admin_key)).json()
-    assert (balance["available"], balance["held"]) == (6, 4)
+    body = client.get("/v1/credits/balance", headers=_auth(admin_key)).json()
+    assert set(body) >= {"available", "held", "consumed", "forfeited", "granted", "grants"}
+    assert (body["available"], body["held"], body["consumed"], body["forfeited"]) == (7, 3, 0, 0)
+    assert body["granted"] == (
+        body["available"] + body["held"] + body["consumed"] + body["forfeited"]
+    )
 
 
-def test_settling_more_than_held_is_409_over_http(
+def test_the_balance_shows_forfeited_after_an_allowance_expires(
     client: TestClient, database, tenant: uuid.UUID, admin_key
 ) -> None:
-    grant_credits(database, tenant, kind="purchased", amount=20, expires_at=None)
-    reservation = _reserve(client, admin_key, 2, "idem-hold").json()
+    grant_credits(database, tenant, kind="included", amount=10, expires_at=_days(1))
+    _reserve_via_service(client, tenant, 4)
 
+    engine = client.app.state.engine
+    with tenant_transaction(engine, tenant) as conn:
+        conn.execute(
+            text("UPDATE credit_grants SET expires_at = now() - interval '1 minute'")
+        )
+
+    body = client.get("/v1/credits/balance", headers=_auth(admin_key)).json()
+    # The allowance is gone: what was held is now forfeited, not available.
+    assert body["available"] == 0
+    assert body["forfeited"] == 6
+    assert body["granted"] == (
+        body["available"] + body["held"] + body["consumed"] + body["forfeited"]
+    )
+
+
+def test_provisioning_a_grant_needs_admin_and_control_plane_path(
+    client: TestClient, database, tenant: uuid.UUID, admin_key
+) -> None:
     resp = client.post(
-        f"/v1/credits/reservations/{reservation['reservation_id']}/settle",
-        headers={**_auth(admin_key), "Idempotency-Key": "idem-overdraw"},
-        json={"amount": 3},
+        "/v1/admin/credits/grants",
+        headers={**_auth(admin_key), "Idempotency-Key": "grant-0001"},
+        json={"kind": "purchased", "amount": 20, "source_ref": "invoice-1"},
     )
-    assert resp.status_code == 409
-    assert resp.json()["error"]["code"] == "conflict"
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["amount"] == 20
+    assert body["expires_at"] is None
 
     balance = client.get("/v1/credits/balance", headers=_auth(admin_key)).json()
-    assert balance["consumed"] == 0
-    assert balance["held"] == 2
+    assert balance["available"] == 20
 
 
-def test_settle_then_release_is_refused(
+def test_a_grant_replay_creates_one_grant(
     client: TestClient, database, tenant: uuid.UUID, admin_key
 ) -> None:
-    grant_credits(database, tenant, kind="purchased", amount=10, expires_at=None)
-    reservation = _reserve(client, admin_key, 2, "idem-seq").json()
-
-    settled = client.post(
-        f"/v1/credits/reservations/{reservation['reservation_id']}/settle",
-        headers={**_auth(admin_key), "Idempotency-Key": "idem-seq-settle"},
-        json={"amount": 2},
+    payload = {"kind": "purchased", "amount": 5}
+    first = client.post(
+        "/v1/admin/credits/grants",
+        headers={**_auth(admin_key), "Idempotency-Key": "grant-replay"},
+        json=payload,
     )
-    assert settled.status_code == 200
-    assert settled.json()["state"] == "settled"
-
-    released = client.post(
-        f"/v1/credits/reservations/{reservation['reservation_id']}/release",
-        headers={**_auth(admin_key), "Idempotency-Key": "idem-seq-release"},
-    )
-    assert released.status_code == 409
-    assert released.json()["error"]["code"] == "conflict"
-
-
-def test_release_returns_the_credits(
-    client: TestClient, database, tenant: uuid.UUID, admin_key
-) -> None:
-    grant_credits(database, tenant, kind="purchased", amount=10, expires_at=None)
-    reservation = _reserve(client, admin_key, 4, "idem-rel").json()
-
-    released = client.post(
-        f"/v1/credits/reservations/{reservation['reservation_id']}/release",
-        headers={**_auth(admin_key), "Idempotency-Key": "idem-rel-release"},
-    )
-    assert released.status_code == 200
-    assert released.json()["state"] == "released"
-    assert released.json()["amount"] == 0
+    for _ in range(4):
+        again = client.post(
+            "/v1/admin/credits/grants",
+            headers={**_auth(admin_key), "Idempotency-Key": "grant-replay"},
+            json=payload,
+        )
+        assert again.status_code == 201
+        assert again.json()["grant_id"] == first.json()["grant_id"]
 
     balance = client.get("/v1/credits/balance", headers=_auth(admin_key)).json()
-    assert (balance["available"], balance["held"], balance["consumed"]) == (10, 0, 0)
+    assert balance["available"] == 5, "a replayed grant added credits again"
 
 
-def test_moving_credits_needs_the_admin_scope(
+def test_an_included_allowance_must_expire_and_a_pack_must_not(
+    client: TestClient, database, tenant: uuid.UUID, admin_key
+) -> None:
+    missing = client.post(
+        "/v1/admin/credits/grants",
+        headers={**_auth(admin_key), "Idempotency-Key": "grant-bad-1"},
+        json={"kind": "included", "amount": 10},
+    )
+    assert missing.status_code == 422
+    assert missing.json()["error"]["code"] == "payload_invalid"
+
+    expiring_pack = client.post(
+        "/v1/admin/credits/grants",
+        headers={**_auth(admin_key), "Idempotency-Key": "grant-bad-2"},
+        json={"kind": "purchased", "amount": 10, "expires_at": _days(5).isoformat()},
+    )
+    assert expiring_pack.status_code == 422
+    assert "never expire" in expiring_pack.json()["error"]["message"]
+
+
+def test_an_observe_only_key_cannot_provision_credits(
     client: TestClient, database, tenant: uuid.UUID
 ) -> None:
     observe_only = bootstrap_key(database, tenant, scopes=("observe",))
-    grant_credits(database, tenant, kind="purchased", amount=5, expires_at=None)
-
-    refused = _reserve(client, observe_only, 1, "idem-scope")
-    assert refused.status_code == 403
-    assert refused.json()["error"]["code"] == "not_entitled"
-
-    assert client.get("/v1/credits/balance", headers=_auth(observe_only)).status_code == 200
-
-
-def test_a_missing_idempotency_key_is_rejected(
-    client: TestClient, database, tenant: uuid.UUID, admin_key
-) -> None:
-    grant_credits(database, tenant, kind="purchased", amount=5, expires_at=None)
     resp = client.post(
-        "/v1/credits/reservations",
-        headers=_auth(admin_key),
-        json={"amount": 1, "operation_ref": "op"},
+        "/v1/admin/credits/grants",
+        headers={**_auth(observe_only), "Idempotency-Key": "grant-refused"},
+        json={"kind": "purchased", "amount": 1},
     )
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "payload_invalid"
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "not_entitled"
 
 
-def test_another_tenants_reservation_is_not_addressable(
-    client: TestClient, database, tenant: uuid.UUID, admin_key
-) -> None:
-    other = provision_tenant(database, slug=f"credit-other-{uuid.uuid4().hex[:8]}", name="Other")
-    other_key = bootstrap_key(database, other, scopes=("observe", "admin"))
-    grant_credits(database, tenant, kind="purchased", amount=10, expires_at=None)
-
-    reservation = _reserve(client, admin_key, 2, "idem-mine").json()
-    resp = client.post(
-        f"/v1/credits/reservations/{reservation['reservation_id']}/settle",
-        headers={**_auth(other_key), "Idempotency-Key": "idem-theirs"},
-        json={"amount": 1},
-    )
-    assert resp.status_code == 404
-    assert resp.json()["error"]["code"] == "route_unknown"
+def test_there_is_no_http_route_for_reservations(client: TestClient, admin_key) -> None:
+    """Holding credits is engine-internal: no route, so no key can hold them."""
+    for path, payload in (
+        ("/v1/credits/reservations", {"amount": 1, "operation_ref": "op"}),
+        ("/v1/credits/reservations/00000000-0000-0000-0000-000000000000/settle", {"amount": 1}),
+        ("/v1/credits/reservations/00000000-0000-0000-0000-000000000000/release", None),
+    ):
+        resp = client.post(
+            path, headers={**_auth(admin_key), "Idempotency-Key": "no-route"}, json=payload
+        )
+        assert resp.status_code == 404, path
+        assert resp.json()["error"]["code"] == "route_unknown"
 
 
-def test_the_openapi_contract_documents_the_credit_routes(client: TestClient) -> None:
-    schema = client.get("/openapi.json").json()
-    for path in ("/v1/credits/balance", "/v1/credits/reservations"):
-        assert path in schema["paths"], path
-    assert json.dumps(schema["paths"]["/v1/credits/reservations"]).count("Idempotency-Key") >= 1
+def test_the_openapi_contract_names_both_credit_routes(client: TestClient) -> None:
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/v1/credits/balance" in paths
+    assert "/v1/admin/credits/grants" in paths
+    assert "/v1/credits/reservations" not in paths

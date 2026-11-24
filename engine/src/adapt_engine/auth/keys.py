@@ -38,6 +38,7 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import DBAPIError
 
 from adapt_engine.db.tenant import tenant_transaction
+from adapt_engine.errors import AdaptError
 
 KEY_ENV_LIVE: Final = "live"
 KEY_ENV_TEST: Final = "test"
@@ -55,10 +56,6 @@ SECRET_LENGTH: Final = 32
 #: `admin` keys are held to the same default and may not exceed the cap.
 DEFAULT_EXPIRY_DAYS: Final = 90
 MAX_EXPIRY_DAYS: Final = 365
-
-#: Compared against when no key matched, so an unknown prefix costs the same
-#: HMAC comparison as a known one.
-DUMMY_HASH: Final = hashlib.sha256(b"adapt-dummy-hash-for-timing").digest()
 
 #: ``last_used_at`` is written at most this often per key.
 LAST_USED_DEBOUNCE_SECONDS: Final = 60
@@ -99,11 +96,15 @@ class IssuedKey:
 
 @dataclass(frozen=True)
 class ResolvedKey:
-    """What the resolver function returns. Never contains the full key."""
+    """What the resolver function returns.
+
+    No hash: the function is given the client-side digest and answers a row
+    only on an exact match, so the runtime never holds a stored hash next to
+    the pepper that makes it useful.
+    """
 
     key_id: uuid.UUID
     tenant_id: uuid.UUID
-    stored_hash: bytes
     scopes: tuple[str, ...]
     revoked: bool
     expires_at: datetime
@@ -153,11 +154,6 @@ def looks_like_key(presented: str) -> bool:
 def hash_key(pepper: str, full_key: str) -> bytes:
     """HMAC-SHA256(pepper, full_key). The pepper never leaves configuration."""
     return hmac.new(pepper.encode("utf-8"), full_key.encode("utf-8"), hashlib.sha256).digest()
-
-
-def hashes_match(stored: bytes, computed: bytes) -> bool:
-    """Constant-time comparison; never short-circuits on length mismatch."""
-    return hmac.compare_digest(bytes(stored), bytes(computed))
 
 
 def validate_scopes(scopes: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -294,26 +290,68 @@ def revoke_api_key(
     return bool(revoked)
 
 
-def resolve_api_key(engine: Engine, prefix: str) -> ResolvedKey | None:
-    """Look a key up by exact prefix, through the SECURITY DEFINER function.
+def set_key_expiry(
+    conn: Connection,
+    *,
+    tenant_id: uuid.UUID,
+    key_id: uuid.UUID,
+    expires_at: datetime,
+    actor_key_id: uuid.UUID | None = None,
+) -> bool:
+    """Shorten (or extend) a key's life — as an audited operation.
 
-    No tenant context is set — that is the point. The function is the only
-    cross-tenant read in the system, and it is read-only.
+    ``adapt_app`` holds no UPDATE on ``api_keys``, so there is no raw path from
+    a request connection; this function plus the audit row is the only way the
+    runtime can change an expiry, which is why it is not a quietly-audited
+    UPDATE.
+    """
+    try:
+        changed = conn.execute(
+            text("SELECT adapt_set_key_expiry(:tenant_id, :key_id, :expires_at)"),
+            {"tenant_id": tenant_id, "key_id": key_id, "expires_at": expires_at},
+        ).scalar_one()
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) == _SQLSTATE_INVALID_PARAMETER:
+            raise AdaptError(
+                code="payload_invalid",
+                message="expires_at must be in the future",
+                status_code=422,
+                retryable=False,
+            ) from exc
+        raise
+    if changed:
+        _write_audit(
+            conn,
+            tenant_id=tenant_id,
+            actor=_actor(actor_key_id),
+            action="api_key_expiry_set",
+            subject=str(key_id),
+            meta={"expires_at": expires_at.isoformat()},
+        )
+    return bool(changed)
+
+
+def resolve_api_key(engine: Engine, prefix: str, presented_hash: bytes) -> ResolvedKey | None:
+    """Look a key up by exact ``(prefix, digest)`` through the definer function.
+
+    The digest is computed here and compared *inside the database*; the
+    function returns a row only on an exact match, and returns no hash. No
+    tenant context is set — that is the point: the key is what says which
+    tenant is calling.
     """
     with engine.connect() as conn:
         row = conn.execute(
             text(
-                "SELECT key_id, tenant_id, key_hash, scopes, revoked_at, expires_at "
-                "FROM adapt_resolve_api_key(:prefix)"
+                "SELECT key_id, tenant_id, scopes, revoked_at, expires_at "
+                "FROM adapt_resolve_api_key(:prefix, :hash)"
             ),
-            {"prefix": prefix},
+            {"prefix": prefix, "hash": presented_hash},
         ).one_or_none()
     if row is None:
         return None
     return ResolvedKey(
         key_id=row.key_id,
         tenant_id=row.tenant_id,
-        stored_hash=bytes(row.key_hash),
         scopes=tuple(row.scopes),
         revoked=row.revoked_at is not None,
         expires_at=row.expires_at,

@@ -28,6 +28,8 @@ from adapt_engine.auth.touch import DEFAULT_FLUSH_INTERVAL_SECONDS as DEFAULT_FL
 from adapt_engine.auth.touch import LastUsedRecorder
 from adapt_engine.clock import Clock, SystemClock
 from adapt_engine.config import Settings
+from adapt_engine.crypto.keyring import Keyring, UnknownKeyId
+from adapt_engine.crypto.store import DataKeyStore
 from adapt_engine.db import check_database, create_db_engine
 from adapt_engine.errors import (
     AdaptError,
@@ -78,7 +80,19 @@ def create_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
-        """Start the `last_used_at` flush loop; drain it on shutdown."""
+        """Check the keyring, start the flush loop, drain it on shutdown.
+
+        The keyring check is a startup gate, not a background nicety: if a
+        stored data key is wrapped under a master key this process does not
+        have, every row belonging to that tenant is unreadable, and serving
+        requests converts that into silent 500s per learner. Refusing to start
+        is the only answer that gets an operator's attention.
+        """
+        store: DataKeyStore = app.state.crypto
+        try:
+            store.verify_covers_usage(active_engine)
+        except UnknownKeyId as exc:
+            raise RuntimeError(f"refusing to start: {exc}") from exc
         recorder: LastUsedRecorder = app.state.last_used
         if start_background:
             recorder.start()
@@ -89,6 +103,7 @@ def create_app(
 
     app = FastAPI(title="Adapt Engine", version=settings.version, lifespan=lifespan)
     app.state.settings = settings
+    app.state.crypto = DataKeyStore(keyring=Keyring.from_settings(settings))
     app.state.clock = active_clock
     app.state.engine = active_engine
     app.state.auth_limiter = (

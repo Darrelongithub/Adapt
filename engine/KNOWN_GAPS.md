@@ -105,23 +105,28 @@ expired when a request fails.
 ## 8. The credits ledger records consumption; nothing lists it back
 
 `GET /v1/credits/balance` answers "how much is there", not "where did it go".
-There is no ledger endpoint, no statement, no `period_start` writer (the column
-exists and is always NULL), and the `expire` reason in the ledger CHECK is
-never emitted — expiry is enforced by query filters, so expired credits are
-invisible rather than debited. A tenant cannot reconcile its invoice against
-our rows.
+There is no ledger endpoint, no statement, and no `period_start` writer (the
+column exists and is always NULL). The `expire` entry type exists in the
+ledger CHECK and is never emitted: expiry is derived on read, which is what
+makes `forfeited` a query rather than a sweep, and it also means an expired
+allowance leaves no row to point at. A tenant can see that it forfeited 40
+credits and cannot see which grant they came from without the grant list.
 
-Also unbuilt: granting credits over the API (grants are provisioning-side,
-created by `tests/pg.py` and later by billing), and any link between a
-reservation and an actual `decide` operation — `operation_ref` is a caller's
-string, not a foreign key.
+`credit_consumption` (the view, grouped by tenant and month) is the sanctioned
+aggregation and nothing reads it yet — no billing job, no report, no route.
+
+Also unbuilt: any link between a reservation and an actual `decide` operation —
+`operation_ref` is a caller's string, not a foreign key.
 
 ## 9. System audit rows are readable only by the owner
 
 Failed-authentication rows have `tenant_id IS NULL` and are visible to
 `adapt_owner` only (DECISIONS.md §7). There is no console screen, no endpoint
-and no alerting on them: spotting a credential-stuffing run currently means
-`psql` as the owner. The aggregation bound (11 rows per source per minute) also
+and no alerting on them. The one improvement is `scripts/audit_query.py`: an
+owner-only, read-only CLI (`--auth-failures`, `--key-events`, `--system-count`)
+that answers the three questions a security review asks without a `psql`
+session. It is not a console screen, it has no scheduling, and nobody is
+paged by it. The aggregation bound (11 rows per source per minute) also
 means the count in the aggregate row is a *lower bound* for that minute — it
 records the count at the moment of the eleventh failure, not the total.
 
@@ -130,3 +135,42 @@ records the count at the moment of the eleventh failure, not the total.
 The flush interval (15 s) and the debounce (60 s) mean `last_used_at` can lag
 reality by a minute (DECISIONS.md §5). No route or console surface exposes it
 yet, so the only reader is a test.
+
+## 11. `/v1/admin/keys/{id}/expiry` exists; nothing calls it yet
+
+Expiry shortening is an audited operation (DECISIONS.md §10), and the audited
+path is a route. No console calls it yet, so in practice an operator with the
+owner credential can still reach the table — but not through the app role,
+which holds no `UPDATE` on `api_keys`. The gap is the caller, not the door.
+
+## 12. Rotation has no command; it has a function
+
+`DataKeyStore.rewrap` and `rewrap_all` exist and are tested, and
+`ADAPT_MASTER_KEY_PREVIOUS` makes the keyring accept both keys during the
+changeover. What does not exist is an operator entry point: no script, no CLI,
+no scheduled job. Rotation today means writing the loop by hand. The startup
+refusal is the safety net for that, not a substitute for it.
+
+## 13. The crypto path logs nothing, which is a property of not writing code
+
+`test_no_plaintext_or_key_material_reaches_a_log_line` proves the encrypt,
+decrypt and wrap paths emit nothing sensitive, and it guards a future
+`logger.debug(envelope)`. It cannot prove a *new* module that starts logging
+ciphertext is caught, because there is no redaction layer — the design is "do
+not log it", enforced by review and by this test.
+
+## 14. A tenant data key is per tenant, and there is no version history
+
+One data key per tenant, re-wrapped on rotation. If a tenant's data key ever
+had to be replaced (suspected compromise of that key alone), old rows would
+become unreadable: `tenant_data_keys` keeps the current wrapper, not a list of
+versions. Master-key rotation is supported; data-key rotation is not.
+
+## 15. `data_key_ids` is a global table, and it is the second documented RLS exception
+
+Every table except `api_keys` is RLS-enabled and FORCEd. `data_key_ids` has no
+tenant column and no RLS: it holds master key ids, which are printed in the
+header of every ciphertext they wrote, and it exists so startup can ask a
+cross-tenant question without a cross-tenant read. `api_keys` was the first
+documented exception (DECISIONS.md §2); this is the second, and it is narrower
+— the table has no row that belongs to anyone.

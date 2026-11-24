@@ -24,6 +24,7 @@ from adapt_engine.auth.deps import (
     security_requirement,
     tenant_connection,
 )
+from adapt_engine.crypto.store import DataKeyStore, crypto_store
 from adapt_engine.db.schema import PROFILES, validate_learner_id
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 
@@ -45,12 +46,22 @@ class Learner(BaseModel):
     date_of_birth: date | None = None
 
 
-def _row_to_learner(row: object) -> Learner:
+def _row_to_learner(
+    row: object, store: DataKeyStore, conn: Connection, tenant_id: uuid.UUID
+) -> Learner:
+    """Decrypt the personal columns; the rest of the row is already readable.
+
+    ``profile`` and ``date_of_birth`` are ciphertext at rest, so this is the
+    only place they become plaintext again — and the only place that could log
+    them, which it does not.
+    """
+    profile = store.decrypt(conn, tenant_id, row.profile)  # type: ignore[attr-defined]
+    dob = store.decrypt(conn, tenant_id, row.date_of_birth)  # type: ignore[attr-defined]
     return Learner(
         id=row.id,  # type: ignore[attr-defined]
         learner_id=row.learner_id,  # type: ignore[attr-defined]
-        profile=row.profile,  # type: ignore[attr-defined]
-        date_of_birth=row.date_of_birth,  # type: ignore[attr-defined]
+        profile=profile or "",
+        date_of_birth=date.fromisoformat(dob) if dob else None,
     )
 
 
@@ -64,6 +75,7 @@ def get_learner(
     learner_id: str,
     auth: Annotated[AuthContext, Depends(require_scope("observe"))],
     conn: Annotated[Connection, Depends(tenant_connection)],
+    store: Annotated[DataKeyStore, Depends(crypto_store)],
 ) -> Learner:
     """Read one learner, scoped to the caller's tenant by RLS.
 
@@ -85,7 +97,7 @@ def get_learner(
             status_code=404,
             retryable=False,
         )
-    return _row_to_learner(row)
+    return _row_to_learner(row, store, conn, auth.tenant_id)
 
 
 @router.get(
@@ -97,6 +109,7 @@ def get_learner(
 def list_learners(
     auth: Annotated[AuthContext, Depends(require_scope("observe"))],
     conn: Annotated[Connection, Depends(tenant_connection)],
+    store: Annotated[DataKeyStore, Depends(crypto_store)],
 ) -> list[Learner]:
     rows = conn.execute(
         text(
@@ -104,7 +117,7 @@ def list_learners(
             "WHERE deleted_at IS NULL ORDER BY created_at LIMIT 200"
         )
     ).all()
-    return [_row_to_learner(row) for row in rows]
+    return [_row_to_learner(row, store, conn, auth.tenant_id) for row in rows]
 
 
 @router.post(
@@ -118,6 +131,7 @@ def create_learner(
     body: LearnerCreate,
     auth: Annotated[AuthContext, Depends(require_scope("admin"))],
     conn: Annotated[Connection, Depends(tenant_connection)],
+    store: Annotated[DataKeyStore, Depends(crypto_store)],
 ) -> Learner:
     """Register a learner for the caller's tenant.
 
@@ -151,8 +165,12 @@ def create_learner(
             {
                 "tenant_id": auth.tenant_id,
                 "learner_id": learner_id,
-                "profile": body.profile,
-                "date_of_birth": body.date_of_birth,
+                "profile": store.encrypt(conn, auth.tenant_id, body.profile),
+                "date_of_birth": store.encrypt(
+                    conn,
+                    auth.tenant_id,
+                    body.date_of_birth.isoformat() if body.date_of_birth else None,
+                ),
             },
         ).one()
     except IntegrityError as exc:
@@ -162,7 +180,7 @@ def create_learner(
             status_code=409,
             retryable=False,
         ) from exc
-    return _row_to_learner(row)
+    return _row_to_learner(row, store, conn, auth.tenant_id)
 
 
 __all__ = ["router"]

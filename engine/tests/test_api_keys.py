@@ -27,7 +27,7 @@ from adapt_engine.config import Settings
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.main import create_app
 from tests.conftest import TEST_PEPPER, make_settings
-from tests.pg import bootstrap_key, provision_tenant
+from tests.pg import bootstrap_key, provision_tenant, synthetic_suffix
 
 PEPPER = TEST_PEPPER
 
@@ -88,6 +88,12 @@ def admin_key(database, tenant: uuid.UUID):
     return bootstrap_key(database, tenant)
 
 
+@pytest.fixture
+def tenant_and_audit(app_engine: Engine, tenant: uuid.UUID) -> tuple[uuid.UUID, Engine]:
+    """The tenant, and an engine for reading its audit rows under RLS."""
+    return tenant, app_engine
+
+
 def test_issued_key_works_then_revoked_key_fails(app_engine: Engine, tenant: uuid.UUID) -> None:
     """The §3 acceptance sequence: issue → authorised call → revoke → 401."""
     issued = _key(tenant)
@@ -122,9 +128,7 @@ def test_stored_value_is_not_the_key(owner_engine: Engine, tenant: uuid.UUID) ->
     assert len(bytes(row.hash)) == 32
     # The hash is not reversible: the secret part is not recoverable from it.
     assert issued.full_key[12:].encode() not in bytes(row.hash)
-    assert key_service.hashes_match(
-        bytes(row.hash), key_service.hash_key(PEPPER, issued.full_key)
-    )
+    assert bytes(row.hash) == key_service.hash_key(PEPPER, issued.full_key)
 
 
 def test_key_format(app_engine: Engine, tenant: uuid.UUID) -> None:
@@ -183,7 +187,7 @@ def test_scopes_are_enforced_as_not_entitled(app_engine: Engine, tenant: uuid.UU
     resp = client.post(
         "/v1/learners",
         headers=_auth(observe_only.full_key),
-        json={"learner_id": f"learner-{uuid.uuid4().hex[:8]}"},
+        json={"learner_id": f"learner-{synthetic_suffix()}"},
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "not_entitled"
@@ -520,3 +524,61 @@ def test_the_flush_loop_runs_under_the_app_lifespan(
             if seen is not None:
                 break
     assert seen is not None, "the flush loop never wrote last_used_at"
+
+
+def test_shortening_a_key_expiry_is_audited(
+    app_engine: Engine, tenant_and_audit, admin_key
+) -> None:
+    """The only runtime path to `expires_at` writes a row naming the key."""
+    from datetime import datetime, timedelta
+
+    tenant_id, audit_conn = tenant_and_audit
+    client = _client(app_engine)
+    created = client.post(
+        "/v1/admin/keys",
+        headers=_auth(admin_key.full_key),
+        json={"scopes": ["observe"], "env": "test"},
+    ).json()
+
+    new_expiry = datetime.now(UTC) + timedelta(days=3)
+    resp = client.post(
+        f"/v1/admin/keys/{created['key_id']}/expiry",
+        headers=_auth(admin_key.full_key),
+        json={"expires_at": new_expiry.isoformat()},
+    )
+    assert resp.status_code == 200, resp.text
+
+    from sqlalchemy import text as _text
+
+    from adapt_engine.db.tenant import tenant_transaction as _tx
+
+    with _tx(audit_conn, tenant_id) as conn:
+        rows = conn.execute(
+            _text(
+                "SELECT actor, action, target FROM audit_log "
+                "WHERE action = 'api_key_expiry_set'"
+            )
+        ).all()
+    assert len(rows) == 1
+    assert rows[0].target == created["key_id"]
+    assert rows[0].actor == f"key:{admin_key.key_id}"
+
+
+def test_an_expiry_in_the_past_is_refused(
+    app_engine: Engine, tenant: uuid.UUID, admin_key
+) -> None:
+    from datetime import datetime, timedelta
+
+    client = _client(app_engine)
+    created = client.post(
+        "/v1/admin/keys",
+        headers=_auth(admin_key.full_key),
+        json={"scopes": ["observe"], "env": "test"},
+    ).json()
+    resp = client.post(
+        f"/v1/admin/keys/{created['key_id']}/expiry",
+        headers=_auth(admin_key.full_key),
+        json={"expires_at": (datetime.now(UTC) - timedelta(days=1)).isoformat()},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "payload_invalid"

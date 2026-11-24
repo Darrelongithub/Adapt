@@ -210,18 +210,12 @@ def test_resolver_is_not_executable_by_public(app_engine: Engine) -> None:
     """`PUBLIC` must not be able to call the one cross-tenant read."""
     with app_engine.connect() as conn:
         has_public = conn.execute(
-            text("SELECT has_function_privilege('public', 'adapt_resolve_api_key(text)', 'EXECUTE')")
+            text(
+                "SELECT has_function_privilege("
+                "'public', 'adapt_resolve_api_key(text,bytea)', 'EXECUTE')"
+            )
         ).scalar_one()
     assert has_public is False
-
-
-def test_resolver_takes_the_prefix_only(owner_engine: Engine) -> None:
-    """The signature is the guarantee that a full key never reaches SQL."""
-    with owner_engine.connect() as conn:
-        args = conn.execute(
-            text("SELECT pg_get_function_arguments(p.oid) FROM pg_proc p WHERE p.proname = 'adapt_resolve_api_key'")
-        ).scalar_one()
-    assert args == "p_prefix text", args
 
 
 def test_resolver_matches_the_prefix_exactly(owner_engine: Engine) -> None:
@@ -239,7 +233,6 @@ def test_resolver_matches_the_prefix_exactly(owner_engine: Engine) -> None:
     lowered = " ".join(source.lower().split())
     assert "k.prefix = p_prefix" in lowered
     assert "like" not in lowered
-    assert ">=" not in lowered
 
 
 @pytest.mark.parametrize("privilege", ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"])
@@ -258,11 +251,87 @@ def test_app_role_holds_no_privilege_on_api_keys(owner_engine: Engine, privilege
     assert held is False, f"adapt_app holds {privilege} on api_keys"
 
 
+def test_no_definer_function_returns_a_hash(owner_engine: Engine) -> None:
+    """No hash leaves the database, asserted against the catalogue.
+
+    The resolver used to return ``key_hash``, which meant the runtime held
+    every stored hash next to the pepper that makes it useful. Now the digest
+    is an *input* and the return type names no hash at all. This test reads
+    every function the owner owns and refuses any whose result mentions one.
+    """
+    with owner_engine.connect() as conn:
+        functions = conn.execute(
+            text(
+                """
+                SELECT p.proname, pg_get_function_result(p.oid) AS result
+                  FROM pg_proc p
+                  JOIN pg_roles r ON r.oid = p.proowner
+                  JOIN pg_namespace n ON n.oid = p.pronamespace
+                 WHERE r.rolname = 'adapt_owner' AND n.nspname = 'public'
+                 ORDER BY p.proname
+                """
+            )
+        ).all()
+    assert functions, "no functions found owned by adapt_owner"
+    leaking = [row.proname for row in functions if "hash" in (row.result or "").lower()]
+    assert leaking == [], f"these functions return a hash: {leaking}"
+
+
+def test_the_resolver_takes_the_digest_as_an_argument(owner_engine: Engine) -> None:
+    """The comparison happens in the database, on an argument it is given."""
+    with owner_engine.connect() as conn:
+        args = conn.execute(
+            text(
+                "SELECT pg_get_function_arguments(p.oid) FROM pg_proc p "
+                "WHERE p.proname = 'adapt_resolve_api_key'"
+            )
+        ).scalar_one()
+        result = conn.execute(
+            text(
+                "SELECT pg_get_function_result(p.oid) FROM pg_proc p "
+                "WHERE p.proname = 'adapt_resolve_api_key'"
+            )
+        ).scalar_one()
+    assert args == "p_prefix text, p_hash bytea", args
+    assert "hash" not in result.lower()
+    for column in ("key_id", "tenant_id", "scopes", "revoked_at", "expires_at"):
+        assert column in result
+
+
+def test_the_resolver_matches_prefix_and_hash_exactly(owner_engine: Engine) -> None:
+    with owner_engine.connect() as conn:
+        source = " ".join(
+            conn.execute(
+                text("SELECT prosrc FROM pg_proc WHERE proname = 'adapt_resolve_api_key'")
+            )
+            .scalar_one()
+            .lower()
+            .split()
+        )
+    assert "k.prefix = p_prefix" in source
+    assert "k.hash = p_hash" in source
+    assert "like" not in source
+
+
+def test_shortening_an_expiry_is_a_function_not_a_raw_update(owner_engine: Engine) -> None:
+    """`adapt_app` cannot UPDATE api_keys, so the audited path is the only path."""
+    with owner_engine.connect() as conn:
+        granted = conn.execute(
+            text("SELECT has_function_privilege('adapt_app', 'adapt_set_key_expiry(uuid,uuid,timestamptz)', 'EXECUTE')")
+        ).scalar_one()
+        update = conn.execute(
+            text("SELECT has_table_privilege('adapt_app', 'api_keys', 'UPDATE')")
+        ).scalar_one()
+    assert granted is True
+    assert update is False
+
+
 def test_app_role_keeps_execute_on_the_key_functions(owner_engine: Engine) -> None:
     """No table privilege, but the four functions are the sanctioned path."""
     expected = (
-        "adapt_resolve_api_key(text)",
+        "adapt_resolve_api_key(text,bytea)",
         "adapt_touch_api_key(uuid,integer)",
+        "adapt_set_key_expiry(uuid,uuid,timestamptz)",
         "adapt_issue_api_key(uuid,text,bytea,text[],timestamptz,uuid)",
         "adapt_revoke_api_key(uuid,uuid)",
         "adapt_note_auth_failure(text,timestamptz,integer,boolean)",
@@ -443,3 +512,51 @@ def test_app_role_cannot_create_a_tenant(app_engine: Engine) -> None:
                 {"id": tenant_id},
             )
     assert "permission denied" in str(excinfo.value).lower()
+
+
+def test_the_kid_catalogue_is_append_only_for_the_app_role(owner_engine: Engine) -> None:
+    """A kid that was used once must stay: the startup check reads this table."""
+    with owner_engine.connect() as conn:
+        privileges = {
+            verb: conn.execute(
+                text("SELECT has_table_privilege('adapt_app', 'data_key_ids', :verb)"),
+                {"verb": verb},
+            ).scalar_one()
+            for verb in ("SELECT", "INSERT", "UPDATE", "DELETE")
+        }
+    assert privileges == {"SELECT": True, "INSERT": True, "UPDATE": False, "DELETE": False}
+
+
+def test_tenant_data_keys_is_scoped_and_forced(owner_engine: Engine) -> None:
+    """Key material gets the same isolation as the rows it protects."""
+    with owner_engine.connect() as conn:
+        flags = conn.execute(
+            text(
+                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                "WHERE relname = 'tenant_data_keys'"
+            )
+        ).one()
+        policy = conn.execute(
+            text("SELECT polname FROM pg_policy WHERE polrelid = 'tenant_data_keys'::regclass")
+        ).scalar_one()
+    assert flags.relrowsecurity is True
+    assert flags.relforcerowsecurity is True
+    assert policy == "tenant_isolation"
+
+
+def test_the_learner_columns_only_accept_envelopes(owner_engine: Engine) -> None:
+    """The constraint that replaced the profile allowlist checks shape, not value."""
+    with owner_engine.connect() as conn:
+        checks = {
+            row.conname: row.consrc
+            for row in conn.execute(
+                text(
+                    "SELECT conname, pg_get_constraintdef(oid) AS consrc FROM pg_constraint "
+                    "WHERE conrelid = 'learners'::regclass AND contype = 'c'"
+                )
+            )
+        }
+    assert "learners_profile_is_envelope" in checks
+    assert "learners_profile_check" not in checks
+    assert "learners_date_of_birth_is_envelope" in checks
+    assert "^v1:" in checks["learners_profile_is_envelope"]

@@ -6,11 +6,18 @@ what is *free*: a reservation takes credits out of ``remaining`` into a hold, a
 settlement turns held credits into consumption, and a release puts them back.
 So
 
-    granted = available + held + consumed, for every tenant, always
+    granted = available + held + consumed + forfeited, for every tenant, always
 
-where ``available = sum(remaining)`` over non-expired grants, ``held`` is the
-sum of open reservations, and ``consumed = -sum(credit_ledger.delta)``. That
-invariant is asserted after every test that moves money.
+where ``available = sum(remaining)`` over **non-expired** grants, ``held`` is
+the sum of open reservations, ``consumed`` is the settle-only figure the
+``credit_consumption`` view exposes, and ``forfeited`` is ``sum(remaining)``
+over grants whose ``expires_at`` has passed.
+
+The fourth term is not bookkeeping taste. Without it the identity breaks the
+moment any allowance expires: the credits are missing from the books, which is
+both a reconciliation failure and a number the customer is entitled to see. It
+is derivable, so nothing sweeps it. The invariant is asserted after an expiry,
+not only on the happy path.
 
 The ledger records **consumption**, not motion: reserve and release write a
 ``delta = 0`` row because no credit was consumed, settle writes ``-amount``.
@@ -64,12 +71,17 @@ class Balance:
     available: int
     held: int
     consumed: int
+    forfeited: int
     granted: int
     grants: tuple[Grant, ...]
 
     @property
     def invariant_holds(self) -> bool:
-        return self.granted == self.available + self.held + self.consumed
+        """Four terms, not three: expired credits are forfeited, not missing."""
+        return (
+            self.granted
+            == self.available + self.held + self.consumed + self.forfeited
+        )
 
 
 @dataclass(frozen=True)
@@ -105,8 +117,20 @@ def balance(conn: Connection, tenant_id: uuid.UUID) -> Balance:
         ),
         {"tenant_id": tenant_id},
     ).scalar_one()
+    # Consumption comes from the view, which filters entry_type = 'settle'.
+    # `sum(delta)` over the ledger is not a consumption figure (METERING.md §4).
     consumed = conn.execute(
-        text("SELECT coalesce(-sum(delta), 0) FROM credit_ledger WHERE tenant_id = :tenant_id"),
+        text(
+            "SELECT coalesce(sum(consumed), 0) FROM credit_consumption "
+            "WHERE tenant_id = :tenant_id"
+        ),
+        {"tenant_id": tenant_id},
+    ).scalar_one()
+    forfeited = conn.execute(
+        text(
+            "SELECT coalesce(sum(remaining), 0) FROM credit_grants "
+            "WHERE tenant_id = :tenant_id AND expires_at IS NOT NULL AND expires_at <= now()"
+        ),
         {"tenant_id": tenant_id},
     ).scalar_one()
     granted = conn.execute(
@@ -117,6 +141,7 @@ def balance(conn: Connection, tenant_id: uuid.UUID) -> Balance:
         available=sum(grant.remaining for grant in live),
         held=int(held),
         consumed=int(consumed),
+        forfeited=int(forfeited),
         granted=int(granted),
         grants=live,
     )
@@ -140,6 +165,12 @@ def grant_credits(
     """
     if amount <= 0:
         raise ValueError("amount must be positive")
+
+    if idempotency_key is not None:
+        replay = _replay(conn, tenant_id=tenant_id, idempotency_key=idempotency_key, expect="grant")
+        if replay is not None:
+            return uuid.UUID(str(replay.ref))
+
     grant_id = uuid.uuid4()
     conn.execute(
         text(
@@ -162,7 +193,7 @@ def grant_credits(
             tenant_id=tenant_id,
             grant_id=grant_id,
             delta=0,
-            reason="grant",
+            entry_type="grant",
             ref=str(grant_id),
             idempotency_key=idempotency_key,
             period_start=period_start,
@@ -192,7 +223,7 @@ def reserve(
         tenant_id=tenant_id,
         grant_id=None,
         delta=0,
-        reason="reserve",
+        entry_type="reserve",
         ref=str(reservation_id),
         idempotency_key=idempotency_key,
         period_start=None,
@@ -276,7 +307,7 @@ def settle(
         tenant_id=tenant_id,
         grant_id=None,
         delta=-amount,
-        reason="settle",
+        entry_type="settle",
         ref=str(reservation_id),
         idempotency_key=idempotency_key,
         period_start=None,
@@ -355,7 +386,7 @@ def release(
         tenant_id=tenant_id,
         grant_id=None,
         delta=0,
-        reason="release",
+        entry_type="release",
         ref=str(reservation_id),
         idempotency_key=idempotency_key,
         period_start=None,
@@ -464,18 +495,18 @@ def _replay(
     """The original ledger row for this key, if this is a replay."""
     row = conn.execute(
         text(
-            "SELECT id, reason, ref, delta FROM credit_ledger "
+            "SELECT id, entry_type, ref, delta FROM credit_ledger "
             "WHERE tenant_id = :tenant_id AND idempotency_key = :key"
         ),
         {"tenant_id": tenant_id, "key": idempotency_key},
     ).one_or_none()
     if row is None:
         return None
-    if row.reason != expect:
+    if row.entry_type != expect:
         raise AdaptError(
             code="conflict",
             message=(
-                f"that Idempotency-Key was already used for a {row.reason}; "
+                f"that Idempotency-Key was already used for a {row.entry_type}; "
                 "a key is bound to one operation"
             ),
             status_code=409,
@@ -539,7 +570,7 @@ def _write_ledger(
     tenant_id: uuid.UUID,
     grant_id: uuid.UUID | None,
     delta: int,
-    reason: str,
+    entry_type: str,
     ref: str | None,
     idempotency_key: str,
     period_start: date | None,
@@ -547,14 +578,14 @@ def _write_ledger(
     conn.execute(
         text(
             "INSERT INTO credit_ledger "
-            "(tenant_id, grant_id, delta, reason, ref, idempotency_key, period_start) "
-            "VALUES (:tenant_id, :grant_id, :delta, :reason, :ref, :key, :period_start)"
+            "(tenant_id, grant_id, delta, entry_type, ref, idempotency_key, period_start) "
+            "VALUES (:tenant_id, :grant_id, :delta, :entry_type, :ref, :key, :period_start)"
         ),
         {
             "tenant_id": tenant_id,
             "grant_id": grant_id,
             "delta": delta,
-            "reason": reason,
+            "entry_type": entry_type,
             "ref": ref,
             "key": idempotency_key,
             "period_start": period_start,

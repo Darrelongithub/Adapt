@@ -22,7 +22,12 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import QueuePool
 
 from adapt_engine.db.tenant import TENANT_SETTING, tenant_transaction
-from tests.pg import SeededTenants, create_learner, synthetic_suffix
+from tests.pg import (
+    PLACEHOLDER_ENVELOPE,
+    SeededTenants,
+    create_learner,
+    synthetic_suffix,
+)
 
 
 def _learner_ids(conn) -> list[str]:
@@ -78,11 +83,12 @@ def test_insert_with_foreign_tenant_is_rejected(role_engine: Engine, seeded: See
             conn.execute(
                 text(
                     "INSERT INTO learners (id, tenant_id, learner_id, profile) "
-                    "VALUES (:id, :tenant_id, :learner_id, 'adult_general')"
+                    "VALUES (:id, :tenant_id, :learner_id, :profile)"
                 ),
                 {
                     "id": uuid.uuid4(),
                     "tenant_id": seeded.b_id,
+                    "profile": PLACEHOLDER_ENVELOPE,
                     "learner_id": f"smuggled-{synthetic_suffix()}",
                 },
             )
