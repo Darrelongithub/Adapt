@@ -218,6 +218,7 @@ Three rules that follow from the table and are not negotiable:
 | 409 | `conflict` | no | duplicate resource, e.g. too many open probe sessions |
 | 413 | `payload_too_large` | no | batch ≤500 events / ≤1 MB |
 | 422 | `payload_invalid` | no | allowlisted keys only; no PII |
+| 422 | `minor_not_supported` | no | the date of birth implies under 18 — adults only, and this is not a validation typo |
 | 429 | `rate_limited` | yes, honour `Retry-After` | free — no credits |
 | 402 | `quota_exhausted` | no | credits/events exhausted; `resets_at` given; free |
 | 410 | `gone` | no | the version was retired; read the `Link` header |

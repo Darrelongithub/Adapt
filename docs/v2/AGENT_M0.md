@@ -274,6 +274,15 @@ not be able to register a key that the startup check then trusts.
 
 ## 6. Increment 6 — migrations, CI, docs
 
+**The contract guard may not patch the contract.** `check_openapi.py` compares the implementation
+against `INTEGRATION.md` **as written**. It must not apply `docs-patches/*.diff`, or any other
+mechanism by which the implementation can legalise a code the document does not contain: that turns
+"the doc is authoritative" into "the code is authoritative and the doc follows". A new error code
+means a doc change reviewed by the document's owner, in the same change set — never a self-served
+patch. `docs-patches/` stays as a review artifact (what the code needs, expressed as a diff) and is
+applied by a human, not by the guard.
+
+
 * Alembic, single head, up **and** down tested (`upgrade head` → `downgrade base` → `upgrade head`).
 * CI: ruff, mypy strict on `src/`, pytest, OpenAPI contract lint (`engine/scripts/check_openapi.py`:
   every route declares auth, every response references the error schema), migration round-trip,
