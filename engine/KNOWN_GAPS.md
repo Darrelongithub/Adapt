@@ -17,7 +17,7 @@ has never been reachable.
 | Gap | Since | Risk if ignored | Tracked in |
 |---|---|---|---|
 | `docker compose up postgres` has **never been run** — the compose file and `Dockerfile` are written, not exercised | increment 1 | the documented path to a running database may not work | §1 |
-| No **3.12 image**: CI runs a 3.12 *interpreter*, and the `Dockerfile` is unbuilt | increment 1 | the container is unverified; the local interpreter is 3.11 | §2 |
+| No **3.12 image**: CI runs a 3.12 interpreter (green, two jobs), the `Dockerfile` is unbuilt | increment 1 | the container is unverified; the local interpreter is 3.11 | §2 |
 | **No Redis** has ever answered: the limiter falls back to in-process state | increment 1 | rate limits do not hold across replicas | §3 |
 | No **rotation command or job**: `scripts/rotate_master_key.py` exists, nothing schedules or verifies a rotation | increment 5 | a compromised master key has no dated, rehearsed response | §12 |
 | **Data-key rotation unsupported**: one data key per tenant, no version history | increment 5 | a single tenant's key cannot be rotated without orphaning rows | §14 |
@@ -72,10 +72,21 @@ host outside the sandbox allowlist), and there are no C headers in the image
 so a 3.11 install is refused — that refusal is the only 3.12-specific
 behaviour observed so far.
 
-**Partial cover now:** `.github/workflows/engine-ci.yml` runs the whole gate on
-a 3.12 interpreter and asserts `sys.version_info[:2] == (3, 12)` before it
-starts. That covers the *interpreter*, which is the part that would break, and
-it has not run yet; the image is still unbuilt.
+**Cover now, measured:** `.github/workflows/engine-ci.yml` runs the whole gate
+on Python 3.12 and asserts `sys.version_info[:2] == (3, 12)` before it starts.
+Both jobs are green at commit `49b2905` — 1m19s with a `postgres:16.4` service,
+1m27s with PostgreSQL 16 from PGDG and a `docker` stub that fails if anything
+touches it. So the interpreter this code claims to need has executed the suite,
+the migrations up→down→up, and the contract guard. What is still unverified is
+the **image**: `engine/Dockerfile` has never been built, and neither has
+`docker compose`.
+
+This section is also where the first CI failure was diagnosed, and it is worth
+keeping: the gate had never run anywhere but this sandbox, and the two things
+that broke were the ones only a runner can show — the docs branch had moved
+(the patch stopped applying) and a runner has no `.venv`. Both are fixed; a
+failure now names its step in a check annotation, because CI log blobs were not
+readable from where the fix was being written.
 
 ## 3. Redis has never been reachable
 
