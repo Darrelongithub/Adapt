@@ -236,6 +236,35 @@ empty balance and integrations that give up on a transient 429. The SDK raises t
 
 ---
 
+## 6A. Endpoint inventory — what exists, and who may call it
+
+This is the surface as built, not as imagined. Three classes, and the class decides who is allowed to
+hold the key at all:
+
+| Route | Class | Scope | Notes |
+|---|---|---|---|
+| `GET /v1/health` | operational | none | 503 names the failed dependency; never carries data |
+| `GET /v1/version` | operational | none | build identity; no secrets |
+| `GET /v1/whoami` | host-facing | any of `observe`, `decide`, `read_model`, `admin` | identity is not a capability, so any valid scope answers it |
+| `GET /v1/learners` | host-facing | `observe` | tenant-scoped list |
+| `GET /v1/learners/{learner_id}` | host-facing | `observe` | unknown id → `404 learner_unknown` |
+| `POST /v1/learners` | host-facing | `admin` | the only write on the learner surface; under-18 → `422 minor_not_supported` |
+| `GET /v1/credits/balance` | host-facing | `observe` | `granted = available + held + consumed + forfeited` |
+| `POST /v1/admin/credits/grants` | **control-plane** | `admin` | provisioning; `Idempotency-Key` required |
+| `POST /v1/admin/keys` | **control-plane** | `admin` | issue; subset-of-own-scopes rule applies |
+| `POST /v1/admin/keys/{id}/revoke` | **control-plane** | `admin` | immediate |
+| `POST /v1/admin/keys/{id}/expiry` | **control-plane** | `admin` | audited; the only path that may shorten a key's life |
+
+Two rules that follow from the table:
+
+* **`/v1/admin/*` is never called with a host's runtime key.** It is the tenant's console surface —
+  provisioned separately, held by a person or a control-plane job, and excluded from the host-facing
+  conformance list. A host that finds these routes and uses them has misunderstood the contract, and
+  the scope will let them, so say this out loud in onboarding.
+* **Credits move by reservation, and reservations have no route.** The engine reserves internally as
+  part of a `decide`; there is no endpoint to hold, settle or release credits by hand, and a request
+  for one returns `404 route_unknown` — not `405`, not `501`. Money moves only through the loop.
+
 ## 7. Idempotency, and the two keys
 
 Every mutating call takes `Idempotency-Key`. **Derive it from the logical operation, never from the
@@ -317,7 +346,9 @@ Adapt is the processor; the host is the controller. The integration must therefo
 
 ## 11. Conformance — how a host proves it, and how we prove ourselves
 
-`npx adapt-conformance --key … --env staging` runs fifteen checks and produces a pass/fail report:
+`npx adapt-conformance --key … --env staging` runs fifteen checks and produces a pass/fail report.
+Checks 1 and 9 apply to the **host-facing** rows of §6A only; `/v1/admin/*` is control-plane and is
+never exercised with a host's runtime key.
 
 | # | Check |
 |---|---|

@@ -6,7 +6,7 @@ Everything is in one tree now: `main` = `10191a9`, engine (79 files, 9 migration
 written"), migration round-trip, 548 tests.
 
 ```
-You are starting Adapt 2.0 **Milestone 1** on `main` (`e3a8436`). M0 is complete and verified;
+You are starting Adapt 2.0 **Milestone 1** on `main`. M0 is complete and verified;
 `engine/` and `docs/v2/` are in the same tree, which is the point — the contract the guard checks
 against is the contract in your working directory.
 
@@ -30,8 +30,12 @@ If any of those is unreadable, stop and say so. Do not improvise the specificati
    is a build that breaks on branch cleanup, and CI must not know any branch names.
 2. `engine/docs-patches/0001-endpoint-inventory.diff` stays as a review artefact. Do not apply it.
    List the routes it contains in your report; the inventory is a doc change I will make, not you.
-3. Confirm the three environmental gaps are still recorded in `engine/KNOWN_GAPS.md`: docker compose
-   never run, no 3.12 execution, no Redis. They are not yours to close in this sandbox, but they must
+3. Confirm `engine/KNOWN_GAPS.md` still records the two remaining environmental gaps: **the Dockerfile
+   has never been built and `docker compose up` has never been run**, and **no Redis has ever
+   answered**. Note that Python 3.12 is *no longer* a gap — CI runs two 3.12 jobs (one with Postgres
+   16 as a service container, one with Postgres 16 from apt and no Docker) and both are green; the
+   thing still unbuilt is the image, not the interpreter. If any other recorded gap has gone stale,
+   correct the record and say which one, rather than restoring wording that is no longer true.
    not silently disappear either.
 
 Stop after the pre-work and report it. Then start increment 1.
