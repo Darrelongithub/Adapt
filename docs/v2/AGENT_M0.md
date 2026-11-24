@@ -239,6 +239,39 @@ body. A grant expiring mid-flight leaves the settled amount debited and the rema
 **Acceptance:** tenant A's ciphertext cannot be decrypted with B's key (must raise, not return
 garbage); rotation test passes; an AAD binding of `tenant_id` is asserted.
 
+### Two rules the first implementation got wrong
+
+**1. A value's header must not name the master key.** If `kid` in `v1:kid:nonce:ct` refers to the
+master key that wrapped the tenant data key *at write time*, then a re-wrap leaves every existing row
+still pointing at the retired key, and that key can never be dropped — startup must keep refusing
+uncovered kids forever. Rotation would then work in one direction only.
+
+The master key belongs on the **wrapped data key row** (`tenant_data_keys.kid`), which re-wrap
+updates. The value header carries either nothing relevant to the master key or a **data key version**
+(`dkv`), which is the field that will matter when data-key rotation exists. Startup validation keys
+off **data key rows**, not value headers.
+
+*Acceptance — this is the proof the lifecycle works:* re-wrap every tenant data key, remove the old
+master key from the keyring entirely, restart, and decrypt a row written before the change. If that
+cannot be done, the design has a permanent dependency disguised as versioning.
+
+**2. AAD must bind the row, not just the tenant.** With AAD = `tenant_id` alone, a ciphertext can be
+swapped between two learners in the same tenant, or between two columns of the same row, and it
+decrypts cleanly into wrong data. That is undetectable corruption of exactly the data the product
+makes claims about, and the host supplies the identifiers.
+
+AAD = `adapt/v1:{tenant_id}:{learner_row_id}:{column}` — the internal row id, not the host's external
+learner id, which the host may change. The wrapped data key keeps its own AAD
+(`adapt/tenant/v1:{tenant_id}`).
+
+*Acceptance:* swapping `profile` between two learners of one tenant raises; swapping `profile` and
+`date_of_birth` within one row raises; moving a row to another tenant raises. All three must raise,
+never decrypt.
+
+**3. The kid catalogue is provisioning data.** `data_key_ids` is written by the migration and by
+re-wrap under the owner role; the runtime role gets `SELECT` only. A role that serves requests should
+not be able to register a key that the startup check then trusts.
+
 ## 6. Increment 6 — migrations, CI, docs
 
 * Alembic, single head, up **and** down tested (`upgrade head` → `downgrade base` → `upgrade head`).
