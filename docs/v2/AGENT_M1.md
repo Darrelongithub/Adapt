@@ -188,9 +188,36 @@ output.
 
 ---
 
-## 8. Definition of done
+## 8. Release gates — M1 cannot be declared done until all three pass in CI
+
+Plumbing is easy to test hard; a model is not, and this is where rigor usually slips. These three are
+gates, not guidance: they run in CI, they fail the build, and they cannot be waived by a report.
+
+**G1 — Deterministic replay against a golden set.** Every `decide` output for a checked-in fixture of
+event histories is committed as a golden file (`engine/tests/golden/decisions/*.json`). CI recomputes
+and compares byte-for-byte. A changed golden file is a **failing** build unless the change carries an
+explicit approval marker and a one-line reason in `engine/DECISIONS.md` — "the numbers moved because X"
+is reviewable; "CI is red, regenerate the goldens" is not.
+
+**G2 — The guesser cannot claim mastery.** A synthetic learner answering at chance (p=0.2 regardless of
+true mastery) must never be served a mastery estimate ≥0.7, at any horizon, in any construct, and must
+be abstained on where the evidence floor is not met. Run as a property test over ≥200 seeded learners,
+not a single case. A failure here blocks release: overclaiming on a chance responder is the product's
+worst failure mode, and it is invisible to every accuracy metric.
+
+**G3 — Every recommendation cites a claim, and the claim cites evidence.** No `recommendation` ships
+without a `claim_id`; no `claim_id` resolves to an ungated construct; and a claim whose evidence floor
+is not met is refused at write time, not filtered at read time. Test the refusal, not the filter.
+
+What these three have in common: each one is a promise the product makes to a buyer, converted into
+something the build fails on. If a gate can be satisfied by editing a constant, it is not a gate.
+
+---
+
+## 9. Definition of done
 
 - [ ] All seven increments' acceptance tests pass; suite <2 min; load test recorded
+- [ ] **G1, G2, G3 pass in CI** (§8) — not in a report, in the build
 - [ ] Abstention: six reason codes, both grains, fixture-exact metrics, zero billing
 - [ ] `decide` deterministic and replayable; every recommendation cites a claim
 - [ ] Guesser test passes — the model refuses to claim mastery it cannot support
@@ -198,7 +225,7 @@ output.
 - [ ] `git diff --stat fb655b3 -- backend frontend scripts e2e` still empty
 - [ ] `engine/DECISIONS.md` updated; `engine/README.md` documents the loop end to end
 
-## 9. Report
+## 10. Report
 
 1. Increment, `git diff --stat`, test counts, load-test numbers.
 2. The measured cost of a `decide` and an `observe` on your implementation, compared to `METERING.md`
@@ -206,7 +233,7 @@ output.
 3. Deviations and their reasons; anything in the earlier docs your implementation contradicts.
 4. What you left out and which milestone owns it.
 
-## 10. Do not
+## 11. Do not
 
 * Add L2 claims, strategy layers, calibration, or probes — they are M2.5/M3.
 * Add an LLM for phrasing. The `why` text at M1 is templated from the claim statement and the learner's
