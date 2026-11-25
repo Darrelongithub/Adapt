@@ -212,6 +212,7 @@ Three rules that follow from the table and are not negotiable:
 | 403 | `not_entitled` | no | `tier_required` says what to buy; **not** a quota problem |
 | 403 | `connection_paused` | later | someone paused this connection deliberately |
 | 404 | `learner_unknown` | no | the route exists but this learner id does not — register the learner first |
+| 404 | `connection_unknown` | no | no such connection id for this tenant — check `GET /v1/admin/connections` |
 | 404 | `route_unknown` | no | no such route — a typo'd URL or path version, not a learner problem |
 | 406 | `instrument_not_renderable` | no | the host's declared capabilities do not cover it |
 | 501 | `not_capable` | no | the capability is not built yet — our gap, not the request's |
@@ -254,6 +255,11 @@ hold the key at all:
 | `POST /v1/admin/keys` | **control-plane** | `admin` | issue; subset-of-own-scopes rule applies |
 | `POST /v1/admin/keys/{id}/revoke` | **control-plane** | `admin` | immediate |
 | `POST /v1/admin/keys/{id}/expiry` | **control-plane** | `admin` | audited; the only path that may shorten a key's life |
+| `POST /v1/admin/connections` | **control-plane** | `admin` | creates a connection; the signing secret is shown once |
+| `GET /v1/admin/connections` | **control-plane** | `admin` | list; never returns a secret |
+| `PATCH /v1/admin/connections/{id}` | **control-plane** | `admin` | pause / resume; `paused` stops host-facing ingest, not the console |
+| `DELETE /v1/admin/connections/{id}` | **control-plane** | `admin` | revoke, terminal; idempotent; un-revoking is `409 conflict` |
+| `GET /v1/admin/connections/{id}/deliveries` | **control-plane** | `admin` | the delivery log — attempts, status, no bodies |
 
 Two rules that follow from the table:
 
@@ -261,6 +267,10 @@ Two rules that follow from the table:
   provisioned separately, held by a person or a control-plane job, and excluded from the host-facing
   conformance list. A host that finds these routes and uses them has misunderstood the contract, and
   the scope will let them, so say this out loud in onboarding.
+* **The learner surface needs two scopes.** Reads are `observe`; `POST /v1/learners` is `admin`,
+  because creating a learner is a provisioning act in most hosts' designs and lands in the audit
+  trail. A host that registers learners at runtime therefore holds a key with both scopes — keep it
+  server-side, and never in a browser.
 * **Credits move by reservation, and reservations have no route.** The engine reserves internally as
   part of a `decide`; there is no endpoint to hold, settle or release credits by hand, and a request
   for one returns `404 route_unknown` — not `405`, not `501`. Money moves only through the loop.
@@ -300,10 +310,25 @@ re-serialises JSON before verification breaks the signature.
 
 Events: `decision.created`, `consent.changed`, `quota.warning`, `learner.erased`, `instrument.not_renderable`.
 
-Delivery is **at-least-once**: retries at 0 s, 30 s, 5 min, 30 min, 2 h, 6 h, then daily to 72 h, with
-jitter; 4xx other than 429 is not retried; every attempt is logged with the response code in the
-console; replay re-sends the original payload with the same `webhook-id` so an idempotent handler
-picks up only what it missed.
+**The body is a doorbell, not a payload:**
+
+```json
+{"id":"msg_2b7f…","type":"decision.created","created_at":"…","data":{"id":"…"}}
+```
+
+`data.id` is an opaque subject id. Never learner content, never an answer, never a construct name.
+Fetch the detail by calling back with your key — which keeps the webhook out of the personal-data
+path, and means a leaked webhook body leaks nothing worth having.
+
+Delivery is **at-least-once**, with **five attempts over roughly 85 seconds** — at 0 s, then 1 s, 4 s,
+16 s and 64 s of backoff, with jitter. A 4xx other than 429 is not retried. After the fifth attempt the
+delivery is marked `failed` and stays **retrievable and replayable** at
+`GET /v1/admin/connections/{id}/deliveries`, so a receiver that was down for an hour loses nothing:
+reconcile from the delivery log rather than trusting the doorbell to arrive.
+
+A longer retry schedule (to 24 h) is planned. It is a contract **upgrade** and will be announced like
+one — it lands with the worker that can actually schedule it, not silently. Until then the paragraph
+above is the promise, and a receiver that requires longer durability should reconcile from the log.
 
 **Registration:** HTTPS only, resolved at registration time and rejected if it points at a private or
 link-local address, no redirects followed (SSRF), 30-second timeout.
