@@ -34,9 +34,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE decisions ADD COLUMN test_traffic boolean NOT NULL DEFAULT false"
-    )
+    op.execute("ALTER TABLE decisions ADD COLUMN test_traffic boolean NOT NULL DEFAULT false")
     op.execute("ALTER TABLE decisions DROP CONSTRAINT decisions_served_is_charged")
     op.execute(
         """

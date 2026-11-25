@@ -28,8 +28,7 @@ branch_labels = None
 depends_on = None
 
 BEFORE = (
-    "'rapid_guess', 'tab_hidden', 'straight_line', 'device_change', "
-    "'assisted', 'repeated_item'"
+    "'rapid_guess', 'tab_hidden', 'straight_line', 'device_change', 'assisted', 'repeated_item'"
 )
 AFTER = BEFORE + ", 'undeterminable'"
 
