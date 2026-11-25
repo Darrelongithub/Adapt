@@ -612,3 +612,162 @@ host app.
 **Revoking is different.** `DELETE` sets `revoked` and revokes the key in the
 same transaction, so the next request is a plain `401`. There is no
 `connection_revoked` code, because there is no window in which it would be true.
+
+## 18. Observe ingest: what a batch costs, and what a refusal means
+
+Increment 2 adds `POST /v1/observe` and three tables behind it. The shape of the
+handler follows from four rules the review named, and one consequence nobody
+asked for but the load test produced.
+
+### 18.1 A batch is one transaction, and the batch row goes in first
+
+An accepted batch is all-or-nothing. Partial acceptance is silent data loss: a
+host that receives `202` and a count of 500 believes 500 events are stored, and
+a later report that 497 arrived is a bug report nobody can reproduce.
+
+The order inside the transaction is: **idempotency lookup → validation →
+event dedupe → quota → batch row → events**. The batch row precedes its events
+because `learning_events.batch_id` is a foreign key — an event whose batch does
+not exist could never be replayed from the idempotency record, and the FK is
+the cheapest way to make that impossible. The response body is already known
+before the events are inserted (counts, flags and quota are all computed from
+the request), so the row is written once with the final response rather than
+inserted empty and patched.
+
+### 18.2 The original response is stored, not re-derived
+
+"A duplicate batch returns the original response and writes nothing" only holds
+if the original response still exists. `observe_batches.response` is a `jsonb`
+column holding exactly the bytes returned, and a replay returns them verbatim —
+same status `202`, same `batch_id`, same counts. Re-deriving would drift: quota
+remaining changes as other batches land, and a replay a minute later would
+report a different `remaining` for the same batch.
+
+`request_hash` (SHA-256 of the raw body, before parsing) distinguishes a retry
+from a client bug. Same key, different body → `409 conflict` with
+`X-Adapt-Idempotency-Conflict: body`. Silently treating it as a retry would
+accept the second body's events under the first body's identity.
+
+### 18.3 Quota is counted at ingest, in the same statement that checks it
+
+`event_quota_monthly` is enforced by one statement:
+
+```sql
+INSERT INTO connection_event_usage (tenant_id, connection_id, period, events)
+SELECT …, :count FROM cap WHERE cap.quota >= :count
+ON CONFLICT (connection_id, period) DO UPDATE SET events = u.events + :count
+WHERE u.events + :count <= (SELECT quota FROM cap)
+```
+
+`SELECT` then `UPDATE` is a race, and the race lets a tenant exceed its quota by
+exactly the number of concurrent batches. Conditional upsert has no such window.
+
+Over quota is `402 quota_exhausted`, free, with the reset time in three places:
+the message, an `X-Adapt-Resets-At` header, and — on success — `usage.resets_at`
+so a host can warn before it hits the wall. The month is the **UTC calendar
+month**, which is what `resets_at` says; nothing rolls the counter over, because
+a new month is a new `period` and the old row is history.
+
+**The loop does not break.** A 402 spends no credits, writes no rows, and does
+not touch the connection's stored history: the same key still reads learners,
+decisions and reports. That is the whole point of the review's fifth acceptance
+point — a host that cannot buy more events must still be able to serve what it
+has. `usage.resets_at` on every successful batch is what lets it back off
+deliberately instead of discovering the wall by hitting it.
+
+### 18.4 A paused connection: refused, not dropped, not stored
+
+The review asked for a choice and a reason, so: **an event sent to a paused
+connection is refused and stored nowhere.**
+
+Refusal is the only option that is honest to both parties. "Dropped" means the
+host loses data it believes it sent — the worst outcome, and invisible to the
+sender. "Stored anyway" means the pause did not do what the console said it
+does: a customer who pauses a connection to stop a runaway client would find the
+rows still arriving. `403 connection_paused` is a *refusal*, and a refusal is
+actionable: the host keeps the batch, resumes, and replays with the same
+`Idempotency-Key`.
+
+Which is why the refusal happens **before** the idempotency row is written and
+before any quota is counted. A test drives exactly that: pause → 403 with zero
+rows in all three tables → resume → the same key and body → `202`. If the
+idempotency record had been written at pause time, the retry would have returned
+a stored "success" for events that were never stored.
+
+### 18.5 Unknown keys are rejected, and the error names them
+
+`... event 1: keys: unknown field(s): learner_email`. Rejecting the batch rather
+than the event is deliberate: a host that ships one bad field in a batch of 500
+should learn immediately, not receive a `202` for 499 and a mystery.
+
+The same rule applies to the envelope (`events`, optional `connection`), and to
+each value's *shape* — `learner_id` goes through the same validator the learner
+route uses, so an email address in the id field is refused at ingest rather than
+stored and quarantined later.
+
+### 18.6 `connection` in the body is optional, and must match the key
+
+The key already identifies the connection, so the field is redundant — but
+AGENT_M1 §2 shows it, and a host doing its own wiring will send it. It is
+accepted, and if present must equal the connection the key belongs to; a
+mismatch is `422 payload_invalid`. Accepting a foreign id would let one
+connection's events be charged to another's quota.
+
+### 18.7 Event duplicates are checked in code, because the schema cannot
+
+Events carrying `(session_id, seq)` are identity-keyed, and a duplicate inside a
+batch or already stored is counted (`duplicates`) and not inserted, and not
+charged.
+
+The check is a query, not a constraint, and the reason is structural: a
+partitioned table's unique index must include the partition key, so
+`UNIQUE (tenant_id, learner_id, session_id, seq)` is impossible across months.
+`learning_events_dedupe_idx` makes the check an index probe; a test asserts the
+behaviour. This is the one invariant in M1 enforced in code and not by the
+schema — it is in KNOWN_GAPS, not in a comment nobody reads.
+
+### 18.8 Validity flags are computed once, at ingest
+
+Flags are stored on the row, never derived at read time from data that may be
+gone. Two rules from MEASUREMENT §4 are visible in the implementation: nothing
+is imputed (a flag is absented, not guessed) and nothing is dropped (a flagged
+event is stored in full).
+
+`tab_hidden` cannot be set, because the event allowlist has no visibility
+channel. The flag exists in the column's CHECK and in the vocabulary, and it is
+documented as unreachable rather than quietly removed (KNOWN_GAPS §2b).
+
+The lookback is bounded — sixteen events per learner, joined laterally — not
+because the flags need more, but because the unbudgeted version was the load
+test's first finding: a window function partitioned by learner scanned every
+event the learner had, so a 500-event batch cost a full sort once the table was
+large.
+
+### 18.9 The route is `async` only to read the body
+
+`POST /v1/observe` is the only `async def` route in the engine, and it exists
+because the raw bytes are needed for hashing. The work happens in
+`run_in_threadpool`.
+
+That is not a style choice. The first load test deadlocked at request four: a
+blocking database call inside `async def` runs on the event loop, so a request
+holding a row lock could not yield to the request waiting for that lock. Every
+other route in this app is plain `def` and never had the problem.
+
+### 18.10 A failed batch can be retried with the same key
+
+Because nothing is written until validation passes, and everything after it is
+in one transaction, a `413`, `422`, `402` or `409` leaves the key unused. A host
+that splits an oversized batch and retries with the original key is fine; a host
+that fixes a rejected field and retries is fine too.
+
+### 18.11 Two documented corrections this increment adopted
+
+* **`connection_unknown` (404)** now exists in INTEGRATION §6, so the connections
+  API raises it instead of `route_unknown`. The route exists; the connection does
+  not; the integrator can now tell that from a typo in the path.
+* **§8's five event types** (`decision.created`, `consent.changed`,
+  `quota.warning`, `learner.erased`, `instrument.not_renderable`) are accepted by
+  `webhook_deliveries` from `0011` onward, and the retry schedule carries jitter
+  (derived from `(delivery_id, attempt)`, not `random()`, so a schedule is
+  reproducible while two deliveries still fan out).

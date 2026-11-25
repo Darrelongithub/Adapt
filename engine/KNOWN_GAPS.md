@@ -5,7 +5,7 @@ environment it claims to be for. They are listed rather than implied: an
 unverified acceptance line that nobody wrote down becomes a false claim in a
 month.
 
-Last updated: increment 6 (migrations, CI, docs), plus the contract-guard
+Last updated: M1 increment 2 (observe ingest), plus the contract-guard
 correction from docs commit `855d74a` (the guard may not patch the contract).
 
 ## Standing gaps at a glance
@@ -26,6 +26,11 @@ has never been reachable.
 | **Webhooks have never reached a real receiver**: the transport is exercised against a fake | increment 1 (M1) | TLS, DNS, a receiver's real behaviour, and a proxy in the way are unverified | §1 |
 | **Nothing schedules the dispatcher**: `run(now=...)` is called by tests, not by a worker | increment 1 (M1) | deliveries sit pending until a worker exists | §1 |
 | **Webhook delivery is off by default** (`ADAPT_WEBHOOK_DELIVERY`) | increment 1 (M1) | turning it on is the untested path | §1 |
+| **`tab_hidden` cannot be set**: the event allowlist has no visibility channel, so one documented flag never fires | increment 2 (M1) | a flag the docs name is silently always false | §2b |
+| **Event duplicates are refused in code, not by a constraint**: a partitioned table cannot carry a global unique index | increment 2 (M1) | two concurrent batches could insert the same `(learner, session, seq)` | §2c |
+| **Nothing schedules `ensure_event_partitions.py`**: partitions are created 24 months ahead by the migration | increment 2 (M1) | after the window, events land in the default partition and lose pruning | §2d |
+| **Observe stores events; nothing reads them back yet** | increment 2 (M1) | 400k rows are accumulated unverified until increment 3 consumes them | §2e |
+| **The 400k-event load test ran on a dev PostgreSQL**, not the image or a tuned server | increment 2 (M1) | the µs/event figure is relative, not a capacity plan | §2f |
 
 ## 1a. Webhook delivery has never left the process
 
@@ -46,6 +51,94 @@ no TLS handshake and no real receiver has ever been involved, because
 that takes `now`, which is what makes the retry schedule testable; a worker that
 calls it every few seconds is later work, and until it exists a delivery stays
 `pending`.
+
+## 2b. `tab_hidden` is in the vocabulary and cannot be recorded
+
+**What is claimed:** MEASUREMENT §4 lists six validity flags, including
+`tab_hidden` ("the document was not visible mid-trial").
+
+**What was actually verified:** five of the six are computed at ingest and
+covered by tests (`rapid_guess`, `straight_line`, `device_change`, `assisted`,
+`repeated_item`). `tab_hidden` is in the column's CHECK constraint and in the
+documented list, and **no input can set it**: the event allowlist has no
+visibility field, and inventing one would be a contract change made by the
+implementation.
+
+**What closes it:** a doc-owner decision — either the field is added to the event
+allowlist (a contract change with its own review), or the flag is removed from
+the vocabulary. Until then a query on `'tab_hidden' = ANY(validity_flags)` is
+always empty, by design rather than by accident.
+
+## 2c. Event dedupe is a query, not a constraint
+
+**What is claimed:** an event that the host re-sends (same `learner_id`,
+`session_id`, `seq`) is stored once.
+
+**What was actually verified:** a duplicate inside a batch, and a duplicate
+against stored events, are both counted as `duplicates`, not inserted, and not
+charged — asserted by two tests.
+
+**Why not a constraint:** `learning_events` is partitioned by `ts`, and a unique
+index on a partitioned table must include the partition key. A uniqueness rule
+over `(tenant_id, learner_id, session_id, seq)` therefore cannot exist across
+months; making it work would mean a unique index on the partition key too, which
+is not the rule. `learning_events_dedupe_idx` makes the check an index probe.
+
+**What is left open:** two *concurrent* batches carrying the same triple can both
+insert it — the check reads before either commits. Closing that needs either a
+non-partitioned identity table with a unique constraint, or an advisory lock per
+`(learner, session)`; both are redesigns, not bug fixes, and are deliberately not
+done here.
+
+## 2d. Nothing schedules the partition maintenance
+
+**What is claimed:** `learning_events` has a month partition for every month in
+the window, and a `DEFAULT` partition as the safety net.
+
+**What was actually verified:** migration `0011` creates 24 monthly partitions
+from the month it runs, plus the default; `scripts/ensure_event_partitions.py`
+creates missing ones and `--check` fails when the default partition holds a row
+or fewer than two months are provisioned (both behaviours tested).
+
+**What is left open:** no cron entry, no Kubernetes CronJob, nothing in
+`engine/` calls it on a schedule. A deployment that runs for two years without
+running it will put events into the default partition — which is why the check
+exists and why it fails rather than warns.
+
+## 2e. Nothing reads learning events back yet
+
+**What is claimed:** observe is the write half of the learning loop.
+
+**What was actually verified:** the write half — validation, flags, quota,
+idempotency, tenancy — with 36 tests and a 400,000-event load test.
+
+**What is left open:** there is no reader. Increments 3–5 (models, `decide`,
+reports) consume these rows; until they land, a bug in the stored *shape* (a
+wrong timezone, a mis-set flag) would be found by a test rather than by a
+consumer. This is the largest unverified surface in M1 so far, and it is
+inherent to building the write side first.
+
+## 2f. The load test ran on a development database
+
+**What is claimed:** `POST /v1/observe` sustains a host's traffic at a known
+cost per event.
+
+**What was actually measured:** 400,000 events in 800 batches of 500 through a
+real HTTP server, four concurrent clients, against `pgserver` (a bundled
+PostgreSQL 16 in this sandbox, default settings, container filesystem):
+p50 **468 ms** per batch, p95 789 ms, p95 per event **245 µs**, 4,081
+events/s. The event payload came out at 262.1 bytes, against METERING §1.1's
+262-byte representative event — the payload model matches the document almost
+exactly.
+
+**What is left open:** this is not a capacity plan. The server was a single
+uvicorn worker on a shared sandbox CPU, the database was untuned
+(`synchronous_commit=on`, default `shared_buffers`), and no TLS, proxy or
+multi-replica path was involved. §1.1's 3.5 µs/event prices three BKT updates
+and no durable write; the measured number prices a committed row plus three
+indexes and two lookback queries. The ratio is reported, not interpreted as a
+regression: **245 µs/event is 70× the §1.1 arithmetic baseline**, and that gap
+is the cost of existing at all.
 
 ## 1. `docker compose up` has never been run
 

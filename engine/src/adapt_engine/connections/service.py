@@ -38,7 +38,19 @@ Status = Literal["active", "paused", "revoked"]
 
 #: The closed event set. Kept next to the schema CHECK, and used to refuse an
 #: unknown type before the database has to.
-EVENT_TYPES: frozenset[str] = frozenset({"decision.created", "consent.changed", "quota.warning"})
+#: INTEGRATION §8 lists five event types. Increment 1 shipped three; the two
+#: that belong to later increments are accepted now, because a receiver that
+#: subscribes to `learner.erased` should be subscribed before there is anything
+#: to erase.
+EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "decision.created",
+        "consent.changed",
+        "quota.warning",
+        "learner.erased",
+        "instrument.not_renderable",
+    }
+)
 
 STATUSES: frozenset[str] = frozenset({"active", "paused", "revoked"})
 
@@ -185,6 +197,13 @@ def status_for_key(conn: Connection, key_id: uuid.UUID) -> str | None:
     """
     return conn.execute(
         text("SELECT status FROM connections WHERE key_id = :key_id"), {"key_id": key_id}
+    ).scalar_one_or_none()
+
+
+def connection_id_for_key(conn: Connection, key_id: uuid.UUID) -> uuid.UUID | None:
+    """The connection a key belongs to, or ``None`` for a console key."""
+    return conn.execute(
+        text("SELECT id FROM connections WHERE key_id = :key_id"), {"key_id": key_id}
     ).scalar_one_or_none()
 
 

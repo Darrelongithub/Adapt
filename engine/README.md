@@ -87,6 +87,11 @@ Each of these is enforced by something that fails, not by a comment:
 | A webhook signature cannot be forged or replayed | Standard Webhooks HMAC + a five-minute window + a bounded seen-set | `tests/test_webhooks.py` (forged, other-secret, stale, duplicate) |
 | One event is delivered once | derived `webhook-id` + `UNIQUE (tenant_id, webhook_id)` | `tests/test_connections.py::test_a_duplicate_enqueue_is_a_no_op` |
 | A delivery log never holds a payload | no body column exists | `tests/test_connections.py::test_the_delivery_log_has_no_place_for_a_payload` |
+| A batch is stored once, however many times it is sent | `UNIQUE (tenant_id, idempotency_key)` + the stored response replayed verbatim | `tests/test_observe.py::test_the_same_batch_twice_returns_the_original_response_and_writes_nothing` |
+| Over quota is a free 402 that writes nothing | one conditional upsert; the batch row is written after it returns a seat | `tests/test_observe.py::test_over_quota_is_402_with_resets_at_and_writes_nothing` |
+| A paused connection's events are refused, not dropped and not stored | the pause refusal happens before the idempotency row and before quota | `tests/test_observe.py::test_a_paused_connection_cannot_ingest_and_nothing_is_stored` |
+| No learner's free text is stored | `response` is hashed at ingest; only `response_digest` and `response_length` exist | `tests/test_observe.py::test_the_free_text_answer_is_hashed_and_not_stored` |
+| An unknown field is refused, and the error names it | a closed allowlist in `observe/schema.py` | `tests/test_observe.py::test_an_unknown_key_in_an_event_is_rejected_and_named` |
 
 ## Routine operations
 
@@ -112,6 +117,31 @@ curl -s -X PATCH localhost:8000/v1/admin/connections/$ID \
 curl -s -X DELETE localhost:8000/v1/admin/connections/$ID \
   -H "Authorization: Bearer $ADMIN_KEY"   # its key now answers 401
 ```
+
+**Send events.** `POST /v1/observe` takes up to 500 events per batch (1 MB), an
+`Idempotency-Key` derived from the logical operation, and nothing else. `202`
+returns the counts, the flags that fired and the month's usage; the same key
+replays the stored response; a key with a different body is `409`.
+
+```bash
+curl -s -X POST localhost:8000/v1/observe \
+  -H "Authorization: Bearer $CONNECTION_KEY" -H 'content-type: application/json' \
+  -H "Idempotency-Key: $DERIVED_KEY" \
+  -d '{"events":[{"learner_id":"learner-0001","skill":"skill.fractions",
+       "item_id":"item-001","correct":true,"ts":"2026-11-17T09:00:00Z",
+       "decision_id":"dcn_…"}]}' | jq
+# 202: {batch_id, accepted, duplicates, flags, decision_attribution, usage{…,resets_at}}
+# 402 quota_exhausted (free, nothing written) | 403 connection_paused | 413 | 422
+```
+
+**Keep the partitions ahead.** `learning_events` is partitioned by month, and the
+runtime role cannot run DDL. Run `python -m scripts.ensure_event_partitions`
+monthly (as the owner) and `--check` nightly: it exits 1 when an event has landed
+in the default partition, which is the only warning the design gives.
+
+**Measure ingest before believing a number.** `python -m scripts.load_observe
+--events 400000 --workers 4 --admin-key …` against a running server prints
+p50/p95/p99 per batch and µs/event against METERING §1.1.
 
 **Add a migration.** `migrations/versions/` is hand-written: autogenerate
 cannot express `FORCE ROW LEVEL SECURITY`, the two policy clauses or the grants,

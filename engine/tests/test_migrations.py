@@ -13,6 +13,7 @@ from tests import pg
 TABLES = (
     "api_keys",
     "audit_log",
+    "connection_event_usage",
     "connections",
     "credit_grants",
     "credit_ledger",
@@ -20,6 +21,8 @@ TABLES = (
     "credit_reservations",
     "data_key_ids",
     "learners",
+    "learning_events",
+    "observe_batches",
     "tenant_data_keys",
     "tenants",
     "webhook_attempts",
@@ -64,6 +67,22 @@ def _policies(database: pg.Database) -> list[tuple[str, bool, bool]]:
         engine.dispose()
 
 
+def _assert_tables(database: pg.Database) -> None:
+    """Base tables exactly, monthly partitions by count and by name.
+
+    A partition is a table with its own name, so listing 25 of them in TABLES
+    would make the list unreadable and would fail every January. The partition
+    set is asserted as a property instead: enough of them, and the default
+    present as the backstop.
+    """
+    tables = _tables(database)
+    base = [name for name in tables if not name.startswith("learning_events_")]
+    assert base == list(TABLES)
+    partitions = [name for name in tables if name.startswith("learning_events_")]
+    assert "learning_events_default" in partitions
+    assert len(partitions) >= 24
+
+
 def test_up_down_up_on_a_clean_database() -> None:
     database = pg.provision(pg.MIGRATIONS_DATABASE, migrate=False)
     try:
@@ -71,7 +90,7 @@ def test_up_down_up_on_a_clean_database() -> None:
 
         # up
         pg.upgrade(database)
-        assert _tables(database) == list(TABLES)
+        _assert_tables(database)
         assert _policies(database) == [
             ("audit_log", True, True),
             ("learners", True, True),
@@ -84,7 +103,7 @@ def test_up_down_up_on_a_clean_database() -> None:
 
         # up again, on the same database
         pg.upgrade(database)
-        assert _tables(database) == list(TABLES)
+        _assert_tables(database)
         assert _policies(database) == [
             ("audit_log", True, True),
             ("learners", True, True),

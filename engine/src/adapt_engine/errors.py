@@ -34,6 +34,7 @@ DOCUMENTED_CODES: frozenset[str] = frozenset(
         "unauthorized",
         "not_entitled",
         "connection_paused",
+        "connection_unknown",
         "learner_unknown",
         "route_unknown",
         "instrument_not_renderable",

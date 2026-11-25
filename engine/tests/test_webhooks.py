@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import base64
 import json
+import uuid
+from datetime import UTC, datetime
 
 import pytest
 
-from adapt_engine.webhooks import signing
+from adapt_engine.connections import service as connections
+from adapt_engine.webhooks import dispatch, signing
 
 SECRET = "whsec_" + base64.b64encode(b"0123456789abcdefghijklmn").decode()
 OTHER_SECRET = "whsec_" + base64.b64encode(b"klmnopqrstuvwxyz012345").decode()
@@ -186,3 +189,39 @@ def test_the_seen_set_is_bounded() -> None:
     for n in range(32):
         seen.seen_before(_msg_id(n))
     assert len(seen._entries) <= 8
+
+
+def test_the_notification_set_is_exactly_the_documented_five() -> None:
+    """§8 lists five types; a type the doc names must be enqueueable."""
+    assert {
+        "decision.created",
+        "consent.changed",
+        "quota.warning",
+        "learner.erased",
+        "instrument.not_renderable",
+    } == connections.EVENT_TYPES
+
+
+def test_jitter_is_reproducible_for_one_delivery() -> None:
+    """Same delivery, same attempt, same second time — a replay is reproducible."""
+    delivery_id = uuid.UUID("2f8f6c1e-0000-4000-8000-000000000001")
+    now = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
+    first = dispatch._next_attempt_at(delivery_id, 1, now)
+    second = dispatch._next_attempt_at(delivery_id, 1, now)
+    assert first == second
+    assert 0.8 <= (first - now).total_seconds() <= 1.2
+
+
+def test_two_deliveries_do_not_retry_at_the_same_instant() -> None:
+    """The point of jitter: a hundred receivers coming back at once fan out."""
+    now = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
+    scheduled = {dispatch._next_attempt_at(uuid.uuid4(), 4, now) for _ in range(20)}
+    assert len(scheduled) > 1
+    for at in scheduled:
+        assert at is not None
+        assert 12.8 <= (at - now).total_seconds() <= 76.8
+
+
+def test_the_fifth_attempt_has_no_successor() -> None:
+    now = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
+    assert dispatch._next_attempt_at(uuid.uuid4(), dispatch.MAX_ATTEMPTS, now) is None

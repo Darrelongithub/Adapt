@@ -23,6 +23,7 @@ from adapt_engine.api.credits import router as credits_router
 from adapt_engine.api.health import router as health_router
 from adapt_engine.api.keys import router as keys_router
 from adapt_engine.api.learners import router as learners_router
+from adapt_engine.api.observe import router as observe_router
 from adapt_engine.auth.audit import AuthFailureAuditor
 from adapt_engine.auth.rate_limit import FailureLimiter
 from adapt_engine.auth.touch import DEFAULT_FLUSH_INTERVAL_SECONDS as DEFAULT_FLUSH_INTERVAL
@@ -149,6 +150,7 @@ def create_app(
     app.include_router(health_router)
     app.include_router(keys_router)
     app.include_router(learners_router)
+    app.include_router(observe_router)
     app.include_router(credits_router)
     app.include_router(connections_router)
     _install_openapi(app)

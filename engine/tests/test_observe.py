@@ -1,0 +1,733 @@
+"""Increment 2: the observe batch contract.
+
+AGENT_M1 §2 and the seven acceptance points, each as a test rather than a
+paragraph. The interesting ones are the ones that are easy to get subtly wrong:
+
+* a duplicate batch returns *the original response* — so the original response
+  is stored, and the test compares the two JSON documents;
+* an abstention is not an error — an event with no `decision_id` is accepted,
+  counted, and never billed;
+* a paused connection's events are **refused, not dropped**: refused means the
+  store is untouched and the same `Idempotency-Key` still works after resume;
+* quota is counted at ingest and refused with `resets_at`, and the refusal does
+  not break the host's loop.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import uuid
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
+from adapt_engine.auth.rate_limit import FailureLimiter
+from adapt_engine.clock import SystemClock
+from adapt_engine.db.tenant import tenant_transaction
+from adapt_engine.main import create_app
+from tests.conftest import make_settings
+from tests.pg import bootstrap_key, provision_tenant
+
+NOW = datetime.now(UTC)
+
+#: The session fixture, addressed relative to this file so the suite runs from
+#: any working directory (the gate runs from `engine/`, a reader may not).
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def tenant(database) -> uuid.UUID:
+    return provision_tenant(database, slug=f"obs-{uuid.uuid4().hex[:8]}", name="Observe Test")
+
+
+@pytest.fixture
+def admin_key(database, tenant: uuid.UUID):
+    return bootstrap_key(database, tenant, scopes=("observe", "admin"))
+
+
+@pytest.fixture
+def client(app_engine: Engine) -> TestClient:
+    app = create_app(
+        make_settings(),
+        clock=SystemClock(),
+        db_check=lambda: True,
+        redis_check=lambda: True,
+        engine=app_engine,
+        auth_limiter=FailureLimiter(clock=SystemClock(), max_failures=10_000),
+    )
+    return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def connection(client: TestClient, admin_key):
+    """A connection with a generous quota, plus its key."""
+    resp = client.post(
+        "/v1/admin/connections",
+        json={
+            "host_name": f"host-{uuid.uuid4().hex[:6]}",
+            "environment": "test",
+            "event_quota_monthly": 250_000,
+            "scopes": ["observe"],
+        },
+        headers={"Authorization": f"Bearer {admin_key.full_key}"},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _scoped_connection(client: TestClient, admin_key, *, quota: int, scopes: list[str]):
+    resp = client.post(
+        "/v1/admin/connections",
+        json={
+            "host_name": f"host-{uuid.uuid4().hex[:6]}",
+            "environment": "test",
+            "event_quota_monthly": quota,
+            "scopes": scopes,
+        },
+        headers={"Authorization": f"Bearer {admin_key.full_key}"},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _headers(connection, key: str | None = None) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {key or connection['key']['full_key']}",
+        "Idempotency-Key": f"batch-{uuid.uuid4().hex}",
+    }
+
+
+def event(
+    *,
+    learner_id: str = "learn-synthetic-001",
+    skill: str = "skill.fractions",
+    item_id: str = "item-001",
+    correct: bool = True,
+    ts: datetime | None = None,
+    **extra: object,
+) -> dict[str, object]:
+    body: dict[str, object] = {
+        "learner_id": learner_id,
+        "skill": skill,
+        "item_id": item_id,
+        "correct": correct,
+        "ts": (ts or NOW).isoformat(),
+    }
+    body.update(extra)
+    return body
+
+
+def _post(client: TestClient, connection, events: list[object], **kwargs: object):
+    headers = kwargs.pop("headers", _headers(connection))
+    return client.post("/v1/observe", json={"events": events}, headers=headers, **kwargs)
+
+
+def _count(app_engine: Engine, tenant: uuid.UUID, sql: str, **params: object) -> int:
+    with tenant_transaction(app_engine, tenant) as conn:
+        return int(conn.execute(text(sql), params).scalar_one())
+
+
+# --- the happy path -------------------------------------------------------
+
+
+def test_a_batch_is_accepted_and_returns_the_counts(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    resp = _post(
+        client,
+        connection,
+        [
+            event(item_id="i-1"),
+            event(item_id="i-2", correct=False),
+            event(item_id="i-3", decision_id="dcn_synthetic_0001"),
+        ],
+    )
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+
+    assert body["accepted"] == 3
+    assert body["duplicates"] == 0
+    assert body["usage"]["used"] == 3
+    assert body["usage"]["quota"] == 250_000
+    assert body["usage"]["remaining"] == 249_997
+    assert body["usage"]["resets_at"].endswith("+00:00")
+    assert uuid.UUID(body["batch_id"])
+
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 3
+    assert _count(app_engine, tenant, "SELECT count(*) FROM connection_event_usage") == 1
+
+
+def test_quota_is_counted_at_ingest_not_at_read_time(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """The counter is a row, written by the same statement that accepts the batch."""
+    _post(client, connection, [event(item_id="i-1"), event(item_id="i-2")])
+    used = _count(app_engine, tenant, "SELECT sum(events) FROM connection_event_usage")
+    assert used == 2
+
+
+# --- idempotency ----------------------------------------------------------
+
+
+def test_the_same_batch_twice_returns_the_original_response_and_writes_nothing(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    headers = _headers(connection)
+    events = [event(item_id="i-1"), event(item_id="i-2")]
+
+    first = client.post("/v1/observe", json={"events": events}, headers=headers)
+    second = client.post("/v1/observe", json={"events": events}, headers=headers)
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    # Byte-identical: the replay is the stored response, not a re-derivation.
+    assert second.json() == first.json()
+    assert second.json()["batch_id"] == first.json()["batch_id"]
+
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 2
+    assert _count(app_engine, tenant, "SELECT sum(events) FROM connection_event_usage") == 2
+    assert _count(app_engine, tenant, "SELECT count(*) FROM observe_batches") == 1
+
+
+def test_the_same_key_with_a_different_body_is_a_conflict(client: TestClient, connection) -> None:
+    headers = _headers(connection)
+    first = client.post("/v1/observe", json={"events": [event()]}, headers=headers)
+    assert first.status_code == 202
+
+    second = client.post(
+        "/v1/observe", json={"events": [event(item_id="different")]}, headers=headers
+    )
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "conflict"
+    assert "Idempotency-Key" in second.json()["error"]["message"]
+
+
+def test_keys_are_scoped_to_a_tenant(client: TestClient, connection, admin_key, database) -> None:
+    """Two tenants may use the same Idempotency-Key without colliding."""
+    other = provision_tenant(database, slug=f"obs-{uuid.uuid4().hex[:8]}", name="Other")
+    other_admin = bootstrap_key(database, other, scopes=("observe", "admin"))
+    other_connection = _scoped_connection(client, other_admin, quota=100, scopes=["observe"])
+
+    shared = f"batch-shared-{uuid.uuid4().hex}"
+    first = client.post(
+        "/v1/observe",
+        json={"events": [event()]},
+        headers={
+            "Authorization": f"Bearer {connection['key']['full_key']}",
+            "Idempotency-Key": shared,
+        },
+    )
+    second = client.post(
+        "/v1/observe",
+        json={"events": [event()]},
+        headers={
+            "Authorization": f"Bearer {other_connection['key']['full_key']}",
+            "Idempotency-Key": shared,
+        },
+    )
+    assert first.status_code == 202, first.text
+    assert second.status_code == 202, second.text
+    assert first.json()["batch_id"] != second.json()["batch_id"]
+
+
+# --- the allowlist --------------------------------------------------------
+
+
+def test_an_unknown_key_in_an_event_is_rejected_and_named(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    resp = _post(
+        client,
+        connection,
+        [event(item_id="i-1"), event(item_id="i-2", learner_email="a@example.test")],
+    )
+    assert resp.status_code == 422
+    error = resp.json()["error"]
+    assert error["code"] == "payload_invalid"
+    assert "learner_email" in error["message"]
+    assert "event 1" in error["message"]
+    # And nothing was written: a partial batch is silent data loss.
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 0
+    assert _count(app_engine, tenant, "SELECT count(*) FROM observe_batches") == 0
+
+
+def test_an_unknown_key_in_the_envelope_is_rejected(client: TestClient, connection) -> None:
+    resp = client.post(
+        "/v1/observe",
+        json={"events": [event()], "learner_email": "a@example.test"},
+        headers=_headers(connection),
+    )
+    assert resp.status_code == 422
+    assert "learner_email" in resp.json()["error"]["message"]
+
+
+def test_a_missing_required_field_names_the_field(client: TestClient, connection) -> None:
+    broken = event()
+    del broken["skill"]
+    resp = _post(client, connection, [broken])
+    assert resp.status_code == 422
+    assert "skill" in resp.json()["error"]["message"]
+
+
+def test_a_response_that_looks_like_an_email_is_refused(client: TestClient, connection) -> None:
+    resp = _post(client, connection, [event(learner_id="ada@example.test")])
+    assert resp.status_code == 422
+    assert "learner_id" in resp.json()["error"]["message"]
+
+
+def test_events_without_a_decision_id_are_accepted(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """An abstention is not an error: no decision id, still a real event."""
+    resp = _post(client, connection, [event(item_id="i-1"), event(item_id="i-2")])
+    assert resp.status_code == 202
+    assert resp.json()["accepted"] == 2
+    assert resp.json()["decision_attribution"]["share"] == 0.0
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 2
+
+
+def test_decision_id_coverage_is_measured_not_asserted(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """The number is reported; the 95% line is a contract target, not a gate."""
+    events = [
+        event(item_id=f"i-{n}", decision_id=f"dcn_synthetic_{n:04d}")
+        if n < 15
+        else event(item_id=f"i-{n}")
+        for n in range(20)
+    ]
+    body = _post(client, connection, events).json()
+    attribution = body["decision_attribution"]
+    assert attribution["events"] == 20
+    assert attribution["with_decision_id"] == 15
+    assert attribution["share"] == 0.75
+    stored = _count(
+        app_engine, tenant, "SELECT count(*) FROM learning_events WHERE decision_id IS NOT NULL"
+    )
+    assert stored == 15
+
+
+def test_an_event_for_an_abstained_decision_is_counted_and_never_billed(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """No decision row, no charge: observe never writes a ledger row."""
+    before = _count(app_engine, tenant, "SELECT count(*) FROM credit_ledger")
+    resp = _post(
+        client,
+        connection,
+        [event(item_id="i-1", decision_id="dcn_that_was_abstained_or_expired")],
+    )
+    assert resp.status_code == 202
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 1
+    assert _count(app_engine, tenant, "SELECT count(*) FROM credit_ledger") == before
+
+
+# --- caps -----------------------------------------------------------------
+
+
+def test_more_than_five_hundred_events_is_413(client: TestClient, connection) -> None:
+    events = [event(item_id=f"i-{n}") for n in range(501)]
+    resp = _post(client, connection, events)
+    assert resp.status_code == 413
+    assert resp.json()["error"]["code"] == "payload_too_large"
+
+
+def test_five_hundred_events_is_allowed(client: TestClient, connection) -> None:
+    events = [event(item_id=f"i-{n}") for n in range(500)]
+    resp = _post(client, connection, events)
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["accepted"] == 500
+
+
+def test_a_body_over_one_megabyte_is_413(client: TestClient, connection) -> None:
+    # A single event whose free-text response is large enough to blow the cap.
+    events = [event(item_id=f"i-{n}", response="x" * 4000) for n in range(280)]
+    resp = _post(client, connection, events)
+    assert resp.status_code == 413
+    assert resp.json()["error"]["code"] == "payload_too_large"
+
+
+def test_an_empty_batch_is_refused(client: TestClient, connection) -> None:
+    resp = _post(client, connection, [])
+    assert resp.status_code == 422
+
+
+def test_a_missing_idempotency_key_is_refused(client: TestClient, connection) -> None:
+    resp = client.post(
+        "/v1/observe",
+        json={"events": [event()]},
+        headers={"Authorization": f"Bearer {connection['key']['full_key']}"},
+    )
+    assert resp.status_code == 422
+    assert "Idempotency-Key" in resp.json()["error"]["message"]
+
+
+# --- quota ----------------------------------------------------------------
+
+
+def test_over_quota_is_402_with_resets_at_and_writes_nothing(
+    client: TestClient, admin_key, app_engine: Engine
+) -> None:
+    small = _scoped_connection(client, admin_key, quota=5, scopes=["observe"])
+
+    ok = _post(client, small, [event(item_id=f"i-{n}") for n in range(5)])
+    assert ok.status_code == 202
+
+    refused = _post(client, small, [event(item_id="i-over")])
+    assert refused.status_code == 402
+    error = refused.json()["error"]
+    assert error["code"] == "quota_exhausted"
+    assert error["retryable"] is False
+    assert "resets_at" in error["message"]
+    assert refused.headers["X-Adapt-Resets-At"].endswith("+00:00")
+
+    # Nothing from the refused batch was stored, and the counter did not move.
+    with tenant_transaction(app_engine, uuid.UUID(_tenant_of(client, admin_key))) as conn:
+        assert (
+            int(conn.execute(text("SELECT sum(events) FROM connection_event_usage")).scalar_one())
+            == 5
+        )
+        assert int(conn.execute(text("SELECT count(*) FROM learning_events")).scalar_one()) == 5
+
+
+def test_the_loop_does_not_break_when_the_quota_is_gone(client: TestClient, admin_key) -> None:
+    """The host can still read what it already has; it just cannot buy more."""
+    small = _scoped_connection(client, admin_key, quota=1, scopes=["observe"])
+    assert _post(client, small, [event(item_id="i-1")]).status_code == 202
+    assert _post(client, small, [event(item_id="i-2")]).status_code == 402
+
+    # Reading the learner history still works with the same key.
+    learners = client.get(
+        "/v1/learners", headers={"Authorization": f"Bearer {small['key']['full_key']}"}
+    )
+    assert learners.status_code == 200
+    assert learners.json() == []
+
+
+def _tenant_of(client: TestClient, admin_key) -> str:
+    whoami = client.get("/v1/whoami", headers={"Authorization": f"Bearer {admin_key.full_key}"})
+    return str(whoami.json()["tenant_id"])
+
+
+# --- paused and unauthorised ---------------------------------------------
+
+
+def test_a_paused_connection_cannot_ingest_and_nothing_is_stored(
+    client: TestClient, connection, admin_key, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    paused = client.patch(
+        f"/v1/admin/connections/{connection['connection']['id']}",
+        json={"status": "paused"},
+        headers={"Authorization": f"Bearer {admin_key.full_key}"},
+    )
+    assert paused.status_code == 200, paused.text
+
+    headers = _headers(connection)
+    refused = client.post("/v1/observe", json={"events": [event()]}, headers=headers)
+    assert refused.status_code == 403
+    assert refused.json()["error"]["code"] == "connection_paused"
+
+    # Refused, not dropped: no event, no batch row, no quota consumed — so the
+    # same Idempotency-Key still works once the connection is resumed.
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 0
+    assert _count(app_engine, tenant, "SELECT count(*) FROM observe_batches") == 0
+    assert _count(app_engine, tenant, "SELECT count(*) FROM connection_event_usage") == 0
+
+    resumed = client.patch(
+        f"/v1/admin/connections/{connection['connection']['id']}",
+        json={"status": "active"},
+        headers={"Authorization": f"Bearer {admin_key.full_key}"},
+    )
+    assert resumed.status_code == 200, resumed.text
+    retried = client.post("/v1/observe", json={"events": [event()]}, headers=headers)
+    assert retried.status_code == 202, retried.text
+
+
+def test_a_console_key_cannot_ingest(client: TestClient, admin_key) -> None:
+    """A key with no connection has no quota to spend and no rows to attribute."""
+    resp = client.post(
+        "/v1/observe",
+        json={"events": [event()]},
+        headers={
+            "Authorization": f"Bearer {admin_key.full_key}",
+            "Idempotency-Key": "batch-console-key-0001",
+        },
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "not_entitled"
+    assert "tier_required" in resp.json()["error"]["message"]
+
+
+def test_the_route_declares_the_observe_scope(client: TestClient) -> None:
+    """A connection key can only ever hold `observe`, so the scope is the gate.
+
+    (The `admin` scope is not mintable onto a connection — increment 1 — which
+    is why the "wrong scope" case is the console key, not a connection key with
+    the other scope.)
+    """
+    schema = client.get("/openapi.json").json()
+    operation = schema["paths"]["/v1/observe"]["post"]
+    assert operation["security"] == [{"APIKeyAuth": ["observe"]}]
+
+
+def test_the_connection_field_must_match_the_key(client: TestClient, connection) -> None:
+    resp = client.post(
+        "/v1/observe",
+        json={"connection": str(uuid.uuid4()), "events": [event()]},
+        headers=_headers(connection),
+    )
+    assert resp.status_code == 422
+    assert "connection" in resp.json()["error"]["message"]
+
+    matching = client.post(
+        "/v1/observe",
+        json={"connection": connection["connection"]["id"], "events": [event()]},
+        headers=_headers(connection),
+    )
+    assert matching.status_code == 202, matching.text
+
+
+# --- isolation and storage ------------------------------------------------
+
+
+def test_events_are_invisible_to_another_tenant(client: TestClient, connection, database) -> None:
+    _post(client, connection, [event(), event(item_id="i-2")])
+    other = provision_tenant(database, slug=f"obs-{uuid.uuid4().hex[:8]}", name="Other")
+
+    from tests import pg
+
+    engine = pg.engine_for(database, "app")
+    try:
+        with tenant_transaction(engine, other) as conn:
+            assert int(conn.execute(text("SELECT count(*) FROM learning_events")).scalar_one()) == 0
+    finally:
+        engine.dispose()
+
+
+def test_the_free_text_answer_is_hashed_and_not_stored(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    answer = "the answer the learner typed"
+    resp = _post(client, connection, [event(item_id="i-1", response=answer)])
+    assert resp.status_code == 202
+
+    with tenant_transaction(app_engine, tenant) as conn:
+        row = conn.execute(
+            text("SELECT response_digest, response_length FROM learning_events")
+        ).one()
+    assert row.response_length == len(answer)
+    assert row.response_digest == hashlib.sha256(answer.encode()).digest()
+    assert answer.encode() not in row.response_digest
+
+
+def test_an_event_outside_the_window_is_refused(client: TestClient, connection) -> None:
+    resp = _post(client, connection, [event(ts=NOW - timedelta(days=500))])
+    assert resp.status_code == 422
+    assert "ts" in resp.json()["error"]["message"]
+
+
+def test_a_naive_timestamp_is_refused(client: TestClient, connection) -> None:
+    naive = event()
+    naive["ts"] = "2026-11-17T12:00:00"
+    resp = _post(client, connection, [naive])
+    assert resp.status_code == 422
+    assert "timezone" in resp.json()["error"]["message"]
+
+
+def test_the_default_partition_stays_empty(
+    client: TestClient, connection, owner_engine: Engine
+) -> None:
+    """An event outside the created window would land here; the alert is that it is non-empty."""
+    _post(client, connection, [event(item_id="i-1")])
+    # The default partition is a table of its own, so the tenant policy on the
+    # parent does not cover this read; it is a count, not a row.
+    with owner_engine.begin() as conn:
+        count = int(conn.execute(text("SELECT count(*) FROM learning_events_default")).scalar_one())
+    assert count == 0
+
+
+# --- duplicates and flags -------------------------------------------------
+
+
+def test_duplicate_events_inside_a_batch_are_counted_not_inserted(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    first = event(item_id="i-1", session_id="sess-1", seq=1)
+    again = dict(first)
+    body = _post(client, connection, [first, again]).json()
+
+    assert body["accepted"] == 1
+    assert body["duplicates"] == 1
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 1
+    # And the duplicate is not billed: one credit-of-quota per stored event.
+    assert _count(app_engine, tenant, "SELECT sum(events) FROM connection_event_usage") == 1
+
+
+def test_an_event_already_stored_is_a_duplicate_on_the_next_batch(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    body = event(item_id="i-1", session_id="sess-1", seq=1)
+    _post(client, connection, [body])
+    second = _post(client, connection, [dict(body)])
+    assert second.json()["duplicates"] == 1
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 1
+
+
+def test_validation_flags_are_recorded(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    events = [
+        event(item_id="i-1", latency_ms=120, device="phone"),  # rapid_guess
+        event(item_id="i-1", correct=False, device="phone"),  # repeated_item
+        event(item_id="i-2", device="tablet", assisted=True),  # device_change + assisted
+        event(item_id="i-3", device="tablet"),
+    ]
+    body = _post(client, connection, events).json()
+    assert body["flags"]["rapid_guess"] == 1
+    assert body["flags"]["repeated_item"] == 1
+    assert body["flags"]["device_change"] == 1
+    assert body["flags"]["assisted"] == 1
+
+    with tenant_transaction(app_engine, tenant) as conn:
+        rows = conn.execute(
+            text("SELECT item_id, validity_flags FROM learning_events ORDER BY ts, item_id")
+        ).all()
+    by_item: dict[str, list[tuple[str, ...]]] = {}
+    for row in rows:
+        by_item.setdefault(row.item_id, []).append(tuple(row.validity_flags))
+    assert any("rapid_guess" in flags for flags in by_item["i-1"])
+    assert any("repeated_item" in flags for flags in by_item["i-1"])
+    assert any("device_change" in flags for flags in by_item["i-2"])
+    assert any("assisted" in flags for flags in by_item["i-2"])
+
+
+def test_a_run_of_eight_identical_outcomes_is_flagged_across_batches(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    first = [event(item_id=f"i-{n}", correct=True) for n in range(4)]
+    assert _post(client, connection, first).json()["flags"] == {}
+    second = [event(item_id=f"j-{n}", correct=True) for n in range(4)]
+    body = _post(client, connection, second).json()
+    # The 8th identical outcome in the run is the 4th of the second batch.
+    assert body["flags"]["straight_line"] == 1
+
+    with tenant_transaction(app_engine, tenant) as conn:
+        flagged = conn.execute(
+            text("SELECT item_id FROM learning_events WHERE 'straight_line' = ANY(validity_flags)")
+        ).all()
+    assert [row.item_id for row in flagged] == ["j-3"]
+
+
+def test_a_hostile_idempotency_key_is_not_a_crash(client: TestClient, connection) -> None:
+    resp = client.post(
+        "/v1/observe",
+        json={"events": [event()]},
+        headers={
+            "Authorization": f"Bearer {connection['key']['full_key']}",
+            "Idempotency-Key": "short",
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "payload_invalid"
+
+
+def test_the_error_envelope_is_the_documented_shape(client: TestClient, connection) -> None:
+    resp = _post(client, connection, [{"learner_id": "x"}])
+    assert resp.status_code == 422
+    error = resp.json()["error"]
+    assert set(error) == {"code", "message", "request_id", "retryable"}
+    assert json.dumps(error)  # serialisable, no leaked objects
+
+
+# --- partition maintenance ------------------------------------------------
+
+
+def test_partitions_are_provisioned_ahead_and_the_script_is_idempotent(
+    owner_engine: Engine,
+) -> None:
+    """Twelve months ahead is the migration's promise; the script keeps it true."""
+    from scripts import ensure_event_partitions as partitions
+
+    assert partitions.months_ahead_available(owner_engine) >= 12
+    assert partitions.default_partition_rows(owner_engine) == 0
+
+    # A month the migration could not have known about gets created, once.
+    future = datetime.now(UTC).replace(year=datetime.now(UTC).year + 5)
+    created = partitions.ensure_partitions(owner_engine, now=future, months=2)
+    assert len(created) == 2
+    assert partitions.ensure_partitions(owner_engine, now=future, months=2) == []
+    assert partitions.months_ahead_available(owner_engine, now=future) == 2
+
+
+def test_the_check_mode_fails_when_the_net_has_been_used(
+    owner_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The alert is city-level, not silent: a row in the default partition exits 1."""
+    from scripts import ensure_event_partitions as partitions
+
+    monkeypatch.setattr(partitions, "default_partition_rows", lambda engine: 1)
+    assert (
+        partitions.main(
+            ["--check", f"--database-url={owner_engine.url.render_as_string(hide_password=False)}"]
+        )
+        == 1
+    )
+
+
+# --- the fixture, measured ------------------------------------------------
+
+
+def test_the_session_fixture_measures_decision_id_coverage(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """The 95% line is a contract target; the number is measured on a fixture.
+
+    `tests/fixtures/observe_session.json` is one hand-built session: 12 events
+    that precede any decision, then 100 that follow one — of which 4 carry no
+    `decision_id`, because the host substituted its own item when the engine
+    abstained. So the honest denominators are two:
+
+        post-decision: 96/100 = 96.0%
+        whole session: 96/112 = 85.7%
+
+    Both are asserted here, and the fixture is in the repo so the number can be
+    recomputed rather than believed.
+    """
+    document = json.loads((FIXTURES / "observe_session.json").read_text())
+    events = document["events"]
+    split = int(document["post_decision_from_index"])
+
+    resp = _post(client, connection, events)
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["accepted"] == len(events)
+
+    post_decision = events[split:]
+    with_id = sum(1 for event in post_decision if "decision_id" in event)
+    assert (with_id, len(post_decision)) == (96, 100)
+    assert round(with_id / len(post_decision), 3) == 0.960
+    assert round(with_id / len(events), 3) == 0.857
+
+    # And the store agrees with the arithmetic.
+    stored = _count(
+        app_engine, tenant, "SELECT count(*) FROM learning_events WHERE decision_id IS NOT NULL"
+    )
+    assert stored == with_id
+    assert body["decision_attribution"]["with_decision_id"] == with_id
+
+
+def test_the_fixture_is_a_realistic_session_not_a_bag_of_events(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """Flags fire where a real host would cause them — hint use, two devices."""
+    document = json.loads((FIXTURES / "observe_session.json").read_text())
+    body = _post(client, connection, document["events"]).json()
+
+    assert body["flags"].get("device_change", 0) >= 1
+    assert body["flags"].get("rapid_guess", 0) == 0  # every latency is human-plausible
+    assert body["flagged_events"] >= body["flags"].get("device_change", 0)

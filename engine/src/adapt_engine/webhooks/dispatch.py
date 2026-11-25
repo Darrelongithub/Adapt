@@ -30,6 +30,7 @@ retry schedule reproducible in a way a ``sleep`` loop never is.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from collections.abc import Callable
@@ -48,6 +49,12 @@ BACKOFF_SECONDS: tuple[int, ...] = (1, 4, 16, 64)
 
 #: Five attempts total: the first try plus four retries.
 MAX_ATTEMPTS = 5
+
+#: How far a scheduled retry may drift from its base delay, either way.
+#: INTEGRATION §8 says "with jitter" and does not say how much; ±20% keeps
+#: "roughly 85 seconds" true (68-102 s) while still spreading the thundering
+#: herd that a fixed schedule produces when a receiver restarts.
+JITTER_FRACTION = 0.2
 
 
 @dataclass(frozen=True)
@@ -234,11 +241,25 @@ def _record_attempt(
     )
 
 
-def _next_attempt_at(attempts: int, now: datetime) -> datetime | None:
+def _jitter(delivery_id: uuid.UUID, attempt: int) -> float:
+    """A reproducible offset in ``[-1, 1]`` for one attempt of one delivery.
+
+    Derived, not random: two runs of the same delivery produce the same
+    schedule (so the backoff is testable and a replay is reproducible), while
+    two deliveries that fail at the same instant do not retry at the same
+    instant. ``random()`` would give the first property up and the second one
+    only if it were seeded per delivery anyway.
+    """
+    digest = hashlib.sha256(f"{delivery_id}:{attempt}".encode()).digest()
+    return (int.from_bytes(digest[:8], "big") / float(2**64)) * 2 - 1
+
+
+def _next_attempt_at(delivery_id: uuid.UUID, attempts: int, now: datetime) -> datetime | None:
     """When attempt ``attempts + 1`` is due, or ``None`` when we are done."""
     if attempts >= MAX_ATTEMPTS:
         return None
-    return now + timedelta(seconds=BACKOFF_SECONDS[attempts - 1])
+    base = BACKOFF_SECONDS[attempts - 1]
+    return now + timedelta(seconds=base * (1 + JITTER_FRACTION * _jitter(delivery_id, attempts)))
 
 
 @dataclass(frozen=True)
@@ -287,7 +308,7 @@ class Dispatcher:
         _record_attempt(conn, delivery=delivery, attempt=attempt_number, result=result, now=now)
 
         succeeded = result.status_code is not None and 200 <= result.status_code < 300
-        next_at = None if succeeded else _next_attempt_at(attempt_number, now)
+        next_at = None if succeeded else _next_attempt_at(delivery.id, attempt_number, now)
         status = "delivered" if succeeded else ("failed" if next_at is None else "pending")
         conn.execute(
             text(

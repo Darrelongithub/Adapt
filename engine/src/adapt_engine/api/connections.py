@@ -14,7 +14,7 @@ What is shown once, and only once:
   to steal it from.
 
 Status codes are the contract's, not new ones: a missing connection is the
-documented 404 (there is no `connection_unknown` code in §6), a duplicate
+documented 404, a duplicate
 (host, environment) or a change to a revoked connection is `409 conflict`, and
 a paused connection's *ingest* is `403 connection_paused` — raised by
 `ingest_connection`, not here.
@@ -142,13 +142,15 @@ def _attempt_view(attempt: dispatch.AttemptLogRow) -> DeliveryAttempt:
 
 
 def _unknown() -> AdaptError:
-    """No `connection_unknown` code exists in §6; 404 is the documented miss.
+    """A connection id this tenant does not have.
 
-    Reported rather than invented: the message says what is missing, the code
-    stays inside the vocabulary the contract publishes.
+    §6 gained `connection_unknown` (404) after increment 1, which is a better
+    answer than the `route_unknown` it replaced: the route exists, the
+    connection does not, and the integrator can tell that apart from a typo in
+    the path.
     """
     return AdaptError(
-        code="route_unknown",
+        code="connection_unknown",
         message="no such connection for this tenant",
         status_code=404,
         retryable=False,

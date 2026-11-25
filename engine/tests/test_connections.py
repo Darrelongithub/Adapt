@@ -253,8 +253,9 @@ def test_an_unknown_connection_is_a_documented_404(client: TestClient, admin_key
     missing = uuid.uuid4()
     resp = client.get(f"/v1/admin/connections/{missing}", headers=_auth(admin_key))
     assert resp.status_code == 404
-    # No `connection_unknown` exists in §6; the vocabulary is not extended here.
-    assert resp.json()["error"]["code"] == "route_unknown"
+    # §6 gained `connection_unknown` (404) after increment 1: the route exists,
+    # the connection does not, and that is now distinguishable from a bad path.
+    assert resp.json()["error"]["code"] == "connection_unknown"
 
 
 def test_state_changes_are_audited(
@@ -403,9 +404,11 @@ def test_a_failing_receiver_gets_five_attempts_then_fails(
     assert final.last_status_code == 500
     assert [row.attempt for row in attempts] == [1, 2, 3, 4, 5]
     assert [row.status_code for row in attempts] == [500, 503, 500, 429, 500]
-    # Backoff measured from the attempt that failed: 1s, 4s, 16s, 64s.
+    # Backoff measured from the attempt that failed: 1s, 4s, 16s, 64s, each
+    # nudged by up to ±20% of jitter (INTEGRATION §8 says "with jitter").
     waits = [(next_at - at).total_seconds() for _, next_at, at in schedule[:4]]
-    assert waits == [1, 4, 16, 64]
+    for wait, base in zip(waits, (1, 4, 16, 64), strict=True):
+        assert base * 0.8 <= wait <= base * 1.2
     assert schedule[-1][1] is None
 
 
