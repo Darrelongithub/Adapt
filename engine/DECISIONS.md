@@ -1191,3 +1191,26 @@ Changing `if not outcome.abstain and not test_traffic:` to `if not test_traffic:
 `test_decide.py::test_an_abstention_is_free_and_a_serve_is_not` with it. The
 sabotage does not touch a billing flag or a header: the tests count rows, so the
 only way to make them green is to write none.
+
+### 21.7 A key-prefix collision was a 500, and is now a retry
+
+CI on this increment failed twice, on two different jobs, in two different
+places: `UniqueViolation` on `api_keys_prefix_key` in one test, and a `500` from
+`POST /v1/admin/connections` in another. One cause. A key is
+`ak_<env>_<32 base32 chars>` and the **prefix is its first 12 characters** — four
+characters of secret, about a million values. A full test session now issues
+around a thousand keys, so a collision is not bad luck, it is the expected
+outcome of a birthday problem (≈ 40% per run at that count); the increment made it
+likely by adding twelve metering tests, each with its own tenant, connection and
+key.
+
+The bug is older than the increment, and worse in production than in CI: a
+customer creating a key had a small but real chance of a `500` they could neither
+cause nor fix. `insert_api_key` now retries up to eight times inside a
+**savepoint** — in PostgreSQL a failed statement aborts the whole transaction, so a
+retry without one would answer `500` anyway, one level deeper, on the audit write.
+`test_api_keys.py::test_a_prefix_collision_is_retried_not_a_500` makes the first
+draw collide on purpose and asserts the second was used and the audit row survived.
+
+The alternative — widening the prefix — was rejected: the 12-character prefix is
+in `INTEGRATION.md` and in every key a customer has already seen.

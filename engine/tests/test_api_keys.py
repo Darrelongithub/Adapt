@@ -579,3 +579,44 @@ def test_an_expiry_in_the_past_is_refused(app_engine: Engine, tenant: uuid.UUID,
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "payload_invalid"
+
+
+def test_a_prefix_collision_is_retried_not_a_500(
+    app_engine: Engine, tenant: uuid.UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Twelve characters of key is four of secret, so prefixes collide.
+
+    A tenant with a few dozen keys already runs a real birthday problem on ~1M
+    prefixes, and the collision surfaced as a 500 on connection-create —
+    something the caller can neither cause nor fix. Issuance retries inside a
+    savepoint, so the collision does not abort the transaction the audit row
+    needs.
+    """
+    first = _key(tenant)
+    real = key_service.generate_key
+    draws: list[str] = []
+
+    def collide_once(env: str = "test") -> tuple[str, str]:
+        draws.append(env)
+        if len(draws) == 1:
+            return first.full_key, first.prefix  # a prefix that already exists
+        return real(env)
+
+    monkeypatch.setattr(key_service, "generate_key", collide_once)
+    with tenant_transaction(app_engine, tenant) as conn:
+        second = key_service.insert_api_key(
+            conn,
+            tenant_id=tenant,
+            scopes=["observe"],
+            env="test",
+            pepper=PEPPER,
+            issuer_key_id=first.key_id,
+        )
+        issued_rows = conn.execute(
+            text("SELECT count(*) FROM audit_log WHERE action = 'api_key_issued'")
+        ).scalar_one()
+
+    assert len(draws) == 2, "the colliding draw was retried"
+    assert second.prefix != first.prefix
+    assert second.full_key[:12] == second.prefix
+    assert issued_rows == 2, "the transaction survived the collision"
