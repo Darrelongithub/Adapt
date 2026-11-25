@@ -59,9 +59,18 @@ constructs, 200 events per learner.
 |---|---|---|---|
 | `decide` (served **and** abstained — an abstention still computes) | 172,000 | 26.2 µs | **4.5 s** |
 | probe scoring | 6,000 | 869 µs | **5.2 s** |
-| `observe` | 400,000 | 3.5 µs | **1.4 s** |
+| `observe`, **model math only** (3 BKT updates) | 400,000 | 3.5 µs | 1.4 s |
+| `observe`, **end-to-end measured** — validation, two lookback queries, four indexes, FK checks, committed row | 400,000 | **245 µs** | **98 s** |
 | cohort refits, nightly, 200 obs × 2,000 learners × 30 nights | 12,000,000 obs | 90 µs | **1,080 s** |
-| **Total model compute** | | | **≈1,091 s ≈ 18.2 CPU-minutes ≈ 0.30 CPU-hours** |
+| **Total** | | | **≈1,188 s ≈ 19.8 CPU-minutes ≈ 0.33 CPU-hours** |
+
+**Refits are 91% of it, not 99%** — persisting events is real work and the earlier table hid it by
+pricing only the arithmetic. The 245 µs figure is an upper bound rather than a target: 400,000 events
+in 800 batches of 500 across 4 concurrent clients, on a **development** PostgreSQL (bundled server,
+default settings, container I/O, single worker, no TLS, no proxy). Load-test detail and the three
+findings that came out of it are in `engine/DECISIONS.md` §18.9 and `KNOWN_GAPS.md` §2f.
+
+The 262-byte payload model is confirmed: measured 262.1 bytes per event.
 
 ### 1.3 Correction log
 
@@ -73,6 +82,7 @@ about 270×, and the catch came from a reader checking the arithmetic rather tha
 | Probe scoring omitted from the total | — | 5.2 s | the weight was assigned but never added into the monthly sum |
 | **Refits omitted entirely** | — | 1,080 s | refits were classified "free" for billing and then, incorrectly, also excluded from *cost*; free to the customer is not free to us |
 | Abstentions excluded from compute | 124,000 decides | 172,000 | an abstention is free to bill but still runs the full decision path |
+| **`observe` priced as model math** | 3.5 µs per event, **1.4 s/month** | 245 µs end-to-end, **98 s/month** | the 3.5 µs figure measures three BKT updates and no durable write; the table labelled it "per event", which understated ingest by ~70×. Found by the build agent's 400,000-event load test, on the increment that first wrote events to disk |
 | Refit unit mis-chosen | 113.7 ms per "learner refit" | ~90 µs/obs, cohort-level | the 200 × 20 batch benchmark was a *cohort* fit, not a per-learner one; and a per-learner fit is not identifiable anyway |
 
 Lesson recorded because it will recur: **a cost that is not billed is the easiest cost to forget**, and
