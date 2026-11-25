@@ -120,11 +120,17 @@ with an interval.
   learner** — a single-learner fit is not identifiable (`METERING.md` §1.1) and the job must refuse it.
 * Cold start: the cohort prior, labelled `"source": "cohort_prior"`, never presented as personal.
 
-**Acceptance:** synthetic learners with known mastery (n=200 per skill, mastery sampled 0.1–0.9) recover
-their generating values with RMSE ≤0.08 after 40 observations, and the stated interval covers the truth
-for ≥90% of learners. The test must also include a **guesser** (p(correct)=0.2 regardless of mastery)
-and assert the estimator does *not* report mastery ≥0.7 — a model that reports confident nonsense on a
-guesser is a release blocker.
+**Acceptance — with the generating model and the interval mass named, because leaving them unnamed made
+the gate unpassable by construction:**
+
+* **Clean generator** (`p(correct) = mastery`, no slip and no guess): n=200 per skill, mastery sampled
+  0.1–0.9, 40 observations. **RMSE ≤0.08** and interval coverage in **[0.90, 0.99]** for a 95% interval
+  — two-sided, because an interval wide enough to cover everything has stopped saying anything.
+* **Noisy generator** (`p(correct) = mastery·(1−slip) + (1−mastery)·guess`): report RMSE and coverage,
+  gate nothing. At 40 trials on a 70% signal the standard error is ≈0.11, so **no** estimator reaches
+  0.08 here — that is the Cramér–Rao floor, not a defect. Both numbers are reported together so neither
+  can be quoted alone.
+* The **guesser** runs per G2 (`§8`), which is the release gate; this increment reports it separately.
 
 ## 4. Increment 4 — `decide` v1
 
@@ -221,11 +227,26 @@ and compares byte-for-byte. A changed golden file is a **failing** build unless 
 explicit approval marker and a one-line reason in `engine/DECISIONS.md` — "the numbers moved because X"
 is reviewable; "CI is red, regenerate the goldens" is not.
 
-**G2 — The guesser cannot claim mastery.** A synthetic learner answering at chance (p=0.2 regardless of
-true mastery) must never be served a mastery estimate ≥0.7, at any horizon, in any construct, and must
-be abstained on where the evidence floor is not met. Run as a property test over ≥200 seeded learners,
-not a single case. A failure here blocks release: overclaiming on a chance responder is the product's
-worst failure mode, and it is invisible to every accuracy metric.
+**G2 — The guesser cannot claim mastery**, in four parts, all in CI:
+
+1. **Property test.** 200 seeded guessers, p(correct)=0.2 regardless of true mastery, 60 trials each,
+   evaluated at **every** horizon at or above the evidence floor: no served value ≥0.7, and a margin
+   assertion at 0.65 so the next change to the estimator trips this before it trips the gate.
+2. **No upward drift.** More evidence must not make a guesser look better: the late-window mean must
+   not exceed the early-window mean by more than 0.05. A guesser's rate is 0.2 forever.
+3. **The streak curve, published and asserted.** The number of consecutive correct answers required to
+   be served 0.5, 0.7 and 0.8 is a test — not a comment — and it appears in `MEASUREMENT.md`. It is
+   the honest, explainable form of the guarantee: "eleven straight correct answers before we show 0.7"
+   is a sentence a buyer can check, and a customer can understand.
+4. **The adversarial construct, with its limit kept alive.** A guesser whose first eight answers are
+   correct and then answers at its true rate can be served above 0.7 — the probability is ~1e-7 per
+   learner and no estimator that must also report a real master can avoid it. Pin the worst case with
+   an upper bound **and** assert that the breach still occurs. A test that only asserts "we are safe"
+   goes vacuously green the day the estimator changes; a test that also asserts "the documented limit
+   is still reachable" fails loudly and forces the docs to be updated.
+
+A failure in any part blocks release. Overclaiming on a chance responder is the product's worst failure
+mode, and it is invisible to every accuracy metric.
 
 **G3 — Every recommendation cites a claim, and the claim cites evidence.** No `recommendation` ships
 without a `claim_id`; no `claim_id` resolves to an ungated construct; and a claim whose evidence floor

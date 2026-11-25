@@ -108,6 +108,7 @@ Erasure semantics, stated precisely because they are easy to get wrong:
 | Deleted immediately | Kept | Why |
 |---|---|---|
 | events, probe trials, decisions, model state, consent records for that learner | aggregate counters that no longer relate to a person | recalibration of the model's own claims must survive, but only in non-identifying form |
+| **derived estimates** — `learner_mastery` rows, per-learner states, anything keyed by learner id | nothing keyed by that learner | a derived estimate is still data about a person; "it is only our model's number" is not a lawful basis for keeping it. Cohort **fits** (parameters shared across ≥20 learners) survive because they no longer select an individual |
 | prediction records (prospective claims) | the **count** of predictions issued, and aggregate calibration statistics once k-anonymised | a prediction about a deleted person is still data about them |
 
 This corrects an earlier draft that proposed keeping "detached" prediction records for audit. Detached
