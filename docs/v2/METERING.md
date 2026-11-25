@@ -240,7 +240,8 @@ separate and non-expiring. No rollover mechanics before there is usage data to m
 |---|---|---|---|
 | Rate per key | 50 rps, burst 100 | `429 rate_limited` | protect the shared fleet |
 | Concurrency per tenant | 20 | `429` | bounded queues |
-| `observe` batch | ≤ 500 events, ≤ 1 MB | `413 payload_too_large` | keeps ingest p95 <100 ms |
+| `observe` batch | ≤ 500 events, ≤ 1 MB | `413 payload_too_large` | bounded batch, so a slow ingest is a slow batch and not a slow request |
+| **Ingest throughput per connection** | **50 rps, burst 100** | `429 rate_limited` + `details.retry_after` | a runaway client must not degrade other tenants on a shared database; free, and counted |
 | Event payload | ≤ 4 KB, allowlisted keys | `422 payload_invalid` | no free-text PII, by construction |
 | `decide` constructs per call | ≤ 5 | `422 payload_invalid` | a call wanting 40 constructs wants a batch job |
 | Open probe sessions per learner | ≤ 5 | `409 conflict` | resumable, not stackable |

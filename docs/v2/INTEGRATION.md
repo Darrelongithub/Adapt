@@ -272,6 +272,8 @@ hold the key at all:
 | `GET /v1/learners` | host-facing | `observe` | tenant-scoped list |
 | `GET /v1/learners/{learner_id}` | host-facing | `observe` | unknown id → `404 learner_unknown` |
 | `POST /v1/learners` | host-facing | `admin` | the only write on the learner surface; under-18 → `422 minor_not_supported` |
+| `GET /v1/mastery?learner_id=` | host-facing | `read_model` | every construct with evidence for that learner |
+| `GET /v1/mastery/{skill}?learner_id=` | host-facing | `read_model` | one construct; may answer `200` with `insufficient_evidence` |
 | `GET /v1/credits/balance` | host-facing | `observe` | `granted = available + held + consumed + forfeited` |
 | `POST /v1/admin/credits/grants` | **control-plane** | `admin` | provisioning; `Idempotency-Key` required |
 | `POST /v1/admin/keys` | **control-plane** | `admin` | issue; subset-of-own-scopes rule applies |
@@ -296,6 +298,38 @@ Two rules that follow from the table:
 * **Credits move by reservation, and reservations have no route.** The engine reserves internally as
   part of a `decide`; there is no endpoint to hold, settle or release credits by hand, and a request
   for one returns `404 route_unknown` — not `405`, not `501`. Money moves only through the loop.
+
+## 6B. Mastery — what `value` means, and why it is not the model's belief
+
+Two response shapes, and the absence of one field is the contract:
+
+```json
+{"learner_id":"…","skill":"…","value":0.62,
+ "interval":{"low":0.44,"high":0.78,"mass":0.95},
+ "estimator":"shrunk_rate","prior":{"source":"cohort_prior","strength":12},
+ "n":34,
+ "entitlement_level":"L1","capability_level":"L1","validation_level":"L0",
+ "served":"L1","limited_by":"validation"}
+```
+
+```json
+{"learner_id":"…","skill":"…","abstain":true,
+ "reason":"insufficient_evidence","needs":{"trials":5},
+ "entitlement_level":"L1","capability_level":"L1","validation_level":"L0",
+ "served":"L1","limited_by":"validation"}
+```
+
+* **`value` is the estimated probability that this learner answers a comparable item correctly.**
+  It is *not* the probability that they "know" the construct, and it is not the filter's latent belief
+  — the filter is stored for item selection and saturates under repeated evidence, while the served
+  number is a shrunk estimate of the observed rate. `estimator` names which one you are looking at, and
+  it will change only with a documented version bump.
+* **An abstention has no `value` field at all.** Not `null`, not a low number: absent. A host that
+  renders "62% (low confidence)" for a learner we declined to score has invented a claim on our behalf.
+* `needs.trials` is the number of additional observations that would clear the floor, so a host can
+  tell the learner something true and actionable instead of nothing.
+* The three axes travel on every response (§`ADR-002`): `entitlement_level`, `capability_level`,
+  `validation_level`, `served = min(…)`, and `limited_by` naming the binding constraint.
 
 ## 7. Idempotency, and the two keys
 
