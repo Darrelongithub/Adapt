@@ -26,7 +26,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from sqlalchemy.engine import Connection
 
-from adapt_engine.api.deps import get_clock
+from adapt_engine.api.deps import get_clock, get_settings
 from adapt_engine.auth.deps import (
     AuthContext,
     ingest_connection,
@@ -34,6 +34,7 @@ from adapt_engine.auth.deps import (
     security_requirement,
 )
 from adapt_engine.clock import Clock
+from adapt_engine.config import Settings
 from adapt_engine.credits import service as credits
 from adapt_engine.decide import service
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
@@ -93,7 +94,9 @@ async def decide(
     auth: Annotated[AuthContext, Depends(require_scope("decide"))],
     conn: Annotated[Connection, Depends(ingest_connection)],
     clock: Annotated[Clock, Depends(get_clock)],
+    settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header(alias=IDEMPOTENCY_HEADER)] = None,
+    x_adapt_test: Annotated[str | None, Header(alias="X-Adapt-Test")] = None,
 ) -> Response:
     """Serve one decision, or abstain with the reason and what would change it."""
     if idempotency_key is None or not 8 <= len(idempotency_key) <= 200:
@@ -103,7 +106,36 @@ async def decide(
             field="Idempotency-Key",
         )
     raw = await request.body()
-    return await _run(raw, idempotency_key=idempotency_key, auth=auth, conn=conn, clock=clock)
+    return await _run(
+        raw,
+        idempotency_key=idempotency_key,
+        auth=auth,
+        conn=conn,
+        clock=clock,
+        test_traffic=_test_traffic(x_adapt_test, settings),
+    )
+
+
+def _test_traffic(header: str | None, settings: Settings) -> bool:
+    """`X-Adapt-Test: 1`, or a staging deployment — METERING §3 rule 3.
+
+    A deployment running with `ADAPT_ENV=staging` exists to be exercised, so it
+    bills nothing without every caller remembering a header; production bills
+    unless the header says otherwise. Anything other than absent/0/1 is refused
+    rather than guessed at: a header that silently means "bill me" when it says
+    "yes" is a support ticket.
+    """
+    if header is None or header == "0":
+        return settings.env == "staging"
+    if header == "1":
+        return True
+    raise AdaptError(
+        code="payload_invalid",
+        message="X-Adapt-Test must be 1 or 0",
+        status_code=422,
+        retryable=False,
+        details={"field": "X-Adapt-Test"},
+    )
 
 
 async def _run(
@@ -113,11 +145,18 @@ async def _run(
     auth: AuthContext,
     conn: Connection,
     clock: Clock,
+    test_traffic: bool,
 ) -> Response:
     from fastapi.concurrency import run_in_threadpool
 
     return await run_in_threadpool(
-        _decide, raw, idempotency_key=idempotency_key, auth=auth, conn=conn, clock=clock
+        _decide,
+        raw,
+        idempotency_key=idempotency_key,
+        auth=auth,
+        conn=conn,
+        clock=clock,
+        test_traffic=test_traffic,
     )
 
 
@@ -128,6 +167,7 @@ def _decide(
     auth: AuthContext,
     conn: Connection,
     clock: Clock,
+    test_traffic: bool,
 ) -> Response:
     if len(raw) > MAX_BODY_BYTES:
         raise AdaptError(
@@ -167,15 +207,22 @@ def _decide(
             body_hash=service.request_hash(raw),
             now=clock.now().astimezone(UTC),
             reserve=credits.reserve,
+            settle=credits.settle,
+            test_traffic=test_traffic,
         )
     except LookupError:
         raise _unknown(learner_id) from None
 
+    # A replay bills nothing: the credit was taken when the decision was first
+    # served, and the header is the caller's only evidence of that.
+    billed = 0 if (test_traffic or stored.replayed or stored.body.get("abstain")) else 1
     return _body_response(
         stored.body,
         headers={
             "X-Adapt-Decision-Id": str(stored.decision_id),
             "X-Adapt-Replayed": "true" if stored.replayed else "false",
+            "X-Adapt-Billed": str(billed),
+            "X-Adapt-Test-Traffic": "true" if test_traffic else "false",
         },
     )
 
@@ -201,17 +248,24 @@ def replay(
     """
     stored = service.replay(conn, tenant_id=auth.tenant_id, decision_id=decision_id)
     if stored is None:
+        # INTEGRATION §6 has `decision_unknown` as of the increment-4 review: a
+        # replay of something we never served is not a typo'd route.
         raise AdaptError(
-            code="route_unknown",
-            message="no decision with that id",
+            code="decision_unknown",
+            message="no stored decision with that id for this tenant",
             status_code=404,
             retryable=False,
+            details={"decision_id": str(decision_id)},
         )
     return _body_response(
         stored.body,
         headers={
             "X-Adapt-Decision-Id": str(stored.id),
             "X-Adapt-Replayed": "identical",
+            # A replay re-serves a stored body: weight 0, and the header says so
+            # rather than leaving a caller to assume it was billed again.
+            "X-Adapt-Billed": "0",
+            "X-Adapt-Test-Traffic": "false",
         },
     )
 

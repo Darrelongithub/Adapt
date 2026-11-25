@@ -5,8 +5,9 @@ environment it claims to be for. They are listed rather than implied: an
 unverified acceptance line that nobody wrote down becomes a false claim in a
 month.
 
-Last updated: M1 increment 2 (observe ingest), plus the contract-guard
-correction from docs commit `855d74a` (the guard may not patch the contract).
+Last updated: M1 increment 5 (metering). §23 and the `decision_unknown` half of
+§24 are closed; §25-§27 record what the flag fixes and the metering proof still
+leave open.
 
 ## Standing gaps at a glance
 
@@ -31,6 +32,9 @@ has never been reachable.
 | **Nothing schedules `ensure_event_partitions.py`**: partitions are created 24 months ahead by the migration | increment 2 (M1) | after the window, events land in the default partition and lose pruning | §2d |
 | **Observe stores events; nothing reads them back yet** | increment 2 (M1) | 400k rows are accumulated unverified until increment 3 consumes them | §2e |
 | **The 400k-event load test ran on a dev PostgreSQL**, not the image or a tuned server | increment 2 (M1) | the µs/event figure is relative, not a capacity plan | §2f |
+| **Metering is proved for `decide` only**: `predict` and `probe` are priced and do not exist | increment 5 | a new route could bill without an empty-ledger test | §26 |
+| **Credit exhaustion under load is untested**: nothing has run a tenant to zero | increment 5 | the `402` before the reservation, and the fairness codes under concurrency, are unverified | §26 |
+| **The metering corpus is one seed**: 176/24 is an arithmetic check, not a distribution | increment 5 | quoting it as a product metric would overstate it | §27 |
 
 ## 1a. Webhook delivery has never left the process
 
@@ -441,25 +445,32 @@ vocabulary so that adding it later is a store, not a new word — and it is *not
 simulated with a flag nothing can set, because a reason code nobody can trigger
 is indistinguishable from a reason code that does not work.
 
-## 23. `straight_line` flags a genuine run of correct answers, and `decide` then abstains
+## 23. ~~`straight_line` flags a genuine run of correct answers, and `decide` then abstains~~ — closed by increment 5
 
-The ingest rule is "8+ identical outcomes in a row on one skill" — which catches
-straight-lining, and also catches a learner who has just got eight right. In the
-200-learner measurement (`DECISIONS.md` §20.8) **9 abstentions out of 33 were
-`data_quality`**, and that is why: a mastery run is flagged by a heuristic written
-to detect the opposite behaviour. The flag predates this increment; what is new is
-that `decide` reads it as a gate on serving. Two ways out, neither free: split the
-flag into `straight_line_correct` and `straight_line_identical` at ingest (a
-contract change to the flags vocabulary), or let `decide` ignore the flag when the
-recent run is *correct* while the estimate is high. Recorded rather than fixed,
-because both options change ingest's published semantics and that is the owner's
-call.
+The rule read `correct`, so eight right answers in a row was a run. It now reads
+`response` (8+ identical responses on one skill, compared by digest), answers
+`undeterminable` when an event carries no response, and never reads correctness
+(`DECISIONS.md` §21.1). On the same 200-learner corpus the nine `data_quality`
+abstentions disappeared and no other decision changed.
 
-## 24. `decide` has no `decision_unknown` code, and decisions are not erased
+Residual, recorded rather than hidden: a host that sends **no** `response` fields
+produces no `straight_line` signal at all. That is the honest state — the flag is
+`undeterminable` for every such event, which is `context` severity and does not
+gate serving — but it means the flag's coverage depends on a field the contract
+lists as optional (`AGENT_M1` §2). A host that wants the flag must send responses.
 
-* A replay of a decision id that does not exist answers `404 route_unknown`,
-  because the closed code set has no `decision_unknown` and inventing one is a
-  §6 row the owner has to add. The 404 is correct; the code is imprecise.
+Also owed: `MEASUREMENT.md` §4 lists six flags and `undeterminable` is a seventh.
+The published table needs the row (and the `context` severity beside it), or a
+host reading only the contract will not know the value can appear in
+`validity_flags`.
+
+## 24. `decide` has some of its codes, and decisions are still not erased
+
+* ~~A replay of a decision id that does not exist answers `404 route_unknown`,
+  because the closed code set has no `decision_unknown`.~~ **Closed:** the code
+  exists (`INTEGRATION.md` §6), and `POST /v1/decisions/{id}/replay` answers
+  `404 decision_unknown` with `details.decision_id`. `check_openapi` counts 23
+  documented codes and fails on an undocumented one.
 * `decisions` rows are personal data (derived) under `PRIVACY.md` §5 and must be
   erased with the learner. They are not, today — the same gap as §18 for
   `learner_mastery`, and both join the erasure path in increment 7. A decision
@@ -469,7 +480,55 @@ call.
   `basis: "documented_default"`, cited to the spacing claim. There is no retention
   model at L1; presenting a number as if there were one would be the exact failure
   this project keeps naming.
+* A `data_quality` abstention carries a `flag_evidence` object (the counted and
+  ignored flags, with the severity table they came from). It is additive and
+  `INTEGRATION.md` §6 does not show it; the body in the contract should gain the
+  field when the doc is next revised, so a host does not discover it by diffing
+  responses.
+* `decide` and its replay now return `X-Adapt-Billed` and `X-Adapt-Test-Traffic`.
+  Neither is in `INTEGRATION.md`; both are additive, and `X-Adapt-Billed` is the
+  cheapest way for a host to see §3 rule 1 holding on its own traffic. Owed a row.
+* `AGENT_M1` §5 says "staging keys set it automatically". A key carries only
+  `live`/`test`, and `expected_key_env` refuses a test key in production, so there
+  is no such thing as a staging *key* in production — the flag is set by
+  `ADAPT_ENV=staging` instead (`DECISIONS.md` §21.5). The contract sentence should
+  say "a staging deployment" rather than "staging keys".
 * Claims are per-tenant copies of global knowledge (§20.4), and there is no claim
   ingestion pipeline, no supersession chain and no `prohibited_claims` template
   check (`CLAIMS.md` §1). The five seeded claims are hand-written and reviewed by
   review only.
+
+## 25. `rapid_guess` no longer fires on a fast correct answer, which costs a true positive
+
+`MEASUREMENT.md` §4 says "response < 300 ms on a non-trivial item". The flag now
+requires latency < 300 ms **and** an incorrect answer **and** an item that is not
+known-trivial (`DECISIONS.md` §21.3). A fast, correct guess on a hard item with no
+`difficulty_band` is therefore missed. That is the deliberate direction of the
+error — a false positive abstains on the strongest learner — but it is an
+unverified trade until a latency-carrying measurement corpus exists: nothing in
+this tree measures how many real events fall in that skip. The measurement corpus
+sends no latencies (`test_decide.py`), so the fix is covered by unit tests, not by
+a corpus number.
+
+## 26. Metering is proved for `decide`, and `decide` is the only billed route
+
+`METERING` §2 prices `predict` at 1 credit and `probe score` at 3. Neither route
+exists yet, so the four zero-billing properties (`DECISIONS.md` §21.5) are proved
+for `decide` only. When those routes land they need their own empty-ledger tests —
+the shape is in `tests/test_metering.py`, and the risk is that a new route is
+written straight to `credits.reserve` without one.
+
+Also unexercised: **an actual credit exhaustion under load.** The tests grant
+credits and run a handful of decisions; nothing has run a tenant to zero and
+checked that the `402` arrives before the reservation, that a rejected decision
+writes no ledger row, and that the fairness codes stay distinct (402 vs 429 vs
+403) under concurrency. `409`/`429` ordering is tested, exhaustion is not.
+
+## 27. The metering corpus is one seed and one shape
+
+The 176/24 split and the 352 ledger rows in `DECISIONS.md` §21.5 come from one
+seeded corpus: 200 learners, mastery 0.1-0.9, 4-40 observations, one decision
+each. It is pinned as a test so drift is caught, but it is not a distribution:
+learners with 4-7 observations all abstain by construction (`EVIDENCE_FLOOR` = 8),
+so the abstention share is a property of the generator as much as of the product.
+Quoted as an arithmetic check on billing, never as a product metric.

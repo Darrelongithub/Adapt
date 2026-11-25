@@ -39,8 +39,41 @@ from adapt_engine.observe.schema import Event
 #: Below this a response cannot be a genuine attempt on a non-trivial item.
 RAPID_GUESS_MS = 300
 
-#: Eight identical outcomes in a row is a pattern, not a coincidence.
+#: Above this, an item is expected to be answered right most of the time, so a
+#: fast answer is fluency rather than a guess (MEASUREMENT §4: "non-trivial item").
+TRIVIAL_BAND_HIGH = 0.85
+
+#: Eight identical *responses* in a row is a pattern, not a coincidence.
+#:
+#: `response` — the option the learner chose — not `correct`. A run of identical
+#: correctness is what a learner on a roll produces, and flagging it made the
+#: honesty machinery abstain on the learners who were progressing fastest
+#: (MEASUREMENT §4, METRICS §1.3). Correctness is never a flag.
 STRAIGHT_LINE_RUN = 8
+
+#: How severe each flag is, published so a host can see what it is being asked to
+#: fix (METRICS §1.3). Only `uninformative` flags gate serving: a `device_change`
+#: is a context note, `assisted` is recorded as data (ADR-001), and
+#: `undeterminable` is an admission, not an accusation.
+SEVERITY: dict[str, str] = {
+    "rapid_guess": "uninformative",
+    "straight_line": "uninformative",
+    # MEASUREMENT §4: "session marked reduced-validity" — a trial the learner
+    # may not have been looking at is uninformative, like a rapid guess. Nothing
+    # emits it today (KNOWN_GAPS §2b), so this classification changes no decision;
+    # it is here so that the day a visibility channel lands, the gate is already
+    # on the right side of the table.
+    "tab_hidden": "uninformative",
+    "device_change": "context",
+    "undeterminable": "context",
+    "assisted": "scoring",
+    "repeated_item": "scoring",
+}
+
+#: The flags that mean "this answer may not be the learner's".
+UNINFORMATIVE_FLAGS: tuple[str, ...] = tuple(
+    name for name, severity in SEVERITY.items() if severity == "uninformative"
+)
 
 #: How much history the flag rules may read, per learner.
 LOOKBACK_EVENTS = 16
@@ -57,9 +90,9 @@ class History:
     last_correct: bool | None = None
     last_skill: str | None = None
     last_device: str | None = None
-    #: Trailing run of identical outcomes, most recent first (1 = last event).
+    #: Trailing run of identical *response digests*, most recent last.
     run_length: int = 0
-    run_value: bool | None = None
+    run_digest: bytes | None = None
     seen_items: frozenset[str] = frozenset()
 
 
@@ -86,19 +119,28 @@ def load_history(
     # sort (the load test found it: 752 µs/event). A lateral `ORDER BY ts DESC
     # LIMIT 16` is an index scan of sixteen rows per learner, which is the cost
     # the design always claimed.
+    #
+    # The tie-break is total: `ts` alone ties whenever a client sends a batch
+    # with one timestamp (our own fixtures do), and `id` is a random uuid, so
+    # ordering by it alone made the tail — and therefore the run length —
+    # different from tenant to tenant for identical input. `created_at` (server
+    # ingest time) then `seq` (client order within a batch) then `id` resolves
+    # ties reproducibly; the sort is still bounded by one learner's rows because
+    # the lateral has already filtered to that learner.
     tail = conn.execute(
         text(
             """
-            SELECT e.learner_id, e.skill, e.correct, e.device, e.ts, e.id
+            SELECT e.learner_id, e.skill, e.response_digest, e.device, e.ts, e.id
               FROM unnest(CAST(:learners AS text[])) AS l(learner_id)
               CROSS JOIN LATERAL (
-                    SELECT learner_id, skill, correct, device, ts, id
+                    SELECT learner_id, skill, response_digest, device, ts, id,
+                           created_at, seq
                       FROM learning_events
                      WHERE learner_id = l.learner_id
-                     ORDER BY ts DESC, id DESC
+                     ORDER BY ts DESC, created_at DESC, seq DESC NULLS LAST, id DESC
                      LIMIT :limit
               ) e
-             ORDER BY e.learner_id, e.ts, e.id
+             ORDER BY e.learner_id, e.ts, e.created_at, e.seq, e.id
             """
         ),
         {"learners": list(learners), "limit": LOOKBACK_EVENTS},
@@ -111,18 +153,22 @@ def load_history(
     history: dict[str, History] = {}
     for learner_id, rows in per_learner.items():
         last = rows[-1]
-        run_value = last.correct
+        run_digest = last.response_digest
         run_length = 0
         for row in reversed(rows):
-            if row.correct != run_value or row.skill != last.skill:
+            # A missing response breaks the run: "no answer recorded" is not the
+            # same value as another missing answer, and treating it as one would
+            # flag every host that does not send responses.
+            if run_digest is None or row.response_digest != run_digest:
+                break
+            if row.skill != last.skill:
                 break
             run_length += 1
         history[learner_id] = History(
-            last_correct=last.correct,
             last_skill=last.skill,
             last_device=last.device,
             run_length=run_length,
-            run_value=run_value,
+            run_digest=run_digest,
         )
 
     wanted = sorted(set(items))
@@ -144,14 +190,24 @@ def load_history(
     for learner_id, found in seen.items():
         base = history.get(learner_id, History())
         history[learner_id] = History(
-            last_correct=base.last_correct,
             last_skill=base.last_skill,
             last_device=base.last_device,
             run_length=base.run_length,
-            run_value=base.run_value,
+            run_digest=base.run_digest,
             seen_items=frozenset(found),
         )
     return history
+
+
+def _is_trivial(difficulty_band: str | None) -> bool:
+    """ "0.55-0.75" style band: true when even its low end is nearly certain."""
+    if difficulty_band is None:
+        return False
+    high = difficulty_band.split("-")[-1]
+    try:
+        return float(high) >= TRIVIAL_BAND_HIGH
+    except ValueError:
+        return False
 
 
 def apply_flags(events: Sequence[Event], history: dict[str, History]) -> list[tuple[str, ...]]:
@@ -169,7 +225,16 @@ def apply_flags(events: Sequence[Event], history: dict[str, History]) -> list[tu
         previous = state.get(event.learner_id, History())
         flags: list[str] = []
 
-        if event.latency_ms is not None and event.latency_ms < RAPID_GUESS_MS:
+        # A fast *correct* answer is fluency, and a fast answer on an item
+        # everyone gets right is the item's fault. Correctness is used here only
+        # to exonerate — never to accuse — so a strong, quick learner is not
+        # turned into a data-quality abstention.
+        if (
+            event.latency_ms is not None
+            and event.latency_ms < RAPID_GUESS_MS
+            and not event.correct
+            and not _is_trivial(event.difficulty_band)
+        ):
             flags.append("rapid_guess")
 
         if event.assisted:
@@ -187,23 +252,29 @@ def apply_flags(events: Sequence[Event], history: dict[str, History]) -> list[tu
             flags.append("repeated_item")
         seen.add(event.item_id)
 
-        run_length = 1
-        if (
-            previous.run_value is not None
-            and previous.last_skill == event.skill
-            and previous.run_value == event.correct
-        ):
-            run_length = previous.run_length + 1
-        if run_length >= STRAIGHT_LINE_RUN:
-            flags.append("straight_line")
+        # Straight-lining is a property of the *response*, and when there is no
+        # response it is undeterminable — never inferred from correctness.
+        digest = event.response_digest
+        run_length = 0
+        if digest is None:
+            flags.append("undeterminable")
+        else:
+            run_length = 1
+            if (
+                previous.run_digest is not None
+                and previous.last_skill == event.skill
+                and previous.run_digest == digest
+            ):
+                run_length = previous.run_length + 1
+            if run_length >= STRAIGHT_LINE_RUN:
+                flags.append("straight_line")
 
         out.append(tuple(flags))
         state[event.learner_id] = History(
-            last_correct=event.correct,
             last_skill=event.skill,
             last_device=event.device if event.device is not None else previous.last_device,
             run_length=run_length,
-            run_value=event.correct,
+            run_digest=digest,
             seen_items=previous.seen_items | frozenset({event.item_id}),
         )
     return out

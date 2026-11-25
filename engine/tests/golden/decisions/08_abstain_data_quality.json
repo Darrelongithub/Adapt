@@ -57,6 +57,20 @@
         "served": "L1",
         "limited_by": null
       }
-    ]
+    ],
+    "flag_evidence": {
+      "uninformative_share": 0.6,
+      "counted": [
+        "rapid_guess",
+        "straight_line",
+        "tab_hidden"
+      ],
+      "ignored": [
+        "device_change",
+        "undeterminable",
+        "assisted",
+        "repeated_item"
+      ]
+    }
   }
 }

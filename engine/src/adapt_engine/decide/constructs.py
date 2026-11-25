@@ -70,6 +70,11 @@ MAX_FLAGGED_SHARE: Final = 0.30
 #: The success rate the difficulty rule aims at (`AGENT_M1.md` §4: 70-85%).
 TARGET_SUCCESS: Final = 0.78
 
+#: What a served decision costs, in credits (METERING §2: `decide` served 1,
+#: abstained 0). The number lives next to the action set because it is a property
+#: of the product, not of the billing code.
+DECIDE_WEIGHT: Final = 1
+
 #: How long a decision's advice stays valid. Fifteen minutes for item-level
 #: advice: long enough for a host to render it, short enough that a stale plan
 #: cannot be served after the learner has done something else.

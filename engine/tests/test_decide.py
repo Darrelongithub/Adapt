@@ -362,9 +362,15 @@ def _decide(
     )
 
 
-def test_a_served_decision_is_stored_and_charged_once(
+def test_a_served_decision_is_stored_and_settled_once(
     client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
 ) -> None:
+    """A serve reserves, then settles inside the same transaction.
+
+    Increment 5 settles every served decision rather than leaving the hold for
+    the nightly job: one decision, one credit, visible in `credit_consumption`
+    the moment the response is written.
+    """
     _seed_credits(app_engine, tenant)
     learner = "learn-decide-0010"
     _observe(client, connection, learner, _answers(30, 26))
@@ -384,9 +390,15 @@ def test_a_served_decision_is_stored_and_charged_once(
         held = conn.execute(
             text("SELECT coalesce(sum(amount), 0) FROM credit_reservations WHERE state = 'held'")
         ).scalar_one()
+        settled = conn.execute(
+            text("SELECT count(*) FROM credit_reservations WHERE state = 'settled'")
+        ).scalar_one()
+        consumed = conn.execute(
+            text("SELECT coalesce(sum(consumed), 0) FROM credit_consumption")
+        ).scalar_one()
     assert (row.action, row.abstain) == (body["action"], False)
     assert row.reservation_id is not None
-    assert held == 1
+    assert (held, settled, consumed) == (0, 1, 1)
 
 
 def test_the_same_key_returns_the_stored_decision_and_charges_nothing_more(
@@ -405,10 +417,14 @@ def test_the_same_key_returns_the_stored_decision_and_charges_nothing_more(
 
     with tenant_transaction(app_engine, tenant) as conn:
         count = conn.execute(text("SELECT count(*) FROM decisions")).scalar_one()
-        held = conn.execute(
-            text("SELECT coalesce(sum(amount), 0) FROM credit_reservations WHERE state = 'held'")
+        settled = conn.execute(
+            text("SELECT count(*) FROM credit_reservations WHERE state = 'settled'")
         ).scalar_one()
-    assert (count, held) == (1, 1)
+        ledger = conn.execute(
+            text("SELECT count(*) FROM credit_ledger WHERE entry_type <> 'grant'")
+        ).scalar_one()
+    assert (count, settled) == (1, 1)
+    assert ledger == 2, "one reserve and one settle; the replay wrote nothing"
 
 
 def test_a_retry_with_a_different_body_is_a_conflict(

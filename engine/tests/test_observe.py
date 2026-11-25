@@ -571,6 +571,34 @@ def test_duplicate_events_inside_a_batch_are_counted_not_inserted(
     assert _count(app_engine, tenant, "SELECT sum(events) FROM connection_event_usage") == 1
 
 
+def test_a_fast_correct_answer_is_fluency_not_a_guess(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """A quick right answer is a learner who knows it: no flag, no abstention.
+
+    `rapid_guess` used to fire on latency alone, so a fluent learner — the one a
+    school most wants to see — filled the uninformative share and had decisions
+    refused for `data_quality`. Correctness is only ever used to exonerate.
+    """
+    events = [
+        event(item_id=f"q-{n}", latency_ms=110, correct=True, response=f"opt-{n}")
+        for n in range(10)
+    ]
+    body = _post(client, connection, events).json()
+    assert body["flags"].get("rapid_guess", 0) == 0
+
+    # Nor does a fast answer on an item everyone gets right count against anyone.
+    easy = [
+        event(item_id=f"e-{n}", latency_ms=100, correct=False, difficulty_band="0.90-0.98")
+        for n in range(3)
+    ]
+    assert _post(client, connection, easy).json()["flags"].get("rapid_guess", 0) == 0
+
+    # And a fast wrong answer on a genuinely hard item still is a guess.
+    hard = [event(item_id="h-1", latency_ms=90, correct=False, difficulty_band="0.20-0.40")]
+    assert _post(client, connection, hard).json()["flags"]["rapid_guess"] == 1
+
+
 def test_an_event_already_stored_is_a_duplicate_on_the_next_batch(
     client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
 ) -> None:
@@ -585,7 +613,7 @@ def test_validation_flags_are_recorded(
     client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
 ) -> None:
     events = [
-        event(item_id="i-1", latency_ms=120, device="phone"),  # rapid_guess
+        event(item_id="i-1", latency_ms=120, correct=False, device="phone"),  # rapid_guess
         event(item_id="i-1", correct=False, device="phone"),  # repeated_item
         event(item_id="i-2", device="tablet", assisted=True),  # device_change + assisted
         event(item_id="i-3", device="tablet"),
@@ -609,14 +637,15 @@ def test_validation_flags_are_recorded(
     assert any("assisted" in flags for flags in by_item["i-2"])
 
 
-def test_a_run_of_eight_identical_outcomes_is_flagged_across_batches(
+def test_eight_identical_responses_are_flagged_across_batches(
     client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
 ) -> None:
-    first = [event(item_id=f"i-{n}", correct=True) for n in range(4)]
-    assert _post(client, connection, first).json()["flags"] == {}
-    second = [event(item_id=f"j-{n}", correct=True) for n in range(4)]
+    """`straight_line` is 8+ identical *responses*, and it spans batches."""
+    first = [event(item_id=f"i-{n}", correct=True, response="b") for n in range(4)]
+    assert _post(client, connection, first).json()["flags"].get("straight_line", 0) == 0
+    second = [event(item_id=f"j-{n}", correct=True, response="b") for n in range(4)]
     body = _post(client, connection, second).json()
-    # The 8th identical outcome in the run is the 4th of the second batch.
+    # The 8th identical response in the run is the 4th of the second batch.
     assert body["flags"]["straight_line"] == 1
 
     with tenant_transaction(app_engine, tenant) as conn:
@@ -624,6 +653,72 @@ def test_a_run_of_eight_identical_outcomes_is_flagged_across_batches(
             text("SELECT item_id FROM learning_events WHERE 'straight_line' = ANY(validity_flags)")
         ).all()
     assert [row.item_id for row in flagged] == ["j-3"]
+
+
+def test_a_run_of_correct_answers_is_never_flagged(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """Correctness is not a flag: ten right answers are a learner doing well.
+
+    The rule that produced this test read "8+ identical outcomes", which flagged
+    a run of correct answers as inattention and made `decide` abstain on the
+    learners progressing fastest (MEASUREMENT §4, METRICS §1.3). Every event here
+    carries a *distinct* response, so no run exists.
+    """
+    answers = [event(item_id=f"k-{n}", correct=True, response=f"option-{n}") for n in range(10)]
+    body = _post(client, connection, answers).json()
+    assert "straight_line" not in body["flags"]
+    with tenant_transaction(app_engine, tenant) as conn:
+        flagged = conn.execute(
+            text("SELECT count(*) FROM learning_events WHERE 'straight_line' = ANY(validity_flags)")
+        ).scalar_one()
+    assert flagged == 0
+
+
+def test_a_missing_response_is_undeterminable_not_inferred_from_correctness(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """No response ⇒ `undeterminable`, on every event, however correct.
+
+    The honest answer to "was this straight-lining?" without a response is "we
+    cannot tell" — not a guess derived from the correctness pattern. The flag is
+    in the vocabulary so the gap is *visible* and countable rather than silent.
+    """
+    answers = [event(item_id=f"m-{n}", correct=True) for n in range(10)]
+    body = _post(client, connection, answers).json()
+    assert body["flags"].get("undeterminable") == 10
+    assert "straight_line" not in body["flags"]
+    with tenant_transaction(app_engine, tenant) as conn:
+        rows = conn.execute(
+            text(
+                "SELECT count(*) FILTER (WHERE 'undeterminable' = ANY(validity_flags)),"
+                "       count(*) FILTER (WHERE 'straight_line' = ANY(validity_flags))"
+                "  FROM learning_events"
+            )
+        ).one()
+    assert (rows[0], rows[1]) == (10, 0)
+
+
+def test_flag_severity_is_published_for_every_flag() -> None:
+    """METRICS §1.3: severity weights are published, and only two gate serving."""
+    from adapt_engine.observe import flags as flag_rules
+
+    vocabulary = {
+        "rapid_guess",
+        "tab_hidden",
+        "straight_line",
+        "device_change",
+        "assisted",
+        "repeated_item",
+        "undeterminable",
+    }
+    assert set(flag_rules.SEVERITY) == vocabulary, "every flag has a published severity"
+    assert set(flag_rules.UNINFORMATIVE_FLAGS) == {
+        "rapid_guess",
+        "straight_line",
+        "tab_hidden",
+    }
+    assert flag_rules.SEVERITY["undeterminable"] == "context"
 
 
 def test_a_hostile_idempotency_key_is_not_a_crash(client: TestClient, connection) -> None:

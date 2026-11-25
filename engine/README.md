@@ -96,6 +96,9 @@ Each of these is enforced by something that fails, not by a comment:
 | Every recommendation cites a claim that resolves | `claims` rows are gated by CHECK (construct, evidence floor, boundary) and seeded before use | `tests/test_decide.py::test_a_claim_below_its_evidence_floor_cannot_be_written` |
 | Advice is reproducible from its own inputs | `decisions.inputs` is frozen at serve time; replay recomputes and raises on mismatch | `tests/test_decide.py::test_a_hundred_stored_decisions_replay_byte_identically`, `test_replay_fails_loudly_when_a_stored_body_is_tampered` |
 | An abstention is free and carries no number | credits are reserved only for a served decision; the abstention body has no `value` key | `tests/test_decide.py::test_an_abstention_is_free_and_a_serve_is_not`, `test_an_abstention_has_no_value_field_and_names_its_need` |
+| Nothing is billed except a served decision | abstentions, failures, retries, replays, reads and `X-Adapt-Test` traffic write **no** ledger rows — asserted as an empty ledger, not as a flag | `tests/test_metering.py` (four zero-ledger cases, one row-count test, one 200-decision corpus) |
+| A served decision bills exactly once | one `reserve` and one `settle` in the request transaction; `credit_consumption` reads `entry_type='settle'` only | `tests/test_metering.py::test_a_served_decision_reserves_and_settles_exactly_once`, `::test_a_retry_writes_no_additional_ledger_rows` |
+| A validity flag never fires on good performance | `straight_line` reads the `response`, not `correct`; `rapid_guess` needs an incorrect answer; severity is published and only `uninformative` flags can gate serving | `tests/test_observe.py::test_a_run_of_correct_answers_is_never_flagged`, `::test_a_fast_correct_answer_is_fluency_not_a_guess`, `::test_flag_severity_is_published_for_every_flag` |
 | Over quota is a free 402 that writes nothing | one conditional upsert; the batch row is written after it returns a seat | `tests/test_observe.py::test_over_quota_is_402_with_resets_at_and_writes_nothing` |
 | A paused connection's events are refused, not dropped and not stored | the pause refusal happens before the idempotency row and before quota | `tests/test_observe.py::test_a_paused_connection_cannot_ingest_and_nothing_is_stored` |
 | No learner's free text is stored | `response` is hashed at ingest; only `response_digest` and `response_length` exist | `tests/test_observe.py::test_the_free_text_answer_is_hashed_and_not_stored` |
@@ -163,7 +166,10 @@ curl -s -H "Authorization: Bearer <key>" \
 
 **Ask what to do next.** `POST /v1/decide` returns one of three actions with the
 claim that justifies it, or an abstention that names what would change the answer.
-A served decision reserves one credit; an abstention is free, always.
+A served decision reserves and settles one credit (`X-Adapt-Billed: 1`); an
+abstention is free, always (`X-Adapt-Billed: 0`). `X-Adapt-Test: 1` — set
+automatically when `ADAPT_ENV=staging` — serves the same answer, bills nothing and
+stores the row as test traffic so metrics exclude it.
 
 ```bash
 curl -s -X POST localhost:8000/v1/decide \

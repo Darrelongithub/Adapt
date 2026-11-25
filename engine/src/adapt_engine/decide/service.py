@@ -36,6 +36,7 @@ from sqlalchemy.engine import Connection
 from adapt_engine.decide import claims as claim_service
 from adapt_engine.decide.constructs import (
     ACTIONS,
+    DECIDE_WEIGHT,
     DECISION_TTL_SECONDS,
     DEFAULT_REVIEW_DAYS,
     MAX_FLAGGED_SHARE,
@@ -47,12 +48,15 @@ from adapt_engine.levels import level_name, level_object
 from adapt_engine.mastery import bkt
 from adapt_engine.mastery.bkt import Params, State
 from adapt_engine.mastery.service import MIN_TRIALS, Prior, prior_for, served_body
+from adapt_engine.observe import flags as flag_rules
 from adapt_engine.tenants import tier_of
 
 #: Validity flags that say "this trial may not be the learner's", rather than
-#: merely "this trial happened in an unusual way". A device change is not a
-#: quality problem; a rapid guess is.
-QUALITY_FLAGS = ("rapid_guess", "straight_line", "tab_hidden")
+#: merely "this trial happened in an unusual way". Read from the flag module's
+#: severity table so the gate and the vocabulary cannot drift: a device change is
+#: a context note, `assisted` is recorded as data, and `undeterminable` is an
+#: admission that we cannot tell — none of them is a reason to abstain.
+QUALITY_FLAGS = flag_rules.UNINFORMATIVE_FLAGS
 
 #: How many of the learner's most recent trials the quality and streak rules look
 #: at. Three is the documented streak ("≥3 consecutive errors"), and twenty is
@@ -179,13 +183,18 @@ def snapshot(
 def _recent_answers(
     conn: Connection, *, tenant_id: uuid.UUID, learner_id: str, skill: str
 ) -> list[bool]:
+    # The tie-break has to be total. `ts` ties whenever a client sends one
+    # timestamp for a batch (our fixtures do) and `id` is a random uuid, so
+    # `ORDER BY ts DESC, id DESC` picked a different "last three answers" per
+    # tenant from identical input — the metering corpus caught it by abstaining
+    # for `conflicting_signals` 0 to 3 times on the same 200 learners.
     rows = conn.execute(
         text(
             """
             SELECT correct
               FROM learning_events
              WHERE tenant_id = :tenant_id AND learner_id = :learner_id AND skill = :skill
-             ORDER BY ts DESC, id DESC
+             ORDER BY ts DESC, created_at DESC, seq DESC NULLS LAST, id DESC
              LIMIT :limit
             """
         ),
@@ -207,7 +216,7 @@ def _flagged_share(conn: Connection, *, tenant_id: uuid.UUID, learner_id: str, s
                 SELECT validity_flags
                   FROM learning_events
                  WHERE tenant_id = :tenant_id AND learner_id = :learner_id AND skill = :skill
-                 ORDER BY ts DESC, id DESC
+                 ORDER BY ts DESC, created_at DESC, seq DESC NULLS LAST, id DESC
                  LIMIT :limit
             )
             SELECT count(*) AS n,
@@ -282,6 +291,11 @@ def evaluate(
             series=series,
             reason="data_quality",
             needs={"clean_trials": MIN_TRIALS},
+            flag_evidence={
+                "uninformative_share": inputs.flagged_share,
+                "counted": list(QUALITY_FLAGS),
+                "ignored": [name for name in flag_rules.SEVERITY if name not in QUALITY_FLAGS],
+            },
         )
 
     estimate = bkt.estimate(
@@ -499,6 +513,7 @@ def _abstain(
     reason: str,
     needs: dict[str, object],
     contributing: list[str] | None = None,
+    flag_evidence: dict[str, object] | None = None,
 ) -> Outcome:
     body = {
         **_base(inputs, now=now, decision_id=decision_id, level=level),
@@ -510,6 +525,8 @@ def _abstain(
         "contributing": contributing or [],
         "estimates": [] if inputs.trials < MIN_TRIALS else [series],
     }
+    if flag_evidence is not None:
+        body["flag_evidence"] = flag_evidence
     return Outcome(body=body, action="abstain", abstain=True, reason=reason)
 
 
@@ -572,15 +589,25 @@ def decide(
     now: datetime,
     decision_id: uuid.UUID | None = None,
     reserve: Any = None,
+    settle: Any = None,
+    test_traffic: bool = False,
 ) -> Stored:
     """Serve or abstain, store the decision, and charge for exactly one of them.
 
-    `reserve` is injected (it is the credits service's own function) so this
-    module does not import money: a served decision reserves one credit, an
-    abstention reserves nothing at all. Reserving *after* deciding is deliberate
-    — an abstention must never be refused for lack of credits, because a host
-    that is out of money is exactly the host that most needs to be told to fix
-    its instrumentation rather than to buy more.
+    `reserve` and `settle` are injected (they are the credits service's own
+    functions) so this module does not import money. A **served** decision
+    reserves one credit and settles it inside the same transaction — two ledger
+    rows, one of which (`settle`) is the only kind billing reads. An
+    **abstention** writes nothing: no reserve, no settle, no release, because
+    nothing was ever held. Reserving after deciding is deliberate — an abstention
+    must never be refused for lack of credits, because a host that is out of
+    money is exactly the host that most needs to be told to fix its
+    instrumentation rather than to buy more.
+
+    `test_traffic` skips the reservation entirely: `X-Adapt-Test: 1` is unbilled
+    and excluded from metrics (METERING §3), so it must not touch the ledger at
+    all — a zero-credit reservation that is released still writes rows, and
+    "zero rows" is the property the increment is asked to prove.
     """
     stored = _find(conn, tenant_id=tenant_id, idempotency_key=idempotency_key)
     if stored is not None:
@@ -601,8 +628,8 @@ def decide(
     outcome = evaluate(inputs, now=now, decision_id=identifier)
 
     reservation_id: uuid.UUID | None = None
-    if not outcome.abstain:
-        if reserve is None:
+    if not outcome.abstain and not test_traffic:
+        if reserve is None or settle is None:
             raise RuntimeError("a served decision needs a credit reservation")
         reservation = reserve(
             conn,
@@ -610,6 +637,16 @@ def decide(
             amount=1,
             operation_ref=f"decision:{identifier}",
             idempotency_key=f"{idempotency_key}:reserve",
+        )
+        # Measured work is known the moment the decision exists, so the hold is
+        # closed in the same transaction: `reserve` binds the key, `settle` is
+        # the row billing reads. A failure anywhere rolls both back.
+        settle(
+            conn,
+            tenant_id=tenant_id,
+            reservation_id=reservation.id,
+            amount=DECIDE_WEIGHT,
+            idempotency_key=f"{idempotency_key}:settle",
         )
         reservation_id = reservation.id
 
@@ -619,10 +656,11 @@ def decide(
             INSERT INTO decisions
                 (tenant_id, id, connection_id, learner_id, skill, action, abstain,
                  reason, request_hash, idempotency_key, inputs, body, issued_at,
-                 expires_at, reservation_id)
+                 expires_at, reservation_id, test_traffic)
             VALUES (:tenant_id, :id, :connection_id, :learner_id, :skill, :action,
                     :abstain, :reason, :hash, :key, CAST(:inputs AS jsonb),
-                    CAST(:body AS jsonb), :issued_at, :expires_at, :reservation_id)
+                    CAST(:body AS jsonb), :issued_at, :expires_at, :reservation_id,
+                    :test_traffic)
             """
         ),
         {
@@ -641,6 +679,7 @@ def decide(
             "issued_at": now,
             "expires_at": now + timedelta(seconds=DECISION_TTL_SECONDS),
             "reservation_id": reservation_id,
+            "test_traffic": test_traffic,
         },
     )
     return Stored(body=outcome.body, decision_id=identifier, replayed=False, created=True)

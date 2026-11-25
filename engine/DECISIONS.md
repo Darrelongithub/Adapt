@@ -1039,3 +1039,155 @@ reachable_reason`, and the two mastery golden tests. Restored: 9 passed. The
 golden file is red in the same run as the behavioural test, which is the point of
 pinning the body: the floor is asserted twice, once as behaviour and once as a
 customer-visible value.
+
+## 21. Increment 5: flags that must not fire on good performance, and money that is counted
+
+### 21.1 `straight_line` is a property of the response, and `undeterminable` when there is none
+
+The rule was "8+ identical *outcomes* in a row", where an outcome was `correct`.
+That is a heuristic for inattention that fires hardest on the learners doing best:
+eight right answers in a row is a run, so the flag was set, the uninformative
+share crossed 0.30, and `decide` answered `data_quality` instead of teaching the
+one learner who least needed to be told to slow down.
+
+The rule is now 8+ identical **`response`** values on one skill (compared by
+SHA-256 digest, so the text itself is still never stored), carried across batch
+boundaries because a batch is a transport unit. When an event arrives without a
+response, the honest answer to "was this straight-lining?" is *we cannot tell*:
+the event is flagged `undeterminable`, which is a `context`-severity flag and is
+**not** in `QUALITY_FLAGS`, so a host that does not send responses never moves a
+decision toward abstention. Correctness is not read at all. `undeterminable` is
+in the closed vocabulary via migration `0014`, because a flag the code can emit
+and the CHECK does not accept is a 500 on the ingest path.
+
+The 200-learner measurement of §20.8, re-run on the same seeded corpus:
+
+| Served | Abstained | Median width (served) | p50 | p95 |
+|---|---|---|---|---|
+| 176 / 200 (88.0%) | 24 (23 `insufficient_evidence`, 1 `conflicting_signals`) | 0.323 | 29.6 ms | 38.3 ms |
+
+The nine `data_quality` abstentions are gone and **nothing else moved** — the
+other 23 `insufficient_evidence` and the single `conflicting_signals` are the
+same learners as before. That is the cleanest possible form of the result: the
+flag fired on exactly nine learners, all nine were being punished for good
+performance, and removing the rule changed no other decision. p50 rose from
+26.4 ms to 29.6 ms, which is the price of two ledger writes per served decision
+(§21.5) and of the ordering fix in §21.4.
+
+### 21.2 The audit: does any other flag fire on good performance?
+
+Every flag in the vocabulary, what sets it, and whether it can be earned by doing
+well — the question the increment asked, answered per flag rather than in general:
+
+| Flag | Set by | Can good performance set it? | Severity | Gates serving? |
+|---|---|---|---|---|
+| `straight_line` | 8+ identical `response` values | Not any more. A learner can *choose* the same option eight times and be right eight times — that is now flagged, and that is the intended signal (identical responses), not correctness. | `uninformative` | yes, via the 0.30 share |
+| `rapid_guess` | latency < 300 ms | **Yes, and it did.** Fixed — §21.3. | `uninformative` | yes, via the 0.30 share |
+| `tab_hidden` | nothing can set it | n/a — unreachable (`KNOWN_GAPS` §2b) | `uninformative` | yes, when it can be set |
+| `device_change` | device differs from the learner's last event | Yes, and it should: changing device is life, not failure. It cannot gate: `context`. | `context` | no |
+| `assisted` | `assisted: true` (hint/prompt observed) | Yes — help-seeking is *good* learning. Published as data (`MEASUREMENT` §4): recorded, excluded only from independence metrics. It cannot gate: `scoring`. | `scoring` | no |
+| `repeated_item` | the item was already served to this learner, or earlier in the batch | Yes, and the fault is ours or the host's scheduling, not the learner's. It cannot gate: `scoring`. | `scoring` | no |
+| `undeterminable` | no `response` on the event | No — it is an instrument limitation, stated as one. `context`. | `context` | no |
+
+The severity of every flag is published in `observe/flags.py::SEVERITY`, and
+`QUALITY_FLAGS` in `decide/service.py` is *derived* from it rather than written
+again, so a new flag cannot be added to the vocabulary and silently start gating
+serving. A test asserts that the table covers the vocabulary exactly and that
+`UNINFORMATIVE_FLAGS` is exactly `{rapid_guess, straight_line, tab_hidden}` — the
+third is unreachable today, and it is `uninformative` because `MEASUREMENT` §4
+calls a hidden tab a reduced-validity session, so the gate is already right for
+the day a visibility channel exists.
+
+### 21.3 `rapid_guess` did fire on good performance, and now does not
+
+`MEASUREMENT` §4 defines the flag as "response < 300 ms **on a non-trivial
+item**". The implementation read only the clock: any answer under 300 ms was
+uninformative, so a fluent learner answering quickly and correctly filled the
+0.30 share and got `data_quality` — the same failure as `straight_line`, one
+flag over, and it was not caught because no measurement corpus carried latencies.
+
+The flag now requires all three: under 300 ms, **not correct**, and an item that
+is not known-trivial (`difficulty_band` whose high end is ≥ 0.85). Correctness is
+used here only to *exonerate* a learner, never to accuse one; that is the
+distinction the earlier rule got wrong in the other direction. A fast wrong
+answer on a hard item is still a guess, which is what the flag is for.
+
+The cost is stated: on an item with no `difficulty_band`, a fast *correct* answer
+is no longer flagged even if the host would call it a guess. Losing a true
+positive on a good answer is the trade this project makes deliberately — a false
+positive here abstains on the strongest learner in the class.
+
+### 21.4 The tie-break bug the metering corpus found
+
+The corpus abstained for `conflicting_signals` a different number of times on
+each run: 3, then 2, then 0, on the same 200 seeded learners. The cause was
+ordering: `_recent_answers` and `_flagged_share` read `ORDER BY ts DESC, id DESC`,
+and a client may send one timestamp for a whole batch (our fixtures do — every
+event in a batch shares `ts`), while `id` is a random uuid. Which three answers
+were "the learner's last three" was therefore a coin flip per tenant.
+
+Every tail query is now ordered by `ts DESC, created_at DESC, seq DESC NULLS
+LAST, id DESC` — server ingest time, then the client's own sequence, then the id.
+The cost is bounded: the lateral in `observe/flags.py` has already filtered to one
+learner, so the sort is over that learner's rows in one month partition, not over
+the table. The corpus is pinned at 176 served / 24 abstained in
+`tests/test_metering.py`, so the next nondeterminism of this kind is a red test
+rather than a drifting number in a report.
+
+### 21.5 Metering: what bills, what does not, and how a reader checks it
+
+Per `AGENT_M1` §5 and `METERING` §3, proved by counting rows rather than by
+asserting a flag:
+
+| Path | Ledger rows | `credit_consumption` | `decisions` row |
+|---|---|---|---|
+| served decision | 2 (`reserve` binds the key, `settle` moves the credit) | +1 | yes |
+| abstention | **0** | 0 | yes |
+| 4xx / 422 / 404 / 403 / 429 | **0** | 0 | no |
+| 5xx after the reservation | **0** — the transaction rolls back the hold | 0 | no |
+| replay (same `Idempotency-Key`) | **0** | 0 | no new row |
+| replay (`POST /v1/decisions/{id}/replay`) | **0** | 0 | no new row |
+| read (`/v1/mastery*`, `/v1/credits/balance`) | **0** | 0 | no new row |
+| test traffic (`X-Adapt-Test: 1`, or `ADAPT_ENV=staging`) | **0** | 0 | yes, `test_traffic = true` |
+
+Four decisions about this that a reviewer should be able to disagree with:
+
+1. **A served decision settles immediately.** `METERING` §2 charges `decide` one
+   credit and §5 lets a tenant hold above one credit without a reservation; the
+   honest reading is that the work is measured when the decision exists, so the
+   hold is settled in the same transaction. Waiting for a nightly job would mean
+   an uncommitted charge visible to nobody, and the arithmetic in this table is
+   only checkable if the ledger is written when the answer is.
+2. **`X-Adapt-Test` is a deployment property, not a key property.** Keys carry
+   only `live`/`test`, and every key outside production is a `test` key — so
+   auto-flagging test keys would have made the billing path unreachable in CI and
+   in every pre-production environment. `ADAPT_ENV=staging` sets test traffic
+   automatically instead, which is what "a staging deployment must not burn a
+   budget" actually means. Anything other than absent/`0`/`1` in the header is a
+   `422` with `details.field`, not a guess.
+3. **`decisions.test_traffic` exists** (migration `0015`) so "excluded from
+   metrics" is a stored fact rather than an inference from a missing ledger row,
+   and `decisions_served_is_charged` was relaxed to
+   `abstain OR test_traffic OR reservation_id IS NOT NULL` — a test-traffic
+   decision is served, unbilled and valid, and the old check rejected it.
+4. **`credit_consumption` was not re-created.** It already exists in migration
+   `0006` as a monthly summary over `entry_type = 'settle'` with
+   `security_invoker = true`, which is exactly what §3 asks for; the increment's
+   job was to prove it (settle-only, tenant-invisible across tenants, unchanged by
+   a reserve/release pair), and a second view would have failed on the duplicate.
+
+The 200-decision corpus, same seed as §21.1: **176 served, 24 abstained, 352
+billing ledger rows** (176 `reserve` + 176 `settle`), one `grant` row from the
+setup, 176 `credit_reservations` all `settled`, and
+`sum(consumed) = 176`. A reader can check three ways: `2 × served = ledger`,
+`settles = consumed = served`, `decisions = served + abstained = 200`.
+
+### 21.6 Red-then-green: billing an abstention
+
+Changing `if not outcome.abstain and not test_traffic:` to `if not test_traffic:`
+— billing exactly what `METERING` §3 rule 1 forbids — turns
+`test_an_abstention_writes_no_ledger_rows` red (its empty ledger becomes
+`{ledger: 2, settles: 1, consumed: 1, reservations: 1}`) and takes
+`test_decide.py::test_an_abstention_is_free_and_a_serve_is_not` with it. The
+sabotage does not touch a billing flag or a header: the tests count rows, so the
+only way to make them green is to write none.
