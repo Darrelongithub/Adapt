@@ -20,6 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from adapt_engine.api.connections import router as connections_router
 from adapt_engine.api.credits import router as credits_router
+from adapt_engine.api.decide import router as decide_router
 from adapt_engine.api.health import router as health_router
 from adapt_engine.api.keys import router as keys_router
 from adapt_engine.api.learners import router as learners_router
@@ -164,6 +165,7 @@ def create_app(
     app.include_router(learners_router)
     app.include_router(observe_router)
     app.include_router(mastery_router)
+    app.include_router(decide_router)
     app.include_router(credits_router)
     app.include_router(connections_router)
     _install_openapi(app)

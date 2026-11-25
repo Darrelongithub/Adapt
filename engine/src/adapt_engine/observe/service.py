@@ -382,6 +382,13 @@ def ingest(
     batch_id = uuid.uuid4()
     quota = _quota(conn, connection_id)
     with_decision = sum(1 for event in fresh if event.decision_id is not None)
+    # OF the events that cite a decision, how many cite one that exists? A host
+    # that invents a decision id, or replays events from a different tenant,
+    # would otherwise look fully attributed — and the metric is the only thing
+    # that tells us whether advice is actually being followed.
+    cited = {event.decision_id for event in fresh if event.decision_id}
+    known = _resolvable_decisions(conn, sorted(cited))
+    resolvable = sum(1 for event in fresh if event.decision_id in known)
     response: BatchResponse = {
         "batch_id": str(batch_id),
         "accepted": len(fresh),
@@ -392,6 +399,8 @@ def ingest(
             "events": len(fresh),
             "with_decision_id": with_decision,
             "share": round(with_decision / len(fresh), 4) if fresh else 0.0,
+            "resolvable": resolvable,
+            "resolvable_share": round(resolvable / len(fresh), 4) if fresh else 0.0,
         },
         "usage": {
             "period": period.date().isoformat(),
@@ -457,6 +466,24 @@ def ingest(
         now=now,
     )
     return StoredBatch(response=response, batch_id=batch_id, replayed=False)
+
+
+def _resolvable_decisions(conn: Connection, decision_ids: list[str]) -> set[str]:
+    """How many of these cited decision ids actually exist for this tenant.
+
+    The column is text on the event and uuid on the decision, so the comparison
+    casts the *stored* side: a malformed client value then simply fails to match
+    instead of raising a cast error in the middle of an ingest.
+    """
+    if not decision_ids:
+        return set()
+    return {
+        str(row.id)
+        for row in conn.execute(
+            text("SELECT id FROM decisions WHERE id::text = ANY(:ids)"),
+            {"ids": decision_ids},
+        ).all()
+    }
 
 
 def _flag_counts(event_flags: list[tuple[str, ...]]) -> dict[str, int]:

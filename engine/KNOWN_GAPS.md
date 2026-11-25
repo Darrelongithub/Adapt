@@ -382,10 +382,15 @@ rather than by this suite, the adversarial constructs are the tests to show.
   is two indexed lookups, and adding a second limiter was not in this increment.
   A tenant with `read_model` can call it as fast as the app can answer.
 * `learner_mastery` rows are never expired, pruned, or erased with a learner's
-  data. Learner erasure (`learner.erased`, INTEGRATION §8) removes encrypted
-  personal fields; it does **not** remove mastery counters, and it should — a
-  per-learner row that survives an erasure request is exactly what a DSR audit
-  looks for. Owed to increment 5 (erasure) or sooner.
+  data. `PRIVACY.md` §5 is explicit that **derived estimates are erased with the
+  learner** — "a derived estimate is still data about a person; 'it is only our
+  model's number' is not a lawful basis for keeping it" — and that cohort *fits*
+  survive only because they are shared across ≥20 learners. So `learner_mastery`
+  (and, from increment 4, `decisions`) **must join the erasure path** in
+  increment 7 when DSR lands: the same transaction that erases the learner's
+  encrypted fields deletes these rows, and the deletion receipt counts them.
+  Until then a per-learner state row survives an erasure request, which is
+  exactly what a DSR audit looks for. Recorded here rather than assumed.
 * "Deep adds cross-cohort mastery modelling" (ADR-002 §tiers) is not enforced
   anywhere: all four current scopes map to `core`, and the refit is an operator
   script rather than a tiered endpoint (DECISIONS §19.7). A tenant cannot buy or
@@ -401,11 +406,70 @@ priors as if it were not. Worth weighting when increment 4 starts consuming the
 estimate to make decisions; worth stating now so the fit is not mistaken for
 flag-aware.
 
-## 20. Three golden files are a sample, not a regression suite
+## 20. Golden files pin branches, not the distribution
 
-`tests/golden/mastery/` pins three sequences at four decimals: a mid-mastery
-history, the luckiest eight-trial start, and a guesser at the floor. They catch a
-change in the served number, not a change in the *distribution* of served numbers
-— that is what the calibration and guesser tests are for. Nothing guards against
-someone editing a golden file and the test it feeds in the same commit; the guard
-is review, and the rule is in DECISIONS §19.6.
+`tests/golden/mastery/` now pins thirteen cases at four decimals, and
+`test_the_golden_set_covers_every_branch` asserts what the set *covers*: three
+abstentions with different `needs.trials`, the capped value, served low/mid/high,
+a long-run guesser, a saturated run, the three G2 crossings, and two constructs.
+That is a branch gate, not a distribution gate — a shift that leaves every branch
+shape intact but moves a percentile is still invisible to it, and the calibration
+and guesser tests are what cover that. Nothing guards against someone editing a
+golden and the test it feeds in the same commit; the guard is review, and the rule
+is in DECISIONS §19.6.
+
+## 21. One unreproduced teardown error, recorded rather than forgotten
+
+On **2026-11-17**, during a full local run of the suite, pytest reported one `ERROR` in the *teardown*
+of `tests/test_observe.py::test_duplicate_events_inside_a_batch_are_counted_not_inserted`. The test
+body passed; the error was in fixture finalisation, after the assertions. It did not reproduce in
+three subsequent full runs of the same tree, nor in CI (run 45607546119, both jobs green).
+
+Unreproduced is not the same as absent. The failure mode it would represent is real: the suite
+provisions and drops a PostgreSQL database per session (`tests/conftest.py::database`), and a teardown
+that races the next provision would show up exactly like this — one `ERROR`, no failed assertion, and
+a green run afterwards. It is recorded here with its date and test name so that a second occurrence is
+a pattern rather than a surprise. If it recurs, the first thing to capture is the full teardown
+traceback (`pytest -x -q --tb=long`) and whether `pgserver` logged a shutdown timeout.
+
+## 22. `consent_withheld` is in the vocabulary and cannot be served
+
+`METRICS.md` §1.3 lists six abstention reasons. `decide` v1 can reach five; the
+sixth, `consent_withheld`, needs a consent store that does not exist yet (the
+scope is in `PRIVACY.md` §5 and lands with the console). It is in the closed
+vocabulary so that adding it later is a store, not a new word — and it is *not*
+simulated with a flag nothing can set, because a reason code nobody can trigger
+is indistinguishable from a reason code that does not work.
+
+## 23. `straight_line` flags a genuine run of correct answers, and `decide` then abstains
+
+The ingest rule is "8+ identical outcomes in a row on one skill" — which catches
+straight-lining, and also catches a learner who has just got eight right. In the
+200-learner measurement (`DECISIONS.md` §20.8) **9 abstentions out of 33 were
+`data_quality`**, and that is why: a mastery run is flagged by a heuristic written
+to detect the opposite behaviour. The flag predates this increment; what is new is
+that `decide` reads it as a gate on serving. Two ways out, neither free: split the
+flag into `straight_line_correct` and `straight_line_identical` at ingest (a
+contract change to the flags vocabulary), or let `decide` ignore the flag when the
+recent run is *correct* while the estimate is high. Recorded rather than fixed,
+because both options change ingest's published semantics and that is the owner's
+call.
+
+## 24. `decide` has no `decision_unknown` code, and decisions are not erased
+
+* A replay of a decision id that does not exist answers `404 route_unknown`,
+  because the closed code set has no `decision_unknown` and inventing one is a
+  §6 row the owner has to add. The 404 is correct; the code is imprecise.
+* `decisions` rows are personal data (derived) under `PRIVACY.md` §5 and must be
+  erased with the learner. They are not, today — the same gap as §18 for
+  `learner_mastery`, and both join the erasure path in increment 7. A decision
+  record that survives an erasure request is worse than a mastery row, because it
+  also holds the advice that was served.
+* `spaced_review` returns a **documented default** interval (7 days) marked
+  `basis: "documented_default"`, cited to the spacing claim. There is no retention
+  model at L1; presenting a number as if there were one would be the exact failure
+  this project keeps naming.
+* Claims are per-tenant copies of global knowledge (§20.4), and there is no claim
+  ingestion pipeline, no supersession chain and no `prohibited_claims` template
+  check (`CLAIMS.md` §1). The five seeded claims are hand-written and reviewed by
+  review only.

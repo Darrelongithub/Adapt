@@ -42,6 +42,7 @@ from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.main import create_app
 from adapt_engine.mastery import bkt, refit
 from adapt_engine.mastery.bkt import DEFAULT_PARAMS, State, estimate, update
+from adapt_engine.mastery.service import Prior, served_body
 from tests.conftest import make_settings
 from tests.pg import bootstrap_key, provision_tenant
 
@@ -299,21 +300,26 @@ def test_where_the_guesser_guarantee_stops() -> None:
     assert worst > MASTERY_LINE, "the documented limit no longer breaches; update DECISIONS"
 
 
-def test_the_streak_length_the_estimator_believes() -> None:
-    """Where the line is crossed: eleven straight correct answers.
+def test_the_streak_curve_is_published_and_asserted() -> None:
+    """G2 part 3: the crossings at 0.5, 0.7 and 0.8, as a test and a document.
 
-    Pinned because it is the number a change to `PRIOR_STRENGTH` moves, and the
-    number the honest report quotes ("a guesser needs eleven in a row").
+    `MEASUREMENT.md` §11 publishes this curve; this test is its assertion. A
+    buyer can check "eleven straight correct answers before we show 0.7", and a
+    learner can understand it, which is why it is the honest form of the
+    guarantee rather than a threshold nobody can verify.
     """
     state = State.cold(DEFAULT_PARAMS)
-    served: dict[int, float] = {}
-    for trial in range(1, 21):
+    crossings: dict[float, int] = {}
+    previous = 0.0
+    for trial in range(1, 41):
         state = update(state, DEFAULT_PARAMS, correct=True)
-        served[trial] = estimate(state, DEFAULT_PARAMS).value
-    assert served[8] == pytest.approx(0.6488, abs=1e-4)
-    assert served[10] < MASTERY_LINE
-    assert served[11] >= MASTERY_LINE, f"crossover moved down to {served[11]:.3f}"
-    assert served[11] < 0.73, f"eleven straight serves {served[11]:.3f}; the crossover is too steep"
+        served = estimate(state, DEFAULT_PARAMS).value
+        for threshold in (0.5, 0.7, 0.8):
+            if threshold not in crossings and served >= threshold:
+                crossings[threshold] = trial
+        previous = served
+    assert crossings == {0.5: 4, 0.7: 11, 0.8: 16}, f"curve moved: {crossings}"
+    assert previous > 0.9, "forty straight should be served as mastery"
 
 
 def test_the_cap_fires_only_when_the_evidence_does_not_clear_guessing(
@@ -362,58 +368,141 @@ def test_the_floor_abstains_and_names_the_count_that_would_change_it() -> None:
 # --- golden files (G1) ----------------------------------------------------
 
 
-def _golden_sequences() -> list[dict[str, object]]:
-    return [
-        {
-            "name": "steady_mid_mastery",
-            "params": bkt.DEFAULT_PARAMS.as_dict(),
-            "sequence": [
-                True,
-                False,
-                True,
-                True,
-                False,
-                True,
-                False,
-                True,
-                True,
-                False,
-                True,
-                True,
-            ],
-        },
-        {
-            "name": "cold_start_all_correct",
-            "params": bkt.DEFAULT_PARAMS.as_dict(),
-            "sequence": [True] * 8,
-        },
-        {
-            "name": "guesser_at_the_floor",
-            "params": bkt.DEFAULT_PARAMS.as_dict(),
-            "sequence": [True, False, False, True, False, False, False, True, False, False],
-        },
-    ]
+#: Twelve-plus goldens, because three are a sample: G1 is only a gate if a
+#: changed *distribution* has somewhere to show up. The set covers every branch
+#: of `served_body` — three abstentions with different `needs.trials`, served
+#: low/mid/high, the guessing cap, the clamp at a long run, the three streak
+#: crossings from G2, and the same evidence under two different constructs.
+GOLDEN_CASES: list[dict[str, object]] = [
+    {"name": "01_abstain_zero_trials", "skill": "skill.fractions", "sequence": []},
+    {
+        "name": "02_abstain_three_trials",
+        "skill": "skill.fractions",
+        "sequence": [True, True, False],
+    },
+    {
+        "name": "03_abstain_seven_trials",
+        "skill": "skill.fractions",
+        "sequence": [True, False, True, True, False, False, True],
+    },
+    # 3 of 12: the guessing cap fires (mean would be 0.29, capped to 0.25).
+    {
+        "name": "04_capped_low",
+        "skill": "skill.fractions",
+        "sequence": [
+            True,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+        ],
+    },
+    {
+        "name": "05_served_low",
+        "skill": "skill.fractions",
+        "sequence": [
+            True,
+            False,
+            False,
+            True,
+            False,
+            True,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+        ],
+    },
+    {
+        "name": "06_served_mid",
+        "skill": "skill.fractions",
+        "sequence": [True, False, True, True, False, True, False, True, True, False, True, True],
+    },
+    {
+        "name": "07_served_high",
+        "skill": "skill.fractions",
+        "sequence": ([True] * 24 + [False] * 3 + [True] * 3),
+    },
+    # 12 of 60: a learner at exactly the guessing rate, long run, near the floor.
+    {
+        "name": "08_long_run_guesser",
+        "skill": "skill.fractions",
+        "sequence": [i % 5 == 0 for i in range(60)],
+    },
+    # 60 straight: through the clamp, well past the 0.8 crossing.
+    {"name": "09_saturated_all_correct", "skill": "skill.fractions", "sequence": [True] * 60},
+    # The three G2 crossing points, at the served layer rather than the raw one.
+    {"name": "10_floor_all_correct", "skill": "skill.fractions", "sequence": [True] * 8},
+    {"name": "11_crossing_0_7", "skill": "skill.fractions", "sequence": [True] * 11},
+    {"name": "12_crossing_0_8", "skill": "skill.fractions", "sequence": [True] * 16},
+    # The same evidence under a second construct: the body must differ only in
+    # `skill`, which is what proves the estimate is not per-construct luck.
+    {
+        "name": "13_second_construct",
+        "skill": "skill.ratios",
+        "sequence": [True, False, True, True, False, True, False, True, True, False, True, True],
+    },
+]
+
+
+def _golden_body(case: dict[str, object]) -> dict[str, object]:
+    """The served body for one golden case, through the same pure function.
+
+    `DEFAULT_PARAMS` and the `documented_default` prior are part of the fixture:
+    a golden that silently picked up a refitted prior would be pinned to data.
+    """
+    params = DEFAULT_PARAMS
+    state = _fold(list(case["sequence"]), params)  # type: ignore[arg-type]
+    prior = Prior(skill=str(case["skill"]), version=1, params=params, source="documented_default")
+    return served_body(
+        learner_id="learn-golden-0001",
+        skill=str(case["skill"]),
+        state=state,
+        prior=prior,
+        tier="core",
+    )
 
 
 def test_golden_files_match_the_estimator() -> None:
-    """G1: three sequences, pinned to four decimals, compared exactly.
+    """G1: every branch of the served body, pinned exactly, compared byte-wise.
 
-    Regenerating these to make a red run green is the failure mode the files
-    exist to prevent: a changed number here is a changed *served* number, and it
-    needs a version bump and a sentence in DECISIONS, not a new fixture.
+    Regenerating a golden to make a red run green is the failure mode these
+    files exist to prevent: a changed number here is a changed *served* number,
+    and it needs a version bump and a sentence in DECISIONS (AGENT_M1 §8 G1).
     """
-    for case in _golden_sequences():
+    assert len(GOLDEN_CASES) >= 10, "G1 needs a set, not a sample"
+    for case in GOLDEN_CASES:
         path = GOLDEN / f"{case['name']}.json"
         assert path.exists(), f"missing golden {path}"
         golden = json.loads(path.read_text())
-        params = bkt.Params(**case["params"])
-        state = _fold(case["sequence"], params)
-        result = estimate(state, params)
-        assert {
-            "value": round(result.value, 4),
-            "interval": [round(result.low, 4), round(result.high, 4)],
-            "trials": result.trials,
-        } == golden["expected"], case["name"]
+        assert _golden_body(case) == golden["expected"], case["name"]
+
+
+def test_the_golden_set_covers_every_branch() -> None:
+    """The set's *coverage* is asserted, not left to whoever adds case thirteen.
+
+    Three abstentions, three served bands, the cap, the clamp, three streak
+    crossings and two constructs — if a later change removes a branch, this test
+    says which shape went missing instead of quietly losing the coverage.
+    """
+    bodies = {case["name"]: _golden_body(case) for case in GOLDEN_CASES}
+    abstentions = [b for b in bodies.values() if b.get("abstain")]
+    assert {b["needs"]["trials"] for b in abstentions} == {8, 5, 1}  # type: ignore[index]
+    served = [b["value"] for b in bodies.values() if "value" in b]
+    assert min(served) < 0.4 and max(served) > 0.8
+    assert any(
+        b.get("value") == bkt.DEFAULT_PARAMS.p_guess + bkt.GUESS_CAP for b in bodies.values()
+    )
+    assert {str(b["skill"]) for b in bodies.values()} == {"skill.fractions", "skill.ratios"}
 
 
 # --- HTTP: fold, abstain, isolate -----------------------------------------
@@ -517,13 +606,14 @@ def test_observations_fold_into_a_served_estimate(
     assert resp.status_code == 202, resp.text
 
     body = _read(client, connection, learner, "skill.fractions").json()
-    assert body["trials"] == 10
-    assert body["estimator"] == bkt.ESTIMATOR
+    # INTEGRATION §6B: `n`, an interval *object* with its mass, `shrunk_rate`.
+    assert body["n"] == 10
+    assert body["estimator"] == "shrunk_rate"
     assert 0.0 < body["value"] < 1.0
-    assert body["interval"][0] <= body["value"] <= body["interval"][1]
-    assert body["interval_mass"] == bkt.INTERVAL_MASS
-    assert body["prior"]["source"] == "cohort_prior"
-    assert body["prior"]["version"] == 1
+    assert body["interval"]["low"] <= body["value"] <= body["interval"]["high"]
+    assert body["interval"]["mass"] == bkt.INTERVAL_MASS
+    assert body["prior"] == {"source": "cohort_prior", "strength": 12, "version": 1}
+    assert body["served"] == "L1" and body["limited_by"] is None
 
     with tenant_transaction(app_engine, tenant) as conn:
         state = conn.execute(
@@ -541,9 +631,10 @@ def test_below_the_floor_the_answer_is_a_count_not_a_number(client: TestClient, 
     assert _post(client, connection, _events(learner, [True, True, False])).status_code == 202
 
     body = _read(client, connection, learner, "skill.fractions").json()
+    assert body["abstain"] is True
     assert body["reason"] == "insufficient_evidence"
     assert body["needs"] == {"trials": 5}
-    assert body["trials"] == 3
+    assert body["n"] == 3
     assert "value" not in body, "an abstention must not carry a number to render"
 
 
@@ -565,7 +656,7 @@ def test_a_replayed_batch_does_not_move_mastery(client: TestClient, connection) 
     assert replay.json() == first.json()
 
     body = _read(client, connection, learner, "skill.fractions").json()
-    assert body["trials"] == 8, "a replay is not evidence"
+    assert body["n"] == 8, "a replay is not evidence"
 
 
 def test_duplicate_events_in_a_new_batch_are_not_evidence(client: TestClient, connection) -> None:
@@ -578,7 +669,7 @@ def test_duplicate_events_in_a_new_batch_are_not_evidence(client: TestClient, co
     assert second.json()["accepted"] == 0
 
     body = _read(client, connection, learner, "skill.fractions").json()
-    assert body["trials"] == 8
+    assert body["n"] == 8
 
 
 def test_the_snapshot_lists_every_skill_this_learner_has(client: TestClient, connection) -> None:
@@ -598,6 +689,7 @@ def test_the_snapshot_lists_every_skill_this_learner_has(client: TestClient, con
         headers={"Authorization": f"Bearer {connection['key']['full_key']}"},
     ).json()
     assert [row["skill"] for row in body["skills"]] == ["skill.fractions", "skill.ratios"]
+    assert body["skills"][1]["abstain"] is True
     assert body["skills"][1]["reason"] == "insufficient_evidence"
     assert body["skills"][1]["needs"] == {"trials": 6}
 

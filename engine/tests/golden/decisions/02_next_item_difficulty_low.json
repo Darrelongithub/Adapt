@@ -1,0 +1,77 @@
+{
+  "name": "02_next_item_difficulty_low",
+  "why": "G1 for decide: the body for these exact inputs, at this exact clock reading, through the same pure function the endpoint uses. A change here is a change in the advice a customer receives, and needs a version bump in DECISIONS.",
+  "input": {
+    "trials": 20,
+    "correct": 7,
+    "recent": [
+      true,
+      false,
+      true
+    ]
+  },
+  "clock": "2026-11-18T09:00:00+00:00",
+  "decision_id": "00000000-0000-4000-8000-000000000001",
+  "expected": {
+    "decision_id": "00000000-0000-4000-8000-000000000001",
+    "learner_id": "learn-decide-0001",
+    "skill": "skill.fractions",
+    "level": {
+      "requested": "L1",
+      "tier": "core",
+      "entitlement_level": "L1",
+      "capability": "L1",
+      "validated": "L1",
+      "served": "L1",
+      "limited_by": null,
+      "since": "2026-11-18",
+      "validation_ref": "gates/g1_g3@1",
+      "profile": "adult_general"
+    },
+    "issued_at": "2026-11-18T09:00:00+00:00",
+    "expires_at": "2026-11-18T09:15:00+00:00",
+    "action": "next_item_difficulty",
+    "abstain": false,
+    "reason_codes": [
+      "low_mastery"
+    ],
+    "claim_ids": [
+      "clm_0002",
+      "clm_0004"
+    ],
+    "recommendations": [
+      {
+        "action": "next_item_difficulty",
+        "confidence": {
+          "point": 0.3528,
+          "interval": {
+            "low": 0.1865,
+            "high": 0.5402,
+            "mass": 0.95
+          }
+        },
+        "why": "Mastery is 0.35 (95% interval 0.19-0.54), below the band where harder items help: retrieval practice on easier items first, so the learner is succeeding often enough to keep going.",
+        "cites": [
+          "clm_0002",
+          "clm_0004"
+        ],
+        "expires_at": "2026-11-18T09:15:00+00:00",
+        "target": {
+          "target_success": 0.78,
+          "current": 0.3528,
+          "direction": "easier"
+        }
+      }
+    ],
+    "estimate": {
+      "value": 0.3528,
+      "interval": {
+        "low": 0.1865,
+        "high": 0.5402,
+        "mass": 0.95
+      },
+      "n": 20,
+      "estimator": "shrunk_rate"
+    }
+  }
+}

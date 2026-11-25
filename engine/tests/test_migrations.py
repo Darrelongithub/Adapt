@@ -13,6 +13,7 @@ from tests import pg
 TABLES = (
     "api_keys",
     "audit_log",
+    "claims",
     "cohort_fits",
     "connection_event_usage",
     "connections",
@@ -21,6 +22,7 @@ TABLES = (
     "credit_reservation_draws",
     "credit_reservations",
     "data_key_ids",
+    "decisions",
     "learner_mastery",
     "learners",
     "learning_events",

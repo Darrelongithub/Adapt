@@ -915,3 +915,127 @@ filter belief is now clamped to `[1e-6, 1−1e-6]`: not a modelling choice, but 
 difference between floating point and a probability. Found by
 `test_five_hundred_events_is_allowed`, an increment-2 test, which is the argument
 for keeping a full-size batch test around.
+
+## 20. `decide` v1: one pure function, five honest abstentions, and a receipt
+
+### 20.1 The split that makes the promises true
+
+`decide/service.py` has two halves. `snapshot()` reads — mastery state, the last
+three answers, the share of recent trials that tripped a validity flag, the
+tenant's tier, the claim ids. `evaluate(Inputs, now, decision_id)` computes, with
+no database, no clock and no randomness. Everything the increment promises
+follows from that signature rather than from discipline:
+
+* same history + same clock ⇒ **byte-identical body** (it is a function);
+* **replay means something**, because a decision stores its `Inputs` and replay
+  folds the snapshot rather than today's evidence (recomputing against live state
+  would differ for the honest reason that the learner answered more items, and a
+  test comparing those two would either fail constantly or prove nothing);
+* the goldens compare a function, not an environment.
+
+### 20.2 Five of the six abstention codes, and the one that is not reachable
+
+`METRICS.md` §1.3 names six: `insufficient_evidence`, `low_confidence`,
+`conflicting_signals`, `consent_withheld`, `data_quality`, `unsupported_request`.
+Five have fixtures and trigger on real inputs. `consent_withheld` needs a consent
+store, which does not exist, so it is named in the closed vocabulary and is
+**unreachable** — recorded in KNOWN_GAPS rather than faked with a flag nobody can
+set. `does_not_apply_when` is not decoration either: the worked-example claim says
+it does not apply to experts, so a high-mastery learner with three consecutive
+errors is served `conflicting_signals`, not the action whose evidence excludes
+them.
+
+Thresholds, all documented constants in `decide/constructs.py`: interval width
+above **0.45** ⇒ `low_confidence`; validity-flag share above **0.30** over the
+last 20 trials ⇒ `data_quality`; the success target for difficulty is **0.78**
+(AGENT_M1 §4's 70-85% band).
+
+### 20.3 Credits: reserve *after* deciding, and abstention is free
+
+The brief said "reserved on serve, released on abstain". Holding a credit and
+then releasing it would make an **abstention able to fail with 402** — the host
+that most needs to be told to fix its instrumentation is exactly the one that may
+be out of money — so the reservation happens only when there is something to
+charge for, after the decision is computed. Nothing is held during an abstention,
+so there is nothing to release. Tested both ways: at zero credits an abstention
+returns 200 and writes no ledger row, while a serve returns `402 quota_exhausted`
+and stores nothing.
+
+### 20.4 Claims: gated at write time, seeded per tenant, no invented identifiers
+
+`claims.construct` is a CHECK against the five constructs this build has evidence
+for; `evidence_n >= evidence_floor` makes an under-evidenced claim **refused at
+write time** (G3's "test the refusal, not the filter"); `does_not_apply_when` is
+`NOT NULL` with a cardinality check, because a claim without a boundary is a
+horoscope. All three are proved by attempting the insert and watching PostgreSQL
+refuse it.
+
+Two deviations worth naming. Claims are **tenant-scoped copies** of knowledge
+that is conceptually global: a truly global table would be a third exception to
+the RLS invariant, and duplicating five rows per tenant is cheaper than an
+exception. And the seed set carries **no DOIs I did not verify** — the one in
+`CLAIMS.md` (Sweller & Cooper 1985) is kept, the rest are author/year references.
+A fabricated identifier looks checkable, which is worse than an absent one.
+
+Seeding happens on first use inside the request transaction (a migration cannot
+`INSERT`), so a tenant that has never run a job still gets cited advice. If a
+claim is missing at serve time the decision **abstains** (`unsupported_request`,
+`needs.claims`) instead of shipping an uncited recommendation.
+
+### 20.5 The body is stored twice, and returned canonically
+
+`decisions` holds the body it returned and the inputs it was computed from.
+Replay recomputes from the inputs and raises a **500** on a mismatch — the
+endpoint exists to be able to fail. It found a real bug: `jsonb` does not preserve
+key order, so a body read back from the row serialised with different key order
+than the same body from `evaluate`, and "byte-identical" was false in the only
+sense a client can check. Both routes now emit sorted keys with fixed separators
+(`api/decide.py::_body_response`).
+
+### 20.6 The level object, and an inconsistency in §6B
+
+`decide` serves the ADR-002 `level` object from `levels.resolve_level`, with
+capability L1, validated L1 (G1, G2 and G3 all run in CI) and
+`validation_ref: "gates/g1_g3@1"`. Mastery serves the same three axes flat, as
+§6B spells them, from the same function — so the two surfaces cannot disagree
+about the served level, only about where the words sit.
+
+`INTEGRATION.md` §6B's example shows `validation_level: "L0"` together with
+`served: "L1"`, which `min()` cannot produce. The code serves consistent values
+(validated L1); the example is owed a correction.
+
+### 20.7 The mastery response changed shape to match §6B
+
+Increment 3 shipped `interval: [low, high]`, `interval_mass`, `trials` and
+`estimator: "bkt_beta_v1"`. §6B now specifies `interval: {low, high, mass}`,
+`n`, `estimator: "shrunk_rate"`, `prior: {source, strength}`, an explicit
+`abstain` flag and the flat level axes. The published contract wins: the shape was
+conformed, the estimator renamed (a documented version bump per §6B's own rule),
+and all thirteen mastery goldens regenerated in the same commit. The goldens'
+numbers did not move — only their shape — which is what makes this a rename rather
+than a change of answer.
+
+### 20.8 The measurement
+
+200 seeded synthetic learners (mastery 0.1-0.9, 4-40 observations each), one
+decision each, in-process over HTTP:
+
+| Served | Abstained | Median interval width (served) | p50 | p95 |
+|---|---|---|---|---|
+| 167 / 200 (83.5%) | 33 (23 `insufficient_evidence`, 9 `data_quality`, 1 `conflicting_signals`) | **0.326** | 26.4 ms | 32.8 ms |
+
+The abstention count is the product admitting it does not know, and the 0.326
+median width is what a served number is allowed to look like. Both belong in the
+report next to the latency (see also KNOWN_GAPS §23 on the `data_quality` share).
+
+### 20.9 Red-then-green: the floor is load-bearing
+
+Lowering `EVIDENCE_FLOOR` to 1 — the change that makes a 5-trial learner
+servable — turns **six** tests red: `test_below_the_floor_the_answer_is_a_count_
+not_a_number` (the abstention test), `test_the_floor_abstains_and_names_the_count_
+that_would_change_it`, `test_golden_decisions_match` on
+`05_abstain_insufficient_evidence`, `test_the_golden_set_covers_every_action_and_
+reachable_reason`, and the two mastery golden tests. Restored: 9 passed. The
+golden file is red in the same run as the behavioural test, which is the point of
+pinning the body: the floor is asserted twice, once as behaviour and once as a
+customer-visible value.

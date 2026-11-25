@@ -203,3 +203,45 @@ Any one of these:
 * learners complete it but the data is unusable (fast-guessing) — then the mechanic is wrong, not the learner;
 * it only works when a facilitator is present, which makes it unmeasurable at scale;
 * it needs a claim we have forbidden, to be worth running at all.
+
+---
+
+## 11. The guesser curve — the number G2 actually promises
+
+`AGENT_M1.md` §8 G2 is a release gate, and this section is the part of it a buyer can check and a
+learner can understand. Everything below is measured on the shipped estimator (`shrunk_rate`), with
+the documented priors (`p_init=0.30, p_learn=0.10, p_guess=0.20, p_slip=0.10`), a shrinkage strength of
+12, a 95% interval, and the evidence floor at 8 trials.
+
+**Method.** A synthetic learner answers correctly with probability 0.2 *regardless of any mastery* —
+a pure guesser. We fold those answers through the same code path the endpoint uses
+(`engine/src/adapt_engine/mastery/bkt.py:update`) and read the served value
+(`estimate`) after every trial. Reported here: the first trial count at which the served value reaches
+each threshold, for a learner who answers **every** item correctly. That is the fastest a guesser can
+possibly climb, because it is the most favourable evidence a chance responder can produce.
+
+| Served value reaches | Consecutive correct answers required | Probability a 0.2 guesser gets that run |
+|---|---|---|
+| 0.50 | 4 | 1.6e-3 |
+| 0.70 | **11** | 2.0e-8 |
+| 0.80 | 16 | 6.6e-12 |
+
+The honest headline: **eleven consecutive correct answers before we show 0.7.** A guesser that answers
+at its true rate never gets there — over 200 seeded guessers × 60 trials the highest value ever served
+is 0.537, with zero serves at or above 0.70 (`engine/tests/test_mastery.py::
+test_a_guesser_is_never_served_mastery`). The curve is asserted, not described
+(`test_the_streak_curve_is_published_and_asserted`), and it is pinned in the golden set
+(`tests/golden/mastery/10_floor_all_correct.json`, `11_crossing_0_7.json`, `12_crossing_0_8.json`), so
+a change to the estimator that makes it credulous moves this table and fails the build.
+
+**The limit, stated in the same breath.** A guesser whose first eight answers are correct (2.6e-6) and
+who then gets three of its next four right (≈8e-8 per learner) *is* served 0.743 — the ascent is
+steep once a run starts, and no estimator that must also report a real master can refuse that streak,
+because eight straight correct answers are the same evidence either way. The adversarial test asserts
+both that the worst case stays under 0.80 **and** that the breach is still reachable, so the limit
+cannot silently disappear from the docs while the test goes vacuously green
+(`test_where_the_guesser_guarantee_stops`).
+
+**What this means for a customer.** "We will not tell you a learner has mastered something until they
+have answered eleven items in a row correctly, or shown an equivalent spread of correct answers" is a
+sentence that survives contact with a sceptical buyer. An RMSE is not.

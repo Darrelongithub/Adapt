@@ -1,0 +1,42 @@
+{
+  "name": "03_abstain_seven_trials",
+  "why": "G1: the served body for this exact history, through the same pure function the endpoint uses. A change here is a change in what a customer is told; it needs a version bump and a line in DECISIONS, not a regenerated fixture.",
+  "input": {
+    "skill": "skill.fractions",
+    "sequence": [
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true
+    ],
+    "params": {
+      "p_init": 0.3,
+      "p_learn": 0.1,
+      "p_guess": 0.2,
+      "p_slip": 0.1
+    },
+    "prior": {
+      "version": 1,
+      "source": "documented_default"
+    },
+    "tier": "core"
+  },
+  "expected": {
+    "learner_id": "learn-golden-0001",
+    "skill": "skill.fractions",
+    "abstain": true,
+    "reason": "insufficient_evidence",
+    "needs": {
+      "trials": 1
+    },
+    "n": 7,
+    "entitlement_level": "L1",
+    "capability_level": "L1",
+    "validation_level": "L1",
+    "served": "L1",
+    "limited_by": null
+  }
+}

@@ -93,6 +93,9 @@ Each of these is enforced by something that fails, not by a comment:
 | The same history serves the same bytes | stored counters + stored prior version + a total order on trials; no RNG, no ambient clock | `tests/test_mastery.py::test_the_same_history_serves_the_same_bytes`, `tests/golden/mastery/` |
 | A refit cannot quietly change what a customer is told | a new `skill_priors` version per fit, refused below 20 learners / 200 observations | `tests/test_mastery.py::test_the_refit_writes_a_version_and_logs_the_fit`, `test_the_refit_refuses_a_cohort_below_the_floor` |
 | A replayed or duplicated batch is not evidence | the fold runs on the batch's `fresh` list, inside the batch transaction | `tests/test_mastery.py::test_a_replayed_batch_does_not_move_mastery` |
+| Every recommendation cites a claim that resolves | `claims` rows are gated by CHECK (construct, evidence floor, boundary) and seeded before use | `tests/test_decide.py::test_a_claim_below_its_evidence_floor_cannot_be_written` |
+| Advice is reproducible from its own inputs | `decisions.inputs` is frozen at serve time; replay recomputes and raises on mismatch | `tests/test_decide.py::test_a_hundred_stored_decisions_replay_byte_identically`, `test_replay_fails_loudly_when_a_stored_body_is_tampered` |
+| An abstention is free and carries no number | credits are reserved only for a served decision; the abstention body has no `value` key | `tests/test_decide.py::test_an_abstention_is_free_and_a_serve_is_not`, `test_an_abstention_has_no_value_field_and_names_its_need` |
 | Over quota is a free 402 that writes nothing | one conditional upsert; the batch row is written after it returns a seat | `tests/test_observe.py::test_over_quota_is_402_with_resets_at_and_writes_nothing` |
 | A paused connection's events are refused, not dropped and not stored | the pause refusal happens before the idempotency row and before quota | `tests/test_observe.py::test_a_paused_connection_cannot_ingest_and_nothing_is_stored` |
 | No learner's free text is stored | `response` is hashed at ingest; only `response_digest` and `response_length` exist | `tests/test_observe.py::test_the_free_text_answer_is_hashed_and_not_stored` |
@@ -152,9 +155,35 @@ learner has evidence on. Reads need the `read_model` scope.
 ```bash
 curl -s -H "Authorization: Bearer <key>" \
   "localhost:8000/v1/mastery/skill.fractions?learner_id=learn-0001" | jq
-# { "value": 0.54, "interval": [0.3256, 0.7469], "interval_mass": 0.95,
-#   "trials": 12, "estimator": "bkt_beta_v1", "prior": {...} }
-# { "reason": "insufficient_evidence", "needs": { "trials": 3 }, "trials": 5 }
+# { "value": 0.54, "interval": {"low":0.3256,"high":0.7469,"mass":0.95},
+#   "estimator": "shrunk_rate", "prior": {"source":"cohort_prior","strength":12},
+#   "n": 12, "served": "L1", "limited_by": null, ... }
+# { "abstain": true, "reason": "insufficient_evidence", "needs": {"trials": 3}, "n": 5 }
+```
+
+**Ask what to do next.** `POST /v1/decide` returns one of three actions with the
+claim that justifies it, or an abstention that names what would change the answer.
+A served decision reserves one credit; an abstention is free, always.
+
+```bash
+curl -s -X POST localhost:8000/v1/decide \
+  -H "Authorization: Bearer <key>" -H "Idempotency-Key: decide-learn-0001-1" \
+  -d '{"learner_id":"learn-0001","skill":"skill.fractions"}' | jq
+# { "action": "next_item_difficulty", "abstain": false,
+#   "recommendations": [{"action":"…","confidence":{"point":0.54,"interval":{…}},
+#                        "why":"…","cites":["clm_0002","clm_0004"],"expires_at":"…"}],
+#   "claim_ids": ["clm_0002","clm_0004"], "reason_codes": ["mastery_band_mid"],
+#   "level": {"served":"L1","limited_by":null,…}, "estimate": {…} }
+# { "action": "abstain", "reason": "insufficient_evidence",
+#   "needs": {"trials": 5}, "reason_codes": ["insufficient_evidence"] }
+```
+
+Replay any stored decision from its own frozen inputs — CI does this for a hundred
+of them and fails on a single differing byte:
+
+```bash
+curl -s -X POST localhost:8000/v1/decisions/<decision_id>/replay \
+  -H "Authorization: Bearer <key>" -D- | jq   # X-Adapt-Replayed: identical
 ```
 
 **Refit the priors (nightly, owner credential).** A cohort below 20 learners or

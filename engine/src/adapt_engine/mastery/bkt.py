@@ -142,7 +142,7 @@ DEFAULT_PARAMS: Final = Params(p_init=0.30, p_learn=0.10, p_guess=0.20, p_slip=0
 
 #: The estimator's name, served with every value. A number whose provenance is a
 #: version string can be compared across a change; a bare float cannot.
-ESTIMATOR: Final = "bkt_beta_v1"
+ESTIMATOR: Final = "shrunk_rate"
 
 
 @dataclass(frozen=True)

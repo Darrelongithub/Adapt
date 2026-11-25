@@ -32,8 +32,10 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from adapt_engine.levels import flat_level_axes
 from adapt_engine.mastery import bkt
 from adapt_engine.mastery.bkt import Params, State
+from adapt_engine.tenants import tier_of
 
 #: Trials below which the endpoint abstains instead of reporting a number.
 #: Eight is the floor from AGENT_M1 §1.3 ("at least 8 observations before a
@@ -276,6 +278,54 @@ def snapshot(conn: Connection, *, tenant_id: uuid.UUID, learner_id: str) -> list
     return out
 
 
+def served_body(
+    *,
+    learner_id: str,
+    skill: str,
+    state: State,
+    prior: Prior,
+    tier: str,
+) -> dict[str, Any]:
+    """The INTEGRATION §6B body: an estimate, or an abstention with no `value`.
+
+    Pure — no connection, no clock — because a golden file has to be able to
+    pin it and because the abstention branch is then testable without a database.
+    The one rule that matters most is the absence: an abstention carries no
+    `value` key at all, so a host cannot render a number we declined to give.
+    """
+    axes = flat_level_axes(tier)
+    needs = needs_more_evidence(state.trials)
+    if needs is not None:
+        return {
+            "learner_id": learner_id,
+            "skill": skill,
+            "abstain": True,
+            "reason": "insufficient_evidence",
+            "needs": needs,
+            "n": state.trials,
+            **axes,
+        }
+    estimate = bkt.estimate(state, prior.params)
+    return {
+        "learner_id": learner_id,
+        "skill": skill,
+        "value": _round(estimate.value),
+        "interval": {
+            "low": _round(estimate.low),
+            "high": _round(estimate.high),
+            "mass": bkt.INTERVAL_MASS,
+        },
+        "estimator": bkt.ESTIMATOR,
+        "prior": {
+            "source": COLD_START_SOURCE if prior.source == "documented_default" else "fitted",
+            "strength": int(bkt.PRIOR_STRENGTH),
+            "version": prior.version,
+        },
+        "n": estimate.trials,
+        **axes,
+    }
+
+
 def _served(
     conn: Connection,
     *,
@@ -284,33 +334,14 @@ def _served(
     skill: str,
     state: State,
 ) -> dict[str, Any]:
-    needs = needs_more_evidence(state.trials)
-    if needs is not None:
-        return {
-            "learner_id": learner_id,
-            "skill": skill,
-            "reason": "insufficient_evidence",
-            "needs": needs,
-            "trials": state.trials,
-        }
     prior = prior_for(conn, tenant_id=tenant_id, skill=skill)
-    estimate = bkt.estimate(state, prior.params)
-    return {
-        "learner_id": learner_id,
-        "skill": skill,
-        "value": _round(estimate.value),
-        "interval": [_round(estimate.low), _round(estimate.high)],
-        "interval_mass": bkt.INTERVAL_MASS,
-        "trials": estimate.trials,
-        "estimator": bkt.ESTIMATOR,
-        "prior": {
-            "version": prior.version,
-            "source": COLD_START_SOURCE if prior.source == "documented_default" else "fitted",
-            "p_init": prior.params.p_init,
-            "p_guess": prior.params.p_guess,
-            "p_slip": prior.params.p_slip,
-        },
-    }
+    return served_body(
+        learner_id=learner_id,
+        skill=skill,
+        state=state,
+        prior=prior,
+        tier=tier_of(conn, tenant_id),
+    )
 
 
 def _round(value: float) -> float:
