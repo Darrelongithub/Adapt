@@ -75,7 +75,13 @@ error names the key.
   dedupe on `(learner_id, session_id, seq)` when `seq` is present.
 * Batch is all-or-nothing per request: partial accept creates silent data loss.
 * Validity flags evaluated at ingest and stored on the event: `rapid_guess` (<300 ms), `tab_hidden`,
-  `straight_line` (8+ identical consecutive), `device_change`, `assisted`, `repeated_item`.
+  `straight_line` (**8+ consecutive identical `response` values** — the option the learner chose, *not*
+  8+ identical correctness outcomes), `device_change`, `assisted`, `repeated_item`. When `response` is
+  absent the flag is **undeterminable**, not inferred from correctness: a learner who has just got
+  eight answers right is a learner doing well, and flagging them as inattentive makes the honesty
+  machinery punish success. (An earlier draft of this line said "8+ identical consecutive", which the
+  implementation read as correctness; `MEASUREMENT.md` §89 was already precise, so the ambiguity was
+  here.)
   Never imputed, never dropped — flagged (`MEASUREMENT.md` §4).
 * Storage: append-only `learning_events`, partitioned by month; retention job enforces the tenant's
   setting, logs what it deleted.
