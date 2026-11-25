@@ -81,8 +81,30 @@ error names the key.
   setting, logs what it deleted.
 
 **Acceptance:** duplicate batch returns the original response and writes no new rows; an event with
-`email` in the payload is rejected with `422 payload_invalid` naming the key; 500 events at p95 <100 ms
-in a 10-minute load test; the retention job's deletions are observable in the console.
+`email` in the payload is rejected with `422 payload_invalid` naming the key; the retention job's
+deletions are observable in the console; and the ingest SLO below is met and re-measured.
+
+### Ingest SLO, and two correctness rules that the schema cannot enforce
+
+**The SLO is stated in a unit we can actually measure.** The earlier line — "500 events at p95
+<100 ms" — was written before anyone had written a row to disk, and a durable 500-event batch does
+not do that on any hardware we have. Measured on the dev reference (bundled PostgreSQL, default
+settings, container I/O, one worker): **p95 789 ms per 500-event batch, 245 µs per event**. That is
+the baseline to beat, not evidence of a defect. Targets: hold ≤250 µs/event on the dev reference,
+re-measure on production-like hardware where the target is ≤100 µs/event, and run a **10-minute soak**
+(the 98 s run did not) watching for degradation or partition-default growth.
+
+**1. Event-level dedupe has no constraint behind it.** A partitioned table cannot carry a global unique
+index, so `(learner_id, session_id, seq)` is checked in code — which two concurrent batches can both
+pass, storing the same observation twice and inflating that learner's evidence. Either take a
+per-`(connection, learner, session)` advisory lock for the duration of the batch, or state plainly in
+`DECISIONS.md` that duplicates are tolerated and why the mastery estimator survives them. Silence is
+not an option: duplicate observations are indistinguishable from real ones downstream.
+
+**2. Ingest has no throughput limit.** Authentication failures are rate-limited; event volume is not.
+A tenant's runaway client can consume the database and degrade every other tenant. Add a per-connection
+ingest limiter returning 429 `rate_limited` with `details.retry_after` and `Retry-After`, free, and
+count it — and record the limit in `METERING.md` §6 rather than leaving it as a surprise at launch.
 
 ## 3. Increment 3 — L1 mastery
 

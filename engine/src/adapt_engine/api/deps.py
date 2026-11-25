@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 
 from adapt_engine.clock import Clock
 from adapt_engine.config import Settings
+from adapt_engine.observe.limits import IngestLimiter
 
 
 def get_settings(request: Request) -> Settings:
@@ -31,6 +32,12 @@ def get_clock(request: Request) -> Clock:
     """Return the app clock."""
     clock: Clock = request.app.state.clock
     return clock
+
+
+def get_ingest_limiter(request: Request) -> IngestLimiter:
+    """Return the per-connection ingest limiter (METERING §6)."""
+    limiter: IngestLimiter = request.app.state.ingest_limiter
+    return limiter
 
 
 def get_db_check(request: Request) -> Callable[[], bool]:

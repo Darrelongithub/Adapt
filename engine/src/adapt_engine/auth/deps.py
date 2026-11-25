@@ -68,6 +68,25 @@ def security_requirement(scope: str) -> dict[str, list[dict[str, list[str]]]]:
 UNAUTHORIZED_MESSAGE = "Invalid or missing API key"
 
 
+#: The lowest tier whose contract includes each scope (ADR-002, Decision 2).
+#: Every scope that exists today is Core; `probe` becomes "plus" and the deep
+#: capabilities "deep" when their routes land — the map is the single place
+#: that changes, and `details.tier_required` follows from it.
+TIER_FOR_SCOPE: dict[str, str] = {
+    "observe": "core",
+    "decide": "core",
+    "read_model": "core",
+    "admin": "core",
+}
+
+
+def tier_required_for(*scopes: str) -> str:
+    """The lowest tier that unlocks at least one of ``scopes``."""
+    order = {"core": 0, "plus": 1, "deep": 2}
+    tiers = [TIER_FOR_SCOPE.get(scope, "core") for scope in scopes]
+    return min(tiers, key=lambda tier: order[tier]) if tiers else "core"
+
+
 @dataclass(frozen=True)
 class AuthContext:
     """Who is calling. Never carries the key or its hash."""
@@ -83,9 +102,10 @@ class AuthContext:
         if scope not in self.scopes:
             raise AdaptError(
                 code="not_entitled",
-                message=f"tier_required: a key with the {scope} scope",
+                message=(f"this key needs the {scope} scope (tier: {tier_required_for(scope)})"),
                 status_code=403,
                 retryable=False,
+                details={"tier_required": tier_required_for(scope)},
             )
 
 
@@ -247,11 +267,13 @@ def require_any_scope(*scopes: str) -> Any:
 
     def _dependency(auth: Annotated[AuthContext, Depends(resolve_auth)]) -> AuthContext:
         if not set(auth.scopes) & set(scopes):
+            tier = tier_required_for(*scopes)
             raise AdaptError(
                 code="not_entitled",
-                message=f"tier_required: a key with one of {', '.join(scopes)}",
+                message=(f"this key needs one of these scopes: {', '.join(scopes)} (tier: {tier})"),
                 status_code=403,
                 retryable=False,
+                details={"tier_required": tier},
             )
         return auth
 

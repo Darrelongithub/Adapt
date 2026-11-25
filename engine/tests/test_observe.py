@@ -459,8 +459,11 @@ def test_a_console_key_cannot_ingest(client: TestClient, admin_key) -> None:
         },
     )
     assert resp.status_code == 403
-    assert resp.json()["error"]["code"] == "not_entitled"
-    assert "tier_required" in resp.json()["error"]["message"]
+    error = resp.json()["error"]
+    assert error["code"] == "not_entitled"
+    # §6 puts the structured value in `details`, not in the message.
+    assert error["details"] == {"tier_required": "core"}
+    assert "tier_required" not in error["message"]
 
 
 def test_the_route_declares_the_observe_scope(client: TestClient) -> None:
@@ -640,7 +643,10 @@ def test_the_error_envelope_is_the_documented_shape(client: TestClient, connecti
     resp = _post(client, connection, [{"learner_id": "x"}])
     assert resp.status_code == 422
     error = resp.json()["error"]
-    assert set(error) == {"code", "message", "request_id", "retryable"}
+    # Four documented fields, plus `details` — and only when there is
+    # something structured to say (INTEGRATION §6).
+    assert set(error) == {"code", "message", "request_id", "retryable", "details"}
+    assert error["details"]["field"].startswith("events[0].")
     assert json.dumps(error)  # serialisable, no leaked objects
 
 
@@ -731,3 +737,218 @@ def test_the_fixture_is_a_realistic_session_not_a_bag_of_events(
     assert body["flags"].get("device_change", 0) >= 1
     assert body["flags"].get("rapid_guess", 0) == 0  # every latency is human-plausible
     assert body["flagged_events"] >= body["flags"].get("device_change", 0)
+
+
+# --- §6 `details`: structured values, not English in `message` -------------
+
+
+def test_quota_refusal_carries_details_resets_at(
+    client: TestClient, admin_key, app_engine: Engine
+) -> None:
+    small = _scoped_connection(client, admin_key, quota=1, scopes=["observe"])
+    assert _post(client, small, [event(item_id="i-1")]).status_code == 202
+    refused = _post(client, small, [event(item_id="i-2")])
+
+    assert refused.status_code == 402
+    details = refused.json()["error"]["details"]
+    assert set(details) == {"resets_at"}
+    assert details["resets_at"].endswith("+00:00")
+    # The header and the body agree, and neither is a second source of truth.
+    assert refused.headers["X-Adapt-Resets-At"] == details["resets_at"]
+
+
+def test_a_rejected_field_names_itself_in_details(client: TestClient, connection) -> None:
+    resp = _post(
+        client, connection, [event(item_id="i-1"), event(item_id="i-2", learner_email="a@b.test")]
+    )
+    assert resp.status_code == 422
+    error = resp.json()["error"]
+    assert error["details"]["field"] == "events[1].keys"
+    assert "learner_email" in error["message"]
+
+
+def test_a_missing_scope_carries_tier_required(client: TestClient, admin_key) -> None:
+    """A console key is `not_entitled` with a tier, not a sentence to parse."""
+    resp = client.post(
+        "/v1/observe",
+        json={"events": [event()]},
+        headers={
+            "Authorization": f"Bearer {admin_key.full_key}",
+            "Idempotency-Key": "batch-console-key-0002",
+        },
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["details"] == {"tier_required": "core"}
+
+
+def test_a_validation_error_from_the_framework_also_names_the_field(
+    client: TestClient, admin_key
+) -> None:
+    resp = client.post(
+        "/v1/admin/connections",
+        json={"host_name": "x"},
+        headers={"Authorization": f"Bearer {admin_key.full_key}"},
+    )
+    assert resp.status_code == 422
+    assert "field" in resp.json()["error"]["details"]
+
+
+# --- the rate limit (METERING §6: 50 rps, burst 100) ----------------------
+
+T0 = datetime(2026, 11, 17, 9, 0, 0, tzinfo=UTC)
+
+
+class _SteppingClock:
+    """A clock a test can move, so a refill can be observed without sleeping."""
+
+    def __init__(self, start: datetime) -> None:
+        self.value = start
+
+    def now(self) -> datetime:
+        return self.value
+
+
+@pytest.fixture
+def tight_app(app_engine: Engine):
+    """The same app with a bucket small enough to empty in a test."""
+    from adapt_engine.observe.limits import IngestLimiter
+
+    clock = _SteppingClock(T0)
+    limiter = IngestLimiter(clock=clock, rate_per_second=1.0, burst=2.0)
+    app = create_app(
+        make_settings(),
+        clock=clock,
+        db_check=lambda: True,
+        redis_check=lambda: True,
+        engine=app_engine,
+        auth_limiter=FailureLimiter(clock=clock, max_failures=10_000),
+        ingest_limiter=limiter,
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+    return client, clock, limiter
+
+
+def test_a_burst_is_allowed_and_the_next_request_is_429(tight_app, admin_key) -> None:
+    client, _clock, _limiter = tight_app
+    connection = _scoped_connection(client, admin_key, quota=100, scopes=["observe"])
+
+    for n in range(2):
+        accepted = _post(client, connection, [event(item_id=f"i-{n}", ts=T0)])
+        assert accepted.status_code == 202, accepted.text
+
+    refused = _post(client, connection, [event(item_id="i-over", ts=T0)])
+    assert refused.status_code == 429
+    error = refused.json()["error"]
+    assert error["code"] == "rate_limited"
+    assert error["retryable"] is True
+    assert error["details"] == {"retry_after": 1}
+    assert refused.headers["Retry-After"] == "1"
+
+
+def test_a_rate_limited_batch_is_free_and_writes_nothing(
+    tight_app, admin_key, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    client, _clock, _limiter = tight_app
+    connection = _scoped_connection(client, admin_key, quota=100, scopes=["observe"])
+    for n in range(2):
+        _post(client, connection, [event(item_id=f"i-{n}", ts=T0)])
+    before = _count(app_engine, tenant, "SELECT sum(events) FROM connection_event_usage")
+
+    assert _post(client, connection, [event(item_id="i-over", ts=T0)]).status_code == 429
+    assert _count(app_engine, tenant, "SELECT sum(events) FROM connection_event_usage") == before
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 2
+
+
+def test_the_bucket_refills_at_the_documented_rate(tight_app, admin_key) -> None:
+    client, clock, _limiter = tight_app
+    connection = _scoped_connection(client, admin_key, quota=100, scopes=["observe"])
+    for n in range(2):
+        _post(client, connection, [event(item_id=f"i-{n}", ts=T0)])
+    assert _post(client, connection, [event(item_id="i-3", ts=T0)]).status_code == 429
+
+    clock.value = T0 + timedelta(seconds=2)
+    assert _post(client, connection, [event(item_id="i-4", ts=T0)]).status_code == 202
+
+
+def test_one_connection_cannot_spend_another_connection_s_bucket(tight_app, admin_key) -> None:
+    """The property that matters: a runaway client is contained."""
+    client, _clock, _limiter = tight_app
+    noisy = _scoped_connection(client, admin_key, quota=100, scopes=["observe"])
+    quiet = _scoped_connection(client, admin_key, quota=100, scopes=["observe"])
+
+    for n in range(2):
+        _post(client, noisy, [event(item_id=f"i-{n}", ts=T0)])
+    assert _post(client, noisy, [event(item_id="i-over", ts=T0)]).status_code == 429
+    assert _post(client, quiet, [event(item_id="j-1", ts=T0)]).status_code == 202
+
+
+# --- the dedupe race ------------------------------------------------------
+
+
+def test_a_concurrent_batch_with_the_same_session_cannot_double_store(
+    app_engine: Engine, database, tenant: uuid.UUID, admin_key, connection
+) -> None:
+    """The advisory lock is what makes the dedupe check a decision.
+
+    Without it both batches read "not stored" and both insert: the same
+    observation twice, which downstream is a learner who answered twice. The
+    test opens the first batch, marks its rows, and only then runs a second
+    batch with the same `(learner, session, seq)` — the second must see the
+    first, wait for its lock, and count a duplicate.
+    """
+    import threading
+    from datetime import datetime as _datetime
+
+    from adapt_engine.db.tenant import tenant_transaction
+    from adapt_engine.observe import service
+    from adapt_engine.observe.schema import parse_event
+
+    connection_id = uuid.UUID(connection["connection"]["id"])
+    now = _datetime.now(UTC)
+    raw = event(item_id="i-race", session_id="sess-race", seq=1)
+    parsed = parse_event(raw, index=0, now=now)
+
+    results: list[object] = []
+    started = threading.Event()
+
+    def second_batch() -> None:
+        started.set()
+        with tenant_transaction(app_engine, tenant) as other:
+            results.append(
+                service.ingest(
+                    other,
+                    tenant_id=tenant,
+                    connection_id=connection_id,
+                    idempotency_key="batch-race-second",
+                    body_hash=b"second",
+                    events=[parsed],
+                    now=now,
+                )
+            )
+
+    with tenant_transaction(app_engine, tenant) as first:
+        stored = service.ingest(
+            first,
+            tenant_id=tenant,
+            connection_id=connection_id,
+            idempotency_key="batch-race-first",
+            body_hash=b"first",
+            events=[parsed],
+            now=now,
+        )
+        assert stored.response["accepted"] == 1
+
+        worker = threading.Thread(target=second_batch)
+        worker.start()
+        started.wait(timeout=5)
+        # The second batch is blocked on the advisory lock, not racing past it.
+        worker.join(timeout=0.3)
+        assert worker.is_alive(), "the second batch did not wait for the first"
+
+    worker.join(timeout=10)
+    assert not worker.is_alive()
+    assert len(results) == 1
+    second = results[0]
+    assert second.response["accepted"] == 0  # type: ignore[attr-defined]
+    assert second.response["duplicates"] == 1  # type: ignore[attr-defined]
+    assert _count(app_engine, tenant, "SELECT count(*) FROM learning_events") == 1

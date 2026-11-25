@@ -23,12 +23,13 @@ import uuid
 from datetime import UTC
 from typing import Annotated, Any
 
+import structlog
 from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.engine import Connection
 
-from adapt_engine.api.deps import get_clock
+from adapt_engine.api.deps import get_clock, get_ingest_limiter
 from adapt_engine.auth.deps import (
     AuthContext,
     ingest_connection,
@@ -39,6 +40,7 @@ from adapt_engine.clock import Clock
 from adapt_engine.connections import service as connections
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 from adapt_engine.observe import service
+from adapt_engine.observe.limits import IngestLimiter
 from adapt_engine.observe.schema import (
     MAX_BODY_BYTES,
     MAX_EVENTS,
@@ -52,15 +54,32 @@ IDEMPOTENCY_HEADER = "Idempotency-Key"
 
 
 def _refuse(
-    code: str, message: str, status_code: int, *, headers: dict[str, str] | None = None
+    code: str,
+    message: str,
+    status_code: int,
+    *,
+    headers: dict[str, str] | None = None,
+    details: dict[str, Any] | None = None,
+    retryable: bool = False,
 ) -> AdaptError:
     return AdaptError(
-        code=code, message=message, status_code=status_code, retryable=False, headers=headers
+        code=code,
+        message=message,
+        status_code=status_code,
+        retryable=retryable,
+        headers=headers,
+        details=details,
     )
 
 
-def _invalid(message: str) -> AdaptError:
-    return _refuse("payload_invalid", message, 422)
+def _invalid(message: str, *, field: str | None = None) -> AdaptError:
+    """422 with the offending field in `details.field` (§6)."""
+    return _refuse(
+        "payload_invalid",
+        message,
+        422,
+        details={"field": field} if field else None,
+    )
 
 
 @router.post(
@@ -75,6 +94,7 @@ async def observe(
     auth: Annotated[AuthContext, Depends(require_scope("observe"))],
     conn: Annotated[Connection, Depends(ingest_connection)],
     clock: Annotated[Clock, Depends(get_clock)],
+    limiter: Annotated[IngestLimiter, Depends(get_ingest_limiter)],
     idempotency_key: Annotated[str | None, Header(alias=IDEMPOTENCY_HEADER)] = None,
 ) -> JSONResponse:
     """Accept up to 500 events, once.
@@ -94,12 +114,19 @@ async def observe(
     if idempotency_key is None or not 8 <= len(idempotency_key) <= 200:
         raise _invalid(
             "Idempotency-Key is required and must be 8-200 characters; "
-            "derive it from the logical operation so a retry reuses it"
+            "derive it from the logical operation so a retry reuses it",
+            field="Idempotency-Key",
         )
 
     raw = await request.body()
     return await run_in_threadpool(
-        _ingest, raw, idempotency_key=idempotency_key, auth=auth, conn=conn, clock=clock
+        _ingest,
+        raw,
+        idempotency_key=idempotency_key,
+        auth=auth,
+        conn=conn,
+        clock=clock,
+        limiter=limiter,
     )
 
 
@@ -110,8 +137,9 @@ def _ingest(
     auth: AuthContext,
     conn: Connection,
     clock: Clock,
+    limiter: IngestLimiter,
 ) -> JSONResponse:
-    """The blocking half: parse, validate, store. Runs in the threadpool."""
+    """The blocking half: limit, parse, validate, store. Runs in the threadpool."""
     if len(raw) > MAX_BODY_BYTES:
         raise _refuse(
             "payload_too_large",
@@ -122,7 +150,7 @@ def _ingest(
     try:
         document: Any = json.loads(raw)
     except ValueError as exc:
-        raise _invalid("the request body is not valid JSON") from exc
+        raise _invalid("the request body is not valid JSON", field="body") from exc
 
     events_raw, declared_connection = _split_batch(document)
     now = clock.now().astimezone(UTC)
@@ -132,11 +160,18 @@ def _ingest(
         try:
             events.append(parse_event(raw_event, index=index, now=now))
         except EventInvalid as exc:
-            raise _invalid(f"event {exc.index}: {exc.field_name}: {exc.detail}") from exc
+            raise _invalid(
+                f"event {exc.index}: {exc.field_name}: {exc.detail}",
+                field=f"events[{exc.index}].{exc.field_name}",
+            ) from exc
 
     connection_id = _connection_id(conn, auth)
+    _spend_rate_limit(limiter, connection_id)
     if declared_connection is not None and declared_connection != str(connection_id):
-        raise _invalid("connection does not match the connection this key belongs to")
+        raise _invalid(
+            "connection does not match the connection this key belongs to",
+            field="connection",
+        )
 
     try:
         stored = service.ingest(
@@ -165,25 +200,51 @@ def _ingest(
             ),
             402,
             headers={"X-Adapt-Resets-At": exc.resets_at.isoformat()},
+            details={"resets_at": exc.resets_at.isoformat()},
         ) from exc
 
     return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=stored.response)
 
 
+def _spend_rate_limit(limiter: IngestLimiter, connection_id: uuid.UUID) -> None:
+    """METERING §6's 50 rps / burst 100, per connection.
+
+    A refusal is free (nothing is written, no quota spent) and counted: the log
+    line is how a spike becomes visible rather than a mystery. The wait is
+    reported twice — `Retry-After` for HTTP clients, `details.retry_after` for
+    the ones that cannot read headers — and it is always at least one second,
+    because "retry after 0" is not a thing a client can act on.
+    """
+    wait = limiter.take(connection_id)
+    if wait is None:
+        return
+    structlog.get_logger("adapt_engine").warning(
+        "observe_rate_limited", connection_id=str(connection_id), retry_after=wait
+    )
+    raise AdaptError(
+        code="rate_limited",
+        message=f"too many requests for this connection; retry after {wait}s",
+        status_code=429,
+        retryable=True,
+        headers={"Retry-After": str(wait)},
+        details={"retry_after": wait},
+    )
+
+
 def _split_batch(document: Any) -> tuple[list[Any], str | None]:
     """Check the envelope, the size, and the connection claim."""
     if not isinstance(document, dict):
-        raise _invalid("the request body must be an object with an 'events' array")
+        raise _invalid("the request body must be an object with an 'events' array", field="body")
     unknown = sorted(set(document) - {"events", "connection"})
     if unknown:
-        raise _invalid("unknown field(s): " + ", ".join(unknown))
+        raise _invalid("unknown field(s): " + ", ".join(unknown), field=unknown[0])
     if "events" not in document:
-        raise _invalid("missing field(s): events")
+        raise _invalid("missing field(s): events", field="events")
     events = document["events"]
     if not isinstance(events, list):
-        raise _invalid("events must be an array")
+        raise _invalid("events must be an array", field="events")
     if not events:
-        raise _invalid("events must not be empty")
+        raise _invalid("events must not be empty", field="events")
     if len(events) > MAX_EVENTS:
         raise _refuse(
             "payload_too_large",
@@ -193,7 +254,7 @@ def _split_batch(document: Any) -> tuple[list[Any], str | None]:
         )
     declared = document.get("connection")
     if declared is not None and not isinstance(declared, str):
-        raise _invalid("connection must be a string")
+        raise _invalid("connection must be a string", field="connection")
     return events, declared
 
 
@@ -204,7 +265,8 @@ def _connection_id(conn: Connection, auth: AuthContext) -> uuid.UUID:
         # events to attribute. Refusing loudly beats writing unattributed rows.
         raise _refuse(
             "not_entitled",
-            "tier_required: observe needs a connection key, not a console key",
+            "observe needs a connection key, not a console key (tier: core)",
             403,
+            details={"tier_required": "core"},
         )
     return found

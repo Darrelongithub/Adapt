@@ -191,7 +191,9 @@ def test_scopes_are_enforced_as_not_entitled(app_engine: Engine, tenant: uuid.UU
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "not_entitled"
-    assert "tier_required" in resp.json()["error"]["message"]
+    # INTEGRATION §6: structured values live in `details`, the message stays a
+    # sentence a human can read.
+    assert resp.json()["error"]["details"] == {"tier_required": "core"}
 
 
 def test_missing_and_malformed_headers_are_unauthorized(app_engine: Engine) -> None:

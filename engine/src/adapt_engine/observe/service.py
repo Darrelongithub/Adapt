@@ -45,6 +45,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Connection
 
+from adapt_engine.mastery import service as mastery
 from adapt_engine.observe import flags as flag_rules
 from adapt_engine.observe.schema import Event
 
@@ -164,6 +165,44 @@ def usage_for(conn: Connection, *, connection_id: uuid.UUID, period: datetime) -
         ).scalar_one_or_none()
         or 0
     )
+
+
+#: Serialise two batches that touch the same (connection, learner, session).
+#:
+#: The dedupe check is a read followed by an insert, and a partitioned table
+#: cannot carry the unique index that would make it atomic, so two concurrent
+#: batches could both see "not stored" and both insert — the same observation
+#: twice, indistinguishable downstream from a learner who answered twice.
+#:
+#: A transaction-scoped advisory lock on the *session* key closes the window:
+#: the second batch waits, then sees the first batch's rows and counts the
+#: duplicate instead of storing it. One lock per distinct session in the batch,
+#: taken in sorted order so two batches touching the same sessions cannot
+#: deadlock each other (a classic AB/BA). The lock is released when the
+#: transaction ends, including on rollback.
+def _lock_key(connection_id: uuid.UUID, learner_id: str, session_id: str) -> int:
+    digest = hashlib.sha256(f"{connection_id}:{learner_id}:{session_id}".encode()).digest()
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
+def lock_batch_sessions(conn: Connection, *, connection_id: uuid.UUID, events: list[Event]) -> None:
+    """Take one advisory lock per (learner, session) pair in the batch."""
+    keys = {
+        _lock_key(connection_id, event.learner_id, event.session_id)
+        for event in events
+        if event.session_id is not None
+    }
+    for key in sorted(keys):
+        conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+
+    # Also lock a per-learner key when the batch carries no session at all: an
+    # event without `session_id` cannot be deduplicated (there is no identity),
+    # but its learner's row still must not be written twice by two batches that
+    # *do* carry sessions.
+    if not keys:
+        for learner_id in sorted({event.learner_id for event in events}):
+            key = _lock_key(connection_id, learner_id, "")
+            conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
 
 def existing_event_keys(
@@ -298,6 +337,11 @@ def ingest(
             raise IdempotencyConflict(idempotency_key)
         return StoredBatch(response=stored_response, batch_id=batch_id, replayed=True)
 
+    # Locks first, then the read they protect: a duplicate can only be seen if
+    # the batch that stored it has committed, and the lock is what orders the
+    # two batches.
+    lock_batch_sessions(conn, connection_id=connection_id, events=events)
+
     keys = [key for key in (event.dedupe_key for event in events) if key is not None]
     already = existing_event_keys(conn, keys) if keys else set()
 
@@ -390,6 +434,26 @@ def ingest(
         batch_id=batch_id,
         events=fresh,
         flags=event_flags,
+        now=now,
+    )
+    # Mastery is folded in *this* transaction, from the same `fresh` list: a
+    # duplicate is not evidence, and a batch that rolls back must not leave a
+    # counter ahead of the events that justify it. The fold is idempotent with
+    # respect to the batch, because a replay returns above without reaching here.
+    mastery.fold(
+        conn,
+        tenant_id=tenant_id,
+        trials=[
+            mastery.Trial(
+                learner_id=event.learner_id,
+                skill=event.skill,
+                correct=event.correct,
+                ts=event.ts,
+                seq=event.seq,
+                item_id=event.item_id,
+            )
+            for event in fresh
+        ],
         now=now,
     )
     return StoredBatch(response=response, batch_id=batch_id, replayed=False)

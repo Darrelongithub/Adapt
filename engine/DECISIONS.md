@@ -771,3 +771,147 @@ that fixes a rejected field and retries is fine too.
   `webhook_deliveries` from `0011` onward, and the retry schedule carries jitter
   (derived from `(delivery_id, attempt)`, not `random()`, so a schedule is
   reproducible while two deliveries still fan out).
+
+## 19. L1 mastery: two numbers per learner, and the one the customer sees
+
+### 19.1 The filter is stored, the filter is not served
+
+`learner_mastery` keeps `(trials, correct, model_p)` and the served number is
+computed from the first two. `model_p` is the BKT belief, advanced one
+observation at a time; it is what increment 4 reads to choose the next item.
+It is *not* what a customer is shown, because it saturates: with the documented
+parameters (G=0.2, S=0.1) one correct answer is 4.5:1 evidence of mastery, so a
+learner answering 55% correctly converges to p≈0.99 within forty trials
+(`test_the_filter_saturates_which_is_why_it_is_not_the_served_value`). Serving it
+measured RMSE 0.355 with 13.5% interval coverage — a confident number that is
+wrong, which is worse than no number.
+
+The served value is the posterior mean of a Beta over the learner's *observed*
+success rate, shrunk toward the cohort prior by `w(n) = K²/(K+n)` with K=12, with
+a 95% central interval from the same Beta. Point and interval come from one
+distribution, so a value outside its own interval is impossible by construction
+(`test_an_estimate_always_lies_inside_its_own_interval`).
+
+### 19.2 No guess correction, and a cap instead
+
+The obvious correction — `m = (rate − G)/(1 − G − S)` — was implemented first and
+removed. Measured over 600 synthetic learners at 40 observations, mastery
+0.1–0.9:
+
+| estimator | clean generator RMSE / coverage | noisy generator RMSE / coverage |
+|---|---|---|
+| guess-corrected + shrunk | 0.1130 / 0.582 | 0.0952 / 0.743 |
+| **observed rate + shrink + cap** | **0.0683 / 0.948** | 0.1102 / 0.753 |
+| shrunk over filter `p` | 0.3087 / 0.183 | — |
+| raw filter `p` | 0.3552 / 0.135 | — |
+
+The correction *widens* error on honest learners, because dividing by
+`1 − G − S` scales the sampling noise by 1.43 while the bias it removes is
+`(1−m)G` — and a host's real items are not the lab items G was measured on. So
+the served value is the observed rate, and the safety property lives in the cap
+instead: if the posterior median does not clear `G + 0.10`, the value is held at
+`G + 0.05`. "Your evidence is consistent with guessing" is not a reason to report
+a number that says you have mastered it.
+
+### 19.3 The gate has a generator, and the doc does not name it
+
+With `p(correct) = mastery` ("clean"), the estimator passes the acceptance gate:
+**RMSE 0.0683 ≤ 0.08, coverage 0.948 ≥ 0.90**. With the model's own response
+function `p(correct) = m(1−S) + (1−m)G` ("noisy"), **no estimator** passes:
+forty Bernoullis on a 70% signal have a standard error of 0.11, so 0.08 is below
+the Cramér–Rao floor — the gate is unattainable there by any estimator, not by
+this one. The clean number is the one the gate asks for; the noisy number
+(0.1102 / 0.753) is asserted in the suite as well
+(`test_the_noisy_generator_is_reported_not_hidden`) so it cannot be dropped from
+a report. **Owed to the owner:** the vocabulary the acceptance criteria use does
+not say which generator they mean; this is the ambiguity, resolved as "clean for
+the gate, both for the report".
+
+### 19.4 The guesser: G2, reported separately, with its edge measured
+
+The honest number is not the RMSE. It is this: 200 seeded learners answering
+correctly with probability 0.2 regardless of mastery, 60 trials each, served at
+every horizon at or above the floor — **highest served value 0.537, breaches at or
+above 0.70: zero**. It is a release blocker, it is independent of the calibration
+numbers above, and it is the first thing to read in the increment report.
+
+Three sabotages, each run against the real module, each restored:
+
+| sabotage | what it removes | result |
+|---|---|---|
+| `EVIDENCE_FLOOR = 1` | the abstention floor | 2 red (`needs.trials`, the HTTP abstention) |
+| `PRIOR_STRENGTH = 0` | shrinkage | red: 1 serve at 0.700; the luckiest-start construct reaches 0.923 |
+| cap block deleted from `estimate()` | the guessing cap | red: the capped learner is served 0.307 instead of 0.250 |
+
+**The guarantee's edge, stated rather than implied.** Shrinkage is what keeps a
+guesser at 0.537, not the cap: the cap only trims a long-run guesser by about a
+point. And the guarantee is statistical past ~ten straight correct answers. A
+guesser whose first eight answers are right (2.6e-6) and who then happens to get
+three of its next four right (≈8e-8 per learner) is served **0.743**. No
+estimator that must also report a real master as a master can avoid that — eight
+straight is the same evidence either way. What is bounded is the ordinary case,
+and the crossover is pinned: the estimator reaches 0.7 at **eleven** straight
+correct answers and 0.8 at sixteen
+(`test_the_streak_length_the_estimator_believes`,
+`test_where_the_guesser_guarantee_stops`).
+
+The random property test is a weak detector on its own — a p=0.2 learner rarely
+gets six of its first eight right, so removing shrinkage breaches it once in 200
+learners. That is why the two adversarial constructs exist alongside it.
+
+### 19.5 Abstention is a count, not a soft number
+
+Below eight observations (`bkt.EVIDENCE_FLOOR`) the endpoint returns
+`{"reason": "insufficient_evidence", "needs": {"trials": 8 − n}, "trials": n}` and
+no `value` key at all. A consumer that receives a number will render the number;
+"0.31 ± 0.4" reads as 31% on every dashboard, and the abstention is the only shape
+that cannot be misread. The count is what makes it actionable.
+
+### 19.6 Determinism, and golden files from this increment
+
+Same history + same clock ⇒ identical bytes
+(`test_the_same_history_serves_the_same_bytes`). Everything the estimator reads is
+stored (`trials`, `correct`, the prior row); the fold sorts trials by
+`(ts, seq, item_id)` so arrival order cannot change `model_p`; nothing in the path
+consults the clock except `updated_at`. `tests/golden/mastery/*.json` pin three
+sequences to four decimals — an ordinary 12-trial history, the luckiest 8-trial
+start, and a guesser at the floor. **Regenerating a golden to make a red run green
+is the failure these files exist to prevent**: a changed number is a changed
+served value and needs a version bump plus a paragraph here.
+
+### 19.7 Priors are tenant-scoped, versioned, and written by a job that can refuse
+
+`skill_priors` is keyed `(tenant_id, skill, version)`. A refit on one tenant's
+cohort must not change another tenant's numbers, and keeping `tenant_id` means
+this increment adds no fourth exception to the RLS invariant. Version 1 of a skill
+is the documented default, inserted on first use (a migration cannot write a row
+for a skill nobody has observed); a refit writes version *n+1*, never an `UPDATE`.
+`learner_mastery.prior_version` records what a learner's state was folded under,
+so a served number can be explained by a row that still exists.
+
+The refit (`mastery/refit.py`, run nightly by `scripts/refit_cohorts.py`) refuses
+a cohort below 20 learners or 200 new observations and leaves the previous version
+serving. A nightly job that always writes a version is a job that turns noise into
+priors. The fit is a fixed 300-point grid with ties broken by grid order, so the
+same cohort produces the same version.
+
+**There is no HTTP refit endpoint.** AGENT_M1 §1.3 calls the refit nightly, not
+callable, and an endpoint that runs 300 likelihood evaluations per request is a
+denial-of-service with a username. It is an operator script, like the partition
+job. That also means the "deep adds cross-cohort mastery modelling" tier promise in
+ADR-002 §tiers is **not** a tier gate at M1 — see KNOWN_GAPS.
+
+### 19.8 The fold runs inside the ingest transaction, and a 500 found the clamp
+
+Mastery is folded from the *fresh* events of a batch, in the batch's transaction,
+after the events are inserted. A duplicate is not evidence (a replay returns
+before the insert; a deduped event never reaches the fold), and a rolled-back
+batch cannot leave a counter ahead of its evidence.
+
+The first version stored `model_p` unclamped, and a batch of 500 consecutive
+correct answers turned it into exactly `1.0` — which the table refuses
+(`CHECK (model_p > 0 AND model_p < 1)`), so a legitimate batch was a 500. The
+filter belief is now clamped to `[1e-6, 1−1e-6]`: not a modelling choice, but the
+difference between floating point and a probability. Found by
+`test_five_hundred_events_is_allowed`, an increment-2 test, which is the argument
+for keeping a full-size batch test around.

@@ -88,6 +88,11 @@ Each of these is enforced by something that fails, not by a comment:
 | One event is delivered once | derived `webhook-id` + `UNIQUE (tenant_id, webhook_id)` | `tests/test_connections.py::test_a_duplicate_enqueue_is_a_no_op` |
 | A delivery log never holds a payload | no body column exists | `tests/test_connections.py::test_the_delivery_log_has_no_place_for_a_payload` |
 | A batch is stored once, however many times it is sent | `UNIQUE (tenant_id, idempotency_key)` + the stored response replayed verbatim | `tests/test_observe.py::test_the_same_batch_twice_returns_the_original_response_and_writes_nothing` |
+| A guesser is never served mastery (G2, blocks release) | shrinkage toward the cohort prior + a cap at `p_guess + 0.05` when the evidence does not clear guessing | `tests/test_mastery.py::test_a_guesser_is_never_served_mastery` (plus two adversarial constructs) |
+| Below eight observations the answer is a count, never a number | `insufficient_evidence` + `needs.trials`, raised before the estimator runs | `tests/test_mastery.py::test_below_the_floor_the_answer_is_a_count_not_a_number` |
+| The same history serves the same bytes | stored counters + stored prior version + a total order on trials; no RNG, no ambient clock | `tests/test_mastery.py::test_the_same_history_serves_the_same_bytes`, `tests/golden/mastery/` |
+| A refit cannot quietly change what a customer is told | a new `skill_priors` version per fit, refused below 20 learners / 200 observations | `tests/test_mastery.py::test_the_refit_writes_a_version_and_logs_the_fit`, `test_the_refit_refuses_a_cohort_below_the_floor` |
+| A replayed or duplicated batch is not evidence | the fold runs on the batch's `fresh` list, inside the batch transaction | `tests/test_mastery.py::test_a_replayed_batch_does_not_move_mastery` |
 | Over quota is a free 402 that writes nothing | one conditional upsert; the batch row is written after it returns a seat | `tests/test_observe.py::test_over_quota_is_402_with_resets_at_and_writes_nothing` |
 | A paused connection's events are refused, not dropped and not stored | the pause refusal happens before the idempotency row and before quota | `tests/test_observe.py::test_a_paused_connection_cannot_ingest_and_nothing_is_stored` |
 | No learner's free text is stored | `response` is hashed at ingest; only `response_digest` and `response_length` exist | `tests/test_observe.py::test_the_free_text_answer_is_hashed_and_not_stored` |
@@ -138,6 +143,31 @@ curl -s -X POST localhost:8000/v1/observe \
 runtime role cannot run DDL. Run `python -m scripts.ensure_event_partitions`
 monthly (as the owner) and `--check` nightly: it exits 1 when an event has landed
 in the default partition, which is the only warning the design gives.
+
+**Read a mastery estimate.** `GET /v1/mastery/{skill}?learner_id=...` returns
+either a calibrated value with an interval, or an abstention that names the count
+that would unlock it. `GET /v1/mastery?learner_id=...` returns every skill the
+learner has evidence on. Reads need the `read_model` scope.
+
+```bash
+curl -s -H "Authorization: Bearer <key>" \
+  "localhost:8000/v1/mastery/skill.fractions?learner_id=learn-0001" | jq
+# { "value": 0.54, "interval": [0.3256, 0.7469], "interval_mass": 0.95,
+#   "trials": 12, "estimator": "bkt_beta_v1", "prior": {...} }
+# { "reason": "insufficient_evidence", "needs": { "trials": 3 }, "trials": 5 }
+```
+
+**Refit the priors (nightly, owner credential).** A cohort below 20 learners or
+200 new observations is *refused*, not fitted — the previous version keeps
+serving and the refusal is printed with its counts.
+
+```bash
+.venv/bin/python -m scripts.refit_cohorts --database-url "$ADAPT_MIGRATION_DATABASE_URL"
+```
+
+**Golden files.** `tests/golden/mastery/*.json` pin the served number for three
+histories. They are not fixtures to regenerate: a changed number is a changed
+customer-facing value and needs a version bump (DECISIONS §19.6).
 
 **Measure ingest before believing a number.** `python -m scripts.load_observe
 --events 400000 --workers 4 --admin-key …` against a running server prints

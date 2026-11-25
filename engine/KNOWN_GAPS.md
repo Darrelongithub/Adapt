@@ -351,3 +351,61 @@ header of every ciphertext they wrote, and it exists so startup can ask a
 cross-tenant question without a cross-tenant read. `api_keys` was the first
 documented exception (DECISIONS.md §2); this is the second, and it is narrower
 — the table has no row that belongs to anyone.
+
+## 16. The mastery estimate is calibrated on one generator, and the other one says so
+
+The acceptance gate (RMSE ≤ 0.08, coverage ≥ 0.90 at 40 observations) is met on
+the clean generator `p(correct) = mastery` — 0.0683 / 0.948. On the model's own
+response function `p(correct) = m(1−S) + (1−m)G` it is 0.1102 / 0.753, and no
+estimator can meet 0.08 there: 40 Bernoullis on a 70% signal have a standard error
+of 0.11. Both numbers are asserted in the suite so neither can be quoted alone.
+The doc's acceptance vocabulary does not say which generator it means; that is an
+owed clarification, not a code defect (DECISIONS §19.3).
+
+## 17. The guesser guarantee holds statistically, not structurally, past ten straight
+
+200 seeded guessers (p=0.2) over 60 trials are never served 0.7 or above — worst
+0.537. But a guesser whose *first eight* answers are correct (2.6e-6) and who then
+gets three of its next four right (≈8e-8 per learner) is served 0.743. There is no
+estimator that can both serve a genuine master and refuse that streak: the
+evidence is identical. The crossover — eleven straight correct answers — is pinned
+by a test so a change that makes the estimator credulous moves it visibly.
+
+The randomness in the property test means it is a weak detector of a broken
+estimator (removing shrinkage breaches it once in 200 learners); the adversarial
+constructs next to it are the strong ones. If G2 is ever enforced by an auditor
+rather than by this suite, the adversarial constructs are the tests to show.
+
+## 18. Mastery has no rate limit, no pruning, and no capability tier
+
+* `GET /v1/mastery*` is not rate-limited. Ingest is (METERING §6); the read path
+  is two indexed lookups, and adding a second limiter was not in this increment.
+  A tenant with `read_model` can call it as fast as the app can answer.
+* `learner_mastery` rows are never expired, pruned, or erased with a learner's
+  data. Learner erasure (`learner.erased`, INTEGRATION §8) removes encrypted
+  personal fields; it does **not** remove mastery counters, and it should — a
+  per-learner row that survives an erasure request is exactly what a DSR audit
+  looks for. Owed to increment 5 (erasure) or sooner.
+* "Deep adds cross-cohort mastery modelling" (ADR-002 §tiers) is not enforced
+  anywhere: all four current scopes map to `core`, and the refit is an operator
+  script rather than a tiered endpoint (DECISIONS §19.7). A tenant cannot buy or
+  be refused the cohort model today.
+
+## 19. The refit counts every flag except `repeat`
+
+`scripts/refit_cohorts.py` excludes events flagged `repeat` (the same item twice
+measures the item, not the learner) and counts everything else — including
+`hint_used` and `assisted` events, which are arguably weaker evidence of mastery.
+At M1 there is no per-flag weight, so a cohort that is 40% hinted items fits its
+priors as if it were not. Worth weighting when increment 4 starts consuming the
+estimate to make decisions; worth stating now so the fit is not mistaken for
+flag-aware.
+
+## 20. Three golden files are a sample, not a regression suite
+
+`tests/golden/mastery/` pins three sequences at four decimals: a mid-mastery
+history, the luckiest eight-trial start, and a guesser at the floor. They catch a
+change in the served number, not a change in the *distribution* of served numbers
+— that is what the calibration and guesser tests are for. Nothing guards against
+someone editing a golden file and the test it feeds in the same commit; the guard
+is review, and the rule is in DECISIONS §19.6.

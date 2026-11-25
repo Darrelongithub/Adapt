@@ -23,6 +23,7 @@ from adapt_engine.api.credits import router as credits_router
 from adapt_engine.api.health import router as health_router
 from adapt_engine.api.keys import router as keys_router
 from adapt_engine.api.learners import router as learners_router
+from adapt_engine.api.mastery import router as mastery_router
 from adapt_engine.api.observe import router as observe_router
 from adapt_engine.auth.audit import AuthFailureAuditor
 from adapt_engine.auth.rate_limit import FailureLimiter
@@ -43,6 +44,7 @@ from adapt_engine.errors import (
     validation_exception_handler,
 )
 from adapt_engine.logging import LoggingMiddleware, configure_logging
+from adapt_engine.observe.limits import IngestLimiter
 from adapt_engine.webhooks import dispatch as webhooks
 from adapt_engine.webhooks.transport import UrllibTransport
 
@@ -73,6 +75,7 @@ def create_app(
     redis_check: Callable[[], bool] | None = None,
     engine: Engine | None = None,
     auth_limiter: FailureLimiter | None = None,
+    ingest_limiter: IngestLimiter | None = None,
     auth_auditor: AuthFailureAuditor | None = None,
     last_used: LastUsedRecorder | None = None,
     flush_interval: float | None = None,
@@ -114,6 +117,15 @@ def create_app(
     app.state.auth_limiter = (
         auth_limiter if auth_limiter is not None else FailureLimiter(clock=active_clock)
     )
+    app.state.ingest_limiter = (
+        ingest_limiter
+        if ingest_limiter is not None
+        else IngestLimiter(
+            clock=active_clock,
+            rate_per_second=settings.observe_rps,
+            burst=settings.observe_burst,
+        )
+    )
     app.state.auth_auditor = (
         auth_auditor
         if auth_auditor is not None
@@ -151,6 +163,7 @@ def create_app(
     app.include_router(keys_router)
     app.include_router(learners_router)
     app.include_router(observe_router)
+    app.include_router(mastery_router)
     app.include_router(credits_router)
     app.include_router(connections_router)
     _install_openapi(app)
