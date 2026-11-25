@@ -193,6 +193,28 @@ Codes are **lowercase snake_case and this table is authoritative** — not the H
 without a code here is a gap to report, not a licence to invent one; `check_openapi.py` fails the build
 if the implementation emits a code that is not in this list.
 
+The envelope is one shape everywhere, with **one optional object** and nothing else:
+
+```json
+{"error":{"code":"quota_exhausted","message":"…","request_id":"req_…","retryable":false,
+          "details":{"resets_at":"2026-12-01T00:00:00Z"}}}
+```
+
+`details` is absent unless there is something structured to say, and the keys are documented here
+rather than invented per endpoint — this is where `resets_at` and `tier_required` live, so that a host
+can act on them without parsing English out of `message`:
+
+| Code | `details` key | Type | Meaning |
+|---|---|---|---|
+| `quota_exhausted` | `resets_at` | RFC 3339 | when the allowance resets; also sent as `X-Adapt-Resets-At` |
+| `not_entitled` | `tier_required` | `core` \| `plus` \| `deep` | the lowest tier that unlocks it |
+| `payload_invalid` | `field` | string | the offending field, e.g. `events[1].learner_email` |
+| `rate_limited` | `retry_after` | integer seconds | mirrors the header, for clients that cannot read headers |
+| `not_capable` | `capability` | string | which capability is not built |
+
+Everything else carries no `details`. A code that wants a new key is a doc change, not an endpoint
+decision.
+
 Three rules that follow from the table and are not negotiable:
 
 * **401 is always `unauthorized`.** There is no `invalid_api_key`, no `key_expired`, no
