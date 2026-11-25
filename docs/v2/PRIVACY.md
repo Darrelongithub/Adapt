@@ -80,6 +80,7 @@ Rules that follow from the map:
 | Control | Implementation |
 |---|---|
 | Tenant isolation | Postgres RLS, forced, `USING` + `WITH CHECK`, tenant set with `SET LOCAL` per transaction. Exception: `api_keys` is reachable only through one `SECURITY DEFINER` resolver and the runtime role holds **no** privilege on the table — key material is protected by grants, not by RLS |
+| Outbound webhooks | The only egress we initiate on a tenant's behalf. The body is a doorbell — event type, an opaque subject id, a timestamp — never learner content, never an answer. The delivery log stores attempts and status, never a body. Off by default (`ADAPT_WEBHOOK_DELIVERY`); when on, the endpoint is the tenant's own and is their processing, not ours |
 | Encryption at rest | per-tenant data key, envelope-encrypted, AAD bound to `tenant_id`; rotation supported |
 | Encryption in transit | TLS 1.3 only; HSTS; no plaintext fallback |
 | Least privilege | app role is not owner, not superuser, no `BYPASSRLS`; migrations run as a separate role |
