@@ -31,7 +31,7 @@ Every claim-bearing response reports all three, plus what was actually served.
 |---|---|---|---|
 | **Entitlement** | what this customer's contract allows | commercial | a contract is signed or changed |
 | **Capability** | what the engine can technically do, per construct | engineering | code ships |
-| **Validation** | what the engine has demonstrated, per construct × profile × population | the measurement programme | gates pass |
+| **Validation** | what the engine has demonstrated, per construct × profile × population | the measurement programme | gates pass — **L1 is a platform gate** (every tenant is served it once the estimator passes), **L2/L3 are per-tenant gates** measured on that tenant's own learners |
 
 All three axes are expressed on **one scale of levels — L0 (nothing) to L3** — because `min()` over a
 tier name and a level is meaningless. The tier maps onto the scale explicitly, and both are returned:

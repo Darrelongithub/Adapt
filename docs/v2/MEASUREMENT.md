@@ -175,8 +175,8 @@ release blocker — the guesser is the cheapest possible test of the abstention 
 Every claim-bearing response carries:
 
 ```json
-{"value": 0.68, "interval": [0.51, 0.82], "estimator": "beta_binomial_v2",
- "evidence_level": "L2", "trials": 34, "sessions": 3,
+{"value": 0.68, "interval": {"low": 0.51, "high": 0.82, "mass": 0.95},
+ "estimator": "shrunk_rate", "evidence_level": "L2", "n": 34, "sessions": 3,
  "validity": {"excluded_trials": 4, "reduced_validity_sessions": 1},
  "cites": ["clm_0142"], "not_a_diagnosis": true}
 ```

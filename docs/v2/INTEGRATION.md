@@ -236,6 +236,7 @@ Three rules that follow from the table and are not negotiable:
 | 404 | `learner_unknown` | no | the route exists but this learner id does not — register the learner first |
 | 404 | `connection_unknown` | no | no such connection id for this tenant — check `GET /v1/admin/connections` |
 | 404 | `route_unknown` | no | no such route — a typo'd URL or path version, not a learner problem |
+| 404 | `decision_unknown` | no | no stored decision with that id for this tenant — a replay of something we never served, or another tenant's id |
 | 406 | `instrument_not_renderable` | no | the host's declared capabilities do not cover it |
 | 501 | `not_capable` | no | the capability is not built yet — our gap, not the request's |
 | 409 | `conflict` | no | duplicate resource, e.g. too many open probe sessions |
@@ -308,15 +309,15 @@ Two response shapes, and the absence of one field is the contract:
  "interval":{"low":0.44,"high":0.78,"mass":0.95},
  "estimator":"shrunk_rate","prior":{"source":"cohort_prior","strength":12},
  "n":34,
- "entitlement_level":"L1","capability_level":"L1","validation_level":"L0",
- "served":"L1","limited_by":"validation"}
+ "entitlement_level":"L1","capability_level":"L1","validation_level":"L1",
+ "served":"L1","limited_by":null}
 ```
 
 ```json
 {"learner_id":"…","skill":"…","abstain":true,
  "reason":"insufficient_evidence","needs":{"trials":5},
- "entitlement_level":"L1","capability_level":"L1","validation_level":"L0",
- "served":"L1","limited_by":"validation"}
+ "entitlement_level":"L1","capability_level":"L1","validation_level":"L1",
+ "served":"L1","limited_by":null}
 ```
 
 * **`value` is the estimated probability that this learner answers a comparable item correctly.**
@@ -330,6 +331,14 @@ Two response shapes, and the absence of one field is the contract:
   tell the learner something true and actionable instead of nothing.
 * The three axes travel on every response (§`ADR-002`): `entitlement_level`, `capability_level`,
   `validation_level`, `served = min(…)`, and `limited_by` naming the binding constraint.
+
+  **Two kinds of gate, and only one of them is per tenant.** The **L1 gate is platform-level** — the
+  estimator clears RMSE and coverage on synthetic learners and passes G2 — so when it passes, every
+  tenant is served L1 and `validation_level` is `L1`. **L2 and L3 gates are per tenant**, measured on
+  that tenant's own learners over time. That is why a served L1 response shows `limited_by: null`
+  rather than `validation`: nothing is being withheld. An earlier draft of this section showed
+  `validation_level: "L0"` alongside `served: "L1"`, which `min()` cannot produce — an example is a
+  specification, and this one was wrong.
 
 ## 7. Idempotency, and the two keys
 

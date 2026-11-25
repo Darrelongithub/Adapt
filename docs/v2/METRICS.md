@@ -60,7 +60,14 @@ Every abstention carries exactly one primary reason and may carry contributing r
 | `low_confidence` | floor met, but the interval is too wide to act on | more trials in the same condition |
 | `conflicting_signals` | method effects or mastery estimates disagree beyond the stated band | more data; possibly a context layer that is missing |
 | `consent_withheld` | the learner's scopes prevent the evidence needed to reach the floor | ask for the scope, or accept L1 |
-| `data_quality` | too many trials excluded by validity checks (rapid guessing, hidden tab, device change) | fix the host's instrumentation |
+| `data_quality` | too many trials excluded by validity checks (rapid guessing, straight-lining, hidden tab, device change) | fix the host's instrumentation |
+
+**Flags are not equally severe, and correctness is not a flag.** `rapid_guess` and `straight_line`
+(a run of identical *responses*) mean the answer is uninformative; `device_change` is a context note.
+Weight them accordingly, and never derive a flag from a run of correct answers — that converts a
+learner's good performance into an accusation of inattention and abstains on exactly the learners who
+are progressing fastest. Flag severity weights are published with the reason code, so a host can see
+what it is being asked to fix.
 | `unsupported_request` | a construct × level × profile combination that does not exist in any sense | correct the request |
 
 Three further codes come from the axes in `ADR-002` and are **not** abstentions — they are reported as
