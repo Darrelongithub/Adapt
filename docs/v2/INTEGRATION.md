@@ -340,6 +340,31 @@ Two response shapes, and the absence of one field is the contract:
   `validation_level: "L0"` alongside `served: "L1"`, which `min()` cannot produce — an example is a
   specification, and this one was wrong.
 
+## 6C. Response headers that carry billing truth
+
+Three headers, and they exist so a host never has to infer whether it was charged:
+
+| Header | Value | Meaning |
+|---|---|---|
+| `X-Adapt-Billed` | integer credits | what this request cost. `0` for an abstention, an error, a retry, a read, a replay, or test traffic — those are the same statement, and none of them is an oversight |
+| `X-Adapt-Test-Traffic` | `true` | echo of the `X-Adapt-Test` request header, so logs on both sides agree |
+| `X-Adapt-Resets-At` | RFC 3339 | when the allowance resets, on `402 quota_exhausted` |
+
+**Test traffic is a property of the request, not of the key.** Send `X-Adapt-Test: 1` and the request
+is billed zero and recorded as test traffic; anything served by a deployment with `ADAPT_ENV=staging`
+is treated the same way. There is no such thing as a "staging key" in production — a key is `live` or
+`test`, and a test key is refused by a live deployment. An earlier draft said "staging keys set it
+automatically", which described a thing that does not exist; the deployment is what is staging.
+
+`data_quality` abstentions additionally carry `flag_evidence` — which flags fired and how many trials
+each one covered — because "fix your instrumentation" is only actionable with the counts:
+
+```json
+{"abstain": true, "reason": "data_quality",
+ "flag_evidence": {"rapid_guess": 7, "straight_line": 0, "tab_hidden": 0},
+ "needs": {"clean_trials": 4}}
+```
+
 ## 7. Idempotency, and the two keys
 
 Every mutating call takes `Idempotency-Key`. **Derive it from the logical operation, never from the

@@ -84,12 +84,13 @@ Recorded on every trial; never imputed; used to exclude or downweight.
 
 | Flag | Rule | Effect |
 |---|---|---|
-| `rapid_guess` | response < 300 ms on a non-trivial item | excluded from accuracy estimates |
+| `rapid_guess` | response < 300 ms **and** incorrect **and** a non-trivial item | excluded from accuracy estimates. Correctness only ever *exonerates*: a fast correct answer is fluency, and flagging it would punish skill |
 | `tab_hidden` | document visibility lost during the trial | session marked reduced-validity |
 | `straight_line` | identical response across 8+ consecutive items | pattern flagged, not excluded blindly |
 | `device_change` | input mode or viewport class changed mid-session | RT and latency metrics dropped for that session |
 | `assisted` | help, prompt or third-party support observed | **recorded as data**; excluded only from independence metrics |
 | `repeated_item` | same generated item served twice | deduplicated in scoring |
+| `undeterminable` | `response` absent, so a response pattern cannot be read | recorded as a context note; **never inferred from correctness**, and never counted toward `data_quality` |
 
 In `cognitive_support`, assistance is normal and expected. It is never treated as contamination of
 ability — it is the variable being modelled (see `ADR-001`).

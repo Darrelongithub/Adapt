@@ -60,14 +60,23 @@ Every abstention carries exactly one primary reason and may carry contributing r
 | `low_confidence` | floor met, but the interval is too wide to act on | more trials in the same condition |
 | `conflicting_signals` | method effects or mastery estimates disagree beyond the stated band | more data; possibly a context layer that is missing |
 | `consent_withheld` | the learner's scopes prevent the evidence needed to reach the floor | ask for the scope, or accept L1 |
-| `data_quality` | too many trials excluded by validity checks (rapid guessing, straight-lining, hidden tab, device change) | fix the host's instrumentation |
+| `data_quality` | too many trials **excluded as uninformative** — `rapid_guess`, `straight_line`, `tab_hidden` only | fix the host's instrumentation |
 
-**Flags are not equally severe, and correctness is not a flag.** `rapid_guess` and `straight_line`
-(a run of identical *responses*) mean the answer is uninformative; `device_change` is a context note.
-Weight them accordingly, and never derive a flag from a run of correct answers — that converts a
-learner's good performance into an accusation of inattention and abstains on exactly the learners who
-are progressing fastest. Flag severity weights are published with the reason code, so a host can see
-what it is being asked to fix.
+**Flags have three classes, and only one of them may cause an abstention.**
+
+| Class | Flags | Effect |
+|---|---|---|
+| `uninformative` | `rapid_guess` (fast **and** wrong **and** a non-trivial item), `straight_line` (identical *responses*), `tab_hidden` | may count toward `data_quality` |
+| `scoring` | `assisted`, `repeated_item` | adjust the score of that trial; never an abstention — help-seeking is learning, and a repeated item is our scheduling's fault |
+| `context` | `device_change`, `undeterminable` (no `response` sent) | recorded, never gates serving |
+
+`undeterminable` exists so that a host sending no `response` values is told the instrument cannot tell,
+rather than drifting toward an abstention it cannot fix.
+
+**Correctness is never a flag.** A run of correct answers is a learner doing well; deriving a flag from
+it converts good performance into an accusation of inattention and abstains on exactly the learners
+progressing fastest. Severity is published once in the implementation and the gate is derived from it,
+so a new flag cannot silently start gating serving.
 | `unsupported_request` | a construct × level × profile combination that does not exist in any sense | correct the request |
 
 Three further codes come from the axes in `ADR-002` and are **not** abstentions — they are reported as
