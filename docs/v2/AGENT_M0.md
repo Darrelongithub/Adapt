@@ -138,6 +138,10 @@ CREATE INDEX ON learners (tenant_id);                     -- policy predicates n
 * Format `ak_live_<32 base32>` / `ak_test_…`; store `prefix` (first 12 chars, indexed) +
   `hash = HMAC-SHA256(pepper, full_key)`. **Not bcrypt** — you need O(1) lookup, and the pepper makes
   an offline database dump useless without the secret.
+* **A 12-character prefix is only ~4 secret characters, ~1M values.** At a thousand keys per test
+  session that is a ~40% chance of a collision, and an unhandled one is a 500 to a customer creating a
+  key. Either widen the prefix or retry the insert inside a savepoint on unique violation — and test
+  the retry, because the failure only appears under load.
 * Shown once, never retrievable. Scopes: `observe`, `decide`, `read_model`, `admin`; enforced per route.
 * Revocation is immediate. `last_used_at` written at most once per minute per key.
 * Constant-time comparison; identical timing and message for unknown vs revoked keys.
