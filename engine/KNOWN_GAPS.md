@@ -5,9 +5,9 @@ environment it claims to be for. They are listed rather than implied: an
 unverified acceptance line that nobody wrote down becomes a false claim in a
 month.
 
-Last updated: M1 increment 5 (metering). §23 and the `decision_unknown` half of
-§24 are closed; §25-§27 record what the flag fixes and the metering proof still
-leave open.
+Last updated: M1 increment 6 (abstention metrics). §23 and the `decision_unknown`
+half of §24 are closed; §25-§27 record what the flag fixes and the metering proof
+leave open; §28 records what the metrics endpoint cannot count and why.
 
 ## Standing gaps at a glance
 
@@ -35,6 +35,8 @@ has never been reachable.
 | **Metering is proved for `decide` only**: `predict` and `probe` are priced and do not exist | increment 5 | a new route could bill without an empty-ledger test | §26 |
 | **Credit exhaustion under load is untested**: nothing has run a tenant to zero | increment 5 | the `402` before the reservation, and the fairness codes under concurrency, are unverified | §26 |
 | **The metering corpus is one seed**: 176/24 is an arithmetic check, not a distribution | increment 5 | quoting it as a product metric would overstate it | §27 |
+| **Five metric series are `null`**: refusals, errors and the three axes have no store | increment 6 | a dashboard will show "unmeasured" where a buyer expects 0 | §28 |
+| **`abstention_polling` is calibrated on one fixture**: the baseline is a median, the threshold is 5× by contract | increment 6 | a tenant with uniformly high retries never alerts, and a real polling host in a quiet tenant is invisible | §28 |
 
 ## 1a. Webhook delivery has never left the process
 
@@ -532,3 +534,56 @@ each. It is pinned as a test so drift is caught, but it is not a distribution:
 learners with 4-7 observations all abstain by construction (`EVIDENCE_FLOOR` = 8),
 so the abstention share is a property of the generator as much as of the product.
 Quoted as an arithmetic check on billing, never as a product metric.
+
+## 28. The metrics endpoint cannot count refusals, errors, or the three axes
+
+`METRICS.md` §1.2 reports `refusals`, `errors`, `entitlement_limits`,
+`not_validated` and `not_capable` as their own series. None of them has a store:
+
+* a 4xx refusal (prohibited claim, missing scope, exhausted credits) returns
+  before anything is written, by design;
+* a 5xx rolls its transaction back, including any row a request-log would have
+  needed;
+* the three axes are contract (`tenants.tier`), code (`capability_matrix`) and
+  harness output, not per-request facts.
+
+So `GET /v1/admin/metrics/abstention` returns `null` for all five and lists them
+in `unmeasured` (`DECISIONS.md` §22.4). The fix is a request-level store — one row
+per `/v1/decide` attempt with its status class, written outside the request
+transaction — and it is not in this increment because a write on the error path is
+where failures compound. Until it exists, the console must render these as
+"unmeasured", not as zero: a 0 in a dashboard is read as an achievement.
+
+Two smaller things owe a store:
+
+* **`abstention_polling` is one fixture deep.** The 5× threshold is the
+  contract's, but the baseline (median of connections with ≥ 10 pairs) is a
+  choice made here, and it has only ever been run against hand-built corpora. A
+  tenant whose connections *all* retry heavily never alerts, and a single polling
+  host in a quiet tenant alerts on the volume floor alone. Both are the right
+  direction; neither is calibrated against real traffic.
+* **The endpoint is not in `INTEGRATION.md`.** Its request and response shapes are
+  specified in `AGENT_M1` §6 and `METRICS` §1, and `scripts/check_openapi.py`
+  passes because the guard checks auth, error envelopes and error codes — not an
+  endpoint inventory. A `/v1/admin/metrics/abstention` row in the contract's
+  endpoint tables is owed by the document's owner, together with `replay_count`
+  becoming a field `decisions` exposes anywhere a decision is read back (it is
+  not, today).
+
+## 29. No `data_quality` abstention survives in the 200-learner corpus
+
+After the `straight_line` fix (`DECISIONS.md` §21.1), five consecutive runs of the
+seeded 200-learner corpus give **176 served / 24 abstained, with zero
+`data_quality`** — the 23 `insufficient_evidence` and the single
+`conflicting_signals` are stable run to run. That is the intended outcome and it
+leaves a gap worth naming: the reason code that most often means "your
+instrumentation is wrong" has no live example in the corpus that the product
+numbers come from.
+
+It is not untested: `tests/test_observe.py` raises it through the flag rules,
+`tests/golden/decisions/08_abstain_data_quality.json` pins its body, and the
+increment-6 fixture (`tests/fixtures/metrics_abstention.json`) builds three
+`data_quality` abstentions through the real API at ~37 % flagged trials. What is
+missing is a *realistic* one: a host whose instrumentation genuinely fails 30 % of
+the time. Until one exists, the threshold (0.30 of a 20-trial sample) is a
+contract with tests, not a calibrated boundary.

@@ -1214,3 +1214,84 @@ draw collide on purpose and asserts the second was used and the audit row surviv
 
 The alternative — widening the prefix — was rejected: the 12-character prefix is
 in `INTEGRATION.md` and in every key a customer has already seen.
+
+## 22. Increment 6: abstention, and the number that has to be shown with it
+
+### 22.1 The denominator is a definition, and the fixture is the specification
+
+`decide_requests_valid` = 2xx `/v1/decide` responses − replays − test traffic −
+paused/revoked connections. The 30-call fixture in
+`tests/fixtures/metrics_abstention.json` is built through the real API and its
+denominator is asserted as the literal **20**, not as a value the code computes:
+a test whose expectation comes from the implementation tests only
+self-consistency. The identity that makes it checkable is
+
+```
+stored rows (25) = denominator (20) + test traffic (3) + paused rows (2)
+30 decide calls  = stored rows (25) + replays (5)
+```
+
+and the test asserts both lines, so a row that stops being excluded, or an
+exclusion that stops being a row, breaks the arithmetic rather than an opinion.
+
+### 22.2 Served rate is the pair, and removing it is a red test
+
+§1.8 is a warning about how an honesty metric gets gamed by accident: a tenant
+with no validated constructs shows 0 % abstention while receiving nothing.
+`served` is therefore computed from the *same* denominator and always present,
+top-level and per construct. Red-then-green: deleting the `served` key from
+`metrics/service.py::report` turns
+`test_served_rate_is_reported_from_the_same_denominator` and
+`test_an_empty_window_is_not_a_zero_percent_abstention` red; restored, 17 pass.
+
+### 22.3 A replay is counted, because "excluded" has to be a number
+
+`METRICS` §1.2 excludes idempotent replays. Replays write no ledger row and no
+decision row, so until this increment the exclusion was true by construction and
+**uncountable** — `exclusions.replays` could only have been a hardcoded 0, which
+is a claim rather than a measurement. Migration `0016` adds
+`decisions.replay_count`, incremented by `decide.service.replay` after the bytes
+match. The metering property that mattered is unchanged — a replay moves no
+money and creates no decision — but the increment-5 phrase "a replay writes
+nothing" is now "a replay writes no money and no decision, and one integer on the
+row it re-served". That is a deliberate trade: a metric nobody can compute is
+worse than a counter on a write path that was already inside a transaction.
+
+### 22.4 Five series are `null`, and the reason is in the response
+
+`entitlement_limits`, `not_validated`, `not_capable`, `refusals` and `errors` are
+real series in §1.2 and none of them has a store at M1: a 4xx refusal writes no
+row, a 5xx rolls back, and the three axes live in the contract and the validation
+harness. The endpoint returns `null` for each and lists them in `unmeasured`. The
+alternative — `0` — would be indistinguishable from "we counted and found none",
+which is exactly the class of lie this project keeps removing. The fixture still
+proves the *exclusion*: the 403 and the 500 are asserted to leave the row count
+at 25, so they are outside the population rather than divided into it.
+`KNOWN_GAPS` §28 records the request-level store that would make them numbers.
+
+### 22.5 `abstention_polling`: 5× the normal repeat ratio, with a volume floor
+
+A repeat is a second `decide` on the same `(learner, construct)`. The baseline is
+the median ratio across connections that have at least 10 pairs; the alert needs
+≥ 10 repeats *and* a ratio above 5× that baseline. A zero baseline is not a
+multiplier — when no other connection repeats, any connection that repeats a lot
+is the outlier by definition, so the multiple is reported as `null` and the alert
+is decided on the ratio. Every connection's ratio, multiple and repeat count is
+in `by_connection`, so the alert can be audited rather than believed.
+
+### 22.6 Both grains agree at M1, and both are still reported
+
+One `decide` request evaluates one construct today, so the request grain and the
+construct grain produce the same totals. The response carries both anyway
+(`rate`/`numerator`/`denominator` for the requested grain, `by_construct` with
+its own denominators and reason mix): the day a request covers several
+constructs, the difference is the case §1.1 exists for, and a consumer that
+already reads both will not need a breaking change.
+
+### 22.7 Wilson, and no interval without a sample
+
+`wilson(k, n)` is the Wilson score interval at 95 %, published to four decimals
+and pinned in tests against values computed outside the module (12/20 →
+[0.3866, 0.7812]; 8/20 → [0.2188, 0.6134]). An empty denominator returns
+`{"low": null, "high": null}` rather than [0, 1] or 0.0: a window with no traffic
+has no rate, and 0 % abstention is the one number §1.5 warns about.

@@ -98,6 +98,9 @@ Each of these is enforced by something that fails, not by a comment:
 | An abstention is free and carries no number | credits are reserved only for a served decision; the abstention body has no `value` key | `tests/test_decide.py::test_an_abstention_is_free_and_a_serve_is_not`, `test_an_abstention_has_no_value_field_and_names_its_need` |
 | Nothing is billed except a served decision | abstentions, failures, retries, replays, reads and `X-Adapt-Test` traffic write **no** ledger rows — asserted as an empty ledger, not as a flag | `tests/test_metering.py` (four zero-ledger cases, one row-count test, one 200-decision corpus) |
 | A served decision bills exactly once | one `reserve` and one `settle` in the request transaction; `credit_consumption` reads `entry_type='settle'` only | `tests/test_metering.py::test_a_served_decision_reserves_and_settles_exactly_once`, `::test_a_retry_writes_no_additional_ledger_rows` |
+| Abstention is always reported with served rate, from one denominator | `metrics/service.py::report` computes both from `decide_requests_valid`; removing `served` turns a test red | `tests/test_metrics.py::test_served_rate_is_reported_from_the_same_denominator` |
+| The metric denominator is the fixture's, not the code's | 30-call fixture in `tests/fixtures/metrics_abstention.json`; the test asserts the literal 20 and `rows = denominator + exclusions` | `tests/test_metrics.py::test_the_thirty_decision_fixture_reproduces_the_rate` |
+| Replays, test traffic and paused connections are excluded and counted | `exclusions` counts each one; a replay bumps `decisions.replay_count` so the count is measured, not assumed | `tests/test_metrics.py`, `tests/test_metering.py::test_a_retry_writes_no_additional_ledger_rows` |
 | A validity flag never fires on good performance | `straight_line` reads the `response`, not `correct`; `rapid_guess` needs an incorrect answer; severity is published and only `uninformative` flags can gate serving | `tests/test_observe.py::test_a_run_of_correct_answers_is_never_flagged`, `::test_a_fast_correct_answer_is_fluency_not_a_guess`, `::test_flag_severity_is_published_for_every_flag` |
 | Over quota is a free 402 that writes nothing | one conditional upsert; the batch row is written after it returns a seat | `tests/test_observe.py::test_over_quota_is_402_with_resets_at_and_writes_nothing` |
 | A paused connection's events are refused, not dropped and not stored | the pause refusal happens before the idempotency row and before quota | `tests/test_observe.py::test_a_paused_connection_cannot_ingest_and_nothing_is_stored` |
@@ -190,6 +193,22 @@ of them and fails on a single differing byte:
 ```bash
 curl -s -X POST localhost:8000/v1/decisions/<decision_id>/replay \
   -H "Authorization: Bearer <key>" -D- | jq   # X-Adapt-Replayed: identical
+```
+
+**Read the abstention metric.** Abstention and served rate come back together,
+from one denominator, and every exclusion carries its own count — so a number in
+a slide can be traced to the query that made it.
+
+```bash
+curl -s -H "Authorization: Bearer <admin key>" \
+  "localhost:8000/v1/admin/metrics/abstention?from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z" | jq
+# { "rate": 0.6, "numerator": 12, "denominator": 20,
+#   "interval": {"low":0.3866,"high":0.7812,"confidence":0.95},
+#   "served": {"numerator": 8, "rate": 0.4, "denominator": 20, "interval": {...}},
+#   "reasons": {"insufficient_evidence": 3, …},
+#   "exclusions": {"test_traffic": 3, "paused_or_revoked": 2, "replays": 5},
+#   "by_construct": [...], "abstention_polling": {"alerting": [], …},
+#   "metric_version": "abstention@1", "unmeasured": ["refusals", "errors", …] }
 ```
 
 **Refit the priors (nightly, owner credential).** A cohort below 20 learners or

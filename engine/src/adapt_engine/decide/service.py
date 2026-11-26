@@ -763,6 +763,17 @@ def replay(
             status_code=500,
             retryable=True,
         )
+    # Counted, not billed: a replay costs nothing and creates no decision, but
+    # `METRICS.md` §1.2 excludes replays from the abstention denominator and a
+    # number nobody records is a number that lies. This is the only write on the
+    # replay path, and it happens after the bytes matched.
+    conn.execute(
+        text(
+            "UPDATE decisions SET replay_count = replay_count + 1"
+            " WHERE tenant_id = :tenant_id AND id = :id"
+        ),
+        {"tenant_id": tenant_id, "id": decision_id},
+    )
     return stored
 
 

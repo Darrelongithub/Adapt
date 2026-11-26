@@ -25,6 +25,7 @@ from adapt_engine.api.health import router as health_router
 from adapt_engine.api.keys import router as keys_router
 from adapt_engine.api.learners import router as learners_router
 from adapt_engine.api.mastery import router as mastery_router
+from adapt_engine.api.metrics import router as metrics_router
 from adapt_engine.api.observe import router as observe_router
 from adapt_engine.auth.audit import AuthFailureAuditor
 from adapt_engine.auth.rate_limit import FailureLimiter
@@ -165,6 +166,7 @@ def create_app(
     app.include_router(learners_router)
     app.include_router(observe_router)
     app.include_router(mastery_router)
+    app.include_router(metrics_router)
     app.include_router(decide_router)
     app.include_router(credits_router)
     app.include_router(connections_router)

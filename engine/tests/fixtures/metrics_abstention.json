@@ -1,0 +1,38 @@
+{
+  "name": "abstention-corpus-30",
+  "why": "The fixture is the specification (AGENT_M1 §6). Thirty `decide` calls with a known composition: 12 abstentions across 4 reasons, 8 served, 5 replays, 3 test calls, 2 calls on a connection paused afterwards — plus one 4xx refusal and one 5xx outside the thirty, which must leave no row. The denominator is 20 and it is written here and hardcoded in the test, never computed from the implementation.",
+  "calls": {
+    "abstentions": {
+      "count": 12,
+      "by_reason": {
+        "insufficient_evidence": 3,
+        "low_confidence": 3,
+        "conflicting_signals": 3,
+        "data_quality": 3
+      }
+    },
+    "served": {"count": 8},
+    "replays": {"count": 5},
+    "test_traffic": {"count": 3},
+    "paused_after_serving": {"count": 2},
+    "refusal": {"count": 1},
+    "error": {"count": 1}
+  },
+  "stored_rows": 25,
+  "expected": {
+    "denominator": 20,
+    "numerator": 12,
+    "rate": 0.6,
+    "served": 8,
+    "served_rate": 0.4,
+    "interval": {"low": 0.3866, "high": 0.7812, "confidence": 0.95},
+    "served_interval": {"low": 0.2188, "high": 0.6134, "confidence": 0.95},
+    "reasons": {
+      "data_quality": 3,
+      "conflicting_signals": 3,
+      "insufficient_evidence": 3,
+      "low_confidence": 3
+    },
+    "exclusions": {"test_traffic": 3, "paused_or_revoked": 2, "replays": 5}
+  }
+}
