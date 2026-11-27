@@ -24,6 +24,12 @@ different and worse one — accent everywhere highlights nothing.
 Per screen, **at most three accent-coloured elements.** If a fourth appears, something in the first
 three was not important enough to be there.
 
+**The budget is a maximum, not a quota.** An accent spent on a number that says *nothing has happened
+yet* teaches the reader to read zero as a highlight — the console's own copy says "0% abstention on a
+quiet tenant is not success", and a terracotta `0.0%` above that sentence argues with it. The mark is
+earned by a value you would **act on**, so on a screen where the headline is zero or `no data`, the
+number prints in `--ink` and the accent is unused. An unused accent is the design working.
+
 ---
 
 ## 2. Tokens — the only place a hex may appear
@@ -111,6 +117,12 @@ justify.
 - **Numbers:** `font-variant-numeric: tabular-nums`, `--ink`, 600. A number is never in the serif face.
 - **One type scale:** 26 / 19 / 15 / 13 / 12. No sizes between them; that is what makes it look drawn
   rather than assembled.
+- **Numbers are formatted by type, never printed raw.** JSON floats do not belong on a screen:
+  rates as **one decimal and a `%` sign** (`0.0%`, `88.0%`); intervals as **two decimals in brackets**
+  (`[0.33, 0.49]`, `[0.00, 0.15]`); estimates and probabilities as **two decimals** (`0.54`, `0.36`);
+  counts as **integers with no separator below 10,000**. Never pad to a fixed width — `0.5400` claims
+  three digits of precision the estimator does not have, and a trailing zero in a measurement is a
+  false claim that costs nothing to avoid. A `null` is the words, never `0` or `—0.00`.
 - **Space:** 4px base — 4 / 8 / 12 / 16 / 24 / 32 / 48. Card padding 20px 24px, card gap 16px, page
   gutter 32px, `max-width: 1120px`.
 - **Radius:** 3px on inputs and buttons, 0 on cards and tables. A card with a shadow and a 12px radius
@@ -136,6 +148,7 @@ justify.
 | Validated | `--ok` text plus a `✓` glyph, never colour alone |
 | Accent rule | 2px `--accent` under H1, spanning only the H1's width |
 | Selected row | `--accent-soft` fill with a 2px `--accent` left border |
+| **Inline chip** | a short value lifted out of a sentence so it can be scanned: `--blue-soft` fill, `--blue` text, 2px 6px padding, 3px radius, 11px/600 uppercase `.04em`, `vertical-align: 1px`. One per row. A chip carrying the *serving level* is the screen's single accent element when it is the point of the screen, and prints in `--blue-soft` otherwise — never both chips and a mark on one screen |
 
 ---
 
