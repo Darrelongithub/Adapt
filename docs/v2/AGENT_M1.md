@@ -223,8 +223,8 @@ to *see* the loop:
 * `adapt sandbox seed` → three synthetic learners: a **guesser** (correct 20% regardless), a steady
   learner, and an over-confident one.
 * `adapt sandbox demo` → the console on a prepared tenant, and the money shot works: a learner with zero
-  events **abstains with `needs`**, six events are sent from the demo panel, and the next `decide`
-  returns a recommendation with reason and interval.
+  events **abstains with `needs`**, the demo sends **exactly `needs.trials` events** — the engine's
+  number, not a round one — and the next `decide` returns a recommendation with reason and interval.
 * No fabricated numbers anywhere in the demo. The sandbox learners are synthetic and labelled as such.
 
 **Acceptance:** every number on every screen traces to an endpoint; a screenshot test fails if any
