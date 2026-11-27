@@ -277,6 +277,11 @@ hold the key at all:
 | `GET /v1/mastery/{skill}?learner_id=` | host-facing | `read_model` | one construct; may answer `200` with `insufficient_evidence` |
 | `GET /v1/credits/balance` | host-facing | `observe` | `granted = available + held + consumed + forfeited` |
 | `GET /v1/admin/metrics/abstention` | **control-plane** | `admin` | the abstention/served pair, both grains, with exclusions counted (§6D) |
+
+**One asymmetry, deliberate and temporary:** `POST /v1/decide` and `POST /v1/decisions/{id}/replay`
+disagree about their own noun — the collection is `decisions`, the action is `decide`. Both appear in the
+generated SDKs, so renaming either is a breaking change for every client; it is scheduled for the next
+major version, not silently fixed before a pilot.
 | `POST /v1/admin/credits/grants` | **control-plane** | `admin` | provisioning; `Idempotency-Key` required |
 | `POST /v1/admin/keys` | **control-plane** | `admin` | issue; subset-of-own-scopes rule applies |
 | `POST /v1/admin/keys/{id}/revoke` | **control-plane** | `admin` | immediate |

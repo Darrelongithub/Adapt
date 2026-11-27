@@ -131,6 +131,19 @@ least **10 repeats**, so a small denominator cannot trigger it. If the baseline 
 reported as `null` and the decision is made on the raw ratio, with the reason stated — never as `∞` and
 never as a silent pass.
 
+**A paused connection changes yesterday.** Status is read at query time, so pausing a connection today
+removes its history from every window, including a report you printed last month: an exclusion that is a
+*joint function of the window and the current configuration* makes a historical metric move without new
+traffic. This is what "excluded and counted" means, and it is defensible — a paused host is not a
+measurement of learner behaviour — but it is the first thing a technical buyer will notice, so it is
+stated here rather than discovered in a review. A print-once export for evidence packs, freezing the
+connection set at generation time, is the M3 answer.
+
+**A zero baseline is never rendered as a multiple.** When no connection has 10 pairs, the baseline is
+`0.00` and `5× the baseline` is arithmetically meaningless — `null`, decided on the raw ratio, with the
+reason shown. A console printing "5.0× baseline" beside a baseline of `0.00` is displaying a threshold
+that does not exist.
+
 **The trap, stated explicitly so nobody optimises into it:** a *falling* abstention rate is not
 automatically good, and a rate of 0% is a warning, not an achievement. It means either every construct
 has passed its gates, or somebody lowered a floor. The console shows the floor configuration next to
