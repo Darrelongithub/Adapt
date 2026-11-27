@@ -1376,3 +1376,185 @@ than papered over: the demo's fresh learner needs **7** more trials after one
 registration observation (the floor is 8), so "six events later" in the walkthrough
 is not the arithmetic this build performs; and the demo reports a second
 abstention if it happens instead of retrying until it does not.
+
+### 23.6 The same Idempotency-Key racing itself is a replay, not a 500 (increment 8, from the audit)
+
+`decide` reads the key, then decides, then inserts. Two requests carrying one key
+can therefore both miss the read; the loser's `INSERT` blocks on
+`decisions_once_per_key`, then fails, and before increment 8 that failure reached
+the caller as **500 internal** — three times out of four in the audit's own
+reproduce. The header exists precisely for the caller that retries, so an error on
+retry is worse than a duplicate: it is a duplicate *plus* an alarm, and the caller
+cannot distinguish "we did not serve you" from "we cannot say".
+
+The fix keeps the whole unit of work — reserve, settle, insert — inside a
+**savepoint**. On the unique violation the savepoint rolls back (so the loser's
+reservation is discarded and nothing is charged), the key is read again, and the
+winner's stored body is returned with `X-Adapt-Replayed: true`, byte-identical to
+what the first caller got. A key re-used with a *different* body still returns
+409: the race and the misuse are different events and keep different answers.
+`tests/test_audit_increment8.py` runs four requests on one key through four
+clients and asserts one row, one settle, four identical bodies.
+
+### 23.7 The palette is four gates, and the accent budget counts elements
+
+`CONSOLE_STYLE.md` §6 lists them; the implementation is deliberately dull, because
+a design system that needs judgement at review time is not enforced. The hex grep
+covers `console/` **and the two screenshot scripts**, so the artifact cannot carry
+a palette the page does not. The contrast test recomputes §3 from `:root` and
+fails with the pair and the ratio, and it also checks the *published* number, so a
+stylesheet edited without the document fails in the other direction too. The
+accent count is taken from the cascade over the renderer's own tree: an element
+counts when its computed `color`, `background` or `border-left` resolves to
+`--accent`, `--accent-fill` or `--accent-ink`. Three is a ceiling and not a quota:
+the empty window marks **nothing** (0/0/0) because "no data" is mustard italic,
+not terracotta, and the populated window marks exactly one number per screen
+(1/1/1 — the abstention rate, the alerting connection, the serving level).
+
+Two `:root` blocks are used on purpose: the first is `CONSOLE_STYLE.md` §2
+byte-for-byte (colours only), the second carries the display and sans stacks that
+§4 asks for. Keeping them apart is what lets the token tests key on colour tokens
+without a prose exception.
+
+### 24.1 Numbers are formatted by type, and the formatter is tested as a grep
+
+Increment 9 began because a reader opened the screenshot and found `0.5400` and
+`[0.3256, 0.7469]` on it. The provenance gate was green: both values came from
+`/v1/mastery`, unchanged, through an id declared in `data-map.json`. **A gate that
+proves where a number came from cannot see what it looks like**, and the console
+had one `formatNumber(value, digits = 4)` doing duty for estimates, intervals and
+anything else that was not a percentage.
+
+There are now four formatters and no `toFixed` outside them: rates one decimal
+plus `%`, intervals two decimals in brackets, estimates two decimals, counts
+integers with separators starting at 10,000 (never below it, because `500,000`
+events is a fiscal year and `12` decisions is a Tuesday). The test is deliberately
+a grep over every rendered run — labels, values, sentences, table cells — rather
+than a list of known cells, because a list of cells is what let a new cell bring
+the old habit back. It permits two things that look like sins and are not: `0.0%`
+(a rate is *defined* as one decimal) and `[0.30, 0.65]` (an interval is *defined*
+as two). It flags `0.5400`, `0.3256`, and `5.0x` — the last one being the old
+threshold sentence, padded to a decimal that meant nothing.
+
+### 24.2 The accent is earned by a value you would act on
+
+`CONSOLE_STYLE.md` §1 now says the budget is a maximum and not a quota, and the
+console had been spending its one marked number on `0.0%` in a 22-decision window
+— three lines above the copy that says 0% abstention is not success. A terracotta
+zero is an argument against the sentence underneath it. The mark is now conditional
+on `rate > 0`; a zero prints at 13px in `--ink`, and `no data` keeps the mustard
+italic it always had (mustard is not an accent).
+
+Both screenshots now carry **zero** accents: 0/0/0 on the empty window and 0/0/0
+on the populated one. That is the design working, not the design absent — the
+tenant has no abstentions and no level gap, so there is nothing to act on. The
+test asserts both halves: the live state marks nothing, and a state with 4
+abstentions in 22 decisions marks exactly one at 19px. Without the second half,
+"at most three" would also be satisfied by a console that never marks anything.
+
+The one chip that may still take the accent is the serving level when it is *below
+the entitlement* (§5) — the gap a reader can act on — and the same test renders a
+`L2`-entitled tenant to prove the chip changes from blue to accent.
+
+### 24.3 A zero baseline is never a multiple, and the API was half the bug
+
+`/v1/admin/metrics/abstention` returned `multiple: 5.0` unconditionally. That field
+is the configured threshold, but its name says "the multiplier", and at a baseline
+of `0.00` there is no multiplier — `METRICS.md` §1.5 already required `null` there.
+The console printed `5.0x baseline` beside `baseline repeat ratio 0.00`.
+
+Both sides were wrong, so both sides changed:
+
+* the **API** sends `multiple: null` when the baseline is zero, and reports the
+  configured constant separately as `threshold_multiple`, so the response no longer
+  has a field whose meaning depends on another field's value;
+* the **console** renders `baseline is zero — decided on the raw ratio, so the 5×
+  threshold is not applied`, and its sentence names the repeat count and the floor:
+  `11 repeats across 2 connections with decisions in this window, 10-repeat floor`.
+
+`test_a_zero_baseline_is_reported_as_no_multiple_at_all` builds the state that
+produces it (a quiet connection with ten pairs and a loud one with one pair and
+twelve repeats) and asserts the null, the constant and the alert. The console test
+asserts the rendered words, and that `1 of 2 connections is` agrees with the count
+that leads the clause rather than with `connections`.
+
+### 24.4 One identity per object, and a level sentence with a grammar
+
+The by-connection table printed `4ad087e1-1cbc-46d5-8375-8635ae157c2f` while the
+table above it printed `console-host` — one connection, two identities, and a
+36-character UUID in a 13px column. Rows now print the host name from
+`/v1/admin/connections`; a connection with no name, or one the console has not
+loaded, gets eight characters and an ellipsis in a system monospace stack (not a
+web font: the console has to work offline). The superseded `connections.row.*.id`
+map entry is gone, because a data-map that points at something the screen no longer
+shows is documentation drift with a test asserting it.
+
+The level sentence is now built from entitlement, served, validated and
+`limited_by`, with four branches and no branch that asserts a gap the parenthetical
+then denies. It used to read "serving L1 where validation has not passed
+(capability L1, validated L1)" — false for the very tenant the screenshot showed —
+and it was the sentence most likely to be quoted. The four cases (L1/L1, L1/L0,
+L2/L1, `limited_by` set) are rendered by the test rather than asserted against a
+helper, so the sentence is checked as a reader sees it.
+
+### 24.5 The response is on the wire before the transaction commits
+
+The docker job went red on `6adf4d0` in the Gate step while the push run at the
+same commit was green — same tree, same gate, two environments, one result each.
+The failing test was the CLI formatting gate, and it failed in its *fixture*:
+
+```
+ERROR tests/test_sandbox_cli.py::test_the_cli_formats_numbers_the_way_the_console_does
+  - SystemExit: error: observe failed for learn-sandbox-guesser:
+    401 {'error': {'code': 'unauthorized', 'message': 'Invalid or missing API key'
+```
+
+`seeded` runs `adapt sandbox seed`, and seed does three things in a row: mint a
+tenant key, `POST /v1/admin/connections` to get a connection key, then `POST
+/v1/observe` with that key. The observe is refused as unauthorized about a key
+that was issued one line earlier.
+
+The cause is an ordering, and it is measurable:
+
+```
+$ uvicorn + a `yield` dependency that sleeps 0.4s before its teardown
+client received response at 1795777862.7637575
+commit happened at        1795777863.1639311
+the client held the response 0.40s BEFORE the commit
+```
+
+FastAPI runs a `yield` dependency's exit code **after** the response bytes are on
+the wire. `tenant_connection` is such a dependency, and `tenant_transaction`
+commits in its teardown (`engine.begin()`). So every write in every request is
+committed *after* the client has the answer. For most routes that is merely
+untidy — the read that follows is the client's own business. For the two routes
+that answer with a **secret** it is a contract bug: `POST /v1/admin/connections`
+and `POST /v1/admin/keys` hand back a key that is not yet in the database, and a
+host that uses it on the next line can be told `401` about a key that is perfectly
+good microseconds later.
+
+TestClient hides this completely — it collects the body only after the app
+callable returns, so teardown has always finished first. That is why 768 local
+tests were green and why the failure needed a real socket, a loaded runner, and a
+race: the window is one commit wide.
+
+**The fix is an explicit commit at the end of the routes that hand out a secret**
+(`commit_before_promise`), with two disciplines that come from *what* it ends:
+
+* the response model is built **before** the commit, because committing expires the
+  ORM identity map and a later read would re-select in a transaction that no longer
+  has `adapt.tenant_id` set — under row-level security, that is a read of nothing;
+* nothing may touch the connection afterwards, because the tenant setting is
+  transaction-local and any further statement raises *"can't operate on closed
+  transaction inside context manager"*.
+
+The regression test widens the window to a third of a second (`_slow_commit`) and
+drives a **real uvicorn server**, so it fails deterministically if the ordering
+comes back: without the fix it answers `401 == 200` on `/v1/whoami`, with it `200`.
+
+**Why it looked like docker.** It was never docker. The apt job passed and the
+docker job failed because the docker job's `ADAPT_TEST_DATABASE_URL` goes through a
+published port (TCP, a borrowed connection, a warmer pool) while the apt job's
+`127.0.0.1` and the local unix socket are faster, so the next request loses the
+race more often. A race that depends on milliseconds looks like an environment
+difference, and the environment was the only thing that visibly changed.

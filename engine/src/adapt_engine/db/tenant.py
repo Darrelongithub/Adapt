@@ -64,3 +64,33 @@ def tenant_transaction(engine: Engine, tenant_id: uuid.UUID | str) -> Iterator[C
     with engine.begin() as conn:
         set_tenant_local(conn, tenant_id)
         yield conn
+
+
+def commit_before_promise(conn: Connection) -> None:
+    """Commit a transaction that is about to hand the caller a secret.
+
+    FastAPI runs a ``yield`` dependency's teardown *after* the response bytes are
+    on the wire (measured, not assumed: see ``DECISIONS.md`` §24.5). ``tenant_
+    transaction`` commits in that teardown, so for a route that returns a freshly
+    minted API key the client can hold the key in its hand — and use it — while the
+    row that makes it valid is still uncommitted. The result is a ``401
+    invalid_api_key`` for a key that is, microseconds later, perfectly good. It is
+    not hypothetical: it is what turned ``engine (postgres via docker)`` red on a
+    commit whose sibling run was green, because ``adapt sandbox seed`` mints a
+    connection key and observes an event with it on the next line.
+
+    Two disciplines come with it, both because the commit ends the *transaction*
+    and not just the write:
+
+    * **Build the response object first, then commit, then return it.** Committing
+      expires the ORM identity map, so reading a row afterwards re-selects it — in
+      a transaction that no longer has ``adapt.tenant_id`` set, which is to say
+      under row-level security, which is to say it is gone.
+    * **Nothing may query the connection after this call.** The tenant setting is
+      transaction-local (``set_config(..., true)``); a follow-up statement would
+      both lose the tenant and raise *"can't operate on closed transaction inside
+      context manager"*.
+
+    So: last statement touching ``conn``, response model already built.
+    """
+    conn.commit()

@@ -44,6 +44,7 @@ from adapt_engine.clock import Clock
 from adapt_engine.config import Settings
 from adapt_engine.connections import service as connections
 from adapt_engine.crypto.store import DataKeyStore, crypto_store
+from adapt_engine.db.tenant import commit_before_promise
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 from adapt_engine.webhooks import dispatch
 
@@ -250,7 +251,10 @@ def create_connection(
             "webhook": row.webhook_url is not None,
         },
     )
-    return ConnectionCreated(
+    # Built from the row *before* the commit below expires it (see
+    # `commit_before_promise`): this response carries `key.full_key`, so it must
+    # not be sendable before the key is committed.
+    created = ConnectionCreated(
         connection=_to_connection(row),
         key=IssuedKeyOnce(
             key_id=issued.key_id,
@@ -262,6 +266,8 @@ def create_connection(
         ),
         webhook_secret=secret,
     )
+    commit_before_promise(conn)
+    return created
 
 
 def _is_unique_violation(exc: IntegrityError) -> bool:

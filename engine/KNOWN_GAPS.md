@@ -635,3 +635,86 @@ reads that way for the sandbox because `adapt sandbox seed` provisions a `deep`
 tenant. A `core` tenant gets "Entitled to L1; serving L1 …" and the sentence is
 equally true; what is *not* yet exercised is the case where entitlement, capability
 and validation disagree in more than one axis.
+
+## 34. A window with two naive timestamps names only one of them
+
+`GET /v1/admin/metrics/abstention` normalises `to` before `from`, so a request with
+*both* boundaries naive gets `422 … details.field = "to"` and no mention of
+`from`. The refusal is correct and the field it names is genuinely wrong; what is
+missing is the second name. Fixing it means collecting all field errors before
+raising, which changes the error envelope for every route that validates more than
+one parameter — a contract change for a message, so the increment-8 audit records
+it here instead. **Not fixed, by choice.**
+
+## 35. `POST /v1/decide` and `POST /v1/decisions/{id}/replay` disagree about their own noun
+
+One route is singular and a verb, the other plural and a noun. Both are documented
+and both are in the generated SDK, so renaming either now breaks every client the
+SDK has produced — including the two in this repository. It was found by writing
+the audit test and getting a 404 from a URL that read as if it should exist, which
+is the argument for fixing it at the next breaking version and not tonight.
+**Won't fix at M1.**
+
+## 36. The console's `serving` mark is a chip, and §5 does not name a chip
+
+`CONSOLE_STYLE.md` §5 has a *selected row* (`--accent-soft` fill, 2px `--accent`
+left border) but no inline variant of it. The inspector needs one: `served` is a
+single number in a table cell and the accent budget allows one mark per screen, so
+the mark is drawn as a chip — the same fill and the same 2px border as the selected
+row, at cell size. It is in the stylesheet, it is counted by gate 3, and it is
+**not** in the spec. Either the spec gains a row or the chip goes; the console
+should not be the only place that knows the grammar.
+
+## 37. The chip is 11px and the type scale is 26 / 19 / 15 / 13 / 12
+
+`CONSOLE_STYLE.md` §4 says "one type scale … no sizes between them";
+`§5` specifies the inline chip at 11px/600. One of them has to give, and §5 is the
+more specific rule about the component, so the chip is 11px — an uppercase,
+letter-spaced, blue-on-blue-soft label whose job is to be scanned rather than read.
+It is recorded here because the next person to add a 11px anything (a caption, a
+tag, "just this once") will quote §5, and the answer has to be that §5 named one
+component and not a second scale. **Not fixed: it is a docs conflict, and the docs
+are the reviewer's.** Either §4 gains 11px for chips or §5 loses the chip.
+
+## 38. A short id is an identity the screen cannot be sure of
+
+`identify()` maps a connection id to its host name, and falls back to the first
+eight characters of the UUID when `/v1/admin/connections` has no row for it. That
+happens if a connection is deleted (the metric keeps its id; `decisions.connection_id`
+is `ON DELETE SET NULL` for the decision but the polling query groups by the id it
+had) or if the two endpoints are read a moment apart. Eight hex characters is
+2³² — fine for a person, not an identity a machine can join on. The screen shows
+the host name to a human and the id only as a fallback; anything that needs to
+*join* on a connection should read the metrics response, not the picture.
+**Won't fix: the fix is a stable display name in the connections table, which is a
+UI.md decision rather than a console one.**
+
+## 39. `threshold_multiple` is a response field with no SDK method behind it
+
+The metrics endpoint answers with both `multiple` (null at a zero baseline) and
+`threshold_multiple` (always the constant). Neither is declared in the OpenAPI
+document beyond the route's loose response, and the generated SDKs return
+`dict[str, Any]`, so nothing breaks — but a field added to make a sentence honest is
+still a field, and the next person to write a client will find it undocumented
+outside `DECISIONS.md §24.3` and `METRICS.md §1.5`. **Won't fix at M1: the metrics
+response has never had a schema, and inventing one for a 15-field diagnostic body
+is a larger job than the sentence it protects.**
+
+## 40. Revoke and pause answer before they take effect
+
+`commit_before_promise` (DECISIONS §24.5) covers the two routes that hand out a
+secret. The **mirror-image** window is still open: `DELETE /v1/admin/connections/{id}`
+and `PATCH .../{id}` commit in the same late teardown, so for one commit's width
+the key of a connection the console has just reported revoked can still
+authenticate. The exposure is different in kind — the client that receives the
+revocation is the one who asked for it, and the window is microseconds — but the
+sentence in `api/connections.py` ("Both in one transaction, so there is no window
+where the connection says revoked and the key still authenticates") is true of the
+*database* and not yet of the *response*.
+
+**Not fixed here: needs its own test with a real socket and a widened teardown, and
+the fix is the same three lines in two more handlers. Judgement was that
+increment 9 is a display-correction increment and this is the CI defect that
+blocked it, not a revoke-hardening increment.** The test to write is the mirror of
+`test_a_key_works_before_the_request_that_minted_it_has_committed`: revoke, then
+present the key immediately, expect 401.

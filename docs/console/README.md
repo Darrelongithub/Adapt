@@ -8,9 +8,39 @@ were rendered from.
 | `empty-window.svg` / `.png` | a window with **no decisions** | the null state: `rate` reads **no data**, not `0.0%`, with the sentence that says why |
 | `populated-window.svg` / `.png` | one connection repeating, one quiet, one learner with evidence | the pair: abstention and served rate from one denominator, credits, the polling alert, and the learner's per-construct row with `serving`/`validated` |
 
+Both files are drawn in the house style of `docs/v2/CONSOLE_STYLE.md`: beige page,
+one flat card, serif display with a 2px terracotta rule under the title, sans for
+every number, `no data` in mustard 700 *italic*, and **one** accent element per
+populated screen. The accent budget is checked, not eyeballed — `console_shot.mjs`
+counts the elements whose computed colour resolves to `--accent`, `--accent-fill`
+or `--accent-ink` and refuses to write above three:
+
+| Screen | Populated | Empty window |
+|---|---|---|
+| Overview | 0 — the rate is `0.0%`, and a zero is not a highlight | 0 — `no data` |
+| Connections | 0 — the chips are blue, not accent | 0 |
+| Learner | 0 — entitlement, service and validation agree | 0 |
+
+The accent is **earned** (`CONSOLE_STYLE.md` §1): it goes on a value you would act
+on, which for these two states is nothing. A tenant with 4 abstentions in 22
+decisions gets one 19px terracotta figure; a tenant serving below its entitlement
+gets one accented chip. Both are rendered and asserted in `tests/test_console.py`,
+so a zero count here is a statement about the data and not a missing feature.
+
+Numbers are formatted by type, never printed raw (§4): rates `0.0%`, intervals
+`[0.33, 0.75]`, estimates `0.54`, counts `50,000` only once they earn the comma.
+A grep over every rendered run fails on a third decimal, so `0.5400` cannot come
+back through a new cell.
+
+The palette is **not** stored in either renderer: both parse `:root` from
+`src/adapt_engine/console/styles.css` (`CONSOLE_STYLE.md` §6, gate 4), so editing a
+token changes the pictures and editing the pictures is not possible. Italics are
+synthesised by shear — no italic face is installed here, and a browser would make
+the same compromise.
+
 These are **not** browser bitmaps. There is no headless browser in this
 environment, so `scripts/console_shot.mjs` walks the vnode tree that
-`console.js` produces and lays the text out as SVG, and `scripts/console_shot.py`
+`console/app.js` produces and lays the text out as SVG, and `scripts/console_shot.py`
 draws the same block model to PNG with Pillow (a dev extra: `pip install -e ".[dev]"`). The content and order are the
 console's; the CSS layout is not. `KNOWN_GAPS` §30 records the gap and the fix.
 

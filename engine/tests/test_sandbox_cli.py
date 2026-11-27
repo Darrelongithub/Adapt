@@ -32,6 +32,7 @@ from adapt_engine import cli
 from adapt_engine.db.tenant import tenant_transaction
 from tests import pg
 from tests.conftest import TEST_MASTER_KEY, TEST_PEPPER
+from tests.formats import numeric_sins
 
 
 @pytest.fixture
@@ -153,6 +154,43 @@ def test_demo_runs_the_loop_and_never_fabricates_a_number(seeded, capsys, _isola
     assert settles == served_rows, f"{settles} settles for {served_rows} served of {decisions}"
     assert decisions > served_rows, "the demo must show at least one abstention"
     assert replays >= 1, "a replay must leave an audit row"
+
+
+def test_the_demo_can_be_run_twice_in_a_row(seeded, capsys, _isolated) -> None:
+    """A demo that only works on a virgin tenant is a demo you can watch once.
+
+    The increment-8 audit found it as a first-run-only bug: `demo` reused the
+    seeded `fresh` learner, so on the second run the engine served a confident
+    number instead of abstaining, `needs.trials` was 0, and the run died on
+    `events must not be empty`. The learner id is now run-scoped, so the money
+    shot reproduces — which is the whole point of running it twice.
+    """
+    for attempt in range(2):
+        assert cli.main(["sandbox", "demo"]) == 0, f"run {attempt + 1} failed"
+        out = capsys.readouterr().out
+        assert "abstain=True" in out, f"run {attempt + 1}: {out}"
+        assert re.search(r"sending exactly what needs asked for: [1-9]\d* events", out), (
+            f"run {attempt + 1} asked for zero events: {out}"
+        )
+        assert re.search(r"serves \w+ confidence", out), f"run {attempt + 1}: {out}"
+
+
+def test_the_cli_formats_numbers_the_way_the_console_does(seeded, capsys, _isolated) -> None:
+    """The same rule, on the second surface where an API number becomes prose.
+
+    The console was the visible defect, not the only copy of the habit: this module
+    prints a rate, two estimates and an interval per learner, and until increment 9
+    it did so with `:.1f`/`:.2f` typed at each site — right by imitation, with
+    nothing to fail if somebody typed `:.4f`. `tests/formats.py` holds the rule and
+    both surfaces are now checked against it.
+    """
+    assert cli.main(["sandbox", "demo"]) == 0
+    out = capsys.readouterr().out
+
+    offenders = [sin for line in out.splitlines() for sin in numeric_sins(line)]
+    assert not offenders, "; ".join(offenders)
+    assert re.search(r"abstention \d+\.\d%", out), out
+    assert re.search(r"value \d\.\d{2} \[\d\.\d{2}-\d\.\d{2}\]", out), out
 
 
 def test_the_demo_refuses_to_run_without_a_seed(sandbox_env: Path, capsys) -> None:
