@@ -32,6 +32,7 @@ from adapt_engine import cli
 from adapt_engine.db.tenant import tenant_transaction
 from tests import pg
 from tests.conftest import TEST_MASTER_KEY, TEST_PEPPER
+from tests.formats import numeric_sins
 
 
 @pytest.fixture
@@ -172,6 +173,24 @@ def test_the_demo_can_be_run_twice_in_a_row(seeded, capsys, _isolated) -> None:
             f"run {attempt + 1} asked for zero events: {out}"
         )
         assert re.search(r"serves \w+ confidence", out), f"run {attempt + 1}: {out}"
+
+
+def test_the_cli_formats_numbers_the_way_the_console_does(seeded, capsys, _isolated) -> None:
+    """The same rule, on the second surface where an API number becomes prose.
+
+    The console was the visible defect, not the only copy of the habit: this module
+    prints a rate, two estimates and an interval per learner, and until increment 9
+    it did so with `:.1f`/`:.2f` typed at each site — right by imitation, with
+    nothing to fail if somebody typed `:.4f`. `tests/formats.py` holds the rule and
+    both surfaces are now checked against it.
+    """
+    assert cli.main(["sandbox", "demo"]) == 0
+    out = capsys.readouterr().out
+
+    offenders = [sin for line in out.splitlines() for sin in numeric_sins(line)]
+    assert not offenders, "; ".join(offenders)
+    assert re.search(r"abstention \d+\.\d%", out), out
+    assert re.search(r"value \d\.\d{2} \[\d\.\d{2}-\d\.\d{2}\]", out), out
 
 
 def test_the_demo_refuses_to_run_without_a_seed(sandbox_env: Path, capsys) -> None:

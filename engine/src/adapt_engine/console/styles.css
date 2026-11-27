@@ -200,16 +200,39 @@ td {
 
 tbody tr:last-child td { border-bottom: 0; }
 
-/* A chip: the tint is --accent-soft, which is not an accent *ink*, and the 2px
- * left border is the mark. Chip text stays --ink so it never rests on 3.78:1. */
+/* Inline chip (CONSOLE_STYLE §5): a short value lifted out of a sentence so it
+ * can be scanned. Blue-soft fill, blue text, 11px/600 uppercase — the chip is
+ * not an accent by default, because a chip on every row would spend the budget
+ * three times over. Its 11px is the one size §5 names outside §4's scale. */
 .chip {
   display: inline-block;
-  padding: 2px 8px;
-  border-left: 2px solid var(--accent);
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+/* The one chip that may take the accent: a serving level below the entitlement,
+ * i.e. the gap a reader can act on. Text stays --ink so it never rests on 3.78:1. */
+.chip-accent {
   background: var(--accent-soft);
   color: var(--ink);
-  border-radius: 3px;
-  font-weight: 600;
+  border-left: 2px solid var(--accent);
+  padding-left: 4px;
+}
+
+/* An identity that is an id rather than a name. A system mono stack, not a web
+ * font: the sandbox has no network and the console must work offline. */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .badge {

@@ -472,6 +472,7 @@ def test_abstention_polling_fires_at_five_times_the_repeat_ratio(
 
     polling = _metrics(client, admin_key)["abstention_polling"]
     assert polling["multiple"] == 5.0
+    assert polling["threshold_multiple"] == 5.0
     assert polling["baseline_repeat_ratio"] == 0.2
     assert polling["min_repeats"] == 10
     alerting = {row["connection_id"] for row in polling["alerting"]}
@@ -504,6 +505,38 @@ def test_abstention_polling_stays_quiet_when_every_connection_repeats_alike(
     assert polling["alerting"] == []
     assert {row["repeat_ratio"] for row in polling["by_connection"]} == {0.2}
     assert polling["baseline_repeat_ratio"] == 0.2
+
+
+def test_a_zero_baseline_is_reported_as_no_multiple_at_all(client: TestClient, admin_key) -> None:
+    """METRICS §1.5: at a zero baseline the multiplier does not exist, so it is null.
+
+    One quiet connection with ten pairs (ratio 0.0) and one loud connection with a
+    single pair and twelve repeats (ratio 12.0). The quiet one sets the baseline to
+    0.0, and then "5x the baseline" is arithmetically meaningless — the API must
+    say so, because a console printing it beside a baseline of 0.00 is drawing a
+    threshold that does not exist. The configured constant is still reported,
+    under a name that says what it is.
+    """
+    quiet = _new_connection(client, admin_key)
+    _pairs(client, quiet, prefix="zeroq", count=10, repeats=0)
+    loud = _new_connection(client, admin_key)
+    _pairs(client, loud, prefix="zerol", count=1, repeats=12)
+
+    polling = _metrics(client, admin_key)["abstention_polling"]
+    assert polling["baseline_repeat_ratio"] == 0.0
+    assert polling["baseline_source"] == "median of 1 connection(s) with >= 10 pairs"
+    assert polling["multiple"] is None, "a zero baseline has no multiplier"
+    assert polling["threshold_multiple"] == 5.0, "the constant is still reported, as a constant"
+    assert [row["connection_id"] for row in polling["alerting"]] == [str(loud["connection"]["id"])]
+
+    loud_row = next(
+        row
+        for row in polling["by_connection"]
+        if row["connection_id"] == str(loud["connection"]["id"])
+    )
+    assert loud_row["multiple_of_baseline"] is None
+    assert loud_row["repeat_ratio"] == 12.0
+    assert loud_row["alerting"] is True, "with a zero baseline, any repeat stands out"
 
 
 def test_polling_needs_volume_before_it_fires(client: TestClient, admin_key) -> None:

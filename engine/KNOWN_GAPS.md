@@ -664,3 +664,38 @@ the mark is drawn as a chip — the same fill and the same 2px border as the sel
 row, at cell size. It is in the stylesheet, it is counted by gate 3, and it is
 **not** in the spec. Either the spec gains a row or the chip goes; the console
 should not be the only place that knows the grammar.
+
+## 37. The chip is 11px and the type scale is 26 / 19 / 15 / 13 / 12
+
+`CONSOLE_STYLE.md` §4 says "one type scale … no sizes between them";
+`§5` specifies the inline chip at 11px/600. One of them has to give, and §5 is the
+more specific rule about the component, so the chip is 11px — an uppercase,
+letter-spaced, blue-on-blue-soft label whose job is to be scanned rather than read.
+It is recorded here because the next person to add a 11px anything (a caption, a
+tag, "just this once") will quote §5, and the answer has to be that §5 named one
+component and not a second scale. **Not fixed: it is a docs conflict, and the docs
+are the reviewer's.** Either §4 gains 11px for chips or §5 loses the chip.
+
+## 38. A short id is an identity the screen cannot be sure of
+
+`identify()` maps a connection id to its host name, and falls back to the first
+eight characters of the UUID when `/v1/admin/connections` has no row for it. That
+happens if a connection is deleted (the metric keeps its id; `decisions.connection_id`
+is `ON DELETE SET NULL` for the decision but the polling query groups by the id it
+had) or if the two endpoints are read a moment apart. Eight hex characters is
+2³² — fine for a person, not an identity a machine can join on. The screen shows
+the host name to a human and the id only as a fallback; anything that needs to
+*join* on a connection should read the metrics response, not the picture.
+**Won't fix: the fix is a stable display name in the connections table, which is a
+UI.md decision rather than a console one.**
+
+## 39. `threshold_multiple` is a response field with no SDK method behind it
+
+The metrics endpoint answers with both `multiple` (null at a zero baseline) and
+`threshold_multiple` (always the constant). Neither is declared in the OpenAPI
+document beyond the route's loose response, and the generated SDKs return
+`dict[str, Any]`, so nothing breaks — but a field added to make a sentence honest is
+still a field, and the next person to write a client will find it undocumented
+outside `DECISIONS.md §24.3` and `METRICS.md §1.5`. **Won't fix at M1: the metrics
+response has never had a schema, and inventing one for a 15-field diagnostic body
+is a larger job than the sentence it protects.**

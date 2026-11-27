@@ -11,26 +11,57 @@
  * runs, so "it passed in the test" and "it works on screen" are the same claim.
  */
 
+/* Numbers are formatted by type, never printed raw (CONSOLE_STYLE §4).
+ *
+ * JSON floats do not belong on a screen. Four types, four formatters, and no
+ * `toFixed(n)` anywhere else in this file — a fixed width is how `0.5400` happens,
+ * and `0.5400` claims two digits of precision the estimator does not have. The
+ * test in `tests/test_console.py` greps every rendered run for a third decimal
+ * or a trailing zero, so a new cell cannot bring the old habit back with it.
+ */
+
 const PERCENT = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 1,
   maximumFractionDigits: 1,
 });
 
+const TWO = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 export const NO_DATA = "no data";
 
+/** A rate: one decimal and a percent sign — `0.0%`, `88.0%`. */
 export function formatPercent(value) {
   return value === null || value === undefined ? NO_DATA : `${PERCENT.format(value * 100)}%`;
 }
 
-export function formatNumber(value, digits = 4) {
-  return value === null || value === undefined ? NO_DATA : Number(value).toFixed(digits);
+/** An estimate or a probability: two decimals — `0.54`, `0.36`. */
+export function formatEstimate(value) {
+  return value === null || value === undefined ? NO_DATA : TWO.format(value);
 }
 
+/** An interval: two decimals, in brackets — `[0.33, 0.49]`. */
 export function formatInterval(interval) {
   if (!interval || interval.low === null || interval.high === null) {
     return "interval unavailable";
   }
-  return `[${formatNumber(interval.low)}, ${formatNumber(interval.high)}]`;
+  return `[${formatEstimate(interval.low)}, ${formatEstimate(interval.high)}]`;
+}
+
+/** A count: an integer, with separators only once they earn their width. */
+export function formatCount(value) {
+  if (value === null || value === undefined) return NO_DATA;
+  const number = Number(value);
+  return Math.abs(number) < 10_000 ? String(number) : number.toLocaleString("en-US");
+}
+
+/** A multiplier of a baseline: integral when it is, one decimal when it is not. */
+export function formatMultiple(value) {
+  if (value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isInteger(number) ? `${number}\u00d7` : `${number.toFixed(1)}\u00d7`;
 }
 
 function h(tag, attrs, ...children) {
@@ -65,10 +96,11 @@ function overview(state) {
     row(
       "rate",
       metric("overview.abstention.rate", formatPercent(m.rate), {
-        // The one number Overview is allowed to mark, and the only place a
-        // 19px terracotta figure is legal (CONSOLE_STYLE §3). A null keeps the
-        // mustard italic instead: "no data" is never decorated.
-        class: m.rate === null ? "null" : "mark",
+        // The accent is earned by a value you would act on (CONSOLE_STYLE §1).
+        // A rate of zero is the number that says "nothing has happened yet", and
+        // marking it terracotta argues with the sentence underneath. A null keeps
+        // the mustard italic: "no data" is never decorated either.
+        class: m.rate === null ? "null" : m.rate > 0 ? "mark" : "value",
       }),
     ),
     row(
@@ -76,9 +108,9 @@ function overview(state) {
       h(
         "span",
         { class: "value" },
-        metric("overview.abstention.numerator", String(m.numerator)),
+        metric("overview.abstention.numerator", formatCount(m.numerator)),
         " / ",
-        metric("overview.abstention.denominator", String(m.denominator)),
+        metric("overview.abstention.denominator", formatCount(m.denominator)),
       ),
     ),
     row("95% interval", metric("overview.abstention.interval", formatInterval(m.interval))),
@@ -93,9 +125,9 @@ function overview(state) {
       metric(
         "overview.abstention.reasons",
         Object.keys(m.reasons).length === 0
-          ? `no abstentions in ${m.denominator} decisions`
+          ? `no abstentions in ${formatCount(m.denominator)} decisions`
           : Object.entries(m.reasons)
-              .map(([reason, count]) => `${reason} ${count}`)
+              .map(([reason, count]) => `${reason} ${formatCount(count)}`)
               .join(", "),
       ),
     ),
@@ -103,9 +135,9 @@ function overview(state) {
       "excluded, and counted",
       metric(
         "overview.abstention.exclusions",
-        `${m.exclusions.test_traffic} test, ` +
-          `${m.exclusions.paused_or_revoked} paused, ` +
-          `${m.exclusions.replays} replays`,
+        `${formatCount(m.exclusions.test_traffic)} test, ` +
+          `${formatCount(m.exclusions.paused_or_revoked)} paused, ` +
+          `${formatCount(m.exclusions.replays)} replays`,
       ),
     ),
     h(
@@ -113,9 +145,10 @@ function overview(state) {
       { class: "sentence", "data-metric": "overview.denominator.sentence" },
       empty
         ? "No decisions in this window, so there is no rate to report — not a 0% one."
-        : `Rate over ${m.denominator} valid decisions. ` +
-          `${m.exclusions.test_traffic} test calls, ${m.exclusions.paused_or_revoked} ` +
-          `paused-connection calls and ${m.exclusions.replays} replays are excluded and counted.`,
+        : `Rate over ${formatCount(m.denominator)} valid decisions. ` +
+          `${formatCount(m.exclusions.test_traffic)} test calls, ` +
+          `${formatCount(m.exclusions.paused_or_revoked)} paused-connection calls and ` +
+          `${formatCount(m.exclusions.replays)} replays are excluded and counted.`,
     ),
     h(
       "p",
@@ -127,10 +160,10 @@ function overview(state) {
 
   const credits = card(
     "Credits",
-    row("available", metric("overview.credits.available", String(state.credits.available))),
-    row("consumed", metric("overview.credits.consumed", String(state.credits.consumed))),
-    row("held", metric("overview.credits.held", String(state.credits.held))),
-    row("granted", metric("overview.credits.granted", String(state.credits.granted))),
+    row("available", metric("overview.credits.available", formatCount(state.credits.available))),
+    row("consumed", metric("overview.credits.consumed", formatCount(state.credits.consumed))),
+    row("held", metric("overview.credits.held", formatCount(state.credits.held))),
+    row("granted", metric("overview.credits.granted", formatCount(state.credits.granted))),
     h(
       "p",
       { class: "sentence" },
@@ -183,13 +216,13 @@ function connectionTable(state) {
           h("td", {}, metric(`overview.connection.${c.id}.host`, c.host_name)),
           h("td", {}, metric(`overview.connection.${c.id}.environment`, c.environment)),
           h("td", {}, metric(`overview.connection.${c.id}.status`, c.status)),
-          h("td", {}, metric(`overview.connection.${c.id}.quota`, String(c.event_quota_monthly))),
+          h("td", {}, metric(`overview.connection.${c.id}.quota`, formatCount(c.event_quota_monthly))),
           h(
             "td",
             {},
             metric(
               `overview.connection.${c.id}.decisions`,
-              usage ? String(usage.denominator) : "0",
+              usage ? formatCount(usage.denominator) : formatCount(0),
             ),
           ),
           h(
@@ -206,6 +239,105 @@ function connectionTable(state) {
   );
 }
 
+/** True when entitlement, service and validation do not agree. */
+function hasGap(skill) {
+  const limitedBy = skill.limited_by;
+  return (
+    (limitedBy !== null && limitedBy !== undefined && limitedBy !== "nothing") ||
+    skill.served !== skill.entitlement_level ||
+    skill.validation_level !== skill.served
+  );
+}
+
+/** The level sentence: a function of the three axes, with a stated grammar.
+ *
+ * The sentence used to read "serving L1 where validation has not passed
+ * (capability L1, validated L1)" — a gap asserted in the first clause and denied
+ * in the parenthetical, on the line most likely to be quoted. It is now built
+ * from entitlement (E), served (S), validated (V) and limited_by (L), and each
+ * branch says one thing:
+ *
+ *   L set        → limited by a tenant setting, not by the evidence
+ *   S = V = E    → no gap between entitlement, capability and validation
+ *   V ≠ S        → the served claim has not passed validation
+ *   S ≠ E        → the entitled claim has not passed, so serving stops at S
+ *
+ * `tests/test_console.py` renders all four (L1/L1, L1/L0, L2/L1, limited_by set)
+ * and asserts the clause, so the sentence cannot drift back into contradiction.
+ */
+function levelSentence(skill) {
+  const entitled = skill.entitlement_level;
+  const served = skill.served;
+  const validated = skill.validation_level;
+  const head = `Entitled to ${entitled}; serving ${served}, validated at ${validated}.`;
+  const limitedBy = skill.limited_by;
+
+  if (limitedBy !== null && limitedBy !== undefined && limitedBy !== "nothing") {
+    return `${head} Limited by "${limitedBy}", a tenant setting rather than the evidence.`;
+  }
+  if (served === entitled && validated === served) {
+    return `${head} No gap between entitlement, capability and validation.`;
+  }
+  if (validated !== served) {
+    return validated === "L0"
+      ? `${head} The ${served} claim has not passed validation at any level.`
+      : `${head} The ${served} claim has not passed validation; ${validated} has.`;
+  }
+  return `${head} The ${entitled} claim has not passed validation, so serving stops at ${served}.`;
+}
+
+/** The same object wears the same name on every screen (CONSOLE_STYLE §5).
+ *
+ * `/v1/admin/connections` has a host name; `/v1/admin/metrics/abstention` only
+ * has an id. Printing the UUID in one table and the host name in the other made
+ * two screens describe one connection two ways. A connection with no host name —
+ * or one the console has not loaded — gets a short monospace id, because a
+ * 36-character UUID in a 13px column is not an identity, it is a wrapping bug.
+ */
+function identify(connections, connectionId) {
+  const match = connections.find((c) => c.id === connectionId);
+  if (match && match.host_name) return { name: match.host_name, mono: false };
+  return { name: `${String(connectionId).slice(0, 8)}…`, mono: true };
+}
+
+/** The polling sentence: what the check compares against, and why. */
+function pollingSentence(polling) {
+  const baseline = polling.baseline_repeat_ratio;
+  const counted = polling.by_connection.length;
+  const repeats = polling.by_connection.reduce((total, row) => total + row.repeats, 0);
+  const floor = `${formatCount(polling.min_repeats)}-repeat floor`;
+  const tail = "A host retrying for a non-abstention shows up here, not in the bill.";
+
+  if (baseline === 0) {
+    const measure =
+      `with the baseline at zero the check uses the raw ratio: ` +
+      `${formatCount(repeats)} repeat${repeats === 1 ? "" : "s"} across ` +
+      `${formatCount(counted)} connection${counted === 1 ? "" : "s"} with decisions in ` +
+      `this window, ${floor}`;
+    return polling.alerting.length === 0
+      ? `No connection is repeating decide on the same learner — ${measure}. ${tail}`
+      : `${alerted(polling)} repeating decide on the same learner — ${measure}. ${tail}`;
+  }
+
+  const threshold = `${formatMultiple(polling.multiple)} the baseline`;
+  return polling.alerting.length === 0
+    ? `No connection is repeating decide on the same learner above ${threshold}, across ` +
+        `${formatCount(counted)} connection${counted === 1 ? "" : "s"} with decisions in ` +
+        `this window and a ${floor}. ${tail}`
+    : `${alerted(polling)} repeating decide on the same learner above ${threshold} — ` +
+        "usually a host retrying for a non-abstention.";
+}
+
+/** "1 of 2 connections is" — the verb agrees with the count that leads the clause. */
+function alerted(polling) {
+  const firing = polling.alerting.length;
+  const counted = polling.by_connection.length;
+  return (
+    `${formatCount(firing)} of ${formatCount(counted)} connection${counted === 1 ? "" : "s"} ` +
+    `${firing === 1 ? "is" : "are"}`
+  );
+}
+
 /** Connections: the polling check, per connection, with the alert state named. */
 function connectionsScreen(state) {
   const polling = state.metrics.abstention_polling;
@@ -218,33 +350,34 @@ function connectionsScreen(state) {
         "baseline repeat ratio",
         metric(
           "connections.polling.baseline",
-          formatNumber(polling.baseline_repeat_ratio, 2),
+          formatEstimate(polling.baseline_repeat_ratio),
         ),
       ),
       row(
         "connections alerting",
-        metric("connections.polling.alerting", String(polling.alerting.length), {
+        metric("connections.polling.alerting", formatCount(polling.alerting.length), {
           class: polling.alerting.length === 0 ? "value" : "chip",
         }),
       ),
       row(
         "alert threshold",
-        metric("connections.polling.multiple", `${formatNumber(polling.multiple, 1)}x baseline`),
+        // A zero baseline is never a multiple (METRICS.md §1.5): the API sends
+        // `multiple: null` there, and a screen that printed "5x baseline" next to
+        // a baseline of 0.00 was drawing a threshold that does not exist. The
+        // configured constant is still named, as a constant that is not applied —
+        // which also keeps this value traceable: it moves when the constant does.
+        polling.multiple === null
+          ? metric(
+              "connections.polling.threshold",
+              "baseline is zero — decided on the raw ratio, so the " +
+                `${formatMultiple(polling.threshold_multiple)} threshold is not applied`,
+            )
+          : metric("connections.polling.multiple", `${formatMultiple(polling.multiple)} baseline`),
       ),
       h(
         "p",
         { class: "sentence", "data-metric": "connections.polling.sentence" },
-        polling.alerting.length === 0
-          ? `No connection is repeating decide on the same learner above ${formatNumber(
-              polling.multiple,
-              1,
-            )}x the baseline, across ${polling.by_connection.length} connections with ` +
-              "decisions in this window and a " +
-              `${polling.min_repeats}-repeat floor. A host retrying for a non-abstention ` +
-              "shows up here, not in the bill."
-          : `${polling.alerting.length} of ${polling.by_connection.length} connections are ` +
-              `repeating decide on the same learner above ${formatNumber(polling.multiple, 1)}x ` +
-              "the baseline — usually a host retrying for a non-abstention.",
+        pollingSentence(polling),
       ),
     ),
     card(
@@ -273,12 +406,23 @@ function connectionsScreen(state) {
             h(
               "tbody",
               {},
-              state.metrics.by_connection.map((c) =>
-                h(
+              state.metrics.by_connection.map((c) => {
+                const identity = identify(state.connections, c.connection_id);
+                return h(
                   "tr",
                   {},
-                  h("td", {}, metric(`connections.row.${c.connection_id}.id`, String(c.connection_id))),
-                  h("td", {}, metric(`connections.row.${c.connection_id}.n`, String(c.denominator))),
+                  h(
+                    "td",
+                    {},
+                    metric(`connections.row.${c.connection_id}.host`, identity.name, {
+                      class: identity.mono ? "mono" : undefined,
+                    }),
+                  ),
+                  h(
+                    "td",
+                    {},
+                    metric(`connections.row.${c.connection_id}.n`, formatCount(c.denominator)),
+                  ),
                   h(
                     "td",
                     {},
@@ -289,8 +433,8 @@ function connectionsScreen(state) {
                     {},
                     metric(`connections.row.${c.connection_id}.served`, formatPercent(c.served.rate)),
                   ),
-                ),
-              ),
+                );
+              }),
             ),
           ),
       h(
@@ -355,7 +499,7 @@ function inspector(state) {
                       {},
                       s.abstain
                         ? metric(`learner.${s.skill}.abstain`, `abstains: ${s.reason}`)
-                        : metric(`learner.${s.skill}.value`, formatNumber(s.value)),
+                        : metric(`learner.${s.skill}.value`, formatEstimate(s.value)),
                     ),
                     h(
                       "td",
@@ -363,15 +507,21 @@ function inspector(state) {
                       s.abstain
                         ? metric(
                             `learner.${s.skill}.needs`,
-                            `needs ${s.needs.trials} more trials`,
+                            `needs ${formatCount(s.needs.trials)} more trials`,
                           )
                         : metric(`learner.${s.skill}.interval`, formatInterval(s.interval)),
                     ),
-                    h("td", {}, metric(`learner.${s.skill}.n`, String(s.n))),
+                    h("td", {}, metric(`learner.${s.skill}.n`, formatCount(s.n))),
                     h(
                       "td",
                       {},
-                      metric(`learner.${s.skill}.served`, String(s.served), { class: "chip" }),
+                      metric(`learner.${s.skill}.served`, String(s.served), {
+                        // §5: a serving-level chip is the screen's single accent
+                        // element when it is the point of the screen. It is the
+                        // point when the level is below the entitlement — that
+                        // is the gap a reader can act on. Otherwise it is blue.
+                        class: hasGap(s) ? "chip chip-accent" : "chip",
+                      }),
                     ),
                     h(
                       "td",
@@ -387,12 +537,7 @@ function inspector(state) {
         ? h(
             "p",
             { class: "sentence level", "data-metric": "learner.level.sentence" },
-            `Entitled to ${skills[0].entitlement_level}; serving ${skills[0].served} where ` +
-              `validation has not passed (capability ${skills[0].capability_level}, ` +
-              `validated ${skills[0].validation_level}). limited_by is ` +
-              `"${skills[0].limited_by === null ? "nothing" : skills[0].limited_by}": a tenant ` +
-              "served at its entitlement is not being withheld from, and at M1 every construct " +
-              "is L1 — the column is shown rather than hidden.",
+            levelSentence(skills[0]),
           )
         : null,
     ),

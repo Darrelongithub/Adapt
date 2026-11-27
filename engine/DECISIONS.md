@@ -1415,3 +1415,84 @@ Two `:root` blocks are used on purpose: the first is `CONSOLE_STYLE.md` §2
 byte-for-byte (colours only), the second carries the display and sans stacks that
 §4 asks for. Keeping them apart is what lets the token tests key on colour tokens
 without a prose exception.
+
+### 24.1 Numbers are formatted by type, and the formatter is tested as a grep
+
+Increment 9 began because a reader opened the screenshot and found `0.5400` and
+`[0.3256, 0.7469]` on it. The provenance gate was green: both values came from
+`/v1/mastery`, unchanged, through an id declared in `data-map.json`. **A gate that
+proves where a number came from cannot see what it looks like**, and the console
+had one `formatNumber(value, digits = 4)` doing duty for estimates, intervals and
+anything else that was not a percentage.
+
+There are now four formatters and no `toFixed` outside them: rates one decimal
+plus `%`, intervals two decimals in brackets, estimates two decimals, counts
+integers with separators starting at 10,000 (never below it, because `500,000`
+events is a fiscal year and `12` decisions is a Tuesday). The test is deliberately
+a grep over every rendered run — labels, values, sentences, table cells — rather
+than a list of known cells, because a list of cells is what let a new cell bring
+the old habit back. It permits two things that look like sins and are not: `0.0%`
+(a rate is *defined* as one decimal) and `[0.30, 0.65]` (an interval is *defined*
+as two). It flags `0.5400`, `0.3256`, and `5.0x` — the last one being the old
+threshold sentence, padded to a decimal that meant nothing.
+
+### 24.2 The accent is earned by a value you would act on
+
+`CONSOLE_STYLE.md` §1 now says the budget is a maximum and not a quota, and the
+console had been spending its one marked number on `0.0%` in a 22-decision window
+— three lines above the copy that says 0% abstention is not success. A terracotta
+zero is an argument against the sentence underneath it. The mark is now conditional
+on `rate > 0`; a zero prints at 13px in `--ink`, and `no data` keeps the mustard
+italic it always had (mustard is not an accent).
+
+Both screenshots now carry **zero** accents: 0/0/0 on the empty window and 0/0/0
+on the populated one. That is the design working, not the design absent — the
+tenant has no abstentions and no level gap, so there is nothing to act on. The
+test asserts both halves: the live state marks nothing, and a state with 4
+abstentions in 22 decisions marks exactly one at 19px. Without the second half,
+"at most three" would also be satisfied by a console that never marks anything.
+
+The one chip that may still take the accent is the serving level when it is *below
+the entitlement* (§5) — the gap a reader can act on — and the same test renders a
+`L2`-entitled tenant to prove the chip changes from blue to accent.
+
+### 24.3 A zero baseline is never a multiple, and the API was half the bug
+
+`/v1/admin/metrics/abstention` returned `multiple: 5.0` unconditionally. That field
+is the configured threshold, but its name says "the multiplier", and at a baseline
+of `0.00` there is no multiplier — `METRICS.md` §1.5 already required `null` there.
+The console printed `5.0x baseline` beside `baseline repeat ratio 0.00`.
+
+Both sides were wrong, so both sides changed:
+
+* the **API** sends `multiple: null` when the baseline is zero, and reports the
+  configured constant separately as `threshold_multiple`, so the response no longer
+  has a field whose meaning depends on another field's value;
+* the **console** renders `baseline is zero — decided on the raw ratio, so the 5×
+  threshold is not applied`, and its sentence names the repeat count and the floor:
+  `11 repeats across 2 connections with decisions in this window, 10-repeat floor`.
+
+`test_a_zero_baseline_is_reported_as_no_multiple_at_all` builds the state that
+produces it (a quiet connection with ten pairs and a loud one with one pair and
+twelve repeats) and asserts the null, the constant and the alert. The console test
+asserts the rendered words, and that `1 of 2 connections is` agrees with the count
+that leads the clause rather than with `connections`.
+
+### 24.4 One identity per object, and a level sentence with a grammar
+
+The by-connection table printed `4ad087e1-1cbc-46d5-8375-8635ae157c2f` while the
+table above it printed `console-host` — one connection, two identities, and a
+36-character UUID in a 13px column. Rows now print the host name from
+`/v1/admin/connections`; a connection with no name, or one the console has not
+loaded, gets eight characters and an ellipsis in a system monospace stack (not a
+web font: the console has to work offline). The superseded `connections.row.*.id`
+map entry is gone, because a data-map that points at something the screen no longer
+shows is documentation drift with a test asserting it.
+
+The level sentence is now built from entitlement, served, validated and
+`limited_by`, with four branches and no branch that asserts a gap the parenthetical
+then denies. It used to read "serving L1 where validation has not passed
+(capability L1, validated L1)" — false for the very tenant the screenshot showed —
+and it was the sentence most likely to be quoted. The four cases (L1/L1, L1/L0,
+L2/L1, `limited_by` set) are rendered by the test rather than asserted against a
+helper, so the sentence is checked as a reader sees it.

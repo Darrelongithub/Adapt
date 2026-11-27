@@ -17,9 +17,20 @@ or `--accent-ink` and refuses to write above three:
 
 | Screen | Populated | Empty window |
 |---|---|---|
-| Overview | 1 — the abstention rate, 19px | 0 — nothing to mark |
-| Connections | 1 — the alerting count | 0 |
-| Learner | 1 — the `serving` chip | 0 |
+| Overview | 0 — the rate is `0.0%`, and a zero is not a highlight | 0 — `no data` |
+| Connections | 0 — the chips are blue, not accent | 0 |
+| Learner | 0 — entitlement, service and validation agree | 0 |
+
+The accent is **earned** (`CONSOLE_STYLE.md` §1): it goes on a value you would act
+on, which for these two states is nothing. A tenant with 4 abstentions in 22
+decisions gets one 19px terracotta figure; a tenant serving below its entitlement
+gets one accented chip. Both are rendered and asserted in `tests/test_console.py`,
+so a zero count here is a statement about the data and not a missing feature.
+
+Numbers are formatted by type, never printed raw (§4): rates `0.0%`, intervals
+`[0.33, 0.75]`, estimates `0.54`, counts `50,000` only once they earn the comma.
+A grep over every rendered run fails on a third decimal, so `0.5400` cannot come
+back through a new cell.
 
 The palette is **not** stored in either renderer: both parse `:root` from
 `src/adapt_engine/console/styles.css` (`CONSOLE_STYLE.md` §6, gate 4), so editing a

@@ -45,14 +45,14 @@
 <text x="48" y="902" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">console-host</text>
 <text x="196.2" y="902" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">test</text>
 <text x="296.1" y="902" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">active</text>
-<text x="368.1" y="902" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">50000</text>
+<text x="368.1" y="902" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">50,000</text>
 <text x="481.8" y="902" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0</text>
 <text x="567.9" y="902" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">no data</text>
 <rect x="48" y="918" width="1084" height="1" fill="#DDD2BF"/>
 <text x="48" y="938" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">console-host-quiet</text>
 <text x="196.2" y="938" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">test</text>
 <text x="296.1" y="938" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">active</text>
-<text x="368.1" y="938" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">50000</text>
+<text x="368.1" y="938" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">50,000</text>
 <text x="481.8" y="938" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0</text>
 <text x="567.9" y="938" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">no data</text>
 <rect x="48" y="954" width="1084" height="1" fill="#DDD2BF"/>
@@ -63,10 +63,10 @@
 <text x="48" y="1056" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">connections alerting</text>
 <text x="348" y="1074" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1B2230">0</text>
 <text x="48" y="1104" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">alert threshold</text>
-<text x="348" y="1122" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">5.0x baseline</text>
-<text x="48" y="1152" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">No connection is repeating decide on the same learner above 5.0x the baseline, across 0</text>
-<text x="48" y="1172" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">connections with decisions in this window and a 10-repeat floor. A host retrying for a</text>
-<text x="48" y="1192" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">non-abstention shows up here, not in the bill.</text>
+<text x="348" y="1122" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">baseline is zero — decided on the raw ratio, so the 5× threshold is not applied</text>
+<text x="48" y="1152" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">No connection is repeating decide on the same learner — with the baseline at zero the check</text>
+<text x="48" y="1172" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">uses the raw ratio: 0 repeats across 0 connections with decisions in this window, 10-repeat</text>
+<text x="48" y="1192" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">floor. A host retrying for a non-abstention shows up here, not in the bill.</text>
 <rect x="24" y="1206" width="1132" height="1" fill="#DDD2BF"/>
 <text x="48" y="1232" font-family="DejaVu Serif, Georgia, serif" font-size="15" font-weight="600" fill="#6B6357">BY CONNECTION</text>
 <text x="48" y="1262" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">No decisions in this window. Nothing to break down — and nothing to celebrate.</text>

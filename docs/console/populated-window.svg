@@ -7,11 +7,11 @@
 <rect x="24" y="124" width="1132" height="1" fill="#DDD2BF"/>
 <text x="48" y="150" font-family="DejaVu Serif, Georgia, serif" font-size="15" font-weight="600" fill="#6B6357">ABSTENTION</text>
 <text x="48" y="180" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">rate</text>
-<text x="348" y="198" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#C4643F">0.0%</text>
+<text x="348" y="198" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1B2230">0.0%</text>
 <text x="48" y="228" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">abstentions / decisions</text>
 <text x="348" y="246" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1B2230">0 / 22</text>
 <text x="48" y="276" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">95% interval</text>
-<text x="348" y="294" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">[0.0000, 0.1487]</text>
+<text x="348" y="294" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">[0.00, 0.15]</text>
 <text x="48" y="324" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">served, same denominator</text>
 <text x="348" y="342" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1B2230">100.0%</text>
 <text x="48" y="372" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">reasons</text>
@@ -46,14 +46,14 @@
 <text x="48" y="922" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">console-host</text>
 <text x="196.2" y="922" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">test</text>
 <text x="296.1" y="922" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">active</text>
-<text x="368.1" y="922" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">50000</text>
+<text x="368.1" y="922" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">50,000</text>
 <text x="481.8" y="922" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">12</text>
 <text x="567.9" y="922" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.0%</text>
 <rect x="48" y="938" width="1084" height="1" fill="#DDD2BF"/>
 <text x="48" y="958" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">console-host-quiet</text>
 <text x="196.2" y="958" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">test</text>
 <text x="296.1" y="958" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">active</text>
-<text x="368.1" y="958" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">50000</text>
+<text x="368.1" y="958" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">50,000</text>
 <text x="481.8" y="958" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">10</text>
 <text x="567.9" y="958" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.0%</text>
 <rect x="48" y="974" width="1084" height="1" fill="#DDD2BF"/>
@@ -62,50 +62,49 @@
 <text x="48" y="1028" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">baseline repeat ratio</text>
 <text x="348" y="1046" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.00</text>
 <text x="48" y="1076" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">connections alerting</text>
-<text x="348" y="1094" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1B2230">1</text>
+<text x="348" y="1094" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#23395B">1</text>
 <text x="48" y="1124" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#6B6357">alert threshold</text>
-<text x="348" y="1142" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">5.0x baseline</text>
-<text x="48" y="1172" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">1 of 2 connections are repeating decide on the same learner above 5.0x the baseline —</text>
-<text x="48" y="1192" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">usually a host retrying for a non-abstention.</text>
-<rect x="24" y="1206" width="1132" height="1" fill="#DDD2BF"/>
-<text x="48" y="1232" font-family="DejaVu Serif, Georgia, serif" font-size="15" font-weight="600" fill="#6B6357">BY CONNECTION</text>
-<rect x="0" y="1246" width="1180" height="32" fill="#EDE4D4"/>
-<text x="48" y="1262" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">CONNECTION</text>
-<text x="320.4" y="1262" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">DECISIONS</text>
-<text x="406.5" y="1262" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">ABSTENTION</text>
-<text x="499.5" y="1262" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">SERVED</text>
-<text x="48" y="1298" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">4ad087e1-1cbc-46d5-8375-8635ae157c2f</text>
-<text x="320.4" y="1298" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">12</text>
-<text x="406.5" y="1298" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.0%</text>
-<text x="499.5" y="1298" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">100.0%</text>
-<rect x="48" y="1314" width="1084" height="1" fill="#DDD2BF"/>
-<text x="48" y="1334" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">e26fa72f-77d6-47dd-842e-fe063be1801b</text>
-<text x="320.4" y="1334" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">10</text>
-<text x="406.5" y="1334" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.0%</text>
-<text x="499.5" y="1334" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">100.0%</text>
-<rect x="48" y="1350" width="1084" height="1" fill="#DDD2BF"/>
-<text x="48" y="1360" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">Last-event time and event volume per connection are not on any endpoint yet (UI.md 2.3 asks</text>
-<text x="48" y="1380" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">for both). The quota and the decision count are; nothing here is invented.</text>
-<rect x="24" y="1394" width="1132" height="1" fill="#DDD2BF"/>
-<text x="48" y="1420" font-family="DejaVu Serif, Georgia, serif" font-size="15" font-weight="600" fill="#6B6357">LEARNER</text>
-<rect x="0" y="1434" width="1180" height="32" fill="#EDE4D4"/>
-<text x="48" y="1450" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">CONSTRUCT</text>
-<text x="175.5" y="1450" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">ESTIMATE</text>
-<text x="254.7" y="1450" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">INTERVAL</text>
-<text x="389.1" y="1450" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">EVIDENCE</text>
-<text x="468.3" y="1450" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">SERVING</text>
-<text x="540.6" y="1450" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">VALIDATED</text>
-<text x="48" y="1486" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">skill.fractions</text>
-<text x="175.5" y="1486" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.5400</text>
-<text x="254.7" y="1486" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">[0.3256, 0.7469]</text>
-<text x="389.1" y="1486" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">12</text>
-<rect x="468.3" y="1474" width="21.52" height="22" fill="#F2E2D8"/>
-<rect x="468.3" y="1474" width="2" height="22" fill="#C4643F"/>
-<text x="476.3" y="1486" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1B2230">L1</text>
-<text x="540.6" y="1486" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#546E58">✓ </text>
-<text x="566.12" y="1486" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">L1</text>
-<rect x="48" y="1502" width="1084" height="1" fill="#DDD2BF"/>
-<text x="48" y="1512" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">Entitled to L1; serving L1 where validation has not passed (capability L1, validated L1).</text>
-<text x="48" y="1532" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">limited_by is &quot;nothing&quot;: a tenant served at its entitlement is not being withheld from, and</text>
-<text x="48" y="1552" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">at M1 every construct is L1 — the column is shown rather than hidden.</text>
+<text x="348" y="1142" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">baseline is zero — decided on the raw ratio, so the 5× threshold is not applied</text>
+<text x="48" y="1172" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">1 of 2 connections is repeating decide on the same learner — with the baseline at zero the</text>
+<text x="48" y="1192" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">check uses the raw ratio: 11 repeats across 2 connections with decisions in this window,</text>
+<text x="48" y="1212" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">10-repeat floor. A host retrying for a non-abstention shows up here, not in the bill.</text>
+<rect x="24" y="1226" width="1132" height="1" fill="#DDD2BF"/>
+<text x="48" y="1252" font-family="DejaVu Serif, Georgia, serif" font-size="15" font-weight="600" fill="#6B6357">BY CONNECTION</text>
+<rect x="0" y="1266" width="1180" height="32" fill="#EDE4D4"/>
+<text x="48" y="1282" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">CONNECTION</text>
+<text x="196.2" y="1282" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">DECISIONS</text>
+<text x="282.29999999999995" y="1282" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">ABSTENTION</text>
+<text x="375.29999999999995" y="1282" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">SERVED</text>
+<text x="48" y="1318" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">console-host-quiet</text>
+<text x="196.2" y="1318" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">10</text>
+<text x="282.29999999999995" y="1318" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.0%</text>
+<text x="375.29999999999995" y="1318" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">100.0%</text>
+<rect x="48" y="1334" width="1084" height="1" fill="#DDD2BF"/>
+<text x="48" y="1354" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">console-host</text>
+<text x="196.2" y="1354" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">12</text>
+<text x="282.29999999999995" y="1354" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.0%</text>
+<text x="375.29999999999995" y="1354" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">100.0%</text>
+<rect x="48" y="1370" width="1084" height="1" fill="#DDD2BF"/>
+<text x="48" y="1380" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">Last-event time and event volume per connection are not on any endpoint yet (UI.md 2.3 asks</text>
+<text x="48" y="1400" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">for both). The quota and the decision count are; nothing here is invented.</text>
+<rect x="24" y="1414" width="1132" height="1" fill="#DDD2BF"/>
+<text x="48" y="1440" font-family="DejaVu Serif, Georgia, serif" font-size="15" font-weight="600" fill="#6B6357">LEARNER</text>
+<rect x="0" y="1454" width="1180" height="32" fill="#EDE4D4"/>
+<text x="48" y="1470" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">CONSTRUCT</text>
+<text x="175.5" y="1470" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">ESTIMATE</text>
+<text x="254.7" y="1470" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">INTERVAL</text>
+<text x="361.5" y="1470" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">EVIDENCE</text>
+<text x="440.7" y="1470" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">SERVING</text>
+<text x="513" y="1470" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">VALIDATED</text>
+<text x="48" y="1506" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">skill.fractions</text>
+<text x="175.5" y="1506" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">0.54</text>
+<text x="254.7" y="1506" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">[0.33, 0.75]</text>
+<text x="361.5" y="1506" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">12</text>
+<rect x="440.7" y="1494" width="19.44" height="22" fill="#E4E7EE"/>
+<text x="448.7" y="1506" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#23395B">L1</text>
+<text x="513" y="1506" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#546E58">✓ </text>
+<text x="538.52" y="1506" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1B2230">L1</text>
+<rect x="48" y="1522" width="1084" height="1" fill="#DDD2BF"/>
+<text x="48" y="1532" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">Entitled to L1; serving L1, validated at L1. No gap between entitlement, capability and</text>
+<text x="48" y="1552" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#3A4356">validation.</text>
 </svg>

@@ -1,9 +1,12 @@
 """Increment 7 and 8: the console shell, and the rule that no number may be invented.
 
-Eight tests, and each one exists because something could go wrong quietly. The
-first three are increment 7's traceability gates; the four `test_the_palette_*`
-and `test_no_screen_*` tests are increment 8's `CONSOLE_STYLE.md` §6 gates, which
-exist because a palette in a document is a palette until something can fail on it:
+Thirteen tests, and each one exists because something could go wrong quietly. The
+first three are increment 7's traceability gates; the `test_palette_*` and
+`test_the_palette_*` tests are increment 8's `CONSOLE_STYLE.md` §6 gates, which
+exist because a palette in a document is a palette until something can fail on it;
+and increment 9's display corrections are four more — the five defects a reader
+found in the screenshot that the traceability gate could not see, because it
+proves provenance and not formatting:
 
 * **Traceability** — every value the console renders is declared in
   `console/data-map.json` and changes when the data changes. The second half is
@@ -28,6 +31,15 @@ exist because a palette in a document is a palette until something can fail on i
 * **Screenshots read the tokens (§6 gate 4)** — the two renderers parse `:root`
   from `styles.css`; neither carries a palette. Proven by rendering with an edited
   stylesheet and finding the edit in the pixels.
+* **No number reaches the screen raw (§4)** — every run of text in the render is
+  grepped for a third decimal and for a trailing zero beyond the type's own
+  precision, so `0.5400` cannot come back through a new cell.
+* **The accent is earned (§1)** — a zero prints in ink with no accent, and a rate
+  a reader would act on carries exactly one; both halves, or the budget is vacuous.
+* **A zero baseline is never a multiple (METRICS §1.5)** — null from the API, words
+  on the screen, the repeat count named.
+* **One identity per object, and a level sentence that cannot contradict itself
+  (§5)** — four level cases, and a short id instead of a UUID.
 
 The renderer runs in Node (`shutil.which("node")` guards it): the sandbox has no
 headless browser, and shipping one is not worth it for text assertions.
@@ -55,6 +67,7 @@ from adapt_engine.credits import service as credits
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.main import create_app
 from tests.conftest import make_settings
+from tests.formats import numeric_sins
 from tests.pg import bootstrap_key, provision_tenant
 
 ROOT = Path(__file__).resolve().parents[1]  # engine/
@@ -272,6 +285,49 @@ def _live_state(
     return populated, empty, bodies
 
 
+def _render(tmp_path: Path, name: str, state: dict) -> dict:
+    """Render a state to the shot's block model — every run of text, with style."""
+    model = tmp_path / f"{name}.json"
+    result = _node(
+        "scripts/console_shot.mjs",
+        "--state",
+        str(_write(tmp_path, f"{name}-state.json", state)),
+        "--out",
+        str(tmp_path / f"{name}.svg"),
+        "--json",
+        str(model),
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(model.read_text())
+
+
+def _texts(shot: dict) -> list[str]:
+    """Every string the picture draws — labels, values, sentences, table cells."""
+    out: list[str] = []
+    for block in shot["blocks"]:
+        if block["kind"] == "row":
+            out += [block["label"], block["text"]]
+        elif block["kind"] == "sentence":
+            out.append(block["text"])
+        elif block["kind"] == "table":
+            out += [cell["text"] for cell in block["header"]]
+            for cells in block["rows"]:
+                out += [cell["text"] for cell in cells]
+        else:
+            out.append(str(block.get("text", "")))
+    return out
+
+
+def _rows(shot: dict) -> dict[str, dict]:
+    return {block["label"]: block for block in shot["blocks"] if block["kind"] == "row"}
+
+
+def _variant(state: dict, mutate) -> dict:
+    copy = json.loads(json.dumps(state))
+    mutate(copy)
+    return copy
+
+
 def _mutate(value):
     """Every leaf changed, and every list longer — the strongest statement of
     'this is not a literal'.
@@ -453,41 +509,64 @@ def test_the_empty_window_renders_to_an_image(
     assert committed.stat().st_size > 10_000
 
 
-def test_a_populated_screen_carries_its_marks_and_no_more(
+def test_the_accent_is_earned_by_a_value_you_would_act_on(
     client: TestClient, admin_key, app_engine: Engine, tenant: uuid.UUID, tmp_path: Path
 ) -> None:
-    """§6 gate 3, on a screen with numbers: at most three, and at least the one.
+    """CONSOLE_STYLE §1: the budget is a ceiling, and the mark is earned.
 
-    A budget that only has an upper bound is satisfied by a console with no accent
-    at all, which is a different failure — the marked number is how a reader knows
-    what the screen is about. So each screen must carry its mark, and the marked
-    number on Overview must be the abstention rate at 19px in terracotta.
+    A terracotta `0.0%` above the sentence that says 0% is not success argues with
+    the sentence. So the live state — 0 abstentions in 22 decisions — must carry
+    **no** accent on Overview, and a rate a reader would act on must carry exactly
+    one. Both halves are asserted, because a budget with only a ceiling is also
+    satisfied by a console that never marks anything, and that is a different bug.
     """
     populated, _, _ = _live_state(client, admin_key, app_engine, tenant)
-    model = tmp_path / "populated.json"
-    result = _node(
-        "scripts/console_shot.mjs",
-        "--state",
-        str(_write(tmp_path, "p.json", populated)),
-        "--out",
-        str(tmp_path / "populated-window.svg"),
-        "--json",
-        str(model),
-    )
-    assert result.returncode == 0, result.stderr
-    shot = json.loads(model.read_text())
-    accents = shot["accents"]
-    assert set(accents) == {"overview", "connections", "learner"}, accents
-    assert all(count <= shot["maxAccents"] for count in accents.values()), accents
-    assert accents["overview"] == 1, f"Overview must mark exactly one number, not {accents}"
-    assert accents["connections"] >= 1, "the alerting connection must be marked"
-    assert 1 <= accents["learner"] <= 3, accents
+    shot = _render(tmp_path, "earned", populated)
 
-    tokens = _root_tokens()
-    rate = next(block for block in shot["blocks"] if block.get("text") == "0.0%")
-    assert rate["style"]["color"].lower() == tokens["--accent"].lower()
-    assert rate["style"]["size"] == 19, "terracotta at 13px is illegal (§3, 3.78:1)"
-    assert rate["style"]["weight"] == 700
+    assert populated["metrics"]["rate"] == 0.0
+    assert shot["accents"]["overview"] == 0, f"a zero is not a highlight: {shot['accents']}"
+    assert all(count <= shot["maxAccents"] for count in shot["accents"].values()), shot["accents"]
+    zero = _rows(shot)["rate"]
+    assert zero["style"]["color"].lower() == _root_tokens()["--ink"].lower()
+    assert zero["style"]["size"] == 13, "an unearned mark must not be 19px either"
+
+    # The same screen, with a rate a reader would act on: 4 of 22 = 18.2%.
+    def severe(state: dict) -> None:
+        state["metrics"]["numerator"] = 4
+        state["metrics"]["rate"] = 0.1818
+        state["metrics"]["interval"] = {"low": 0.0727, "high": 0.3939}
+
+    marked = _render(tmp_path, "severe", _variant(populated, severe))
+    assert marked["accents"]["overview"] == 1, marked["accents"]
+    earned = _rows(marked)["rate"]
+    assert earned["text"] == "18.2%"
+    assert earned["style"]["color"].lower() == _root_tokens()["--accent"].lower()
+    assert earned["style"]["size"] == 19, "terracotta at 13px is illegal (§3, 3.78:1)"
+    assert earned["style"]["weight"] == 700
+
+    # And the other accent a screen may spend (§5): a serving level below its
+    # entitlement. The live tenant has no gap, so the chip is blue and costs nothing.
+    assert shot["accents"]["learner"] == 0, shot["accents"]
+
+    def gap(state: dict) -> None:
+        state["mastery"]["skills"][0]["entitlement_level"] = "L2"
+
+    gapped = _render(tmp_path, "gap", _variant(populated, gap))
+    assert gapped["accents"]["learner"] == 1, gapped["accents"]
+    chip_runs = [
+        run
+        for block in gapped["blocks"]
+        if block["kind"] == "table"
+        for cells in block["rows"]
+        for cell in cells
+        for run in cell.get("runs") or []
+        if run.get("text") == "L1"
+    ]
+    assert chip_runs, "the serving level is not on the screen"
+    assert any(run["style"].get("borderLeft") for run in chip_runs), "the gap chip is not accented"
+    assert all(
+        run["style"]["color"].lower() == _root_tokens()["--ink"].lower() for run in chip_runs
+    )
 
 
 def test_the_console_is_a_static_page_with_declared_assets_only(client: TestClient) -> None:
@@ -691,3 +770,173 @@ def test_the_screenshot_palette_is_parsed_from_the_stylesheet(tmp_path: Path) ->
     )
     assert result.returncode == 0, result.stderr
     assert "#00FF00" in svg.read_text()
+
+
+# ------------------------------------------------------- formatting by type (§4)
+
+
+def test_no_number_reaches_the_screen_raw(
+    client: TestClient, admin_key, app_engine: Engine, tenant: uuid.UUID, tmp_path: Path
+) -> None:
+    """§4's formatting rule, enforced on every run of text the picture draws.
+
+    The traceability gate proves a value came from an endpoint; it cannot see that
+    `0.5400` claims four digits of a number the estimator gives two. This test can,
+    and it is deliberately a grep over the render rather than a list of known
+    cells, so a new cell cannot bring the habit back with it.
+    """
+    populated, empty, _ = _live_state(client, admin_key, app_engine, tenant)
+
+    for name, state in (("populated", populated), ("empty", empty)):
+        shot = _render(tmp_path, name, state)
+        offenders = [sin for text in _texts(shot) for sin in numeric_sins(text)]
+        assert not offenders, "; ".join(offenders)
+
+    shot = _render(tmp_path, "formats", populated)
+    rows = _rows(shot)
+    assert rows["rate"]["text"] == "0.0%", "a rate is one decimal and a percent sign"
+    assert rows["95% interval"]["text"] == "[0.00, 0.15]", "an interval is two decimals in brackets"
+    assert rows["abstentions / decisions"]["text"] == "0 / 22", "a count is an integer"
+    assert rows["base" if "base" in rows else "baseline repeat ratio"]["text"] == "0.00"
+
+    cells = [
+        cell["text"]
+        for block in shot["blocks"]
+        if block["kind"] == "table"
+        for row in block["rows"]
+        for cell in row
+    ]
+    assert "0.54" in cells, f"an estimate is two decimals: {cells}"
+    assert "[0.33, 0.75]" in cells
+
+
+def test_a_zero_baseline_is_never_rendered_as_a_multiple(
+    client: TestClient, admin_key, app_engine: Engine, tenant: uuid.UUID, tmp_path: Path
+) -> None:
+    """METRICS §1.5: with no baseline there is no multiplier, and the screen says why.
+
+    The live state has the shape that produced the defect: a quiet connection sets
+    the baseline to 0.00, a loud one repeats eleven times, and the console used to
+    print "5.0x baseline" from the configured constant — a threshold that did not
+    exist, next to a baseline that said it could not.
+    """
+    populated, _, _ = _live_state(client, admin_key, app_engine, tenant)
+    polling = populated["metrics"]["abstention_polling"]
+    assert polling["baseline_repeat_ratio"] == 0.0
+    assert polling["multiple"] is None, "the API must not send a multiplier at a zero baseline"
+
+    shot = _render(tmp_path, "zero-baseline", populated)
+    rows = _rows(shot)
+    threshold = rows["alert threshold"]["text"]
+    assert threshold.startswith("baseline is zero — decided on the raw ratio"), threshold
+    assert "5\u00d7 threshold is not applied" in threshold, "the constant is named, as a constant"
+    assert "5\u00d7 baseline" not in threshold, "a multiplier of zero does not exist"
+
+    sentence = next(
+        block["text"] for block in shot["blocks"] if "repeating decide" in str(block.get("text"))
+    )
+    assert "1 of 2 connections is repeating" in sentence, sentence
+    assert "are repeating" not in sentence, "the verb agrees with the count that leads the clause"
+    assert "raw ratio" in sentence
+    assert f"{sum(row['repeats'] for row in polling['by_connection'])} repeats" in sentence, (
+        sentence
+    )
+    assert f"{polling['min_repeats']}-repeat floor" in sentence, sentence
+
+    # A real baseline keeps the multiple, and prints it without a trailing zero.
+    def measurable(state: dict) -> None:
+        state["metrics"]["abstention_polling"]["baseline_repeat_ratio"] = 0.2
+        state["metrics"]["abstention_polling"]["multiple"] = 5.0
+
+    marked = _render(tmp_path, "baseline", _variant(populated, measurable))
+    assert _rows(marked)["alert threshold"]["text"] == "5\u00d7 baseline"
+
+
+def test_the_level_sentence_is_a_function_of_three_axes(
+    client: TestClient, admin_key, app_engine: Engine, tenant: uuid.UUID, tmp_path: Path
+) -> None:
+    """The sentence most likely to be quoted must not contradict itself.
+
+    It used to read "serving L1 where validation has not passed (capability L1,
+    validated L1)" — a gap asserted in one clause and denied in the next. Four
+    cases, one clause each.
+    """
+    populated, _, _ = _live_state(client, admin_key, app_engine, tenant)
+
+    def sentence(**level) -> str:
+        def change(state: dict) -> None:
+            state["mastery"]["skills"][0].update(level)
+
+        shot = _render(
+            tmp_path,
+            f"level-{len(level)}-{abs(hash(str(level))) % 10_000}",
+            _variant(populated, change),
+        )
+        return next(
+            block["text"]
+            for block in shot["blocks"]
+            if str(block.get("text", "")).startswith("Entitled to")
+        )
+
+    agreed = sentence(entitlement_level="L1", served="L1", validation_level="L1", limited_by=None)
+    assert "Entitled to L1; serving L1, validated at L1." in agreed
+    assert "No gap between entitlement, capability and validation." in agreed
+    assert "where validation has not passed" not in agreed
+
+    unvalidated = sentence(
+        entitlement_level="L1", served="L1", validation_level="L0", limited_by=None
+    )
+    assert "validated at L0" in unvalidated
+    assert "The L1 claim has not passed validation at any level." in unvalidated
+
+    held = sentence(entitlement_level="L2", served="L1", validation_level="L1", limited_by=None)
+    assert "The L2 claim has not passed validation, so serving stops at L1." in held
+
+    limited = sentence(
+        entitlement_level="L3", served="L1", validation_level="L1", limited_by="tier_cap"
+    )
+    assert 'Limited by "tier_cap", a tenant setting rather than the evidence.' in limited
+    assert "No gap" not in limited
+
+
+def test_one_identity_per_object(
+    client: TestClient, admin_key, app_engine: Engine, tenant: uuid.UUID, tmp_path: Path
+) -> None:
+    """The same connection is named the same way on both screens (§5).
+
+    The by-connection table printed a 36-character UUID while the table above it
+    printed the host name — one object, two identities, and the UUID wrapped. A
+    connection with no host name (or one the console has not loaded) gets a short
+    monospace id instead of the whole thing.
+    """
+    populated, _, _ = _live_state(client, admin_key, app_engine, tenant)
+    hosts = {connection["id"]: connection["host_name"] for connection in populated["connections"]}
+
+    shot = _render(tmp_path, "identity", populated)
+    table = next(
+        block
+        for block in shot["blocks"]
+        if block["kind"] == "table" and block["header"][0]["text"] == "connection"
+    )
+    rendered = [cells[0] for cells in table["rows"]]
+    for cell in rendered:
+        assert cell["text"] in hosts.values(), f"{cell['text']} is not a host name"
+        assert len(cell["text"]) < 36, "a full UUID is not an identity"
+        assert cell["style"].get("family") != "serif"
+
+    # A connection the console cannot name falls back to a short mono id, not a UUID.
+    def anonymous(state: dict) -> None:
+        for connection in state["connections"]:
+            connection["host_name"] = ""
+
+    fallback = _render(tmp_path, "anonymous", _variant(populated, anonymous))
+    table = next(
+        block
+        for block in fallback["blocks"]
+        if block["kind"] == "table" and block["header"][0]["text"] == "connection"
+    )
+    for cells in table["rows"]:
+        cell = cells[0]
+        assert len(cell["text"]) == 9 and cell["text"].endswith("…"), cell["text"]
+        runs = cell.get("runs") or []
+        assert runs and all(run["style"]["family"] == "sans" for run in runs)

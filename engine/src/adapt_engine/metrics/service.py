@@ -372,7 +372,14 @@ def _polling(conn: Connection, params: dict[str, Any]) -> dict[str, Any]:
             alerting.append(entry)
 
     return {
-        "multiple": POLLING_MULTIPLE,
+        # `multiple` is the multiplier the alert is measured against, and it does
+        # not exist when the baseline is zero (METRICS §1.5: "reported as `null`
+        # and the decision is made on the raw ratio"). Sending 5.0 there let a
+        # console print "5x baseline" beside a baseline of 0.00 — a threshold that
+        # does not exist. The configured constant is still reported, under a name
+        # that says it is a constant.
+        "multiple": POLLING_MULTIPLE if baseline > 0 else None,
+        "threshold_multiple": POLLING_MULTIPLE,
         "min_repeats": POLLING_MIN_REPEATS,
         "baseline_repeat_ratio": baseline,
         "baseline_source": baseline_source,
