@@ -276,6 +276,7 @@ hold the key at all:
 | `GET /v1/mastery?learner_id=` | host-facing | `read_model` | every construct with evidence for that learner |
 | `GET /v1/mastery/{skill}?learner_id=` | host-facing | `read_model` | one construct; may answer `200` with `insufficient_evidence` |
 | `GET /v1/credits/balance` | host-facing | `observe` | `granted = available + held + consumed + forfeited` |
+| `GET /v1/admin/metrics/abstention` | **control-plane** | `admin` | the abstention/served pair, both grains, with exclusions counted (§6D) |
 | `POST /v1/admin/credits/grants` | **control-plane** | `admin` | provisioning; `Idempotency-Key` required |
 | `POST /v1/admin/keys` | **control-plane** | `admin` | issue; subset-of-own-scopes rule applies |
 | `POST /v1/admin/keys/{id}/revoke` | **control-plane** | `admin` | immediate |
@@ -365,6 +366,31 @@ each one covered — because "fix your instrumentation" is only actionable with 
  "needs": {"clean_trials": 4}}
 ```
 
+## 6D. The abstention report — one endpoint, two numbers, one denominator
+
+```
+GET /v1/admin/metrics/abstention?from=&to=&connection=&construct=&tier=&grain=
+```
+
+Returns `rate`, `numerator`, `denominator`, `interval`, `served`, `reasons`, `by_construct`,
+`by_connection`, `exclusions`, `abstention_polling`, and `metric_version`.
+
+Three rules, and each is a way this endpoint gets built wrong:
+
+* **`served` is derived from the same denominator** — `denominator − numerator`, computed once, never a
+  second query. Two numbers fetched separately agree on day one and disagree in a year, and the pair is
+  the entire honesty claim (`METRICS.md` §1.8).
+* **The denominator is a definition with counted exclusions**: valid 2xx `decide` calls, minus replays,
+  minus test traffic, minus paused or revoked connections. Every exclusion returns its own count under
+  `exclusions`, because "excluded" without a number is "missing".
+* **An unmeasured series is `null`, never `0`.** `refusals`, `errors`, `entitlement_limits`,
+  `not_validated` and `not_capable` have no store yet; they return `null` and are named in
+  `unmeasured`. A console that renders a null as zero turns "we do not know" into "it never happened",
+  which is the exact failure this product exists to avoid.
+
+An empty window returns `null` for the rate with an explicit reason — **not 0%** — because a 0%
+abstention rate in a window with no traffic is the most flattering lie the console could tell.
+
 ## 7. Idempotency, and the two keys
 
 Every mutating call takes `Idempotency-Key`. **Derive it from the logical operation, never from the
@@ -377,6 +403,10 @@ client.observe(learner=l, events=batch, idempotency_key=key)
 
 A timeout followed by a retry must consume one credit, write one batch, return one result. The SDK
 generates these by default; if you write your own HTTP client, this is the field to copy correctly.
+
+**A replay is free and is counted.** `POST /v1/decisions/{id}/replay` returns the stored body without
+recomputing it, writes no ledger row, and is excluded from the abstention denominator — but it is
+recorded, because "replays are excluded" has to be a number in `exclusions`, not a promise.
 
 Probe sessions carry a second key — `probe_session_id` — so a learner can resume across devices and
 days without creating a duplicate session.
