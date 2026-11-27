@@ -121,7 +121,15 @@ Per construct, with the band set at validation time:
 | healthy | within the pre-registered band | normal honesty |
 | watch | +3pp week over week, two weeks running | something changed in the data |
 | investigate | +8pp, or >60% for a construct older than 30 days | instrumentation, consent, or a broken floor |
-| `abstention_polling` | one connection exceeds 5× the normal repeat ratio on the same (learner, construct) | a host retrying `decide` hoping for a non-abstention; free calls are still capped and cached (`METERING.md` §6) |
+| `abstention_polling` | one connection exceeds **5× its baseline** repeat ratio on the same (learner, construct) | a host retrying `decide` hoping for a non-abstention; free calls are still capped and cached (`METERING.md` §6) |
+
+**"Normal" is defined, because an undefined baseline is an unmeasurable alert.** A *repeat* is a second
+`decide` on the same (learner, construct). The baseline is the **median repeat ratio across connections
+with at least 10 pairs** — median, not mean, so one polling connection cannot raise the bar for
+everyone. The alert fires only when the ratio is above 5× that baseline **and** the connection has at
+least **10 repeats**, so a small denominator cannot trigger it. If the baseline is zero, the multiple is
+reported as `null` and the decision is made on the raw ratio, with the reason stated — never as `∞` and
+never as a silent pass.
 
 **The trap, stated explicitly so nobody optimises into it:** a *falling* abstention rate is not
 automatically good, and a rate of 0% is a warning, not an achievement. It means either every construct

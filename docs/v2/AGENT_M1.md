@@ -191,6 +191,18 @@ GET /v1/admin/metrics/abstention?from=&to=&connection=&construct=&grain=request|
 calls, 2 paused-connection calls, 1 refusal, 1 5xx) reproduces the expected rate exactly, and the test
 asserts the denominator equals 20 — the fixture *is* the specification, so it goes in the repo.
 
+### Replay accounting: log it, do not mutate the decision
+
+`replay_count` on the `decisions` row makes a served decision a mutable record, which is precisely the
+property G1 depends on — the stored body is the evidence, and evidence that changes after the fact is
+not evidence. Replace the counter with an **append-only `decision_replays(decision_id, at, test_traffic)`**
+table: one row per replay, `adapt_app` holding `INSERT` and `SELECT` only, no `UPDATE`. It gives the same
+measurable `exclusions.replays`, keeps every other invariant in increment 5 intact, and costs one small
+table.
+
+Increment 5's claim stays literally true then: a replay writes no money and no decision. It writes one
+audit row, which is what an audit trail is for.
+
 ## 7. Increment 7 — console shell
 
 Three screens, real data only.
