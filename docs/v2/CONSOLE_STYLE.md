@@ -24,6 +24,13 @@ different and worse one — accent everywhere highlights nothing.
 Per screen, **at most three accent-coloured elements.** If a fourth appears, something in the first
 three was not important enough to be there.
 
+**There is a floor as well as a ceiling, and it is structural.** The 2px `--accent` rule under the H1 is
+present on **every** screen and is not counted against the budget — it is the page's signature, the one
+mark that does not depend on whether today's numbers earned one. A screen with no earned accent is
+therefore never a screen with no terracotta: the rule is always there, the number marks come and go
+above it. This is why the discipline does not produce a grey product — the accent is anchored to the
+masthead, and the budget governs only how much of it moves.
+
 **The budget is a maximum, not a quota.** An accent spent on a number that says *nothing has happened
 yet* teaches the reader to read zero as a highlight — the console's own copy says "0% abstention on a
 quiet tenant is not success", and a terracotta `0.0%` above that sentence argues with it. The mark is
@@ -115,8 +122,10 @@ justify.
   label, not a browser default `<h2>`.
 - **Body:** same system sans stack as today. 13px/1.55, `--ink-body`.
 - **Numbers:** `font-variant-numeric: tabular-nums`, `--ink`, 600. A number is never in the serif face.
-- **One type scale:** 26 / 19 / 15 / 13 / 12. No sizes between them; that is what makes it look drawn
-  rather than assembled.
+- **One type scale, six steps:** 26 / 19 / 15 / 13 / 12 / 11. No sizes between them; that is what makes it
+  look drawn rather than assembled. **11px is reserved** for inline chips and micro-labels — uppercase,
+  tracked, never a sentence. If a size is needed that is not on this list, the layout is wrong, not the
+  scale.
 - **Numbers are formatted by type, never printed raw.** JSON floats do not belong on a screen:
   rates as **one decimal and a `%` sign** (`0.0%`, `88.0%`); intervals as **two decimals in brackets**
   (`[0.33, 0.49]`, `[0.00, 0.15]`); estimates and probabilities as **two decimals** (`0.54`, `0.36`);
