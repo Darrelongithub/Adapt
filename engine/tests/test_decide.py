@@ -461,15 +461,22 @@ def test_replay_recomputes_from_the_stored_inputs(
 
 
 def test_replay_fails_loudly_when_a_stored_body_is_tampered(
-    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID, owner_engine: Engine
 ) -> None:
-    """The replay's teeth: a tampered row is a 500, not a quiet echo."""
+    """The replay's teeth: a tampered row is a 500, not a quiet echo.
+
+    The tampering is done as the **owner**, because the application role no longer
+    holds `UPDATE` on `decisions` (migration 0017): a decision row is immutable to
+    the thing that serves it, and only an operator with a database connection can
+    change one. That is the attack the replay check exists to catch.
+    """
     _seed_credits(app_engine, tenant)
     learner = "learn-decide-0014"
     _observe(client, connection, learner, _answers(24, 18))
     served = _decide(client, connection, learner).json()
 
-    with tenant_transaction(app_engine, tenant) as conn:
+    with owner_engine.connect() as conn:
+        conn.execute(text("SELECT set_config('adapt.tenant_id', :t, true)"), {"t": str(tenant)})
         conn.execute(
             text(
                 "UPDATE decisions SET body = jsonb_set(body, '{action}', '\"spaced_review\"') "
@@ -477,6 +484,7 @@ def test_replay_fails_loudly_when_a_stored_body_is_tampered(
             ),
             {"id": uuid.UUID(served["decision_id"])},
         )
+        conn.commit()
     replay = client.post(f"/v1/decisions/{served['decision_id']}/replay", headers=_auth(connection))
     assert replay.status_code == 500
     assert replay.json()["error"]["code"] == "internal"
@@ -771,3 +779,40 @@ def test_the_served_split_interval_width_and_latency_are_measured(
     assert summary["median_interval_width"] is not None
     assert summary["median_interval_width"] <= 0.45, "a served advice carries a usable interval"
     assert summary["p95_ms"] < 250, f"p95 {summary['p95_ms']}ms exceeds the interactive budget"
+
+
+def test_a_decision_row_is_immutable_and_replays_are_appended(
+    client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
+) -> None:
+    """A replay logs a row and never touches the decision it re-served.
+
+    `AGENT_M1` §6: the stored body is the evidence G1 rests on. A counter on the
+    decision row made that evidence mutable, so the counter became an append-only
+    `decision_replays` table, and `UPDATE` on `decisions` was revoked from the
+    application role.
+    """
+    _seed_credits(app_engine, tenant)
+    learner = "learn-decide-0031"
+    _observe(client, connection, learner, _answers(24, 18))
+    served = _decide(client, connection, learner).json()
+
+    for _ in range(3):
+        assert (
+            client.post(
+                f"/v1/decisions/{served['decision_id']}/replay", headers=_auth(connection)
+            ).status_code
+            == 200
+        )
+
+    with tenant_transaction(app_engine, tenant) as conn:
+        replays = conn.execute(
+            text("SELECT count(*) FROM decision_replays WHERE decision_id = :id"),
+            {"id": uuid.UUID(served["decision_id"])},
+        ).scalar_one()
+        decision_rows = conn.execute(text("SELECT count(*) FROM decisions")).scalar_one()
+        with pytest.raises(Exception) as caught:
+            conn.execute(text("UPDATE decisions SET body = body"))
+        conn.rollback()
+    assert replays == 3
+    assert decision_rows == 1
+    assert "permission denied" in str(caught.value).lower()

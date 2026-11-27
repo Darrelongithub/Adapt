@@ -59,6 +59,27 @@ curl -s localhost:8000/v1/health | jq
 `/v1/version` says which build. Neither requires a key — an operator checking a
 deploy should not need a credential.
 
+## The demo, in one command
+
+Once the schema is applied and the environment above is exported, the sandbox
+provisions itself and runs the loop with timestamps:
+
+```bash
+adapt sandbox seed    # tenant (deep), a connection, three synthetic learners
+adapt sandbox demo    # abstain -> needs -> serve -> replay, every number from a response
+adapt console         # http://127.0.0.1:8000/console — asks for the key, reads four endpoints
+```
+
+`seed` prints its API key once and writes `.adapt-sandbox.json` (mode 600) in the
+working directory. The learners are **synthetic and labelled as such**: a guesser
+(right about one time in five), a steady learner, and an over-confident one. The
+demo takes under three minutes on a clean checkout, and it prints an abstention
+rather than hiding one — if the engine declines, the transcript says so and names
+what it needs.
+
+The SDKs live one level up, in `sdk/` (`sdk/README.md`): generated from this
+app's OpenAPI document, thin by design, with a `curl` example next to them.
+
 Provision a tenant and get its first key (owner credential):
 
 ```bash

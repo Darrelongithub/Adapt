@@ -284,7 +284,9 @@ def test_the_thirty_decision_fixture_reproduces_the_rate(
         "data_quality": 3,
     }
 
-    # Replays, test traffic and paused rows are excluded, each with its own count.
+    # Replays, test traffic and paused rows are excluded, each with its own count,
+    # and the replay count comes from the append-only log rather than from a
+    # counter on the decision row.
     assert body["exclusions"] == {"test_traffic": 3, "paused_or_revoked": 2, "replays": 5}
 
     # The identity a reader can check: stored rows = denominator + exclusions.

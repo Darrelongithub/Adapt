@@ -15,10 +15,13 @@ name: engine
 # either contains it or the gate fails closed.
 
 on:
+  # `sdk/**` is in the trigger list because the generated clients are checked
+  # against this tree's OpenAPI document: a change to the SDK alone must still
+  # run the gate that says whether it is stale.
   push:
-    paths: ["engine/**", ".github/workflows/engine-ci.yml"]
+    paths: ["engine/**", "sdk/**", ".github/workflows/engine-ci.yml"]
   pull_request:
-    paths: ["engine/**", ".github/workflows/engine-ci.yml"]
+    paths: ["engine/**", "sdk/**", ".github/workflows/engine-ci.yml"]
 
 jobs:
   engine:
@@ -56,6 +59,12 @@ jobs:
 
       - name: Assert the interpreter is 3.12
         run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
+
+      # The console tests run the browser's own renderer under Node; without it
+      # the traceability gate would skip, and a gate that skips is not a gate.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Install
         run: |
@@ -126,6 +135,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      # The console tests run the browser's own renderer under Node; the gate must
+      # not skip on a runner that happens not to ship it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Install
         run: |

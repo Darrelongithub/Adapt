@@ -34,6 +34,7 @@ from adapt_engine.auth.touch import LastUsedRecorder
 from adapt_engine.clock import Clock, SystemClock
 from adapt_engine.config import Settings
 from adapt_engine.connections.service import webhook_target
+from adapt_engine.console import router as console_router
 from adapt_engine.crypto.keyring import Keyring, UnknownKeyId
 from adapt_engine.crypto.store import DataKeyStore
 from adapt_engine.db import check_database, create_db_engine
@@ -167,6 +168,7 @@ def create_app(
     app.include_router(observe_router)
     app.include_router(mastery_router)
     app.include_router(metrics_router)
+    app.include_router(console_router)
     app.include_router(decide_router)
     app.include_router(credits_router)
     app.include_router(connections_router)

@@ -316,7 +316,11 @@ def test_a_staging_deployment_sets_test_traffic_without_the_header(
 def test_reads_and_replays_write_no_ledger_rows(
     client: TestClient, connection, app_engine: Engine, tenant: uuid.UUID
 ) -> None:
-    """METERING §2: `observe`, reads and replay are weight 0."""
+    """METERING §2: `observe`, reads and replay are weight 0.
+
+    A replay writes exactly one row — the append-only `decision_replays` audit
+    row — and no money and no decision. That is the increment-5 claim, literally.
+    """
     _grant(app_engine, tenant)
     learner = "learn-meter-0006"
     _observe(client, connection, learner, _answers(24, 18))
@@ -333,6 +337,9 @@ def test_reads_and_replays_write_no_ledger_rows(
     assert replay.status_code == 200
     assert replay.headers["X-Adapt-Billed"] == "0"
     assert _counts(app_engine, tenant) == before, "reads and replays are weight 0"
+    with tenant_transaction(app_engine, tenant) as conn:
+        logged = conn.execute(text("SELECT count(*) FROM decision_replays")).scalar_one()
+    assert logged == 1, "one audit row per replay, and the decision row is untouched"
 
 
 def test_an_invalid_test_header_is_refused_rather_than_guessed(

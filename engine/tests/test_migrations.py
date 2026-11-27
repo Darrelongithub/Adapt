@@ -22,6 +22,7 @@ TABLES = (
     "credit_reservation_draws",
     "credit_reservations",
     "data_key_ids",
+    "decision_replays",
     "decisions",
     "learner_mastery",
     "learners",

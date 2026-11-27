@@ -285,14 +285,18 @@ def _by_connection(conn: Connection, params: dict[str, Any]) -> list[dict[str, A
 
 
 def _replays(conn: Connection, params: dict[str, Any]) -> int:
-    """Replays of decisions in the window — counted, because replays add no rows."""
+    """Replays of decisions in the window, from the append-only log.
+
+    A replay writes no decision and no money; it writes one row here, so
+    "excluded" is a count rather than a belief.
+    """
     row = conn.execute(
         text(
             f"""
             WITH rows AS ({_WINDOW})
-            SELECT coalesce(sum(d.replay_count), 0) AS replays
-              FROM decisions d
-             WHERE d.id IN (SELECT id FROM rows)
+            SELECT count(*) AS replays
+              FROM decision_replays r
+             WHERE r.decision_id IN (SELECT id FROM rows)
             """
         ),
         params,

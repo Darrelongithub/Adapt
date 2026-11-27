@@ -22,14 +22,11 @@ import os
 import sys
 import uuid
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from adapt_engine.auth.keys import issue_api_key
+from adapt_engine import provisioning
 from adapt_engine.config import Settings
-from adapt_engine.crypto.keyring import Keyring
-from adapt_engine.crypto.provisioning import provision_data_key
-from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.errors import ConfigError
 
 
@@ -49,46 +46,30 @@ def _settings() -> Settings:
         raise SystemExit(1) from exc
 
 
-def provision(engine: Engine, settings: Settings, *, slug: str, name: str) -> tuple[uuid.UUID, str]:
-    """Create tenant + data key + first key. Returns (tenant_id, full_api_key)."""
-    keyring = Keyring.from_settings(settings)
-    tenant_id = uuid.uuid4()
+def provision(
+    engine: Engine, settings: Settings, *, slug: str, name: str, tier: str = "core"
+) -> tuple[uuid.UUID, str]:
+    """Create tenant + data key + first key. Returns (tenant_id, full_api_key).
 
-    with tenant_transaction(engine, tenant_id) as conn:
-        conn.execute(
-            text(
-                "INSERT INTO tenants (id, slug, name, profile, status) "
-                "VALUES (:id, :slug, :name, 'adult_general', 'active')"
-            ),
-            {"id": tenant_id, "slug": slug, "name": name},
-        )
-        # The data key is provisioning data: the runtime may only read one, so
-        # a tenant created without it would fail its first write.
-        provision_data_key(conn, tenant_id, keyring)
-
-    # The first key goes through the same provisioning path the tests use, so
-    # there is one implementation of "mint the tenant's first key", not two.
-    issued = issue_api_key(
-        engine,
-        tenant_id=tenant_id,
-        scopes=["observe", "admin"],
-        env=settings.env,
-        pepper=settings.key_pepper.get_secret_value(),
-        issuer_key_id=None,
-    )
-    return tenant_id, issued.full_key
+    The implementation moved into the package (`adapt_engine.provisioning`) when
+    the sandbox CLI needed it; this script stays as the owner's tool.
+    """
+    return provisioning.provision(engine, settings, slug=slug, name=name, tier=tier)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Provision an Adapt tenant (owner only)")
     parser.add_argument("--slug", required=True)
     parser.add_argument("--name", required=True)
+    parser.add_argument("--tier", default="core", choices=("core", "plus", "deep"))
     args = parser.parse_args(argv)
 
     settings = _settings()
     engine = _owner_engine()
     try:
-        tenant_id, full_key = provision(engine, settings, slug=args.slug, name=args.name)
+        tenant_id, full_key = provision(
+            engine, settings, slug=args.slug, name=args.name, tier=args.tier
+        )
     finally:
         engine.dispose()
 

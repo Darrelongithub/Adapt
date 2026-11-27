@@ -742,7 +742,12 @@ def _to_stored(row: Any) -> StoredDecision:
 
 
 def replay(
-    conn: Connection, *, tenant_id: uuid.UUID, decision_id: uuid.UUID
+    conn: Connection,
+    *,
+    tenant_id: uuid.UUID,
+    decision_id: uuid.UUID,
+    now: datetime,
+    test_traffic: bool = False,
 ) -> StoredDecision | None:
     """Recompute a stored decision from its frozen inputs and assert equality.
 
@@ -763,16 +768,22 @@ def replay(
             status_code=500,
             retryable=True,
         )
-    # Counted, not billed: a replay costs nothing and creates no decision, but
-    # `METRICS.md` §1.2 excludes replays from the abstention denominator and a
-    # number nobody records is a number that lies. This is the only write on the
-    # replay path, and it happens after the bytes matched.
+    # Logged, not billed: a replay costs nothing, creates no decision and does not
+    # touch the decision row — the stored body is the evidence G1 rests on, and
+    # evidence that changes after the fact is not evidence. It writes one audit
+    # row, which is what an audit trail is for, and that row is what makes
+    # `METRICS.md` §1.2's "replays excluded" a measured number.
     conn.execute(
         text(
-            "UPDATE decisions SET replay_count = replay_count + 1"
-            " WHERE tenant_id = :tenant_id AND id = :id"
+            "INSERT INTO decision_replays (tenant_id, decision_id, at, test_traffic)"
+            " VALUES (:tenant_id, :decision_id, :at, :test_traffic)"
         ),
-        {"tenant_id": tenant_id, "id": decision_id},
+        {
+            "tenant_id": tenant_id,
+            "decision_id": decision_id,
+            "at": now,
+            "test_traffic": test_traffic,
+        },
     )
     return stored
 

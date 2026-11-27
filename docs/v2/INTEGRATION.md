@@ -286,6 +286,7 @@ hold the key at all:
 | `PATCH /v1/admin/connections/{id}` | **control-plane** | `admin` | pause / resume; `paused` stops host-facing ingest, not the console |
 | `DELETE /v1/admin/connections/{id}` | **control-plane** | `admin` | revoke, terminal; idempotent; un-revoking is `409 conflict` |
 | `GET /v1/admin/connections/{id}/deliveries` | **control-plane** | `admin` | the delivery log — attempts, status, no bodies |
+| `GET /console` | **console** | none | a static page, not part of the API contract: it asks for an admin key and reads four endpoints with it. No server-side data access, so no key on the server |
 
 Two rules that follow from the table:
 
@@ -406,7 +407,11 @@ generates these by default; if you write your own HTTP client, this is the field
 
 **A replay is free and is counted.** `POST /v1/decisions/{id}/replay` returns the stored body without
 recomputing it, writes no ledger row, and is excluded from the abstention denominator — but it is
-recorded, because "replays are excluded" has to be a number in `exclusions`, not a promise.
+recorded, because "replays are excluded" has to be a number in `exclusions`, not a promise. The
+record is one row in the append-only `decision_replays` table (`tenant_id`, `decision_id`, `at`,
+`test_traffic`), which the application may only `INSERT` into and read. **A served decision is
+immutable**: `UPDATE` on `decisions` is not granted to the runtime role at all, so a replay cannot
+rewrite the evidence it is replaying.
 
 Probe sessions carry a second key — `probe_session_id` — so a learner can resume across devices and
 days without creating a duplicate session.

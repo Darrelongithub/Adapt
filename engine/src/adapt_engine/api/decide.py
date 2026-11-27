@@ -237,6 +237,9 @@ def replay(
     decision_id: uuid.UUID,
     auth: Annotated[AuthContext, Depends(require_scope("decide"))],
     conn: Annotated[Connection, Depends(ingest_connection)],
+    clock: Annotated[Clock, Depends(get_clock)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    x_adapt_test: Annotated[str | None, Header(alias="X-Adapt-Test")] = None,
 ) -> Response:
     """Re-run a stored decision from its own inputs and return the stored body.
 
@@ -246,7 +249,14 @@ def replay(
     is a determinism bug in the estimator, and the only useful place for it to
     show up is here.
     """
-    stored = service.replay(conn, tenant_id=auth.tenant_id, decision_id=decision_id)
+    test_traffic = _test_traffic(x_adapt_test, settings)
+    stored = service.replay(
+        conn,
+        tenant_id=auth.tenant_id,
+        decision_id=decision_id,
+        now=clock.now().astimezone(UTC),
+        test_traffic=test_traffic,
+    )
     if stored is None:
         # INTEGRATION §6 has `decision_unknown` as of the increment-4 review: a
         # replay of something we never served is not a typo'd route.
