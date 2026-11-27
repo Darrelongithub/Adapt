@@ -95,6 +95,14 @@ defects rather than refinements.
   `cognitive_support`, where pressure to continue is a prohibited pattern.
 * **The privacy allowlist is a product feature**, not a compliance chore: it is enforceable in code and
   shown to the user verbatim.
+* **A test client that reads the response after the handler returns cannot see an ordering bug.**
+  `TestClient` collects the body only once the app callable has finished, so a dependency teardown that
+  commits late is invisible to it — 768 green tests, and a freshly minted key that 401s on the next
+  request. Ordering promises (commit-before-response, revocation-before-acknowledgement, notify-before-200)
+  need a real socket in the suite, permanently.
+* **One green run clears one run, not one commit.** The same SHA came back success on `push` and failure
+  on `pull_request`, and the difference was a race the environment merely made more likely. Two events,
+  two samples, before saying a commit is green.
 * **Licensing gates the roadmap.** ICAR is academic-use only; PROMIS is free-with-attribution but
   health-domain; IPIP is public domain; Pearson/CANTAB are commercial contracts. Our instruments must
   be ours or public domain, validated by us.

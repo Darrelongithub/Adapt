@@ -424,6 +424,35 @@ days without creating a duplicate session.
 
 ---
 
+## 7A. A promise is committed before it is made
+
+Three routes are only honest if the database holds the fact **before** the client holds the response:
+
+* `POST /v1/admin/keys` — the key you are handed must work on the very next request, from another
+  connection, in another process.
+* `POST /v1/admin/connections` — same, for the signing secret.
+* `PATCH` / `DELETE /v1/admin/connections/{id}` — a connection reported paused or revoked must not
+  authenticate the request that follows.
+
+FastAPI runs a `yield` dependency's teardown **after** the response bytes are on the wire, so a route
+that lets the teardown do its committing has already promised something it has not stored. Measured on a
+local uvicorn: the client held the response **0.40 s before the commit** — long enough for a host to
+receive a key and be refused with it.
+
+**The rule:** build the response model, commit, then return. Committing expires the ORM identity map,
+so any read *after* the commit re-selects the row in a transaction where `adapt.tenant_id` is no longer
+set — under row-level security that reads nothing. Build the object first; never read afterwards.
+
+**Status, stated because a contract with an open violation is still a contract:** fixed on the two
+routes that hand out secrets; **still open on `PATCH`/`DELETE`**, where the violation is
+security-shaped rather than availability-shaped. `engine/KNOWN_GAPS.md` §40 carries the exact test that
+must accompany the fix.
+
+**And the testing rule that follows:** a client which collects the response body after the app callable
+returns can never observe this ordering — `TestClient` hid it across 768 green tests. **An
+ordering promise needs a real socket**, which is why the regression test runs uvicorn rather than the
+test client.
+
 ## 8. Webhooks
 
 We follow the **Standard Webhooks** specification, so standard verification libraries work:
