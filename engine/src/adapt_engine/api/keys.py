@@ -38,6 +38,7 @@ from adapt_engine.auth.deps import (
 )
 from adapt_engine.auth.keys import MAX_EXPIRY_DAYS, SCOPES
 from adapt_engine.config import Settings
+from adapt_engine.db.tenant import commit_before_promise
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 
 router = APIRouter(prefix="/v1", tags=["keys"], responses=ERROR_RESPONSES)
@@ -158,7 +159,9 @@ def issue_key(
             status_code=422,
             retryable=False,
         ) from exc
-    return KeyIssued(
+    # Built first, committed last: see `commit_before_promise`. The response is a
+    # key, and a key that does not resolve yet is a 401 waiting to happen.
+    response = KeyIssued(
         key_id=issued.key_id,
         prefix=issued.prefix,
         full_key=issued.full_key,
@@ -166,6 +169,8 @@ def issue_key(
         env=issued.env,
         expires_at=issued.expires_at,
     )
+    commit_before_promise(conn)
+    return response
 
 
 @router.post(

@@ -12,15 +12,24 @@ convention.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import socket
+import threading
+import time
+import urllib.error
+import urllib.request
 import uuid
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from adapt_engine.auth import deps as auth_deps
 from adapt_engine.auth.rate_limit import FailureLimiter
 from adapt_engine.clock import SystemClock
 from adapt_engine.connections import service as connections
@@ -529,3 +538,121 @@ def test_a_paused_connection_is_not_paused_for_the_console(client: TestClient, a
 
     assert client.get("/v1/admin/connections", headers=_auth(admin_key)).status_code == 200
     assert client.get("/v1/learners", headers=_auth(admin_key)).status_code == 200
+
+
+@contextlib.contextmanager
+def _live_server(app: Any) -> Iterator[str]:
+    """Serve the real app on a loopback port, the way a host runs it.
+
+    `TestClient` is not enough for this test and is the reason the defect survived:
+    it collects the response body only after the app callable returns, so a `yield`
+    dependency's teardown has already run by the time the client sees anything.
+    A real socket flushes the response first — the ordering a host experiences.
+    """
+    import uvicorn
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 30
+    while not server.started and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert server.started, "the app did not start"
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+
+
+def _call(base: str, path: str, *, key: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(
+        f"{base}{path}",
+        data=data,
+        method="GET" if body is None else "POST",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read() or b"null")
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read() or b"null")
+
+
+def _slow_commit(monkeypatch, delay: float = 0.30) -> None:
+    """Hold the door open between "response sent" and "transaction committed".
+
+    This is the real ordering, slowed from microseconds to a third of a second so a
+    test can stand in it. Without the delay the race is won by the commit nearly
+    every time — which is how a green run and a red run can share a commit.
+    """
+    real = auth_deps.tenant_transaction
+
+    @contextlib.contextmanager
+    def slow(engine, tenant_id):
+        with real(engine, tenant_id) as conn:
+            yield conn
+            time.sleep(delay)
+
+    monkeypatch.setattr(auth_deps, "tenant_transaction", slow)
+
+
+def test_a_key_works_before_the_request_that_minted_it_has_committed(
+    app_engine: Engine, admin_key, monkeypatch
+) -> None:
+    """The key in the response must be a key, not a promise of one.
+
+    `POST /v1/admin/connections` and `POST /v1/admin/keys` both answer with a secret,
+    and FastAPI runs `tenant_transaction`'s commit after the response is on the
+    wire. A host that creates a connection and uses the key on the next line could
+    therefore be told `401 invalid or missing API key` about a key that was valid
+    the whole time — the failure that made `engine (postgres via docker)` red on
+    `6adf4d0` while the push run at the same commit was green, because
+    `adapt sandbox seed` does exactly that: mint a connection key, observe with it.
+    """
+    _slow_commit(monkeypatch)
+    app = create_app(
+        make_settings(),
+        clock=SystemClock(),
+        db_check=lambda: True,
+        redis_check=lambda: True,
+        engine=app_engine,
+        auth_limiter=FailureLimiter(clock=SystemClock(), max_failures=10_000),
+    )
+
+    with _live_server(app) as base:
+        status, created = _call(
+            base,
+            "/v1/admin/connections",
+            key=admin_key.full_key,
+            body={
+                "host_name": "impatient-host",
+                "environment": "test",
+                "event_quota_monthly": 1000,
+                "scopes": ["observe"],
+            },
+        )
+        assert status == 201, created
+        minted = created["key"]["full_key"]
+
+        # Immediately, while the request that minted it is still in its teardown.
+        status, who = _call(base, "/v1/whoami", key=minted)
+        assert status == 200, who
+        assert who["key_id"] == created["key"]["key_id"]
+
+        # Same rule for the other route that hands out a secret.
+        status, issued = _call(
+            base, "/v1/admin/keys", key=admin_key.full_key, body={"scopes": ["observe"]}
+        )
+        assert status in (200, 201), issued
+        status, who = _call(base, "/v1/whoami", key=issued["full_key"])
+        assert status == 200, who
+        assert who["key_id"] == issued["key_id"]

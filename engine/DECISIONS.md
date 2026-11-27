@@ -1496,3 +1496,65 @@ then denies. It used to read "serving L1 where validation has not passed
 and it was the sentence most likely to be quoted. The four cases (L1/L1, L1/L0,
 L2/L1, `limited_by` set) are rendered by the test rather than asserted against a
 helper, so the sentence is checked as a reader sees it.
+
+### 24.5 The response is on the wire before the transaction commits
+
+The docker job went red on `6adf4d0` in the Gate step while the push run at the
+same commit was green — same tree, same gate, two environments, one result each.
+The failing test was the CLI formatting gate, and it failed in its *fixture*:
+
+```
+ERROR tests/test_sandbox_cli.py::test_the_cli_formats_numbers_the_way_the_console_does
+  - SystemExit: error: observe failed for learn-sandbox-guesser:
+    401 {'error': {'code': 'unauthorized', 'message': 'Invalid or missing API key'
+```
+
+`seeded` runs `adapt sandbox seed`, and seed does three things in a row: mint a
+tenant key, `POST /v1/admin/connections` to get a connection key, then `POST
+/v1/observe` with that key. The observe is refused as unauthorized about a key
+that was issued one line earlier.
+
+The cause is an ordering, and it is measurable:
+
+```
+$ uvicorn + a `yield` dependency that sleeps 0.4s before its teardown
+client received response at 1795777862.7637575
+commit happened at        1795777863.1639311
+the client held the response 0.40s BEFORE the commit
+```
+
+FastAPI runs a `yield` dependency's exit code **after** the response bytes are on
+the wire. `tenant_connection` is such a dependency, and `tenant_transaction`
+commits in its teardown (`engine.begin()`). So every write in every request is
+committed *after* the client has the answer. For most routes that is merely
+untidy — the read that follows is the client's own business. For the two routes
+that answer with a **secret** it is a contract bug: `POST /v1/admin/connections`
+and `POST /v1/admin/keys` hand back a key that is not yet in the database, and a
+host that uses it on the next line can be told `401` about a key that is perfectly
+good microseconds later.
+
+TestClient hides this completely — it collects the body only after the app
+callable returns, so teardown has always finished first. That is why 768 local
+tests were green and why the failure needed a real socket, a loaded runner, and a
+race: the window is one commit wide.
+
+**The fix is an explicit commit at the end of the routes that hand out a secret**
+(`commit_before_promise`), with two disciplines that come from *what* it ends:
+
+* the response model is built **before** the commit, because committing expires the
+  ORM identity map and a later read would re-select in a transaction that no longer
+  has `adapt.tenant_id` set — under row-level security, that is a read of nothing;
+* nothing may touch the connection afterwards, because the tenant setting is
+  transaction-local and any further statement raises *"can't operate on closed
+  transaction inside context manager"*.
+
+The regression test widens the window to a third of a second (`_slow_commit`) and
+drives a **real uvicorn server**, so it fails deterministically if the ordering
+comes back: without the fix it answers `401 == 200` on `/v1/whoami`, with it `200`.
+
+**Why it looked like docker.** It was never docker. The apt job passed and the
+docker job failed because the docker job's `ADAPT_TEST_DATABASE_URL` goes through a
+published port (TCP, a borrowed connection, a warmer pool) while the apt job's
+`127.0.0.1` and the local unix socket are faster, so the next request loses the
+race more often. A race that depends on milliseconds looks like an environment
+difference, and the environment was the only thing that visibly changed.
