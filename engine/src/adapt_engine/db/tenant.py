@@ -67,7 +67,13 @@ def tenant_transaction(engine: Engine, tenant_id: uuid.UUID | str) -> Iterator[C
 
 
 def commit_before_promise(conn: Connection) -> None:
-    """Commit a transaction that is about to hand the caller a secret.
+    """Commit a transaction whose response asserts something about this write.
+
+    Two families of route need this. The obvious one hands out a **secret** — a key
+    that must work on the next request, a webhook secret. The larger one states a
+    **fact about a write** — "paused", "revoked", "expires at T", "this batch is
+    durable", "this learner exists", "this decision can be replayed" — where the
+    next request a client makes is entitled to see the fact.
 
     FastAPI runs a ``yield`` dependency's teardown *after* the response bytes are
     on the wire (measured, not assumed: see ``DECISIONS.md`` §24.5). ``tenant_
@@ -86,6 +92,10 @@ def commit_before_promise(conn: Connection) -> None:
       expires the ORM identity map, so reading a row afterwards re-selects it — in
       a transaction that no longer has ``adapt.tenant_id`` set, which is to say
       under row-level security, which is to say it is gone.
+    * **The rule is about the promise, not the row.** DECISIONS §24.6 sweeps every
+      write route and records which ones promise something the next request has to
+      observe; a route that only returns numbers it computed (a grant, a body
+      re-serialised from inputs) does not need this and does not call it.
     * **Nothing may query the connection after this call.** The tenant setting is
       transaction-local (``set_config(..., true)``); a follow-up statement would
       both lose the tenant and raise *"can't operate on closed transaction inside

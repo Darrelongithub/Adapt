@@ -28,6 +28,7 @@ from adapt_engine.auth.deps import (
 from adapt_engine.clock import Clock
 from adapt_engine.crypto.store import DataKeyStore, crypto_store
 from adapt_engine.db.schema import MINIMUM_AGE, PROFILES, age_on, validate_learner_id
+from adapt_engine.db.tenant import commit_before_promise
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 
 router = APIRouter(prefix="/v1", tags=["learners"], responses=ERROR_RESPONSES)
@@ -208,7 +209,12 @@ def create_learner(
             status_code=409,
             retryable=False,
         ) from exc
-    return _row_to_learner(row, store, conn, auth.tenant_id)
+    learner = _row_to_learner(row, store, conn, auth.tenant_id)
+    # The id in this response is meant to be used on the next line — `adapt
+    # sandbox seed` does exactly that, and a host registering at first contact
+    # does too. Commit before handing it over (DECISIONS §24.6).
+    commit_before_promise(conn)
+    return learner
 
 
 __all__ = ["router"]

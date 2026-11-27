@@ -374,7 +374,12 @@ def update_connection(
         target=row.id,
         meta={"status": row.status},
     )
-    return _to_connection(row)
+    view = _to_connection(row)
+    # "Paused" is a promise about the *next* request: `ingest_connection` refuses
+    # it at the same moment the row says so. Commit before announcing it, or a
+    # paused connection ingests for one commit's width (DECISIONS §24.6).
+    commit_before_promise(conn)
+    return view
 
 
 @router.delete(
@@ -413,7 +418,12 @@ def revoke_connection(
         target=row.id,
         meta={"key_id": str(row.key_id)},
     )
-    return _to_connection(row)
+    view = _to_connection(row)
+    # The docstring above says there is no window where the connection says
+    # revoked and the key still authenticates. That is true of the database; the
+    # commit is what makes it true of the response (DECISIONS §24.6).
+    commit_before_promise(conn)
+    return view
 
 
 @router.get(

@@ -18,8 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import scripts.check_openapi as guard
 from scripts.check_openapi import (
     DEFAULT_DOC_PATH,
+    NORMATIVE_ANCHORS,
     DocError,
     _table_rows,
+    check_anchors,
     check_emitted_codes,
     check_openapi,
     documented_codes,
@@ -368,3 +370,44 @@ def test_the_escape_hatch_is_explicit_and_still_verbatim(tmp_path: Path) -> None
     loaded, source = load_doc_text(str(doc))
     assert loaded == text
     assert Path(source) == doc
+
+
+# ---------------------------------------------------------------- rule (d): anchors
+#
+# Rule (c) parses §6 and only §6, so a normative section could be deleted while the
+# contract check stayed green — which is how a PR that removed §7A could show one
+# green contract paragraph and no section. These assert existence by heading, and
+# nothing about the text underneath: a guard that checked wording would be a second
+# copy of the document to keep in sync.
+
+
+def test_every_normative_anchor_is_present_in_the_real_document() -> None:
+    assert NORMATIVE_ANCHORS == ("6B", "6C", "6D", "7A")
+    assert check_anchors(_doc()) == []
+
+
+def test_a_deleted_section_fails_and_names_itself() -> None:
+    """Remove §7A the way a bad merge would, and the guard says which one is gone."""
+    without_7a = "\n".join(line for line in _doc().splitlines() if not line.startswith("## 7A."))
+    findings = check_anchors(without_7a)
+    assert len(findings) == 1, findings
+    assert findings[0].rule == "d:anchor-present"
+    assert "'## 7A.'" in findings[0].message
+    assert "7A" in findings[0].message
+
+
+def test_a_mention_in_prose_is_not_a_section() -> None:
+    """`§7A` in a sentence is not §7A. The heading is what makes it readable."""
+    stripped = "\n".join(line for line in _doc().splitlines() if not line.startswith("## 6C."))
+    assert check_anchors(stripped), "a prose reference must not satisfy the guard"
+    assert check_anchors(stripped + "\n\nSee §6C for the headers.\n") == check_anchors(stripped)
+
+
+def test_the_guard_returns_nonzero_when_a_section_is_missing(tmp_path: Path) -> None:
+    """The failure has to reach `main()`, not just the helper — CI runs the script."""
+    doc = tmp_path / "INTEGRATION.md"
+    doc.write_text(
+        "\n".join(line for line in _doc().splitlines() if not line.startswith("## 6D.")),
+        encoding="utf-8",
+    )
+    assert guard.main(["--doc", str(doc)]) == 1

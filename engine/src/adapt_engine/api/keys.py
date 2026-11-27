@@ -206,7 +206,11 @@ def set_key_expiry(
             status_code=404,
             retryable=False,
         )
-    return KeyExpirySet(key_id=key_id, expires_at=body.expires_at)
+    response = KeyExpirySet(key_id=key_id, expires_at=body.expires_at)
+    # The next request with this key reports this expiry. Commit first, or it
+    # reports the old one (DECISIONS §24.6).
+    commit_before_promise(conn)
+    return response
 
 
 @router.post(
@@ -230,4 +234,8 @@ def revoke_key(
     key_service.revoke_api_key(
         conn, tenant_id=auth.tenant_id, key_id=key_id, actor_key_id=auth.key_id
     )
-    return KeyRevoked(key_id=key_id, revoked=True)
+    response = KeyRevoked(key_id=key_id, revoked=True)
+    # "Revoke immediately" is in the docstring; this is what makes it true of the
+    # response rather than of the next transaction (DECISIONS §24.6).
+    commit_before_promise(conn)
+    return response
