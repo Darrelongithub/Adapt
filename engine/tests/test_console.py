@@ -1,6 +1,6 @@
 """Increment 7 and 8: the console shell, and the rule that no number may be invented.
 
-Thirteen tests, and each one exists because something could go wrong quietly. The
+Fourteen tests, and each one exists because something could go wrong quietly. The
 first three are increment 7's traceability gates; the `test_palette_*` and
 `test_the_palette_*` tests are increment 8's `CONSOLE_STYLE.md` §6 gates, which
 exist because a palette in a document is a palette until something can fail on it;
@@ -40,6 +40,8 @@ proves provenance and not formatting:
   on the screen, the repeat count named.
 * **One identity per object, and a level sentence that cannot contradict itself
   (§5)** — four level cases, and a short id instead of a UUID.
+* **The type scale is the documented one (§4)** — six steps parsed from the
+  stylesheet, so a stray `14px` is an error rather than a judgement call.
 
 The renderer runs in Node (`shutil.which("node")` guards it): the sandbox has no
 headless browser, and shipping one is not worth it for text assertions.
@@ -69,6 +71,9 @@ from adapt_engine.main import create_app
 from tests.conftest import make_settings
 from tests.formats import numeric_sins
 from tests.pg import bootstrap_key, provision_tenant
+
+#: CONSOLE_STYLE.md §4, six steps. 11 is for inline chips and micro-labels only.
+SCALE = frozenset({26, 19, 15, 13, 12, 11})
 
 ROOT = Path(__file__).resolve().parents[1]  # engine/
 CONSOLE = ROOT / "src" / "adapt_engine" / "console"
@@ -773,6 +778,20 @@ def test_the_screenshot_palette_is_parsed_from_the_stylesheet(tmp_path: Path) ->
 
 
 # ------------------------------------------------------- formatting by type (§4)
+
+
+def test_the_type_scale_is_the_documented_one() -> None:
+    """§4: six steps, 26/19/15/13/12/11, and 11px is reserved for chips.
+
+    The doc says "if a size is needed that is not on this list, the layout is wrong,
+    not the scale" — which is only true if something checks. This is that check, and
+    it reads the same `styles.css` the two renderers parse their palette from.
+    """
+    css = STYLES.read_text()
+    used = {int(size) for size in re.findall(r"font-size:\s*(\d+)px", css)}
+    assert used, "no font sizes found — the parse is wrong, not the stylesheet"
+    assert used <= SCALE, f"off the scale: {sorted(used - SCALE)} (scale: {sorted(SCALE)})"
+    assert 11 in used, "11px is the chip size and the chip exists"
 
 
 def test_no_number_reaches_the_screen_raw(
