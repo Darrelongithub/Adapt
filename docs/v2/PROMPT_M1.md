@@ -84,8 +84,9 @@ than shipping a weaker version and explaining it afterwards.
   four separate tests, because that is the commercial promise.
 - Increment 6: the 30-decision fixture whose denominator must come out at exactly 20, and the
   abstention-rate/served-rate pair rendered from the same denominator.
-- Increment 7: the sandbox demo — zero-event learner abstains, six events, cited recommendation with
-  an interval — in under three minutes on a clean checkout, with no fabricated numbers anywhere.
+- Increment 7: the sandbox demo — zero-event learner abstains, sends exactly `needs.trials` events,
+  then serves a cited recommendation with an interval — in under three minutes on a clean checkout,
+  with no fabricated numbers anywhere.
 
 ## REPORT FORMAT — same six parts as M0
 

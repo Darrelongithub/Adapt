@@ -561,9 +561,12 @@ The walkthrough, in the order that tells the story:
 2. **Learner inspector** — the steady learner at mastery 0.41 `[0.33–0.49]`, with 212 trials and the
    `L1` badge.
 3. **The money shot** — open a learner with **zero** events, press *decide*: the engine abstains and
-   names what it needs ("6 more trials, 1 session"). Send six events from the demo panel, press
-   *decide* again: a recommendation appears, with its reason and its interval. Ninety seconds, and it
-   is the whole product: it declines to guess, then earns the claim.
+   names what it needs ("8 more trials"). Send **exactly what `needs.trials` asked for** — the number is
+   the engine's, not the demo's — press *decide* again: a recommendation appears, with its reason and its
+   interval. Ninety seconds, and it is the whole product: it declines to guess, then earns the claim.
+   *(An earlier draft of this script said "six events". The floor is 8 trials, so eight from cold and
+   seven after a registration observation; a demo that sends a round number instead of the requested one
+   teaches the reader the wrong arithmetic.)*
 4. **Replay** — re-run the last decision and watch it produce an identical body. That is the audit story.
 5. **Coverage** — capability vs validated vs serving, with validation debt named by failing gate. It is
    also the honest answer to "what does Deep actually get me today".
