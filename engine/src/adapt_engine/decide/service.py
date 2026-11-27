@@ -32,6 +32,7 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 
 from adapt_engine.decide import claims as claim_service
 from adapt_engine.decide.constructs import (
@@ -627,29 +628,101 @@ def decide(
     identifier = decision_id or uuid.uuid4()
     outcome = evaluate(inputs, now=now, decision_id=identifier)
 
-    reservation_id: uuid.UUID | None = None
-    if not outcome.abstain and not test_traffic:
-        if reserve is None or settle is None:
-            raise RuntimeError("a served decision needs a credit reservation")
-        reservation = reserve(
-            conn,
-            tenant_id=tenant_id,
-            amount=1,
-            operation_ref=f"decision:{identifier}",
-            idempotency_key=f"{idempotency_key}:reserve",
-        )
-        # Measured work is known the moment the decision exists, so the hold is
-        # closed in the same transaction: `reserve` binds the key, `settle` is
-        # the row billing reads. A failure anywhere rolls both back.
-        settle(
-            conn,
-            tenant_id=tenant_id,
-            reservation_id=reservation.id,
-            amount=DECIDE_WEIGHT,
-            idempotency_key=f"{idempotency_key}:settle",
-        )
-        reservation_id = reservation.id
+    # Reserve, settle and insert inside a savepoint. Two requests carrying the
+    # same Idempotency-Key can both miss `_find` above and both try to insert;
+    # the loser's INSERT blocks on the unique index, then fails. Without the
+    # savepoint that failure aborts the request transaction and the caller gets a
+    # 500 for doing exactly what the header is for — this was a real double-charge
+    # hazard in reverse: a retry storm got an error instead of the stored answer.
+    savepoint = conn.begin_nested()
+    try:
+        reservation_id: uuid.UUID | None = None
+        if not outcome.abstain and not test_traffic:
+            if reserve is None or settle is None:
+                raise RuntimeError("a served decision needs a credit reservation")
+            reservation = reserve(
+                conn,
+                tenant_id=tenant_id,
+                amount=1,
+                operation_ref=f"decision:{identifier}",
+                idempotency_key=f"{idempotency_key}:reserve",
+            )
+            # Measured work is known the moment the decision exists, so the hold is
+            # closed in the same transaction: `reserve` binds the key, `settle` is
+            # the row billing reads. A failure anywhere rolls both back.
+            settle(
+                conn,
+                tenant_id=tenant_id,
+                reservation_id=reservation.id,
+                amount=DECIDE_WEIGHT,
+                idempotency_key=f"{idempotency_key}:settle",
+            )
+            reservation_id = reservation.id
 
+        _insert(
+            conn,
+            tenant_id=tenant_id,
+            identifier=identifier,
+            connection_id=connection_id,
+            learner_id=learner_id,
+            skill=skill,
+            outcome=outcome,
+            body_hash=body_hash,
+            idempotency_key=idempotency_key,
+            inputs=inputs,
+            now=now,
+            reservation_id=reservation_id,
+            test_traffic=test_traffic,
+        )
+    except IntegrityError as exc:
+        if _constraint(exc) != "decisions_once_per_key":
+            savepoint.rollback()
+            raise
+        # The other request won: discard our reservation and serve their answer.
+        savepoint.rollback()
+        existing = _find(conn, tenant_id=tenant_id, idempotency_key=idempotency_key)
+        if existing is None:
+            raise
+        if existing.hash != body_hash:
+            raise AdaptError(
+                code="conflict",
+                message=(
+                    "that Idempotency-Key was used for a different request body; "
+                    "a key is bound to one logical decision"
+                ),
+                status_code=409,
+                retryable=False,
+            ) from exc
+        return Stored(body=existing.body, decision_id=existing.id, replayed=True, created=False)
+    except BaseException:
+        savepoint.rollback()
+        raise
+    else:
+        savepoint.commit()
+    return Stored(body=outcome.body, decision_id=identifier, replayed=False, created=True)
+
+
+def _constraint(exc: IntegrityError) -> str | None:
+    """The violated constraint's name, or None when the driver did not say."""
+    return getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+
+
+def _insert(
+    conn: Connection,
+    *,
+    tenant_id: uuid.UUID,
+    identifier: uuid.UUID,
+    connection_id: uuid.UUID | None,
+    learner_id: str,
+    skill: str,
+    outcome: Any,
+    body_hash: bytes,
+    idempotency_key: str,
+    inputs: Any,
+    now: datetime,
+    reservation_id: uuid.UUID | None,
+    test_traffic: bool,
+) -> None:
     conn.execute(
         text(
             """
@@ -682,7 +755,6 @@ def decide(
             "test_traffic": test_traffic,
         },
     )
-    return Stored(body=outcome.body, decision_id=identifier, replayed=False, created=True)
 
 
 @dataclass(frozen=True, slots=True)

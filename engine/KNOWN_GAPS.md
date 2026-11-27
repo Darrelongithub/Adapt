@@ -635,3 +635,32 @@ reads that way for the sandbox because `adapt sandbox seed` provisions a `deep`
 tenant. A `core` tenant gets "Entitled to L1; serving L1 …" and the sentence is
 equally true; what is *not* yet exercised is the case where entitlement, capability
 and validation disagree in more than one axis.
+
+## 34. A window with two naive timestamps names only one of them
+
+`GET /v1/admin/metrics/abstention` normalises `to` before `from`, so a request with
+*both* boundaries naive gets `422 … details.field = "to"` and no mention of
+`from`. The refusal is correct and the field it names is genuinely wrong; what is
+missing is the second name. Fixing it means collecting all field errors before
+raising, which changes the error envelope for every route that validates more than
+one parameter — a contract change for a message, so the increment-8 audit records
+it here instead. **Not fixed, by choice.**
+
+## 35. `POST /v1/decide` and `POST /v1/decisions/{id}/replay` disagree about their own noun
+
+One route is singular and a verb, the other plural and a noun. Both are documented
+and both are in the generated SDK, so renaming either now breaks every client the
+SDK has produced — including the two in this repository. It was found by writing
+the audit test and getting a 404 from a URL that read as if it should exist, which
+is the argument for fixing it at the next breaking version and not tonight.
+**Won't fix at M1.**
+
+## 36. The console's `serving` mark is a chip, and §5 does not name a chip
+
+`CONSOLE_STYLE.md` §5 has a *selected row* (`--accent-soft` fill, 2px `--accent`
+left border) but no inline variant of it. The inspector needs one: `served` is a
+single number in a table cell and the accent budget allows one mark per screen, so
+the mark is drawn as a chip — the same fill and the same 2px border as the selected
+row, at cell size. It is in the stylesheet, it is counted by gate 3, and it is
+**not** in the spec. Either the spec gains a row or the chip goes; the console
+should not be the only place that knows the grammar.

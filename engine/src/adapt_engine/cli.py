@@ -412,7 +412,13 @@ def _demo_body(
     print()
 
     # 2. The money shot: a learner the engine has never seen.
-    fresh = sandbox.learners["fresh"]
+    #
+    # Per run, not per tenant. `demo` used to reuse the seeded `fresh` id, so the
+    # second run of the demo served a confident number instead of abstaining, asked
+    # for zero trials, and died on `events must not be empty` — the demo was a
+    # one-shot. A run-scoped id makes the money shot reproducible, and the id is
+    # printed so the row it creates can still be found.
+    fresh = f"{sandbox.learners['fresh']}-{uuid.uuid4().hex[:6]}"
     status, _, first = call(
         "POST", "/v1/decide", {"learner_id": fresh, "skill": SKILL}, idempotent=True
     )
@@ -420,6 +426,14 @@ def _demo_body(
         # A learner must exist before a decision can be made about them; the
         # sandbox registers it with one observation, which the engine will then
         # still decline to score.
+        #
+        # Say so. The 404 is in the transcript as a logged request either way, and
+        # an unexplained error line in a demo reads as a broken demo — to a reader
+        # who is deciding whether to trust the rest of the numbers.
+        print(
+            f"{_ts(started)} register   a learner must exist before it can be decided "
+            "about: one observation, then the 404 becomes an abstention"
+        )
         _observe(call, fresh, 1)
         status, _, first = call(
             "POST", "/v1/decide", {"learner_id": fresh, "skill": SKILL}, idempotent=True
@@ -438,7 +452,7 @@ def _demo_body(
     # The engine named a number. The demo sends exactly that many, not a round
     # number chosen to make the screenshot look good.
     print(f"{_ts(started)} observe    sending exactly what needs asked for: {trials} events")
-    _observe(call, sandbox.learners["fresh"], trials, offset=1)
+    _observe(call, fresh, trials, offset=1)
     status, _, second = call(
         "POST", "/v1/decide", {"learner_id": fresh, "skill": SKILL}, idempotent=True
     )

@@ -1376,3 +1376,42 @@ than papered over: the demo's fresh learner needs **7** more trials after one
 registration observation (the floor is 8), so "six events later" in the walkthrough
 is not the arithmetic this build performs; and the demo reports a second
 abstention if it happens instead of retrying until it does not.
+
+### 23.6 The same Idempotency-Key racing itself is a replay, not a 500 (increment 8, from the audit)
+
+`decide` reads the key, then decides, then inserts. Two requests carrying one key
+can therefore both miss the read; the loser's `INSERT` blocks on
+`decisions_once_per_key`, then fails, and before increment 8 that failure reached
+the caller as **500 internal** — three times out of four in the audit's own
+reproduce. The header exists precisely for the caller that retries, so an error on
+retry is worse than a duplicate: it is a duplicate *plus* an alarm, and the caller
+cannot distinguish "we did not serve you" from "we cannot say".
+
+The fix keeps the whole unit of work — reserve, settle, insert — inside a
+**savepoint**. On the unique violation the savepoint rolls back (so the loser's
+reservation is discarded and nothing is charged), the key is read again, and the
+winner's stored body is returned with `X-Adapt-Replayed: true`, byte-identical to
+what the first caller got. A key re-used with a *different* body still returns
+409: the race and the misuse are different events and keep different answers.
+`tests/test_audit_increment8.py` runs four requests on one key through four
+clients and asserts one row, one settle, four identical bodies.
+
+### 23.7 The palette is four gates, and the accent budget counts elements
+
+`CONSOLE_STYLE.md` §6 lists them; the implementation is deliberately dull, because
+a design system that needs judgement at review time is not enforced. The hex grep
+covers `console/` **and the two screenshot scripts**, so the artifact cannot carry
+a palette the page does not. The contrast test recomputes §3 from `:root` and
+fails with the pair and the ratio, and it also checks the *published* number, so a
+stylesheet edited without the document fails in the other direction too. The
+accent count is taken from the cascade over the renderer's own tree: an element
+counts when its computed `color`, `background` or `border-left` resolves to
+`--accent`, `--accent-fill` or `--accent-ink`. Three is a ceiling and not a quota:
+the empty window marks **nothing** (0/0/0) because "no data" is mustard italic,
+not terracotta, and the populated window marks exactly one number per screen
+(1/1/1 — the abstention rate, the alerting connection, the serving level).
+
+Two `:root` blocks are used on purpose: the first is `CONSOLE_STYLE.md` §2
+byte-for-byte (colours only), the second carries the display and sans stacks that
+§4 asks for. Keeping them apart is what lets the token tests key on colour tokens
+without a prose exception.

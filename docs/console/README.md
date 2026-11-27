@@ -8,9 +8,28 @@ were rendered from.
 | `empty-window.svg` / `.png` | a window with **no decisions** | the null state: `rate` reads **no data**, not `0.0%`, with the sentence that says why |
 | `populated-window.svg` / `.png` | one connection repeating, one quiet, one learner with evidence | the pair: abstention and served rate from one denominator, credits, the polling alert, and the learner's per-construct row with `serving`/`validated` |
 
+Both files are drawn in the house style of `docs/v2/CONSOLE_STYLE.md`: beige page,
+one flat card, serif display with a 2px terracotta rule under the title, sans for
+every number, `no data` in mustard 700 *italic*, and **one** accent element per
+populated screen. The accent budget is checked, not eyeballed — `console_shot.mjs`
+counts the elements whose computed colour resolves to `--accent`, `--accent-fill`
+or `--accent-ink` and refuses to write above three:
+
+| Screen | Populated | Empty window |
+|---|---|---|
+| Overview | 1 — the abstention rate, 19px | 0 — nothing to mark |
+| Connections | 1 — the alerting count | 0 |
+| Learner | 1 — the `serving` chip | 0 |
+
+The palette is **not** stored in either renderer: both parse `:root` from
+`src/adapt_engine/console/styles.css` (`CONSOLE_STYLE.md` §6, gate 4), so editing a
+token changes the pictures and editing the pictures is not possible. Italics are
+synthesised by shear — no italic face is installed here, and a browser would make
+the same compromise.
+
 These are **not** browser bitmaps. There is no headless browser in this
 environment, so `scripts/console_shot.mjs` walks the vnode tree that
-`console.js` produces and lays the text out as SVG, and `scripts/console_shot.py`
+`console/app.js` produces and lays the text out as SVG, and `scripts/console_shot.py`
 draws the same block model to PNG with Pillow (a dev extra: `pip install -e ".[dev]"`). The content and order are the
 console's; the CSS layout is not. `KNOWN_GAPS` §30 records the gap and the fix.
 

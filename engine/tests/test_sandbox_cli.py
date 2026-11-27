@@ -155,6 +155,25 @@ def test_demo_runs_the_loop_and_never_fabricates_a_number(seeded, capsys, _isola
     assert replays >= 1, "a replay must leave an audit row"
 
 
+def test_the_demo_can_be_run_twice_in_a_row(seeded, capsys, _isolated) -> None:
+    """A demo that only works on a virgin tenant is a demo you can watch once.
+
+    The increment-8 audit found it as a first-run-only bug: `demo` reused the
+    seeded `fresh` learner, so on the second run the engine served a confident
+    number instead of abstaining, `needs.trials` was 0, and the run died on
+    `events must not be empty`. The learner id is now run-scoped, so the money
+    shot reproduces — which is the whole point of running it twice.
+    """
+    for attempt in range(2):
+        assert cli.main(["sandbox", "demo"]) == 0, f"run {attempt + 1} failed"
+        out = capsys.readouterr().out
+        assert "abstain=True" in out, f"run {attempt + 1}: {out}"
+        assert re.search(r"sending exactly what needs asked for: [1-9]\d* events", out), (
+            f"run {attempt + 1} asked for zero events: {out}"
+        )
+        assert re.search(r"serves \w+ confidence", out), f"run {attempt + 1}: {out}"
+
+
 def test_the_demo_refuses_to_run_without_a_seed(sandbox_env: Path, capsys) -> None:
     assert cli.main(["sandbox", "demo"]) == 1
     assert "adapt sandbox seed" in capsys.readouterr().err

@@ -1,87 +1,222 @@
+/* The console's palette, its type scale and its component grammar.
+ *
+ * Normative source: `docs/v2/CONSOLE_STYLE.md`. Where this file and that one
+ * disagree, that one wins and this file is the bug.
+ *
+ * Two rules hold the rest together:
+ *
+ *   1. **Every hex lives in :root, and only there.** `tests/test_console.py`
+ *      greps the console directory for hex literals and fails on anything but
+ *      this block, because a colour that escapes the token list is a colour
+ *      nobody can check a contrast ratio against.
+ *   2. **`no data` is not `0` in three signals** — the words, the weight and
+ *      style (700 italic against tabular 600 upright), and only then the colour.
+ *      A deuteranope sees none of the third, which is why it is third.
+ */
+
 :root {
-  --ink: #111827;
-  --muted: #6b7280;
-  --body: #4b5563;
-  --rule: #e5e7eb;
-  --null: #b45309;
+  /* ground — 60% */
+  --bg:           #F3ECDF;  /* beige page */
+  --surface:      #FBF8F2;  /* cards, header bar */
+  --surface-sunk: #EDE4D4;  /* table header, insets, disabled fill */
+  --rule:         #DDD2BF;  /* borders, dividers */
+  --rule-strong:  #C9BBA0;  /* rule under a heading that needs weight, never a lone affordance */
+
+  /* ink and structure — 30% */
+  --ink:          #1B2230;  /* headings, values */
+  --ink-body:     #3A4356;  /* prose, sentences */
+  --ink-muted:    #6B6357;  /* labels, captions, table headers */
+  --blue:         #23395B;  /* primary fill, links, focus ring, level sentence */
+  --blue-soft:    #E4E7EE;  /* badge/chip fill */
+
+  /* accent — ≤10% */
+  --accent:       #C4643F;  /* terracotta: marks, rules, ≥19px display figures, 3:1 UI only */
+  --accent-fill:  #9E4A2B;  /* terracotta darkened: button fills that carry 13px label text */
+  --accent-ink:   #8E3F22;  /* terracotta darkened: accent text at body size, if ever needed */
+  --accent-soft:  #F2E2D8;  /* selected row, chip tint */
+
+  /* state */
+  --null:         #7A5A0F;  /* "no data" — mustard ink, never plain mustard */
+  --ok:           #546E58;  /* validated / passed — sage ink, never plain sage */
+  --alert:        #7A2E35;  /* a failing gate, a real error — oxblood */
+}
+
+/* Type stacks are not colours, so they live beside the tokens rather than in a
+ * second file. No web fonts: the console has to work offline, in a browser with
+ * no network, which is also how the screenshot gate renders it. */
+:root {
+  --display: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  color: var(--ink);
-  background: #f9fafb;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-body);
+  background: var(--bg);
 }
+
+/* ---------------------------------------------------------------- header bar */
 
 .bar {
-  background: #ffffff;
+  background: var(--surface);
   border-bottom: 1px solid var(--rule);
-  padding: 24px 32px 16px;
+  padding: 24px 32px;
 }
 
-h1 { margin: 0 0 4px; font-size: 22px; }
+/* The one ornament: a 2px accent rule under the page title, and only under it.
+ * An inline-block border rather than a decorative element, because a decorative
+ * element is a fourth accent on every screen. */
+.bar h1 {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--accent);
+  font-family: var(--display);
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--ink);
+}
 
-.sub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.sub { margin: 8px 0 16px; color: var(--ink-muted); font-size: 13px; }
 
 .auth { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 
-.auth label { font-size: 12px; color: var(--muted); }
+.auth label { font-size: 12px; color: var(--ink-muted); }
 
 .auth input {
-  padding: 6px 8px;
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  font-size: 13px;
+  min-height: 36px;
   min-width: 220px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
 }
 
+.auth input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
 .auth button {
-  padding: 7px 14px;
-  border: 1px solid #111827;
-  background: #111827;
-  color: #ffffff;
-  border-radius: 4px;
+  min-height: 36px;
+  padding: 8px 16px;
+  font: inherit;
   font-size: 13px;
+  font-weight: 600;
+  color: var(--surface);
+  background: var(--blue);
+  border: 0;
+  border-radius: 3px;
   cursor: pointer;
 }
 
-.auth button:focus-visible,
-.auth input:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.auth button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
-.hint { font-size: 12px; color: var(--muted); }
+.hint { font-size: 12px; color: var(--ink-muted); }
 
-.status { margin: 8px 0 0; font-size: 12px; color: var(--muted); min-height: 16px; }
+.status { margin: 8px 0 0; font-size: 12px; color: var(--ink-muted); min-height: 16px; }
 
-main { padding: 24px 32px 64px; max-width: 1180px; }
+/* --------------------------------------------------------------------- page */
+
+main { padding: 32px; max-width: 1120px; }
 
 .screen { margin-bottom: 32px; }
 
 .card {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 6px;
-  padding: 18px 20px;
+  border-radius: 0;
+  padding: 20px 24px;
   margin-bottom: 16px;
 }
 
-.card h2 { margin: 0 0 12px; font-size: 15px; text-transform: none; letter-spacing: 0; }
+.card h2 {
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
 
-.row { display: flex; justify-content: space-between; gap: 24px; padding: 4px 0; }
+/* -------------------------------------------------------------------- rows */
 
-.label { color: var(--muted); font-size: 13px; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 3px 0; }
 
-.value { font-variant-numeric: tabular-nums; font-weight: 600; }
+.label { color: var(--ink-muted); font-size: 13px; }
 
-.null { color: var(--null); font-weight: 700; }
+.value { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-.sentence { color: var(--body); font-size: 13px; line-height: 1.5; margin: 12px 0 0; }
+/* The one number a screen is allowed to mark. 19px bold is large text, so
+ * terracotta at 3.78:1 is legal here and nowhere at 13px. */
+.mark {
+  color: var(--accent);
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "no data": mustard ink, 700, italic, against the tabular upright of a value. */
+.null { color: var(--null); font-weight: 700; font-style: italic; }
+
+.ok { color: var(--ok); }
+
+.level { color: var(--blue); }
+
+.sentence { margin: 12px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-body); }
+
+.empty { color: var(--ink-muted); font-size: 13px; }
+
+/* ------------------------------------------------------------------- tables */
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 
-th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+thead th {
+  padding: 8px 12px;
+  background: var(--surface-sunk);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  text-align: left;
+}
 
-td { padding: 6px 0; border-bottom: 1px solid #f3f4f6; font-variant-numeric: tabular-nums; }
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
 
-.empty { color: var(--muted); font-size: 13px; }
+tbody tr:last-child td { border-bottom: 0; }
+
+/* A chip: the tint is --accent-soft, which is not an accent *ink*, and the 2px
+ * left border is the mark. Chip text stays --ink so it never rests on 3.78:1. */
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  color: var(--ink);
+  font-weight: 600;
+}

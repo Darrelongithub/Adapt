@@ -1,6 +1,9 @@
-"""Increment 7: the console shell, and the rule that no number may be invented.
+"""Increment 7 and 8: the console shell, and the rule that no number may be invented.
 
-Three tests, and each one exists because something could go wrong quietly:
+Eight tests, and each one exists because something could go wrong quietly. The
+first three are increment 7's traceability gates; the four `test_the_palette_*`
+and `test_no_screen_*` tests are increment 8's `CONSOLE_STYLE.md` §6 gates, which
+exist because a palette in a document is a palette until something can fail on it:
 
 * **Traceability** — every value the console renders is declared in
   `console/data-map.json` and changes when the data changes. The second half is
@@ -14,6 +17,17 @@ Three tests, and each one exists because something could go wrong quietly:
 * **The screenshot** — the empty window renders to an image that contains the
   sentence a human needs ("No decisions in this window"), so the artifact under
   review is the real rendering and not a retyped mock.
+* **The palette (§6 gate 1)** — one hex, in `:root`, and nowhere else. A colour
+  that drifted into a rule is a second source of truth.
+* **Contrast (§6 gate 2)** — the §3 pairs are recomputed from the stylesheet and
+  compared with the numbers the document published. A changed hex is a red test
+  with the pair printed, not a review comment.
+* **The accent budget (§6 gate 3)** — no screen may paint more than three
+  elements in terracotta; on a populated screen each of the three screens carries
+  at least the one mark it is allowed.
+* **Screenshots read the tokens (§6 gate 4)** — the two renderers parse `:root`
+  from `styles.css`; neither carries a palette. Proven by rendering with an edited
+  stylesheet and finding the edit in the pixels.
 
 The renderer runs in Node (`shutil.which("node")` guards it): the sandbox has no
 headless browser, and shipping one is not worth it for text assertions.
@@ -23,8 +37,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
+import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -45,6 +61,35 @@ ROOT = Path(__file__).resolve().parents[1]  # engine/
 CONSOLE = ROOT / "src" / "adapt_engine" / "console"
 DATA_MAP = json.loads((CONSOLE / "data-map.json").read_text())["metrics"]
 NODE = shutil.which("node")
+STYLES = CONSOLE / "styles.css"
+
+#: `CONSOLE_STYLE.md` §3, as `(ink token, surface token, floor, published ratio)`.
+#: The published ratio is checked too: the document and the stylesheet must not
+#: drift apart in either direction, because §3 is what a reviewer reads instead
+#: of opening the CSS.
+CONTRAST = (
+    ("--ink", "--bg", 4.5, 13.56),
+    ("--ink", "--surface", 4.5, 15.03),
+    ("--ink-body", "--bg", 4.5, 8.44),
+    ("--ink-body", "--surface", 4.5, 9.36),
+    ("--ink-muted", "--bg", 4.5, 5.04),
+    ("--ink-muted", "--surface", 4.5, 5.58),
+    ("--blue", "--bg", 4.5, 9.89),
+    ("--blue", "--surface", 4.5, 10.96),
+    ("--surface", "--blue", 4.5, 10.96),
+    ("--alert", "--surface", 4.5, 8.73),
+    ("--null", "--surface", 4.5, 6.01),
+    ("--ok", "--surface", 4.5, 5.29),
+    # Terracotta is a mark, not an ink: 3:1 is the UI/large-text floor and 4.5 is
+    # explicitly *not* claimed for it (CONSOLE_STYLE §3, consequence 1).
+    ("--accent", "--surface", 3.0, 3.78),
+    ("--surface", "--accent-fill", 4.5, 5.71),
+    # A hairline: deliberately under 3:1, so it can never be the only affordance.
+    ("--rule", "--bg", 1.0, 1.27),
+)
+
+#: The two raw hues §3 retires from text roles, and what they measured.
+RETIRED = (("#C99A2E", 2.19), ("#7F9A83", 2.61))
 
 SKILL = "skill.fractions"
 LEARNER = "learn-console-0001"
@@ -379,23 +424,70 @@ def test_the_empty_window_renders_to_an_image(
     """
     _, empty, _ = _live_state(client, admin_key, app_engine, tenant)
     svg = tmp_path / "empty-window.svg"
+    model = tmp_path / "empty.json"
     result = _node(
         "scripts/console_shot.mjs",
         "--state",
         str(_write(tmp_path, "s.json", empty)),
         "--out",
         str(svg),
+        "--json",
+        str(model),
     )
     assert result.returncode == 0, result.stderr
+    # §6 gate 3 on the screen where it matters most: nothing to report is not a
+    # reason to reach for terracotta. "no data" is mustard and italic, not a mark.
+    accents = json.loads(model.read_text())["accents"]
+    assert accents["overview"] == 0, f"the empty window marks {accents['overview']} elements"
+    assert all(count <= 3 for count in accents.values()), accents
     text = svg.read_text()
     assert "No decisions in this window" in text
     assert "no data" in text
-    assert "0.0%" not in text.split("Abstention")[1].split("Credits")[0]
+    # Card titles render uppercase (§4), so the section is cut on the drawn text.
+    abstention = text.split("ABSTENTION", 1)[1].split("CREDITS", 1)[0]
+    assert "0.0%" not in abstention, "the empty window must not print a percentage"
     assert len(text) > 2_000
 
     committed = ROOT.parent / "docs" / "console" / "empty-window.png"
     assert committed.exists(), "the reviewed screenshot is missing from docs/console/"
     assert committed.stat().st_size > 10_000
+
+
+def test_a_populated_screen_carries_its_marks_and_no_more(
+    client: TestClient, admin_key, app_engine: Engine, tenant: uuid.UUID, tmp_path: Path
+) -> None:
+    """§6 gate 3, on a screen with numbers: at most three, and at least the one.
+
+    A budget that only has an upper bound is satisfied by a console with no accent
+    at all, which is a different failure — the marked number is how a reader knows
+    what the screen is about. So each screen must carry its mark, and the marked
+    number on Overview must be the abstention rate at 19px in terracotta.
+    """
+    populated, _, _ = _live_state(client, admin_key, app_engine, tenant)
+    model = tmp_path / "populated.json"
+    result = _node(
+        "scripts/console_shot.mjs",
+        "--state",
+        str(_write(tmp_path, "p.json", populated)),
+        "--out",
+        str(tmp_path / "populated-window.svg"),
+        "--json",
+        str(model),
+    )
+    assert result.returncode == 0, result.stderr
+    shot = json.loads(model.read_text())
+    accents = shot["accents"]
+    assert set(accents) == {"overview", "connections", "learner"}, accents
+    assert all(count <= shot["maxAccents"] for count in accents.values()), accents
+    assert accents["overview"] == 1, f"Overview must mark exactly one number, not {accents}"
+    assert accents["connections"] >= 1, "the alerting connection must be marked"
+    assert 1 <= accents["learner"] <= 3, accents
+
+    tokens = _root_tokens()
+    rate = next(block for block in shot["blocks"] if block.get("text") == "0.0%")
+    assert rate["style"]["color"].lower() == tokens["--accent"].lower()
+    assert rate["style"]["size"] == 19, "terracotta at 13px is illegal (§3, 3.78:1)"
+    assert rate["style"]["weight"] == 700
 
 
 def test_the_console_is_a_static_page_with_declared_assets_only(client: TestClient) -> None:
@@ -423,3 +515,179 @@ def test_the_console_is_a_static_page_with_declared_assets_only(client: TestClie
     unknown = client.get("/console/secret.env")
     assert unknown.status_code == 404
     assert unknown.json()["error"]["code"] == "route_unknown"
+
+
+# --------------------------------------------------------------------- palette
+
+
+def _root_tokens(path: Path = STYLES) -> dict[str, str]:
+    """`--token: hex;` from every `:root` block — the one place a hex may live."""
+    css = re.sub(r"/\*.*?\*/", "", path.read_text(), flags=re.S)
+    tokens: dict[str, str] = {}
+    for block in re.findall(r":root\s*\{([^}]*)\}", css):
+        for declaration in block.split(";"):
+            if ":" in declaration:
+                name, value = declaration.split(":", 1)
+                tokens[name.strip()] = value.strip()
+    return tokens
+
+
+def _luminance(colour: str) -> float:
+    digits = colour.lstrip("#")
+    if len(digits) == 3:
+        digits = "".join(ch * 2 for ch in digits)
+    assert len(digits) == 6, f"{colour} is not a hex colour"
+    channels = []
+    for index in (0, 2, 4):
+        value = int(digits[index : index + 2], 16) / 255
+        channels.append(value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4)
+    red, green, blue = channels
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _ratio(one: str, two: str) -> float:
+    lighter, darker = sorted((_luminance(one), _luminance(two)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
+
+
+def test_the_palette_lives_in_root_and_nowhere_else() -> None:
+    """§6 gate 1. One hex, in `:root`; a colour that drifted into a rule is a
+    second source of truth and the first one stops being enforceable."""
+    stray: list[str] = []
+    styles = STYLES.read_text()
+    outside = re.sub(r":root\s*\{[^}]*\}", "", styles)
+    stray += [f"styles.css outside :root: {hit}" for hit in HEX.findall(outside)]
+
+    for path in sorted(CONSOLE.rglob("*")):
+        if not path.is_file() or path == STYLES or path.suffix == ".pyc":
+            continue
+        stray += [f"{path.relative_to(CONSOLE)}: {hit}" for hit in HEX.findall(path.read_text())]
+
+    # §6 gate 4: the screenshot scripts must not carry their own copy of the
+    # palette, so they are held to the same rule as the page.
+    for name in ("console_shot.mjs", "console_shot.py"):
+        script = (ROOT / "scripts" / name).read_text()
+        stray += [f"scripts/{name}: {hit}" for hit in HEX.findall(script)]
+        assert '":root"' in script or ":root" in script, f"{name} does not parse :root"
+
+    assert not stray, "hex outside :root: " + ", ".join(stray)
+
+
+def test_every_published_contrast_pair_still_measures_what_the_document_says() -> None:
+    """§6 gate 2. Computed, not asserted: the pair and the ratio are in the message."""
+    tokens = _root_tokens()
+    assert tokens, "styles.css has no :root block"
+    failures: list[str] = []
+    for foreground, background, floor, published in CONTRAST:
+        one, two = tokens.get(foreground), tokens.get(background)
+        assert one and two, f"{foreground} / {background} is declared in §3 but missing from :root"
+        measured = _ratio(one, two)
+        if measured < floor:
+            failures.append(
+                f"{foreground} {one} on {background} {two}: {measured:.2f} < {floor:.2f} "
+                f"(§3 published {published:.2f})"
+            )
+        elif abs(measured - published) > 0.011:
+            failures.append(
+                f"{foreground} on {background}: {measured:.2f} but §3 publishes {published:.2f} "
+                "— the stylesheet and the document have drifted"
+            )
+    # Terracotta is legal as a mark *because* it is under the body-text floor;
+    # a future palette that "fixes" that silently would be a different design.
+    assert _ratio(tokens["--accent"], tokens["--surface"]) < 4.5
+    assert _ratio(tokens["--rule"], tokens["--bg"]) < 3.0
+
+    for retired, published in RETIRED:
+        assert retired.lower() not in STYLES.read_text().lower(), (
+            f"{retired} is retired from text roles"
+        )
+        measured = _ratio(retired, tokens["--bg"])
+        if measured >= 4.5:
+            failures.append(f"{retired} measures {measured:.2f}: it would no longer be retired")
+        if abs(measured - published) > 0.011:
+            failures.append(f"{retired} on --bg: {measured:.2f}, §3 says {published:.2f}")
+
+    assert not failures, "contrast: " + "; ".join(failures)
+
+
+def test_the_screenshot_palette_is_parsed_from_the_stylesheet(tmp_path: Path) -> None:
+    """§6 gate 4, proven in the pixels: edit `:root`, and the picture follows.
+
+    A script that kept its own copy would render the old beige here, which is the
+    lie the gate exists to prevent.
+    """
+    pytest.importorskip("PIL", reason="Pillow is a dev extra")
+    from PIL import Image  # imported after the skip: Pillow is a dev extra
+
+    styles = tmp_path / "styles.css"
+    source = STYLES.read_text()
+    assert source.count("#F3ECDF") == 1, "the beige must be declared once, in :root"
+    styles.write_text(source.replace("#F3ECDF", "#00FF00"))
+    blocks = tmp_path / "blocks.json"
+    blocks.write_text(
+        json.dumps({"width": 1180, "heading": {"title": "t", "subtitle": "s"}, "blocks": []})
+    )
+    png = tmp_path / "shot.png"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/console_shot.py",
+            "--styles",
+            str(styles),
+            "--blocks",
+            str(blocks),
+            "--out",
+            str(png),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert Image.open(png).convert("RGB").getpixel((1, 1)) == (0, 255, 0)
+
+    # And the SVG side: the stylesheet's background is what the vector says.
+    state = _write(
+        tmp_path,
+        "state.json",
+        {
+            "metrics": {
+                "rate": None,
+                "numerator": 0,
+                "denominator": 0,
+                "interval": {"low": None, "high": None},
+                "served": {"rate": None},
+                "reasons": {},
+                "exclusions": {"test_traffic": 0, "paused_or_revoked": 0, "replays": 0},
+                "by_connection": [],
+                "abstention_polling": {
+                    "baseline_repeat_ratio": 0.0,
+                    "alerting": [],
+                    "multiple": 5,
+                    "min_repeats": 10,
+                    "by_connection": [],
+                },
+            },
+            "credits": {"available": 0, "held": 0, "consumed": 0, "forfeited": 0, "granted": 0},
+            "connections": [],
+            "mastery": None,
+            "learnerId": None,
+        },
+    )
+    svg = tmp_path / "shot.svg"
+    result = _node(
+        "scripts/console_shot.mjs",
+        "--styles",
+        str(styles),
+        "--state",
+        str(state),
+        "--out",
+        str(svg),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "#00FF00" in svg.read_text()

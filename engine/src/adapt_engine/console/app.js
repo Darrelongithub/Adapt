@@ -65,7 +65,10 @@ function overview(state) {
     row(
       "rate",
       metric("overview.abstention.rate", formatPercent(m.rate), {
-        class: m.rate === null ? "null" : "value",
+        // The one number Overview is allowed to mark, and the only place a
+        // 19px terracotta figure is legal (CONSOLE_STYLE §3). A null keeps the
+        // mustard italic instead: "no data" is never decorated.
+        class: m.rate === null ? "null" : "mark",
       }),
     ),
     row(
@@ -220,7 +223,9 @@ function connectionsScreen(state) {
       ),
       row(
         "connections alerting",
-        metric("connections.polling.alerting", String(polling.alerting.length)),
+        metric("connections.polling.alerting", String(polling.alerting.length), {
+          class: polling.alerting.length === 0 ? "value" : "chip",
+        }),
       ),
       row(
         "alert threshold",
@@ -363,10 +368,15 @@ function inspector(state) {
                         : metric(`learner.${s.skill}.interval`, formatInterval(s.interval)),
                     ),
                     h("td", {}, metric(`learner.${s.skill}.n`, String(s.n))),
-                    h("td", {}, metric(`learner.${s.skill}.served`, String(s.served))),
                     h(
                       "td",
                       {},
+                      metric(`learner.${s.skill}.served`, String(s.served), { class: "chip" }),
+                    ),
+                    h(
+                      "td",
+                      {},
+                      h("span", { class: "ok" }, "\u2713 "),
                       metric(`learner.${s.skill}.validation_level`, String(s.validation_level)),
                     ),
                   ),
@@ -376,7 +386,7 @@ function inspector(state) {
       mastery !== null && skills.length > 0
         ? h(
             "p",
-            { class: "sentence", "data-metric": "learner.level.sentence" },
+            { class: "sentence level", "data-metric": "learner.level.sentence" },
             `Entitled to ${skills[0].entitlement_level}; serving ${skills[0].served} where ` +
               `validation has not passed (capability ${skills[0].capability_level}, ` +
               `validated ${skills[0].validation_level}). limited_by is ` +
