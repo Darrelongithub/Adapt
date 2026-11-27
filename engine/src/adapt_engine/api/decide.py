@@ -36,6 +36,7 @@ from adapt_engine.auth.deps import (
 from adapt_engine.clock import Clock
 from adapt_engine.config import Settings
 from adapt_engine.credits import service as credits
+from adapt_engine.db.tenant import commit_before_promise
 from adapt_engine.decide import service
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 
@@ -216,7 +217,7 @@ def _decide(
     # A replay bills nothing: the credit was taken when the decision was first
     # served, and the header is the caller's only evidence of that.
     billed = 0 if (test_traffic or stored.replayed or stored.body.get("abstain")) else 1
-    return _body_response(
+    response = _body_response(
         stored.body,
         headers={
             "X-Adapt-Decision-Id": str(stored.decision_id),
@@ -225,6 +226,11 @@ def _decide(
             "X-Adapt-Test-Traffic": "true" if test_traffic else "false",
         },
     )
+    # The decision id this response returns is meant to be replayable and
+    # readable the moment it is returned, and the credit it spent has to be
+    # spent. Commit before answering (DECISIONS §24.6).
+    commit_before_promise(conn)
+    return response
 
 
 @router.post(
@@ -267,7 +273,7 @@ def replay(
             retryable=False,
             details={"decision_id": str(decision_id)},
         )
-    return _body_response(
+    response = _body_response(
         stored.body,
         headers={
             "X-Adapt-Decision-Id": str(stored.id),
@@ -278,6 +284,10 @@ def replay(
             "X-Adapt-Test-Traffic": "false",
         },
     )
+    # The replay row is the audit evidence that this decision was re-served; a
+    # replay the caller has been told about must be one the log can find.
+    commit_before_promise(conn)
+    return response
 
 
 def _connection_id(conn: Connection, auth: AuthContext) -> uuid.UUID | None:

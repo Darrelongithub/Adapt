@@ -38,6 +38,7 @@ from adapt_engine.auth.deps import (
 )
 from adapt_engine.clock import Clock
 from adapt_engine.connections import service as connections
+from adapt_engine.db.tenant import commit_before_promise
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
 from adapt_engine.observe import service
 from adapt_engine.observe.limits import IngestLimiter
@@ -203,7 +204,14 @@ def _ingest(
             details={"resets_at": exc.resets_at.isoformat()},
         ) from exc
 
-    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=stored.response)
+    response = JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=stored.response)
+    # This route's docstring says "the batch is durable when the response is
+    # written". Until increment 10 that sentence was false by one commit: the
+    # events were committed in the dependency teardown, after the 202 was on the
+    # wire, so a decision taken immediately afterwards saw no evidence at all
+    # (DECISIONS §24.6).
+    commit_before_promise(conn)
+    return response
 
 
 def _spend_rate_limit(limiter: IngestLimiter, connection_id: uuid.UUID) -> None:

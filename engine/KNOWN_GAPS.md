@@ -700,21 +700,17 @@ outside `DECISIONS.md §24.3` and `METRICS.md §1.5`. **Won't fix at M1: the met
 response has never had a schema, and inventing one for a 15-field diagnostic body
 is a larger job than the sentence it protects.**
 
-## 40. Revoke and pause answer before they take effect
+## 40. ~~Revoke and pause answer before they take effect~~ — closed by increment 10
 
-`commit_before_promise` (DECISIONS §24.5) covers the two routes that hand out a
-secret. The **mirror-image** window is still open: `DELETE /v1/admin/connections/{id}`
-and `PATCH .../{id}` commit in the same late teardown, so for one commit's width
-the key of a connection the console has just reported revoked can still
-authenticate. The exposure is different in kind — the client that receives the
-revocation is the one who asked for it, and the window is microseconds — but the
-sentence in `api/connections.py` ("Both in one transaction, so there is no window
-where the connection says revoked and the key still authenticates") is true of the
-*database* and not yet of the *response*.
+`PATCH`/`DELETE /v1/admin/connections/{id}` and `POST /v1/admin/keys/{id}/revoke`
+committed in the late dependency teardown, so for one commit's width a connection
+the console had just reported revoked could still authenticate, and a paused
+connection could still ingest. Recorded here because increment 9 judged it out of
+scope; the reviewer judged otherwise, correctly, and it is security-shaped.
 
-**Not fixed here: needs its own test with a real socket and a widened teardown, and
-the fix is the same three lines in two more handlers. Judgement was that
-increment 9 is a display-correction increment and this is the CI defect that
-blocked it, not a revoke-hardening increment.** The test to write is the mirror of
-`test_a_key_works_before_the_request_that_minted_it_has_committed`: revoke, then
-present the key immediately, expect 401.
+Now fixed, with the test this entry asked for: `tests/test_ordering.py` runs a real
+uvicorn server with the window held open (`widen_the_window`) and asserts the *very
+next* request — `403 connection_paused` for a paused connection, `401 unauthorized`
+for a revoked one. The sweep that closed it also found four more routes with the
+same window (`decide`, `replay`, `observe`, `learners`), all fixed; `DECISIONS.md`
+§24.6 has the table, including the one route that did not need changing and why.

@@ -443,10 +443,12 @@ receive a key and be refused with it.
 so any read *after* the commit re-selects the row in a transaction where `adapt.tenant_id` is no longer
 set — under row-level security that reads nothing. Build the object first; never read afterwards.
 
-**Status, stated because a contract with an open violation is still a contract:** fixed on the two
-routes that hand out secrets; **still open on `PATCH`/`DELETE`**, where the violation is
-security-shaped rather than availability-shaped. `engine/KNOWN_GAPS.md` §40 carries the exact test that
-must accompany the fix.
+**Status, stated because a contract with an open violation is still a contract:** fixed on **all five**
+routes named above — the two that hand out secrets and the three that state a state change — plus four
+more found by sweeping every mutating route (`decide`, `replay`, `observe`, `learners`). The sweep, and
+the one route that did not need changing, are in `engine/DECISIONS.md` §24.6; the tests are
+`engine/tests/test_ordering.py`, which runs a real uvicorn server because the test client cannot see
+this ordering at all.
 
 **And the testing rule that follows:** a client which collects the response body after the app callable
 returns can never observe this ordering — `TestClient` hid it across 768 green tests. **An

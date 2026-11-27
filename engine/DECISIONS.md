@@ -1558,3 +1558,62 @@ published port (TCP, a borrowed connection, a warmer pool) while the apt job's
 `127.0.0.1` and the local unix socket are faster, so the next request loses the
 race more often. A race that depends on milliseconds looks like an environment
 difference, and the environment was the only thing that visibly changed.
+
+### 24.6 Every route that states a fact about a write commits before it answers
+
+`commit_before_promise` was introduced for the two routes that hand out a secret
+(§24.5). The same window — one commit, between "response bytes on the wire" and
+"dependency teardown" — sits under **every** write route, because they all take
+`tenant_connection`. The question that decides whether it matters is not "does this
+write matter?" but **"is the caller entitled to act on the answer immediately?"**
+
+**The sweep.** Every mutating route in `api/`, what its response asserts, whether
+the response could arrive before the commit at `7863ca9`, and what a caller
+observing the gap would wrongly believe. The tests are in
+`tests/test_ordering.py`, each driving a real uvicorn server with the window held
+open to a third of a second.
+
+| Route | The response asserts | Gap? | What a caller would wrongly believe | Verdict |
+|---|---|---|---|---|
+| `POST /v1/decide` | this decision id exists; it was billed | yes | replay answers `404 decision_unknown` | **fixed** |
+| `POST /v1/decisions/{id}/replay` | the replay was logged | yes | the audit trail has no row for a replay the caller was told about | **fixed** |
+| `POST /v1/observe` | "the batch is durable when the response is written" | yes | the very next `decide` sees no evidence (`404 no mastery state`) | **fixed** |
+| `POST /v1/learners` | this learner exists | yes | `GET /v1/learners/{id}` answers `404 no such learner` | **fixed** |
+| `POST /v1/admin/connections` | this key works; this webhook secret signs | yes | `401 invalid or missing API key` for a key just issued | fixed in §24.5 |
+| `PATCH /v1/admin/connections/{id}` | paused / resumed | yes | a paused connection **ingests** the next batch: `202 accepted` | **fixed** |
+| `DELETE /v1/admin/connections/{id}` | revoked | yes | the revoked key still **authenticates**: `200 whoami` | **fixed** |
+| `POST /v1/admin/keys` | this key works | yes | `401` on the next request | fixed in §24.5 |
+| `POST /v1/admin/keys/{id}/expiry` | this key now expires at T | yes | `whoami` reports the *old* expiry — measured: `2027-02-25T12:01:26Z` where T was `2026-11-27T12:03:26Z` | **fixed** |
+| `POST /v1/admin/keys/{id}/revoke` | revoked, "immediately" | yes | the revoked key still authenticates: `200 whoami` | **fixed** |
+| `POST /v1/admin/credits/grants` | N credits were granted | **no** | nothing: `run_idempotent` runs its own `tenant_transaction` and commits *inside* the call, before the response is built | safe, unchanged |
+| webhook registration (part of connection create) | this URL receives deliveries | yes, same as create | a delivery for an event the receiver cannot fetch | fixed with create |
+| webhook **enqueue** | a delivery row exists | **no** | nothing today: no route enqueues yet, and `dispatch.enqueue` writes the row *inside* the request's transaction, so a worker polling after commit cannot see a delivery before its event | safe by construction; rule recorded below |
+
+**Why `credits` is the one that did not need changing, stated so it is not mistaken
+for an omission:** it does not depend on the request's connection at all. It calls
+`credits.run_idempotent(engine, tenant, ...)`, which opens and closes its own
+`tenant_transaction` *inside the handler*. The commit therefore happens before the
+response model is constructed, and the route already satisfies the rule that the
+other ten needed help with.
+
+**The rule for webhooks, before the worker exists.** A delivery must never be
+attempted before the event it announces is committed. That is guaranteed *by
+placing `enqueue` in the same transaction as the event*, not by ordering two
+calls: a worker that polls after commit cannot see a delivery row whose event is
+still uncommitted, because neither row exists yet. If a future revision dispatches
+inline instead of enqueuing, the dispatch must happen after
+`commit_before_promise`, never before.
+
+**What the window was.** One commit — a round trip to PostgreSQL, single-digit
+milliseconds on a warm pool, and 0.40 s when `widen_the_window` stretches it in a
+test. Long enough for a host to receive a key, or a console to report a revocation,
+and for the next request to disagree. It is a race, so it is not "rare" in any sense
+that helps: it is a coin that lands green almost every time, which is why it took a
+loaded runner, a published port and 768 `TestClient` tests to find it.
+
+**And the harness is permanent.** `tests/live.py` holds `live_server`,
+`call` and `widen_the_window`; `tests/test_ordering.py` is the ordering suite;
+`test_a_key_works_on_the_very_next_connection` is the smoke test that needs no
+widened window and would have caught §24.5 in increment 1. `TestClient` stays for
+everything else — it is faster and it is right for anything that is not about
+ordering — but no test of a promise may use it.
