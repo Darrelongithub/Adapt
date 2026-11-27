@@ -443,12 +443,23 @@ receive a key and be refused with it.
 so any read *after* the commit re-selects the row in a transaction where `adapt.tenant_id` is no longer
 set — under row-level security that reads nothing. Build the object first; never read afterwards.
 
-**Status, stated because a contract with an open violation is still a contract:** fixed on **all five**
-routes named above — the two that hand out secrets and the three that state a state change — plus four
-more found by sweeping every mutating route (`decide`, `replay`, `observe`, `learners`). The sweep, and
-the one route that did not need changing, are in `engine/DECISIONS.md` §24.6; the tests are
-`engine/tests/test_ordering.py`, which runs a real uvicorn server because the test client cannot see
-this ordering at all.
+**The scope of the rule, because a sweep proved it has one.** A handler that uses the *request-scoped*
+connection (`tenant_connection`, `ingest_connection`) must commit before it returns: it does not own the
+transaction, so the commit is otherwise left to a teardown that runs after the response is on the wire. A
+handler that **owns its own transaction is outside the rule** and must not be given the helper —
+`POST /v1/admin/credits/grants` calls `credits.run_idempotent`, which opens and closes a
+`tenant_transaction` inside the handler, so its commit already precedes its response. The rule is about
+**who owns the transaction**, not about which routes write. That is why it is not a ritual to sprinkle on
+every handler, and why the sweep in `engine/DECISIONS.md` §24.6 can name a route it deliberately did not
+change.
+
+**Status, stated because a contract with an open violation is still a contract:** **fixed on all five
+routes named above**, and on four more that the sweep of every mutating route found — `decide`, `replay`,
+`observe` and `learners` (each answered with a fact the next request could not yet see). The sweep, the
+one route it deliberately left unchanged (`credits/grants`, by the scope rule above), and what a caller
+would wrongly believe in each gap are in `engine/DECISIONS.md` §24.6. The tests are
+`engine/tests/test_ordering.py`, which runs a real uvicorn server with the commit window held open,
+because the test client cannot observe this ordering at all.
 
 **And the testing rule that follows:** a client which collects the response body after the app callable
 returns can never observe this ordering — `TestClient` hid it across 768 green tests. **An

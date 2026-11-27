@@ -7,7 +7,12 @@ Fails the build when:
 (b) an operation documents a non-2xx response that is not the error envelope,
     or documents no error response at all;
 (c) ``errors.py`` can emit a code that is absent from the authoritative table
-    in ``docs/v2/INTEGRATION.md`` §6.
+    in ``docs/v2/INTEGRATION.md`` §6;
+(d) a **normative section** of that document is missing by heading — §6B, §6C,
+    §6D or §7A. Rule (c) parses §6 and only §6, so the rest of the document could
+    be deleted while the guard stayed green: a section that vanishes is a contract
+    change, and nothing was watching. Anchors only, never content — a guard that
+    asserted wording would be a second copy of the document to maintain.
 
 The code list is read from the document, never copied here, so the two cannot
 drift. Exit codes: 0 clean, 1 violations, 2 the document could not be read.
@@ -43,6 +48,14 @@ AUTH_EXEMPT_PATHS = frozenset({"/v1/health", "/v1/version"})
 
 #: The schema every documented error response must reference.
 ENVELOPE_SCHEMA = "ErrorEnvelope"
+
+#: Sections of ``INTEGRATION.md`` whose *existence* the code depends on. Rule (c)
+#: reads §6's table and nothing else, so without this a whole normative section
+#: could disappear under a green contract check. Deliberately anchors only: the
+#: guard asserts a heading like ``## 7A.`` is present, never what it says.
+NORMATIVE_ANCHORS: tuple[str, ...] = ("6B", "6C", "6D", "7A")
+
+_HEADING = re.compile(r"^##\s+(?P<section>[0-9]+[A-Z]?)\.", re.MULTILINE)
 
 #: An OpenAPI document, and one operation inside it. Values stay loose: this
 #: is foreign JSON, not something the engine owns.
@@ -231,6 +244,26 @@ def check_openapi(openapi: OpenAPI) -> list[Finding]:
     return findings
 
 
+def check_anchors(text: str) -> list[Finding]:
+    """Rule (d): every normative anchor is present, by heading.
+
+    A section is identified by its heading (``## 6C.``), not by a mention of its
+    name in prose: the point is that the section is still there to be read. The
+    failure names the anchor that is missing, because "the contract guard failed"
+    on a documentation change is not an actionable sentence.
+    """
+    present = set(_HEADING.findall(text))
+    return [
+        Finding(
+            "d:anchor-present",
+            f"INTEGRATION.md has no '## {section}.' heading — a normative section is gone "
+            f"(present: {', '.join(sorted(present)) or 'none'})",
+        )
+        for section in NORMATIVE_ANCHORS
+        if section not in present
+    ]
+
+
 def check_emitted_codes(emitted: frozenset[str], doc_codes: frozenset[str]) -> list[Finding]:
     """Rule (c): every code the engine can emit must come from the table.
 
@@ -326,6 +359,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(text)
         print(f"openapi-check: doc read from {source}", file=sys.stderr)
         return 0
+
+    # Rule (d) first: if a normative section is gone, say which one before parsing
+    # the table it may have taken with it.
+    anchors = check_anchors(text)
+    if anchors:
+        for finding in anchors:
+            print(f"  FAIL {finding}")
+        print(f"openapi-check: {len(anchors)} violation(s)")
+        return 1
 
     try:
         codes = documented_codes(text)
