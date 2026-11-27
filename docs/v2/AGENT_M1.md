@@ -191,6 +191,23 @@ GET /v1/admin/metrics/abstention?from=&to=&connection=&construct=&grain=request|
 calls, 2 paused-connection calls, 1 refusal, 1 5xx) reproduces the expected rate exactly, and the test
 asserts the denominator equals 20 — the fixture *is* the specification, so it goes in the repo.
 
+### Increment 8 — the console gets its house style
+
+`CONSOLE_STYLE.md` is normative: the `:root` token block, the 60/30/10 budget, the type scale and the
+component grammar. Five things a restyle gets wrong that the doc now forbids by test:
+
+* **Terracotta is a fill and a mark, not an ink.** `#C4643F` is 3.78:1 on a card — legal at 19px+,
+  illegal at 13px. Small text on a terracotta button uses `--accent-fill` (5.71:1), and raw mustard
+  (2.19:1) and raw sage (2.61:1) never carry text at all.
+* **Hexes live in `:root` and nowhere else**, enforced by a grep test over `console/`.
+* **Contrast is computed by a test**, pair by pair, so changing a hex without changing the doc is red.
+* **The screenshot scripts parse `:root`** — they must not hold their own copy of the palette.
+* **At most three accent elements per screen**, counted from the render.
+
+Keep the information architecture exactly as it is. This is a token swap plus type and spacing, not a
+redesign: the empty-window state, the pair, the exclusions and the traceability gate all survive
+untouched, and the regenerated screenshots must show `no data` in mustard ink at 700 italic.
+
 ### Replay accounting: log it, do not mutate the decision
 
 `replay_count` on the `decisions` row makes a served decision a mutable record, which is precisely the

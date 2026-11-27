@@ -87,6 +87,11 @@ one accent hue, centered numeric columns, drop shadows on cards, animated counte
 "hero" panels that hold one number, and mock data in screenshots that a buyer can spot (no
 "SaaS Inc.", no "John Doe", no 100% uptime).
 
+The **palette, type scale and component grammar are normative in `CONSOLE_STYLE.md`** — beige ground,
+deep-blue structure, terracotta confined to the thing you want clicked, with every permitted colour
+pair carrying a measured contrast ratio. Where this file describes *what* the console shows,
+`CONSOLE_STYLE.md` decides *how it looks*, and a stylesheet that disagrees with it is a bug.
+
 ---
 
 ## 2. Console information architecture
