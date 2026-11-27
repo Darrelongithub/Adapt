@@ -35,7 +35,7 @@ from typing import Final
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.errors import AdaptError
@@ -61,6 +61,10 @@ MAX_EXPIRY_DAYS: Final = 365
 LAST_USED_DEBOUNCE_SECONDS: Final = 60
 
 #: SQLSTATEs the functions raise, mapped to reasons the caller can act on.
+_SQLSTATE_UNIQUE_VIOLATION = "23505"
+
+#: Prefix collisions are a birthday problem, not a bug; retry rather than 500.
+KEY_ATTEMPTS = 8
 _SQLSTATE_INSUFFICIENT_PRIVILEGE: Final = "42501"
 _SQLSTATE_INVALID_PARAMETER: Final = "22023"
 
@@ -173,6 +177,13 @@ def expiry_from_days(days: int | None) -> datetime:
     return datetime.now(UTC) + timedelta(days=horizon)
 
 
+def _is_prefix_collision(exc: IntegrityError) -> bool:
+    """A duplicate on ``api_keys_prefix_key`` and nothing else."""
+    if getattr(exc.orig, "sqlstate", None) != _SQLSTATE_UNIQUE_VIOLATION:
+        return False
+    return "api_keys_prefix_key" in str(exc.orig)
+
+
 def _reason_from_error(exc: DBAPIError) -> str | None:
     """The function's RAISE message, or None if this is a different error."""
     orig = exc.orig
@@ -202,27 +213,43 @@ def insert_api_key(
     """
     validated = validate_scopes(scopes)
     expires_at = expiry_from_days(expires_in_days)
-    full_key, prefix = generate_key(env)
-    try:
-        key_id = conn.execute(
-            text(
-                "SELECT adapt_issue_api_key("
-                ":tenant_id, :prefix, :hash, :scopes, :expires_at, :issuer_key_id)"
-            ),
-            {
-                "tenant_id": tenant_id,
-                "prefix": prefix,
-                "hash": hash_key(pepper, full_key),
-                "scopes": list(validated),
-                "expires_at": expires_at,
-                "issuer_key_id": issuer_key_id,
-            },
-        ).scalar_one()
-    except DBAPIError as exc:
-        reason = _reason_from_error(exc)
-        if reason is None:
+    for attempt in range(1, KEY_ATTEMPTS + 1):
+        full_key, prefix = generate_key(env)
+        try:
+            # A savepoint, because a duplicate prefix aborts the *statement*, and
+            # in PostgreSQL a failed statement takes the whole transaction with
+            # it — the caller's connection-create would fail on the audit write
+            # that follows.
+            with conn.begin_nested():
+                key_id = conn.execute(
+                    text(
+                        "SELECT adapt_issue_api_key("
+                        ":tenant_id, :prefix, :hash, :scopes, :expires_at, :issuer_key_id)"
+                    ),
+                    {
+                        "tenant_id": tenant_id,
+                        "prefix": prefix,
+                        "hash": hash_key(pepper, full_key),
+                        "scopes": list(validated),
+                        "expires_at": expires_at,
+                        "issuer_key_id": issuer_key_id,
+                    },
+                ).scalar_one()
+            break
+        except IntegrityError as exc:
+            # 12 characters of key is 4 of secret: ~1M prefixes, and a tenant
+            # with a few dozen keys is already a real birthday problem. Retry
+            # rather than answering a 500 for something the caller cannot fix.
+            if _is_prefix_collision(exc) and attempt < KEY_ATTEMPTS:
+                continue
             raise
-        raise KeyIssueRefused(reason) from exc
+        except DBAPIError as exc:
+            reason = _reason_from_error(exc)
+            if reason is None:
+                raise
+            raise KeyIssueRefused(reason) from exc
+    else:  # pragma: no cover - unreachable while KEY_ATTEMPTS > 0
+        raise KeyIssueRefused("prefix_exhausted")
 
     _write_audit(
         conn,

@@ -1,0 +1,76 @@
+{
+  "name": "08_abstain_data_quality",
+  "why": "G1 for decide: the body for these exact inputs, at this exact clock reading, through the same pure function the endpoint uses. A change here is a change in the advice a customer receives, and needs a version bump in DECISIONS.",
+  "input": {
+    "flagged_share": 0.6
+  },
+  "clock": "2026-11-18T09:00:00+00:00",
+  "decision_id": "00000000-0000-4000-8000-000000000001",
+  "expected": {
+    "decision_id": "00000000-0000-4000-8000-000000000001",
+    "learner_id": "learn-decide-0001",
+    "skill": "skill.fractions",
+    "level": {
+      "requested": "L1",
+      "tier": "core",
+      "entitlement_level": "L1",
+      "capability": "L1",
+      "validated": "L1",
+      "served": "L1",
+      "limited_by": null,
+      "since": "2026-11-18",
+      "validation_ref": "gates/g1_g3@1",
+      "profile": "adult_general"
+    },
+    "issued_at": "2026-11-18T09:00:00+00:00",
+    "expires_at": "2026-11-18T09:15:00+00:00",
+    "action": "abstain",
+    "abstain": true,
+    "reason": "data_quality",
+    "reason_codes": [
+      "data_quality"
+    ],
+    "needs": {
+      "clean_trials": 8
+    },
+    "contributing": [],
+    "estimates": [
+      {
+        "learner_id": "learn-decide-0001",
+        "skill": "skill.fractions",
+        "value": 0.5415,
+        "interval": {
+          "low": 0.3539,
+          "high": 0.7232,
+          "mass": 0.95
+        },
+        "estimator": "shrunk_rate",
+        "prior": {
+          "source": "cohort_prior",
+          "strength": 12,
+          "version": 1
+        },
+        "n": 20,
+        "entitlement_level": "L1",
+        "capability_level": "L1",
+        "validation_level": "L1",
+        "served": "L1",
+        "limited_by": null
+      }
+    ],
+    "flag_evidence": {
+      "uninformative_share": 0.6,
+      "counted": [
+        "rapid_guess",
+        "straight_line",
+        "tab_hidden"
+      ],
+      "ignored": [
+        "device_change",
+        "undeterminable",
+        "assisted",
+        "repeated_item"
+      ]
+    }
+  }
+}

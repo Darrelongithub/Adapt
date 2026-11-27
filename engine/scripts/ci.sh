@@ -109,20 +109,20 @@ step "format (ruff format --check)"
 step "types (mypy --strict)"
 MYPYPATH=src "$PYTHON" -m mypy src/adapt_engine scripts 2>&1 | tee "$STEP_LOG" || failed
 
-step "contract doc (resolve as written)"
-# The guard compares against INTEGRATION.md as written, never a patched copy
-# (AGENT_M0 §6). Materialising it here lets us assert the fetched document is
-# the current one: if the ref is stale, `minor_not_supported` is missing and the
-# guard would fail *anyway*, but this step says why in one line.
+step "contract doc (in-tree, as written)"
+# The contract is a file in this tree at docs/v2/INTEGRATION.md, and the guard
+# reads it as written — no patches, no branch, no `git show` (AGENT_M0 §6,
+# AGENT_M1 pre-work). This step proves the resolution stayed in-tree: a run that
+# had to reach for --doc or ADAPT_INTEGRATION_DOC would print something else.
 DOC="$(mktemp)"
 "$PYTHON" scripts/check_openapi.py --print-doc >"$DOC" 2>"$STEP_LOG" || failed
 cat "$STEP_LOG"
-if ! grep -q "minor_not_supported" "$DOC"; then
-    echo "the fetched INTEGRATION.md does not document minor_not_supported"
-    echo "(stale docs ref, or the doc's owner has not applied the change)"
+if ! grep -q "docs/v2/INTEGRATION.md" "$STEP_LOG"; then
+    echo "the contract did not resolve to the in-tree docs/v2/INTEGRATION.md:"
+    cat "$STEP_LOG"
     failed
 fi
-echo "doc resolved to: $DOC ($(wc -l <"$DOC") lines)"
+echo "doc resolved to: $(sed -n 's/^openapi-check: doc read from //p' "$STEP_LOG") ($(wc -l <"$DOC") lines)"
 
 step "contract guard (OpenAPI vs INTEGRATION.md)"
 "$PYTHON" scripts/check_openapi.py --doc "$DOC" 2>&1 | tee "$STEP_LOG" || failed

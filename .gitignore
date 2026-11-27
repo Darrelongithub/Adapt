@@ -28,3 +28,6 @@ htmlcov/
 test-results/
 playwright-report/
 results.json
+
+# The sandbox CLI writes a tenant key here (mode 600), in the cwd.
+.adapt-sandbox.json

@@ -30,9 +30,9 @@ from sqlalchemy.engine import Connection, Engine
 from adapt_engine.api.deps import get_engine
 from adapt_engine.auth.deps import (
     AuthContext,
+    ingest_connection,
     require_scope,
     security_requirement,
-    tenant_connection,
 )
 from adapt_engine.credits import service as credits
 from adapt_engine.errors import ERROR_RESPONSES, AdaptError
@@ -101,7 +101,7 @@ def _require_key(key: str) -> str:
 )
 def get_balance(
     auth: Annotated[AuthContext, Depends(require_scope("observe"))],
-    conn: Annotated[Connection, Depends(tenant_connection)],
+    conn: Annotated[Connection, Depends(ingest_connection)],
 ) -> BalanceOut:
     """The balance is a query over grants, never a mutable column."""
     current = credits.balance(conn, auth.tenant_id)

@@ -71,6 +71,15 @@ class Settings(BaseModel):
     commit: str = Field(default="unknown", description="ADAPT_COMMIT")
     build_time: str = Field(default="unknown", description="ADAPT_BUILD_TIME")
     version: str = Field(default="0.1.0", description="ADAPT_VERSION")
+    #: Outbound webhook delivery. Off by default: AGENT_M1 §0 forbids network
+    #: egress and §1 requires webhooks, so the switch is how both are true at
+    #: once — deliveries are recorded either way, attempted only when enabled.
+    webhook_delivery: str = Field(default="disabled", description="ADAPT_WEBHOOK_DELIVERY")
+    #: METERING §6 documents 50 rps per key with a burst of 100. Configurable so
+    #: a deployment can tune it without a code change, and so a test can prove
+    #: the refusal without sending 101 requests.
+    observe_rps: float = Field(default=50.0, description="ADAPT_OBSERVE_RPS")
+    observe_burst: float = Field(default=100.0, description="ADAPT_OBSERVE_BURST")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -153,6 +162,28 @@ class Settings(BaseModel):
 
         redis_url = (source.get("ADAPT_REDIS_URL") or "redis://localhost:6379/0").strip()
 
+        def _number(name: str, default: float) -> float:
+            raw = (source.get(name) or "").strip()
+            if not raw:
+                return default
+            try:
+                value = float(raw)
+            except ValueError as exc:
+                raise ConfigError(name, "must be a number") from exc
+            if value <= 0:
+                raise ConfigError(name, "must be positive")
+            return value
+
+        observe_rps = _number("ADAPT_OBSERVE_RPS", 50.0)
+        observe_burst = _number("ADAPT_OBSERVE_BURST", 100.0)
+
+        webhook_delivery = (source.get("ADAPT_WEBHOOK_DELIVERY") or "disabled").strip().lower()
+        if webhook_delivery not in ("disabled", "enabled"):
+            raise ConfigError(
+                "ADAPT_WEBHOOK_DELIVERY",
+                "must be 'disabled' or 'enabled'",
+            )
+
         # Build identity is required in production: a health check that cannot
         # say which build is running is not an incident tool.
         if env_value == "production":
@@ -172,6 +203,9 @@ class Settings(BaseModel):
             master_key_previous_id=master_key_previous_id,
             key_pepper=SecretStr(key_pepper),
             redis_url=redis_url,
+            webhook_delivery=webhook_delivery,
+            observe_rps=observe_rps,
+            observe_burst=observe_burst,
             commit=commit,
             build_time=build_time,
             version=version,

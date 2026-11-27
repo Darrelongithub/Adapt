@@ -508,3 +508,871 @@ app was given: the column is ciphertext (§12) and a CHECK cannot read it. The
 pure part (`age_on`) has boundary tests — a birthday that falls today is a
 birthday, not a year — and the route test asserts that nothing was written when
 the gate refuses.
+
+## 15. The contract is a file in this tree, and the guard fails closed without it
+
+**Decision.** `check_openapi.py` resolves `docs/v2/INTEGRATION.md` in the
+working tree and nowhere else. `--doc PATH` and `ADAPT_INTEGRATION_DOC` are
+explicit escape hatches for a document under review; if neither is given and the
+in-tree file is absent or empty, the guard exits 2 naming the path. There is no
+`FALLBACK_DOC_REFS`, no `ADAPT_DOCS_REF`, no `git show`, and no branch name in
+`check_openapi.py`, `scripts/ci.sh` or `.github/workflows/engine-ci.yml`.
+
+**Why.** M1's premise is that the contract and the engine are in one tree. A
+guard that can read the document from a branch silently decouples them: the tree
+compiles against a document nobody checked out, so a reviewer diffing the branch
+sees nothing, and branch cleanup turns a green build into a red one for a reason
+that has nothing to do with the code. Failure mode, measured rather than
+imagined: on a worktree at `b008b45` — M0's tree, which has no `docs/v2/` — the
+old guard printed `table read from
+origin/arena/cb97052d-adapt:docs/v2/INTEGRATION.md (17 codes)` / `no violations`
+and exited **0**. It was checking the engine against a document that was not in
+the tree it was building.
+
+**What "fail closed" means here.** The tempting middle ground is to fall back to
+the last ref that has the file and warn. That is the same bug with a log line:
+the build still succeeds on a document outside the tree. Exit 2, name the path,
+name the escape hatch, and let a human decide — that is the only version of this
+that stays honest when the file goes missing for a real reason.
+
+**Not patched, not fetched, not generated.** The guard reads the file's bytes and
+parses the §6 table out of them (DECISIONS §14). `test_the_contract_is_resolved_
+in_tree_and_read_verbatim` asserts byte equality with the file, and
+`test_the_guard_knows_no_branch` fails if any of the strings above reappear.
+
+## 16. Webhooks: one egress switch, five attempts, one message id, no payload at rest
+
+**Decision.** Deliveries are recorded in the database and attempted by a
+dispatcher, not sent from the request path. Five attempts with 1s / 4s / 16s /
+64s between them, then `failed`. Every attempt carries the same `webhook-id`.
+A duplicate enqueue returns the existing row and sends nothing. The delivery log
+stores the event type, an opaque subject id, the attempt count and the last
+status code — there is no column for a body.
+
+**The egress contradiction, stated plainly.** `AGENT_M1.md` §0 carries "no
+network egress outside `/v1`" from M0; §1 requires webhooks with five retries.
+Both cannot be literally true. The resolution is one switch and one choke point:
+`ADAPT_WEBHOOK_DELIVERY` defaults to `disabled`, in which case rows are still
+written (so the log, the dedupe and the retry schedule are all testable and
+observable) and nothing leaves the process. `enabled` constructs exactly one
+`UrllibTransport`, an https-only POST with a 5s timeout that refuses redirects.
+This is *not* a fourth exception to an invariant (the rule review asked about):
+no invariant says "the engine never speaks to a customer endpoint" — the
+invariant is that nothing calls a model provider or an unrelated host from the
+request path, and this calls a URL the customer configured, from a worker, when
+a human turns it on. I have flagged the wording conflict rather than quietly
+picking a side.
+
+**Why an outbox.** A webhook is a notification that something happened, and the
+something is already committed. Sending inline makes the customer's uptime our
+latency and turns a receiver outage into lost events. The row is the record; the
+attempt is a consequence.
+
+**Why five attempts and not "until it works".** An unbounded retry is a queue
+with no bound and a delivery log nobody can read. Five attempts over 85 seconds
+covers a deploy and a restart; a receiver down for longer than that has a
+different problem, and the row says `failed` so a human can look.
+
+**Why the same message id on every attempt.** Standard Webhooks puts it in a
+header so the receiver can recognise a retry. A fresh id per attempt turns one
+event into five at the far end, which is the same bug as double delivery with
+more steps.
+
+**Two layers of duplicate suppression, and both are tested.** The derived
+message id (tenant, connection, type, dedupe key) plus the application check
+returns the existing row; `UNIQUE (tenant_id, webhook_id)` is the last line. The
+red-then-green shows what each is worth: with the app check removed the second
+enqueue raises `UniqueViolation`; with the constraint dropped as well, one event
+becomes `rows=2 same_id=True deliveries=2` — the same message delivered twice.
+
+**Why no payload at rest.** A webhook is a doorbell. Storing the body would make
+the delivery log a second copy of learner data with its own retention question,
+its own access policy and its own breach surface. The schema has no column for
+it, so this is a property rather than a habit.
+
+## 17. `connection_paused` is raised, never inferred
+
+**Decision.** A paused connection answers **403 `connection_paused`** on the
+host-facing data routes and keeps answering `200` on `/v1/whoami`. A bare 403 is
+`not_entitled` and nothing else; `connection_paused` is only reachable by raising
+it explicitly.
+
+**Why it is not `unauthorized`.** The key is fine — the customer paused the
+connection themselves. Answering `401` sends an integrator to rotate a key that
+works. Why it is not `not_entitled`: nothing needs to be bought. Why identity
+still answers: telling a caller who it is, is not ingest.
+
+**Where the check lives.** `auth.deps.ingest_connection`, used by the
+host-facing data routes. Admin routes deliberately use the plain
+`tenant_connection`, because the console has to be able to resume a connection
+that is paused — a key blocked from fixing its own mistake is a support ticket.
+A key with no connection row (the onboarding key) is never paused: it is not a
+host app.
+
+**Revoking is different.** `DELETE` sets `revoked` and revokes the key in the
+same transaction, so the next request is a plain `401`. There is no
+`connection_revoked` code, because there is no window in which it would be true.
+
+## 18. Observe ingest: what a batch costs, and what a refusal means
+
+Increment 2 adds `POST /v1/observe` and three tables behind it. The shape of the
+handler follows from four rules the review named, and one consequence nobody
+asked for but the load test produced.
+
+### 18.1 A batch is one transaction, and the batch row goes in first
+
+An accepted batch is all-or-nothing. Partial acceptance is silent data loss: a
+host that receives `202` and a count of 500 believes 500 events are stored, and
+a later report that 497 arrived is a bug report nobody can reproduce.
+
+The order inside the transaction is: **idempotency lookup → validation →
+event dedupe → quota → batch row → events**. The batch row precedes its events
+because `learning_events.batch_id` is a foreign key — an event whose batch does
+not exist could never be replayed from the idempotency record, and the FK is
+the cheapest way to make that impossible. The response body is already known
+before the events are inserted (counts, flags and quota are all computed from
+the request), so the row is written once with the final response rather than
+inserted empty and patched.
+
+### 18.2 The original response is stored, not re-derived
+
+"A duplicate batch returns the original response and writes nothing" only holds
+if the original response still exists. `observe_batches.response` is a `jsonb`
+column holding exactly the bytes returned, and a replay returns them verbatim —
+same status `202`, same `batch_id`, same counts. Re-deriving would drift: quota
+remaining changes as other batches land, and a replay a minute later would
+report a different `remaining` for the same batch.
+
+`request_hash` (SHA-256 of the raw body, before parsing) distinguishes a retry
+from a client bug. Same key, different body → `409 conflict` with
+`X-Adapt-Idempotency-Conflict: body`. Silently treating it as a retry would
+accept the second body's events under the first body's identity.
+
+### 18.3 Quota is counted at ingest, in the same statement that checks it
+
+`event_quota_monthly` is enforced by one statement:
+
+```sql
+INSERT INTO connection_event_usage (tenant_id, connection_id, period, events)
+SELECT …, :count FROM cap WHERE cap.quota >= :count
+ON CONFLICT (connection_id, period) DO UPDATE SET events = u.events + :count
+WHERE u.events + :count <= (SELECT quota FROM cap)
+```
+
+`SELECT` then `UPDATE` is a race, and the race lets a tenant exceed its quota by
+exactly the number of concurrent batches. Conditional upsert has no such window.
+
+Over quota is `402 quota_exhausted`, free, with the reset time in three places:
+the message, an `X-Adapt-Resets-At` header, and — on success — `usage.resets_at`
+so a host can warn before it hits the wall. The month is the **UTC calendar
+month**, which is what `resets_at` says; nothing rolls the counter over, because
+a new month is a new `period` and the old row is history.
+
+**The loop does not break.** A 402 spends no credits, writes no rows, and does
+not touch the connection's stored history: the same key still reads learners,
+decisions and reports. That is the whole point of the review's fifth acceptance
+point — a host that cannot buy more events must still be able to serve what it
+has. `usage.resets_at` on every successful batch is what lets it back off
+deliberately instead of discovering the wall by hitting it.
+
+### 18.4 A paused connection: refused, not dropped, not stored
+
+The review asked for a choice and a reason, so: **an event sent to a paused
+connection is refused and stored nowhere.**
+
+Refusal is the only option that is honest to both parties. "Dropped" means the
+host loses data it believes it sent — the worst outcome, and invisible to the
+sender. "Stored anyway" means the pause did not do what the console said it
+does: a customer who pauses a connection to stop a runaway client would find the
+rows still arriving. `403 connection_paused` is a *refusal*, and a refusal is
+actionable: the host keeps the batch, resumes, and replays with the same
+`Idempotency-Key`.
+
+Which is why the refusal happens **before** the idempotency row is written and
+before any quota is counted. A test drives exactly that: pause → 403 with zero
+rows in all three tables → resume → the same key and body → `202`. If the
+idempotency record had been written at pause time, the retry would have returned
+a stored "success" for events that were never stored.
+
+### 18.5 Unknown keys are rejected, and the error names them
+
+`... event 1: keys: unknown field(s): learner_email`. Rejecting the batch rather
+than the event is deliberate: a host that ships one bad field in a batch of 500
+should learn immediately, not receive a `202` for 499 and a mystery.
+
+The same rule applies to the envelope (`events`, optional `connection`), and to
+each value's *shape* — `learner_id` goes through the same validator the learner
+route uses, so an email address in the id field is refused at ingest rather than
+stored and quarantined later.
+
+### 18.6 `connection` in the body is optional, and must match the key
+
+The key already identifies the connection, so the field is redundant — but
+AGENT_M1 §2 shows it, and a host doing its own wiring will send it. It is
+accepted, and if present must equal the connection the key belongs to; a
+mismatch is `422 payload_invalid`. Accepting a foreign id would let one
+connection's events be charged to another's quota.
+
+### 18.7 Event duplicates are checked in code, because the schema cannot
+
+Events carrying `(session_id, seq)` are identity-keyed, and a duplicate inside a
+batch or already stored is counted (`duplicates`) and not inserted, and not
+charged.
+
+The check is a query, not a constraint, and the reason is structural: a
+partitioned table's unique index must include the partition key, so
+`UNIQUE (tenant_id, learner_id, session_id, seq)` is impossible across months.
+`learning_events_dedupe_idx` makes the check an index probe; a test asserts the
+behaviour. This is the one invariant in M1 enforced in code and not by the
+schema — it is in KNOWN_GAPS, not in a comment nobody reads.
+
+### 18.8 Validity flags are computed once, at ingest
+
+Flags are stored on the row, never derived at read time from data that may be
+gone. Two rules from MEASUREMENT §4 are visible in the implementation: nothing
+is imputed (a flag is absented, not guessed) and nothing is dropped (a flagged
+event is stored in full).
+
+`tab_hidden` cannot be set, because the event allowlist has no visibility
+channel. The flag exists in the column's CHECK and in the vocabulary, and it is
+documented as unreachable rather than quietly removed (KNOWN_GAPS §2b).
+
+The lookback is bounded — sixteen events per learner, joined laterally — not
+because the flags need more, but because the unbudgeted version was the load
+test's first finding: a window function partitioned by learner scanned every
+event the learner had, so a 500-event batch cost a full sort once the table was
+large.
+
+### 18.9 The route is `async` only to read the body
+
+`POST /v1/observe` is the only `async def` route in the engine, and it exists
+because the raw bytes are needed for hashing. The work happens in
+`run_in_threadpool`.
+
+That is not a style choice. The first load test deadlocked at request four: a
+blocking database call inside `async def` runs on the event loop, so a request
+holding a row lock could not yield to the request waiting for that lock. Every
+other route in this app is plain `def` and never had the problem.
+
+### 18.10 A failed batch can be retried with the same key
+
+Because nothing is written until validation passes, and everything after it is
+in one transaction, a `413`, `422`, `402` or `409` leaves the key unused. A host
+that splits an oversized batch and retries with the original key is fine; a host
+that fixes a rejected field and retries is fine too.
+
+### 18.11 Two documented corrections this increment adopted
+
+* **`connection_unknown` (404)** now exists in INTEGRATION §6, so the connections
+  API raises it instead of `route_unknown`. The route exists; the connection does
+  not; the integrator can now tell that from a typo in the path.
+* **§8's five event types** (`decision.created`, `consent.changed`,
+  `quota.warning`, `learner.erased`, `instrument.not_renderable`) are accepted by
+  `webhook_deliveries` from `0011` onward, and the retry schedule carries jitter
+  (derived from `(delivery_id, attempt)`, not `random()`, so a schedule is
+  reproducible while two deliveries still fan out).
+
+## 19. L1 mastery: two numbers per learner, and the one the customer sees
+
+### 19.1 The filter is stored, the filter is not served
+
+`learner_mastery` keeps `(trials, correct, model_p)` and the served number is
+computed from the first two. `model_p` is the BKT belief, advanced one
+observation at a time; it is what increment 4 reads to choose the next item.
+It is *not* what a customer is shown, because it saturates: with the documented
+parameters (G=0.2, S=0.1) one correct answer is 4.5:1 evidence of mastery, so a
+learner answering 55% correctly converges to p≈0.99 within forty trials
+(`test_the_filter_saturates_which_is_why_it_is_not_the_served_value`). Serving it
+measured RMSE 0.355 with 13.5% interval coverage — a confident number that is
+wrong, which is worse than no number.
+
+The served value is the posterior mean of a Beta over the learner's *observed*
+success rate, shrunk toward the cohort prior by `w(n) = K²/(K+n)` with K=12, with
+a 95% central interval from the same Beta. Point and interval come from one
+distribution, so a value outside its own interval is impossible by construction
+(`test_an_estimate_always_lies_inside_its_own_interval`).
+
+### 19.2 No guess correction, and a cap instead
+
+The obvious correction — `m = (rate − G)/(1 − G − S)` — was implemented first and
+removed. Measured over 600 synthetic learners at 40 observations, mastery
+0.1–0.9:
+
+| estimator | clean generator RMSE / coverage | noisy generator RMSE / coverage |
+|---|---|---|
+| guess-corrected + shrunk | 0.1130 / 0.582 | 0.0952 / 0.743 |
+| **observed rate + shrink + cap** | **0.0683 / 0.948** | 0.1102 / 0.753 |
+| shrunk over filter `p` | 0.3087 / 0.183 | — |
+| raw filter `p` | 0.3552 / 0.135 | — |
+
+The correction *widens* error on honest learners, because dividing by
+`1 − G − S` scales the sampling noise by 1.43 while the bias it removes is
+`(1−m)G` — and a host's real items are not the lab items G was measured on. So
+the served value is the observed rate, and the safety property lives in the cap
+instead: if the posterior median does not clear `G + 0.10`, the value is held at
+`G + 0.05`. "Your evidence is consistent with guessing" is not a reason to report
+a number that says you have mastered it.
+
+### 19.3 The gate has a generator, and the doc does not name it
+
+With `p(correct) = mastery` ("clean"), the estimator passes the acceptance gate:
+**RMSE 0.0683 ≤ 0.08, coverage 0.948 ≥ 0.90**. With the model's own response
+function `p(correct) = m(1−S) + (1−m)G` ("noisy"), **no estimator** passes:
+forty Bernoullis on a 70% signal have a standard error of 0.11, so 0.08 is below
+the Cramér–Rao floor — the gate is unattainable there by any estimator, not by
+this one. The clean number is the one the gate asks for; the noisy number
+(0.1102 / 0.753) is asserted in the suite as well
+(`test_the_noisy_generator_is_reported_not_hidden`) so it cannot be dropped from
+a report. **Owed to the owner:** the vocabulary the acceptance criteria use does
+not say which generator they mean; this is the ambiguity, resolved as "clean for
+the gate, both for the report".
+
+### 19.4 The guesser: G2, reported separately, with its edge measured
+
+The honest number is not the RMSE. It is this: 200 seeded learners answering
+correctly with probability 0.2 regardless of mastery, 60 trials each, served at
+every horizon at or above the floor — **highest served value 0.537, breaches at or
+above 0.70: zero**. It is a release blocker, it is independent of the calibration
+numbers above, and it is the first thing to read in the increment report.
+
+Three sabotages, each run against the real module, each restored:
+
+| sabotage | what it removes | result |
+|---|---|---|
+| `EVIDENCE_FLOOR = 1` | the abstention floor | 2 red (`needs.trials`, the HTTP abstention) |
+| `PRIOR_STRENGTH = 0` | shrinkage | red: 1 serve at 0.700; the luckiest-start construct reaches 0.923 |
+| cap block deleted from `estimate()` | the guessing cap | red: the capped learner is served 0.307 instead of 0.250 |
+
+**The guarantee's edge, stated rather than implied.** Shrinkage is what keeps a
+guesser at 0.537, not the cap: the cap only trims a long-run guesser by about a
+point. And the guarantee is statistical past ~ten straight correct answers. A
+guesser whose first eight answers are right (2.6e-6) and who then happens to get
+three of its next four right (≈8e-8 per learner) is served **0.743**. No
+estimator that must also report a real master as a master can avoid that — eight
+straight is the same evidence either way. What is bounded is the ordinary case,
+and the crossover is pinned: the estimator reaches 0.7 at **eleven** straight
+correct answers and 0.8 at sixteen
+(`test_the_streak_length_the_estimator_believes`,
+`test_where_the_guesser_guarantee_stops`).
+
+The random property test is a weak detector on its own — a p=0.2 learner rarely
+gets six of its first eight right, so removing shrinkage breaches it once in 200
+learners. That is why the two adversarial constructs exist alongside it.
+
+### 19.5 Abstention is a count, not a soft number
+
+Below eight observations (`bkt.EVIDENCE_FLOOR`) the endpoint returns
+`{"reason": "insufficient_evidence", "needs": {"trials": 8 − n}, "trials": n}` and
+no `value` key at all. A consumer that receives a number will render the number;
+"0.31 ± 0.4" reads as 31% on every dashboard, and the abstention is the only shape
+that cannot be misread. The count is what makes it actionable.
+
+### 19.6 Determinism, and golden files from this increment
+
+Same history + same clock ⇒ identical bytes
+(`test_the_same_history_serves_the_same_bytes`). Everything the estimator reads is
+stored (`trials`, `correct`, the prior row); the fold sorts trials by
+`(ts, seq, item_id)` so arrival order cannot change `model_p`; nothing in the path
+consults the clock except `updated_at`. `tests/golden/mastery/*.json` pin three
+sequences to four decimals — an ordinary 12-trial history, the luckiest 8-trial
+start, and a guesser at the floor. **Regenerating a golden to make a red run green
+is the failure these files exist to prevent**: a changed number is a changed
+served value and needs a version bump plus a paragraph here.
+
+### 19.7 Priors are tenant-scoped, versioned, and written by a job that can refuse
+
+`skill_priors` is keyed `(tenant_id, skill, version)`. A refit on one tenant's
+cohort must not change another tenant's numbers, and keeping `tenant_id` means
+this increment adds no fourth exception to the RLS invariant. Version 1 of a skill
+is the documented default, inserted on first use (a migration cannot write a row
+for a skill nobody has observed); a refit writes version *n+1*, never an `UPDATE`.
+`learner_mastery.prior_version` records what a learner's state was folded under,
+so a served number can be explained by a row that still exists.
+
+The refit (`mastery/refit.py`, run nightly by `scripts/refit_cohorts.py`) refuses
+a cohort below 20 learners or 200 new observations and leaves the previous version
+serving. A nightly job that always writes a version is a job that turns noise into
+priors. The fit is a fixed 300-point grid with ties broken by grid order, so the
+same cohort produces the same version.
+
+**There is no HTTP refit endpoint.** AGENT_M1 §1.3 calls the refit nightly, not
+callable, and an endpoint that runs 300 likelihood evaluations per request is a
+denial-of-service with a username. It is an operator script, like the partition
+job. That also means the "deep adds cross-cohort mastery modelling" tier promise in
+ADR-002 §tiers is **not** a tier gate at M1 — see KNOWN_GAPS.
+
+### 19.8 The fold runs inside the ingest transaction, and a 500 found the clamp
+
+Mastery is folded from the *fresh* events of a batch, in the batch's transaction,
+after the events are inserted. A duplicate is not evidence (a replay returns
+before the insert; a deduped event never reaches the fold), and a rolled-back
+batch cannot leave a counter ahead of its evidence.
+
+The first version stored `model_p` unclamped, and a batch of 500 consecutive
+correct answers turned it into exactly `1.0` — which the table refuses
+(`CHECK (model_p > 0 AND model_p < 1)`), so a legitimate batch was a 500. The
+filter belief is now clamped to `[1e-6, 1−1e-6]`: not a modelling choice, but the
+difference between floating point and a probability. Found by
+`test_five_hundred_events_is_allowed`, an increment-2 test, which is the argument
+for keeping a full-size batch test around.
+
+## 20. `decide` v1: one pure function, five honest abstentions, and a receipt
+
+### 20.1 The split that makes the promises true
+
+`decide/service.py` has two halves. `snapshot()` reads — mastery state, the last
+three answers, the share of recent trials that tripped a validity flag, the
+tenant's tier, the claim ids. `evaluate(Inputs, now, decision_id)` computes, with
+no database, no clock and no randomness. Everything the increment promises
+follows from that signature rather than from discipline:
+
+* same history + same clock ⇒ **byte-identical body** (it is a function);
+* **replay means something**, because a decision stores its `Inputs` and replay
+  folds the snapshot rather than today's evidence (recomputing against live state
+  would differ for the honest reason that the learner answered more items, and a
+  test comparing those two would either fail constantly or prove nothing);
+* the goldens compare a function, not an environment.
+
+### 20.2 Five of the six abstention codes, and the one that is not reachable
+
+`METRICS.md` §1.3 names six: `insufficient_evidence`, `low_confidence`,
+`conflicting_signals`, `consent_withheld`, `data_quality`, `unsupported_request`.
+Five have fixtures and trigger on real inputs. `consent_withheld` needs a consent
+store, which does not exist, so it is named in the closed vocabulary and is
+**unreachable** — recorded in KNOWN_GAPS rather than faked with a flag nobody can
+set. `does_not_apply_when` is not decoration either: the worked-example claim says
+it does not apply to experts, so a high-mastery learner with three consecutive
+errors is served `conflicting_signals`, not the action whose evidence excludes
+them.
+
+Thresholds, all documented constants in `decide/constructs.py`: interval width
+above **0.45** ⇒ `low_confidence`; validity-flag share above **0.30** over the
+last 20 trials ⇒ `data_quality`; the success target for difficulty is **0.78**
+(AGENT_M1 §4's 70-85% band).
+
+### 20.3 Credits: reserve *after* deciding, and abstention is free
+
+The brief said "reserved on serve, released on abstain". Holding a credit and
+then releasing it would make an **abstention able to fail with 402** — the host
+that most needs to be told to fix its instrumentation is exactly the one that may
+be out of money — so the reservation happens only when there is something to
+charge for, after the decision is computed. Nothing is held during an abstention,
+so there is nothing to release. Tested both ways: at zero credits an abstention
+returns 200 and writes no ledger row, while a serve returns `402 quota_exhausted`
+and stores nothing.
+
+### 20.4 Claims: gated at write time, seeded per tenant, no invented identifiers
+
+`claims.construct` is a CHECK against the five constructs this build has evidence
+for; `evidence_n >= evidence_floor` makes an under-evidenced claim **refused at
+write time** (G3's "test the refusal, not the filter"); `does_not_apply_when` is
+`NOT NULL` with a cardinality check, because a claim without a boundary is a
+horoscope. All three are proved by attempting the insert and watching PostgreSQL
+refuse it.
+
+Two deviations worth naming. Claims are **tenant-scoped copies** of knowledge
+that is conceptually global: a truly global table would be a third exception to
+the RLS invariant, and duplicating five rows per tenant is cheaper than an
+exception. And the seed set carries **no DOIs I did not verify** — the one in
+`CLAIMS.md` (Sweller & Cooper 1985) is kept, the rest are author/year references.
+A fabricated identifier looks checkable, which is worse than an absent one.
+
+Seeding happens on first use inside the request transaction (a migration cannot
+`INSERT`), so a tenant that has never run a job still gets cited advice. If a
+claim is missing at serve time the decision **abstains** (`unsupported_request`,
+`needs.claims`) instead of shipping an uncited recommendation.
+
+### 20.5 The body is stored twice, and returned canonically
+
+`decisions` holds the body it returned and the inputs it was computed from.
+Replay recomputes from the inputs and raises a **500** on a mismatch — the
+endpoint exists to be able to fail. It found a real bug: `jsonb` does not preserve
+key order, so a body read back from the row serialised with different key order
+than the same body from `evaluate`, and "byte-identical" was false in the only
+sense a client can check. Both routes now emit sorted keys with fixed separators
+(`api/decide.py::_body_response`).
+
+### 20.6 The level object, and an inconsistency in §6B
+
+`decide` serves the ADR-002 `level` object from `levels.resolve_level`, with
+capability L1, validated L1 (G1, G2 and G3 all run in CI) and
+`validation_ref: "gates/g1_g3@1"`. Mastery serves the same three axes flat, as
+§6B spells them, from the same function — so the two surfaces cannot disagree
+about the served level, only about where the words sit.
+
+`INTEGRATION.md` §6B's example shows `validation_level: "L0"` together with
+`served: "L1"`, which `min()` cannot produce. The code serves consistent values
+(validated L1); the example is owed a correction.
+
+### 20.7 The mastery response changed shape to match §6B
+
+Increment 3 shipped `interval: [low, high]`, `interval_mass`, `trials` and
+`estimator: "bkt_beta_v1"`. §6B now specifies `interval: {low, high, mass}`,
+`n`, `estimator: "shrunk_rate"`, `prior: {source, strength}`, an explicit
+`abstain` flag and the flat level axes. The published contract wins: the shape was
+conformed, the estimator renamed (a documented version bump per §6B's own rule),
+and all thirteen mastery goldens regenerated in the same commit. The goldens'
+numbers did not move — only their shape — which is what makes this a rename rather
+than a change of answer.
+
+### 20.8 The measurement
+
+200 seeded synthetic learners (mastery 0.1-0.9, 4-40 observations each), one
+decision each, in-process over HTTP:
+
+| Served | Abstained | Median interval width (served) | p50 | p95 |
+|---|---|---|---|---|
+| 167 / 200 (83.5%) | 33 (23 `insufficient_evidence`, 9 `data_quality`, 1 `conflicting_signals`) | **0.326** | 26.4 ms | 32.8 ms |
+
+The abstention count is the product admitting it does not know, and the 0.326
+median width is what a served number is allowed to look like. Both belong in the
+report next to the latency (see also KNOWN_GAPS §23 on the `data_quality` share).
+
+### 20.9 Red-then-green: the floor is load-bearing
+
+Lowering `EVIDENCE_FLOOR` to 1 — the change that makes a 5-trial learner
+servable — turns **six** tests red: `test_below_the_floor_the_answer_is_a_count_
+not_a_number` (the abstention test), `test_the_floor_abstains_and_names_the_count_
+that_would_change_it`, `test_golden_decisions_match` on
+`05_abstain_insufficient_evidence`, `test_the_golden_set_covers_every_action_and_
+reachable_reason`, and the two mastery golden tests. Restored: 9 passed. The
+golden file is red in the same run as the behavioural test, which is the point of
+pinning the body: the floor is asserted twice, once as behaviour and once as a
+customer-visible value.
+
+## 21. Increment 5: flags that must not fire on good performance, and money that is counted
+
+### 21.1 `straight_line` is a property of the response, and `undeterminable` when there is none
+
+The rule was "8+ identical *outcomes* in a row", where an outcome was `correct`.
+That is a heuristic for inattention that fires hardest on the learners doing best:
+eight right answers in a row is a run, so the flag was set, the uninformative
+share crossed 0.30, and `decide` answered `data_quality` instead of teaching the
+one learner who least needed to be told to slow down.
+
+The rule is now 8+ identical **`response`** values on one skill (compared by
+SHA-256 digest, so the text itself is still never stored), carried across batch
+boundaries because a batch is a transport unit. When an event arrives without a
+response, the honest answer to "was this straight-lining?" is *we cannot tell*:
+the event is flagged `undeterminable`, which is a `context`-severity flag and is
+**not** in `QUALITY_FLAGS`, so a host that does not send responses never moves a
+decision toward abstention. Correctness is not read at all. `undeterminable` is
+in the closed vocabulary via migration `0014`, because a flag the code can emit
+and the CHECK does not accept is a 500 on the ingest path.
+
+The 200-learner measurement of §20.8, re-run on the same seeded corpus:
+
+| Served | Abstained | Median width (served) | p50 | p95 |
+|---|---|---|---|---|
+| 176 / 200 (88.0%) | 24 (23 `insufficient_evidence`, 1 `conflicting_signals`) | 0.323 | 29.6 ms | 38.3 ms |
+
+The nine `data_quality` abstentions are gone and **nothing else moved** — the
+other 23 `insufficient_evidence` and the single `conflicting_signals` are the
+same learners as before. That is the cleanest possible form of the result: the
+flag fired on exactly nine learners, all nine were being punished for good
+performance, and removing the rule changed no other decision. p50 rose from
+26.4 ms to 29.6 ms, which is the price of two ledger writes per served decision
+(§21.5) and of the ordering fix in §21.4.
+
+### 21.2 The audit: does any other flag fire on good performance?
+
+Every flag in the vocabulary, what sets it, and whether it can be earned by doing
+well — the question the increment asked, answered per flag rather than in general:
+
+| Flag | Set by | Can good performance set it? | Severity | Gates serving? |
+|---|---|---|---|---|
+| `straight_line` | 8+ identical `response` values | Not any more. A learner can *choose* the same option eight times and be right eight times — that is now flagged, and that is the intended signal (identical responses), not correctness. | `uninformative` | yes, via the 0.30 share |
+| `rapid_guess` | latency < 300 ms | **Yes, and it did.** Fixed — §21.3. | `uninformative` | yes, via the 0.30 share |
+| `tab_hidden` | nothing can set it | n/a — unreachable (`KNOWN_GAPS` §2b) | `uninformative` | yes, when it can be set |
+| `device_change` | device differs from the learner's last event | Yes, and it should: changing device is life, not failure. It cannot gate: `context`. | `context` | no |
+| `assisted` | `assisted: true` (hint/prompt observed) | Yes — help-seeking is *good* learning. Published as data (`MEASUREMENT` §4): recorded, excluded only from independence metrics. It cannot gate: `scoring`. | `scoring` | no |
+| `repeated_item` | the item was already served to this learner, or earlier in the batch | Yes, and the fault is ours or the host's scheduling, not the learner's. It cannot gate: `scoring`. | `scoring` | no |
+| `undeterminable` | no `response` on the event | No — it is an instrument limitation, stated as one. `context`. | `context` | no |
+
+The severity of every flag is published in `observe/flags.py::SEVERITY`, and
+`QUALITY_FLAGS` in `decide/service.py` is *derived* from it rather than written
+again, so a new flag cannot be added to the vocabulary and silently start gating
+serving. A test asserts that the table covers the vocabulary exactly and that
+`UNINFORMATIVE_FLAGS` is exactly `{rapid_guess, straight_line, tab_hidden}` — the
+third is unreachable today, and it is `uninformative` because `MEASUREMENT` §4
+calls a hidden tab a reduced-validity session, so the gate is already right for
+the day a visibility channel exists.
+
+### 21.3 `rapid_guess` did fire on good performance, and now does not
+
+`MEASUREMENT` §4 defines the flag as "response < 300 ms **on a non-trivial
+item**". The implementation read only the clock: any answer under 300 ms was
+uninformative, so a fluent learner answering quickly and correctly filled the
+0.30 share and got `data_quality` — the same failure as `straight_line`, one
+flag over, and it was not caught because no measurement corpus carried latencies.
+
+The flag now requires all three: under 300 ms, **not correct**, and an item that
+is not known-trivial (`difficulty_band` whose high end is ≥ 0.85). Correctness is
+used here only to *exonerate* a learner, never to accuse one; that is the
+distinction the earlier rule got wrong in the other direction. A fast wrong
+answer on a hard item is still a guess, which is what the flag is for.
+
+The cost is stated: on an item with no `difficulty_band`, a fast *correct* answer
+is no longer flagged even if the host would call it a guess. Losing a true
+positive on a good answer is the trade this project makes deliberately — a false
+positive here abstains on the strongest learner in the class.
+
+### 21.4 The tie-break bug the metering corpus found
+
+The corpus abstained for `conflicting_signals` a different number of times on
+each run: 3, then 2, then 0, on the same 200 seeded learners. The cause was
+ordering: `_recent_answers` and `_flagged_share` read `ORDER BY ts DESC, id DESC`,
+and a client may send one timestamp for a whole batch (our fixtures do — every
+event in a batch shares `ts`), while `id` is a random uuid. Which three answers
+were "the learner's last three" was therefore a coin flip per tenant.
+
+Every tail query is now ordered by `ts DESC, created_at DESC, seq DESC NULLS
+LAST, id DESC` — server ingest time, then the client's own sequence, then the id.
+The cost is bounded: the lateral in `observe/flags.py` has already filtered to one
+learner, so the sort is over that learner's rows in one month partition, not over
+the table. The corpus is pinned at 176 served / 24 abstained in
+`tests/test_metering.py`, so the next nondeterminism of this kind is a red test
+rather than a drifting number in a report.
+
+### 21.5 Metering: what bills, what does not, and how a reader checks it
+
+Per `AGENT_M1` §5 and `METERING` §3, proved by counting rows rather than by
+asserting a flag:
+
+| Path | Ledger rows | `credit_consumption` | `decisions` row |
+|---|---|---|---|
+| served decision | 2 (`reserve` binds the key, `settle` moves the credit) | +1 | yes |
+| abstention | **0** | 0 | yes |
+| 4xx / 422 / 404 / 403 / 429 | **0** | 0 | no |
+| 5xx after the reservation | **0** — the transaction rolls back the hold | 0 | no |
+| replay (same `Idempotency-Key`) | **0** | 0 | no new row |
+| replay (`POST /v1/decisions/{id}/replay`) | **0** | 0 | no new row |
+| read (`/v1/mastery*`, `/v1/credits/balance`) | **0** | 0 | no new row |
+| test traffic (`X-Adapt-Test: 1`, or `ADAPT_ENV=staging`) | **0** | 0 | yes, `test_traffic = true` |
+
+Four decisions about this that a reviewer should be able to disagree with:
+
+1. **A served decision settles immediately.** `METERING` §2 charges `decide` one
+   credit and §5 lets a tenant hold above one credit without a reservation; the
+   honest reading is that the work is measured when the decision exists, so the
+   hold is settled in the same transaction. Waiting for a nightly job would mean
+   an uncommitted charge visible to nobody, and the arithmetic in this table is
+   only checkable if the ledger is written when the answer is.
+2. **`X-Adapt-Test` is a deployment property, not a key property.** Keys carry
+   only `live`/`test`, and every key outside production is a `test` key — so
+   auto-flagging test keys would have made the billing path unreachable in CI and
+   in every pre-production environment. `ADAPT_ENV=staging` sets test traffic
+   automatically instead, which is what "a staging deployment must not burn a
+   budget" actually means. Anything other than absent/`0`/`1` in the header is a
+   `422` with `details.field`, not a guess.
+3. **`decisions.test_traffic` exists** (migration `0015`) so "excluded from
+   metrics" is a stored fact rather than an inference from a missing ledger row,
+   and `decisions_served_is_charged` was relaxed to
+   `abstain OR test_traffic OR reservation_id IS NOT NULL` — a test-traffic
+   decision is served, unbilled and valid, and the old check rejected it.
+4. **`credit_consumption` was not re-created.** It already exists in migration
+   `0006` as a monthly summary over `entry_type = 'settle'` with
+   `security_invoker = true`, which is exactly what §3 asks for; the increment's
+   job was to prove it (settle-only, tenant-invisible across tenants, unchanged by
+   a reserve/release pair), and a second view would have failed on the duplicate.
+
+The 200-decision corpus, same seed as §21.1: **176 served, 24 abstained, 352
+billing ledger rows** (176 `reserve` + 176 `settle`), one `grant` row from the
+setup, 176 `credit_reservations` all `settled`, and
+`sum(consumed) = 176`. A reader can check three ways: `2 × served = ledger`,
+`settles = consumed = served`, `decisions = served + abstained = 200`.
+
+### 21.6 Red-then-green: billing an abstention
+
+Changing `if not outcome.abstain and not test_traffic:` to `if not test_traffic:`
+— billing exactly what `METERING` §3 rule 1 forbids — turns
+`test_an_abstention_writes_no_ledger_rows` red (its empty ledger becomes
+`{ledger: 2, settles: 1, consumed: 1, reservations: 1}`) and takes
+`test_decide.py::test_an_abstention_is_free_and_a_serve_is_not` with it. The
+sabotage does not touch a billing flag or a header: the tests count rows, so the
+only way to make them green is to write none.
+
+### 21.7 A key-prefix collision was a 500, and is now a retry
+
+CI on this increment failed twice, on two different jobs, in two different
+places: `UniqueViolation` on `api_keys_prefix_key` in one test, and a `500` from
+`POST /v1/admin/connections` in another. One cause. A key is
+`ak_<env>_<32 base32 chars>` and the **prefix is its first 12 characters** — four
+characters of secret, about a million values. A full test session now issues
+around a thousand keys, so a collision is not bad luck, it is the expected
+outcome of a birthday problem (≈ 40% per run at that count); the increment made it
+likely by adding twelve metering tests, each with its own tenant, connection and
+key.
+
+The bug is older than the increment, and worse in production than in CI: a
+customer creating a key had a small but real chance of a `500` they could neither
+cause nor fix. `insert_api_key` now retries up to eight times inside a
+**savepoint** — in PostgreSQL a failed statement aborts the whole transaction, so a
+retry without one would answer `500` anyway, one level deeper, on the audit write.
+`test_api_keys.py::test_a_prefix_collision_is_retried_not_a_500` makes the first
+draw collide on purpose and asserts the second was used and the audit row survived.
+
+The alternative — widening the prefix — was rejected: the 12-character prefix is
+in `INTEGRATION.md` and in every key a customer has already seen.
+
+## 22. Increment 6: abstention, and the number that has to be shown with it
+
+### 22.1 The denominator is a definition, and the fixture is the specification
+
+`decide_requests_valid` = 2xx `/v1/decide` responses − replays − test traffic −
+paused/revoked connections. The 30-call fixture in
+`tests/fixtures/metrics_abstention.json` is built through the real API and its
+denominator is asserted as the literal **20**, not as a value the code computes:
+a test whose expectation comes from the implementation tests only
+self-consistency. The identity that makes it checkable is
+
+```
+stored rows (25) = denominator (20) + test traffic (3) + paused rows (2)
+30 decide calls  = stored rows (25) + replays (5)
+```
+
+and the test asserts both lines, so a row that stops being excluded, or an
+exclusion that stops being a row, breaks the arithmetic rather than an opinion.
+
+### 22.2 Served rate is the pair, and removing it is a red test
+
+§1.8 is a warning about how an honesty metric gets gamed by accident: a tenant
+with no validated constructs shows 0 % abstention while receiving nothing.
+`served` is therefore computed from the *same* denominator and always present,
+top-level and per construct. Red-then-green: deleting the `served` key from
+`metrics/service.py::report` turns
+`test_served_rate_is_reported_from_the_same_denominator` and
+`test_an_empty_window_is_not_a_zero_percent_abstention` red; restored, 17 pass.
+
+### 22.3 A replay is counted, because "excluded" has to be a number
+
+> **Superseded by §23.1.** The count moved from a column on `decisions` to the
+> append-only `decision_replays` table; the reasoning below about *why* a replay
+> must be counted still stands, and only the storage changed.
+
+`METRICS` §1.2 excludes idempotent replays. Replays write no ledger row and no
+decision row, so until this increment the exclusion was true by construction and
+**uncountable** — `exclusions.replays` could only have been a hardcoded 0, which
+is a claim rather than a measurement. Migration `0016` adds
+`decisions.replay_count`, incremented by `decide.service.replay` after the bytes
+match. The metering property that mattered is unchanged — a replay moves no
+money and creates no decision — but the increment-5 phrase "a replay writes
+nothing" is now "a replay writes no money and no decision, and one integer on the
+row it re-served". That is a deliberate trade: a metric nobody can compute is
+worse than a counter on a write path that was already inside a transaction.
+
+### 22.4 Five series are `null`, and the reason is in the response
+
+`entitlement_limits`, `not_validated`, `not_capable`, `refusals` and `errors` are
+real series in §1.2 and none of them has a store at M1: a 4xx refusal writes no
+row, a 5xx rolls back, and the three axes live in the contract and the validation
+harness. The endpoint returns `null` for each and lists them in `unmeasured`. The
+alternative — `0` — would be indistinguishable from "we counted and found none",
+which is exactly the class of lie this project keeps removing. The fixture still
+proves the *exclusion*: the 403 and the 500 are asserted to leave the row count
+at 25, so they are outside the population rather than divided into it.
+`KNOWN_GAPS` §28 records the request-level store that would make them numbers.
+
+### 22.5 `abstention_polling`: 5× the normal repeat ratio, with a volume floor
+
+A repeat is a second `decide` on the same `(learner, construct)`. The baseline is
+the median ratio across connections that have at least 10 pairs; the alert needs
+≥ 10 repeats *and* a ratio above 5× that baseline. A zero baseline is not a
+multiplier — when no other connection repeats, any connection that repeats a lot
+is the outlier by definition, so the multiple is reported as `null` and the alert
+is decided on the ratio. Every connection's ratio, multiple and repeat count is
+in `by_connection`, so the alert can be audited rather than believed.
+
+### 22.6 Both grains agree at M1, and both are still reported
+
+One `decide` request evaluates one construct today, so the request grain and the
+construct grain produce the same totals. The response carries both anyway
+(`rate`/`numerator`/`denominator` for the requested grain, `by_construct` with
+its own denominators and reason mix): the day a request covers several
+constructs, the difference is the case §1.1 exists for, and a consumer that
+already reads both will not need a breaking change.
+
+### 22.7 Wilson, and no interval without a sample
+
+`wilson(k, n)` is the Wilson score interval at 95 %, published to four decimals
+and pinned in tests against values computed outside the module (12/20 →
+[0.3866, 0.7812]; 8/20 → [0.2188, 0.6134]). An empty denominator returns
+`{"low": null, "high": null}` rather than [0, 1] or 0.0: a window with no traffic
+has no rate, and 0 % abstention is the one number §1.5 warns about.
+
+## 23. Increment 7: the console, the sandbox and the SDK
+
+### 23.1 Replays are a table, not a counter (supersedes §22.3)
+
+Increment 6 counted replays by incrementing `decisions.replay_count`. That made a
+served decision mutable, and the stored body is the evidence G1 rests on:
+evidence that changes after the fact is not evidence. Migration `0017` drops the
+column, adds `decision_replays(id, tenant_id, decision_id, at, test_traffic)`
+with `INSERT`/`SELECT` grants only, and revokes `UPDATE` on `decisions` from
+`adapt_app` altogether. A replay now writes one audit row, and increment 5's "a
+replay writes nothing" stays literally true — no money, no decision. The metric's
+`exclusions.replays` still counts 5 in the fixture, now from the log.
+
+The downgrade does **not** backfill the counter: a migration is schema, and a
+downgrade that quietly reconstructs a number from a log is DML dressed as schema.
+
+### 23.2 The console renders a state; the browser is not in the test
+
+`console/app.js` is a pure renderer (`renderConsole(state) -> vnode tree`) with
+one side-effecting bootstrap that fetches four endpoints. The tests run the
+*browser's* module under Node, so "it passed" and "it works on screen" are the
+same claim, and no build step sits between the file a person reads and the file
+that runs.
+
+Every rendered value carries `data-metric="<id>"`, and `console/data-map.json`
+declares the endpoint and JSON path for each id. The traceability gate is not the
+id check — that is the easy half — it is the mutation check: the same renderer is
+run over two states that differ in every leaf (and in every list's length), and
+any value that renders identically twice is a hardcoded number. The red-then-green
+is in the report: replacing `formatPercent(m.rate)` with the literal `"0.0%"`
+fails three tests, and restoring it passes all five.
+
+### 23.3 The empty window says "no data", and the screenshot proves it
+
+`rate` is `null` at denominator 0 and the console renders `no data` with a
+sentence — "No decisions in this window, so there is no rate to report — not a 0%
+one". The screenshot artifact in `docs/console/` is generated by rendering that
+state; the test asserts the text, not the pixels, so a font change cannot fail a
+correctness test.
+
+There is no headless browser in this environment, so the PNG is drawn by
+`scripts/console_shot.py` from the renderer's own block model. That is a
+screenshot of the rendering logic with the rendering logic's text — not a
+pixel-accurate browser bitmap, and `KNOWN_GAPS` §30 says so rather than letting
+the artifact imply more than it is.
+
+### 23.4 The SDK is generated, and `--check` is a gate
+
+`sdk/generate.py` reads the app's OpenAPI document and writes both clients.
+`tests/test_sdk.py` runs it with `--check` on every CI run, so an endpoint that
+changes without the SDK changing fails the build rather than a customer. The
+clients are thin on purpose: one `request()`, one method per operation, bodies as
+dictionaries, no retries and no models — the contract's interesting parts are
+absences (`needs` with no `value`), and a generated model layer is the fastest way
+to invent a `null` where the API guarantees nothing at all.
+
+`Idempotency-Key` is derived from `(method, path, body)` when the caller does not
+pass one. Derived, never random: a timeout and a retry must consume one credit and
+write one row.
+
+### 23.5 `adapt sandbox` never invents a number
+
+`seed` provisions a real tenant (tier `deep`, so the console's level sentence is
+the honest one), a real connection, and three synthetic learners — a guesser, a
+steady learner and an over-confident one — and says on its first line that they
+are generated. `demo` prints the loop with timestamps and takes every number from
+a response: the abstention's `needs`, the events it then sends (exactly the number
+`needs` asked for, not a round number chosen for the screenshot), the served
+recommendation with its interval and cites, and a replay that is byte-identical
+and billed at zero.
+
+Two honest deviations from `INTEGRATION.md` §13's story are recorded here rather
+than papered over: the demo's fresh learner needs **7** more trials after one
+registration observation (the floor is 8), so "six events later" in the walkthrough
+is not the arithmetic this build performs; and the demo reports a second
+abstention if it happens instead of retrying until it does not.

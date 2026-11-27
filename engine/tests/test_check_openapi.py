@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import scripts.check_openapi as guard
 from scripts.check_openapi import (
+    DEFAULT_DOC_PATH,
     DocError,
     _table_rows,
     check_emitted_codes,
@@ -60,6 +61,23 @@ def test_parses_the_authoritative_table() -> None:
     assert "gone" in codes
     # The 200 row has no code and must not be parsed as one.
     assert "—" not in codes
+
+
+def test_only_the_error_section_defines_codes() -> None:
+    """A code documented in another table is not documented.
+
+    §6A (the endpoint inventory) has a table whose second column is a *class* —
+    ``operational``, ``host-facing``, ``control-plane``. Reading the whole file
+    made ``operational`` a documented error code, which is the guard quietly
+    widening its own allowlist as the document grows.
+    """
+    text = (
+        _doc() + "\n## 6B. Another table\n\n| Field | Value |\n|---|---|\n| invented_code | yes |\n"
+    )
+    assert "invented_code" not in documented_codes(text)
+    assert "operational" not in documented_codes(text)
+    # And the real section is still read.
+    assert "payload_invalid" in documented_codes(text)
 
 
 def test_sentinel_row_is_a_documented_code() -> None:
@@ -288,3 +306,65 @@ def test_entrypoint_errors_when_doc_missing(tmp_path: Path) -> None:
 def test_missing_doc_raises_doc_error(tmp_path: Path) -> None:
     with pytest.raises(DocError):
         load_doc_text(str(tmp_path / "absent.md"))
+
+
+def test_the_contract_is_resolved_in_tree_and_read_verbatim() -> None:
+    """The contract is a file in this checkout, and it is read as written.
+
+    Byte equality with the file on disk is the point: no patch step, no
+    transform, nothing between the document the owner wrote and the table the
+    guard parses.
+    """
+    text, source = load_doc_text(None)
+    assert Path(source) == DEFAULT_DOC_PATH
+    assert text == DEFAULT_DOC_PATH.read_text(encoding="utf-8")
+
+
+def test_the_guard_knows_no_branch() -> None:
+    """CI must not know a branch name, and neither must the guard (M1 pre-work).
+
+    A build that reaches for ``origin/<somebody's-branch>`` is a build that
+    breaks the day that branch is cleaned up, and it lets the contract live
+    somewhere other than the tree being compiled.
+    """
+    source = Path(guard.__file__).read_text(encoding="utf-8")
+    for forbidden in (
+        "FALLBACK_DOC_REFS",
+        "ADAPT_DOCS_REF",
+        "origin/arena",
+        "cb97052d",
+        "subprocess",
+        "git rev-parse",
+        '"git",',
+    ):
+        assert forbidden not in source, f"check_openapi.py still references {forbidden!r}"
+
+
+def test_a_tree_without_the_contract_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No contract in the tree is a build failure, not a reason to look elsewhere.
+
+    Exit 2, the path it wanted, and the documented escape hatch — the message has
+    to be actionable, because the alternative (silently passing, or reaching for
+    a branch) is how a contract guard becomes decorative.
+    """
+    absent = tmp_path / "docs" / "v2" / "INTEGRATION.md"
+    monkeypatch.setattr(guard, "DEFAULT_DOC_PATH", absent)
+    monkeypatch.delenv("ADAPT_INTEGRATION_DOC", raising=False)
+    with pytest.raises(DocError) as excinfo:
+        load_doc_text(None)
+    message = str(excinfo.value)
+    assert str(absent) in message
+    assert "ADAPT_INTEGRATION_DOC" in message
+    assert main([]) == 2
+
+
+def test_the_escape_hatch_is_explicit_and_still_verbatim(tmp_path: Path) -> None:
+    """--doc exists for a doc under review; it does not change the rules."""
+    text = _doc()
+    doc = tmp_path / "INTEGRATION.md"
+    doc.write_text(text, encoding="utf-8")
+    loaded, source = load_doc_text(str(doc))
+    assert loaded == text
+    assert Path(source) == doc

@@ -34,6 +34,7 @@ from adapt_engine.auth.audit import AuthFailureAuditor, ip_hash
 from adapt_engine.auth.rate_limit import FailureLimiter
 from adapt_engine.auth.touch import LastUsedRecorder
 from adapt_engine.config import Settings
+from adapt_engine.connections import service as connections
 from adapt_engine.db.tenant import tenant_transaction
 from adapt_engine.errors import AdaptError
 
@@ -67,6 +68,25 @@ def security_requirement(scope: str) -> dict[str, list[dict[str, list[str]]]]:
 UNAUTHORIZED_MESSAGE = "Invalid or missing API key"
 
 
+#: The lowest tier whose contract includes each scope (ADR-002, Decision 2).
+#: Every scope that exists today is Core; `probe` becomes "plus" and the deep
+#: capabilities "deep" when their routes land — the map is the single place
+#: that changes, and `details.tier_required` follows from it.
+TIER_FOR_SCOPE: dict[str, str] = {
+    "observe": "core",
+    "decide": "core",
+    "read_model": "core",
+    "admin": "core",
+}
+
+
+def tier_required_for(*scopes: str) -> str:
+    """The lowest tier that unlocks at least one of ``scopes``."""
+    order = {"core": 0, "plus": 1, "deep": 2}
+    tiers = [TIER_FOR_SCOPE.get(scope, "core") for scope in scopes]
+    return min(tiers, key=lambda tier: order[tier]) if tiers else "core"
+
+
 @dataclass(frozen=True)
 class AuthContext:
     """Who is calling. Never carries the key or its hash."""
@@ -82,9 +102,10 @@ class AuthContext:
         if scope not in self.scopes:
             raise AdaptError(
                 code="not_entitled",
-                message=f"tier_required: a key with the {scope} scope",
+                message=(f"this key needs the {scope} scope (tier: {tier_required_for(scope)})"),
                 status_code=403,
                 retryable=False,
+                details={"tier_required": tier_required_for(scope)},
             )
 
 
@@ -210,16 +231,49 @@ def tenant_connection(
         yield conn
 
 
+def ingest_connection(
+    auth: Annotated[AuthContext, Depends(resolve_auth)],
+    conn: Annotated[Connection, Depends(tenant_connection)],
+) -> Connection:
+    """A tenant connection whose *connection* is allowed to serve data.
+
+    A paused connection keeps its key — pausing stops ingest and keeps data —
+    so the key still authenticates and this is where the refusal happens. It is
+    an explicit ``403 connection_paused``: the integrator has to be able to tell
+    "someone paused this on purpose" from ``not_entitled`` ("buy something") and
+    from ``unauthorized`` ("your key is wrong"), because the fix is different in
+    each case.
+
+    Admin routes deliberately do *not* use this. The console has to be able to
+    resume a paused connection, and a key that is paused for ingest but blocked
+    from the console is a key that cannot fix its own mistake.
+
+    A key with no connection (the onboarding/console key) is never paused: it is
+    not a host app, so there is nothing to pause.
+    """
+    status = connections.status_for_key(conn, auth.key_id)
+    if status == "paused":
+        raise AdaptError(
+            code="connection_paused",
+            message="this connection is paused; resume it from the console to continue",
+            status_code=403,
+            retryable=True,
+        )
+    return conn
+
+
 def require_any_scope(*scopes: str) -> Any:
     """A dependency satisfied by at least one of ``scopes``."""
 
     def _dependency(auth: Annotated[AuthContext, Depends(resolve_auth)]) -> AuthContext:
         if not set(auth.scopes) & set(scopes):
+            tier = tier_required_for(*scopes)
             raise AdaptError(
                 code="not_entitled",
-                message=f"tier_required: a key with one of {', '.join(scopes)}",
+                message=(f"this key needs one of these scopes: {', '.join(scopes)} (tier: {tier})"),
                 status_code=403,
                 retryable=False,
+                details={"tier_required": tier},
             )
         return auth
 

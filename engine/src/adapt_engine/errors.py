@@ -34,7 +34,9 @@ DOCUMENTED_CODES: frozenset[str] = frozenset(
         "unauthorized",
         "not_entitled",
         "connection_paused",
+        "connection_unknown",
         "learner_unknown",
+        "decision_unknown",
         "route_unknown",
         "instrument_not_renderable",
         "not_capable",
@@ -103,7 +105,10 @@ class AdaptError(Exception):
     """Base for HTTP errors that use the single envelope.
 
     ``code`` must be a documented code, so a handler cannot introduce a name
-    that is absent from INTEGRATION.md §6.
+    that is absent from INTEGRATION.md §6. ``details`` carries the structured
+    values §6 documents (``resets_at``, ``tier_required``, ``field``,
+    ``retry_after``, ``capability``) so a host never has to parse English out
+    of ``message``.
     """
 
     def __init__(
@@ -114,6 +119,7 @@ class AdaptError(Exception):
         status_code: int,
         retryable: bool,
         headers: dict[str, str] | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         if code not in EMITTED_CODES:
             raise ValueError(
@@ -125,16 +131,23 @@ class AdaptError(Exception):
         self.status_code = status_code
         self.retryable = retryable
         self.headers = headers
+        self.details = details
         super().__init__(message)
 
 
 class ErrorDetail(BaseModel):
-    """The inner error object."""
+    """The inner error object.
+
+    ``details`` is absent unless there is something structured to say — the
+    keys are documented in §6, so this model does not constrain them beyond
+    being a JSON object. A code that wants a new key is a doc change.
+    """
 
     code: str
     message: str
     request_id: str
     retryable: bool
+    details: dict[str, Any] | None = None
 
 
 class ErrorEnvelope(BaseModel):
@@ -191,16 +204,18 @@ def error_body(
     message: str,
     request_id: str,
     retryable: bool,
+    details: dict[str, Any] | None = None,
 ) -> dict[str, object]:
-    """Build the single envelope body."""
-    return {
-        "error": {
-            "code": code,
-            "message": message,
-            "request_id": request_id,
-            "retryable": retryable,
-        }
+    """Build the single envelope body. `details` is omitted when empty."""
+    error: dict[str, object] = {
+        "code": code,
+        "message": message,
+        "request_id": request_id,
+        "retryable": retryable,
     }
+    if details:
+        error["details"] = details
+    return {"error": error}
 
 
 def responses_with_envelope(statuses: list[int]) -> dict[int | str, dict[str, Any]]:
@@ -224,6 +239,7 @@ async def adapt_error_handler(request: Request, exc: Exception) -> JSONResponse:
         message=exc.message,
         request_id=_request_id(request),
         retryable=exc.retryable,
+        details=exc.details,
     )
     return JSONResponse(status_code=exc.status_code, content=body, headers=exc.headers)
 
@@ -266,6 +282,7 @@ async def validation_exception_handler(request: Request, exc: Exception) -> JSON
         message=message,
         request_id=_request_id(request),
         retryable=retryable_for_status(422),
+        details={"field": fields[0]} if fields else None,
     )
     return JSONResponse(status_code=422, content=body)
 

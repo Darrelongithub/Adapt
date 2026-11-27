@@ -21,7 +21,9 @@ from adapt_engine.errors import (
 from adapt_engine.main import create_app
 from tests.conftest import make_settings
 
-ENVELOPE_KEYS = {"code", "message", "request_id", "retryable"}
+#: `details` joined the envelope in INTEGRATION §6: optional, structured, and
+#: the only place a machine-readable value belongs.
+ENVELOPE_KEYS = {"code", "message", "request_id", "retryable", "details"}
 
 
 class _EchoBody(BaseModel):
@@ -87,7 +89,12 @@ def _assert_envelope(body: object, *, code: str, retryable: bool) -> None:
     assert set(body.keys()) == {"error"}
     err = body["error"]
     assert isinstance(err, dict)
-    assert set(err.keys()) == ENVELOPE_KEYS
+    # `details` is optional: present only when there is something structured to
+    # say, absent otherwise (so an error never carries an empty object).
+    assert set(err.keys()) <= ENVELOPE_KEYS
+    assert set(err.keys()) >= ENVELOPE_KEYS - {"details"}
+    if "details" in err:
+        assert isinstance(err["details"], dict)
     assert err["code"] == code
     assert isinstance(err["message"], str)
     assert err["message"]

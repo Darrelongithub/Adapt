@@ -33,13 +33,20 @@ dev = [
   # dependency and never installed in the image: the suite reads
   # ADAPT_TEST_DATABASE_URL and any PostgreSQL 16 will do.
   "pgserver==0.1.4",
+  # Draws the console screenshot's block model to PNG. Dev-only, and only because
+  # this environment has no headless browser to take a real one (KNOWN_GAPS §30).
+  "pillow>=10,<14",
 ]
 
 [project.scripts]
 adapt-engine = "adapt_engine.main:main"
+adapt = "adapt_engine.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"adapt_engine.console" = ["*.html", "*.css", "*.js", "*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

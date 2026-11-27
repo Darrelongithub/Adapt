@@ -9,18 +9,19 @@ name: engine
 # The suite never hard-codes a server: it reads ADAPT_TEST_DATABASE_URL and
 # provisions its own databases, so both jobs run exactly the same gate
 # (`engine/scripts/ci.sh`) and neither is special-cased in test code.
+#
+# No job knows a branch name: the contract the guard checks against is
+# docs/v2/INTEGRATION.md, in this tree, and the checkout that runs this workflow
+# either contains it or the gate fails closed.
 
 on:
+  # `sdk/**` is in the trigger list because the generated clients are checked
+  # against this tree's OpenAPI document: a change to the SDK alone must still
+  # run the gate that says whether it is stale.
   push:
-    paths: ["engine/**", ".github/workflows/engine-ci.yml"]
+    paths: ["engine/**", "sdk/**", ".github/workflows/engine-ci.yml"]
   pull_request:
-    paths: ["engine/**", ".github/workflows/engine-ci.yml"]
-
-env:
-  # The contract doc lives on another branch of this repository. The checker
-  # exits 2 rather than guessing when it cannot read it, so CI must fetch it.
-  ADAPT_DOCS_REF: origin/arena/cb97052d-adapt
-  DOCS_BRANCH: arena/cb97052d-adapt
+    paths: ["engine/**", "sdk/**", ".github/workflows/engine-ci.yml"]
 
 jobs:
   engine:
@@ -50,14 +51,6 @@ jobs:
       ADAPT_MIGRATION_DATABASE_URL: postgresql://adapt_owner:adapt-owner-dev-password@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Fetch the contract doc branch
-        working-directory: .
-        run: |
-          git fetch origin "$DOCS_BRANCH:refs/remotes/origin/$DOCS_BRANCH"
-          git rev-parse --verify "refs/remotes/origin/$DOCS_BRANCH"
 
       - uses: actions/setup-python@v6
         with:
@@ -66,6 +59,12 @@ jobs:
 
       - name: Assert the interpreter is 3.12
         run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
+
+      # The console tests run the browser's own renderer under Node; without it
+      # the traceability gate would skip, and a gate that skips is not a gate.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Install
         run: |
@@ -103,14 +102,6 @@ jobs:
       ADAPT_MIGRATION_DATABASE_URL: postgresql://adapt_owner:adapt-owner-dev-password@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Fetch the contract doc branch
-        working-directory: .
-        run: |
-          git fetch origin "$DOCS_BRANCH:refs/remotes/origin/$DOCS_BRANCH"
-          git rev-parse --verify "refs/remotes/origin/$DOCS_BRANCH"
 
       - name: Make sure nothing here needs Docker
         run: |
@@ -144,6 +135,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      # The console tests run the browser's own renderer under Node; the gate must
+      # not skip on a runner that happens not to ship it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Install
         run: |

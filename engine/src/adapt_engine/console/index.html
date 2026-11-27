@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Adapt console</title>
+    <link rel="stylesheet" href="/console/styles.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>Adapt console</h1>
+      <p class="sub">Every number below is fetched from an endpoint. Nothing is mocked.</p>
+      <form id="auth" class="auth">
+        <label for="key">Admin key</label>
+        <input id="key" name="key" type="password" autocomplete="off" spellcheck="false"
+               placeholder="ak_test_…" aria-describedby="key-help" />
+        <label for="learner">Learner id</label>
+        <input id="learner" name="learner" type="text" placeholder="learn-sandbox-steady"
+               aria-describedby="key-help" />
+        <button type="submit">Load</button>
+        <span id="key-help" class="hint">
+          Kept in this tab only (sessionStorage). The sandbox prints one for you.
+        </span>
+      </form>
+      <p id="status" class="status" role="status"></p>
+    </header>
+    <main id="app" aria-live="polite">
+      <p class="empty">Enter a key to load the console.</p>
+    </main>
+    <script type="module" src="/console/app.js"></script>
+  </body>
+</html>

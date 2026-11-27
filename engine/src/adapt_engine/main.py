@@ -18,16 +18,23 @@ from fastapi.openapi.utils import get_openapi
 from sqlalchemy.engine import Engine
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from adapt_engine.api.connections import router as connections_router
 from adapt_engine.api.credits import router as credits_router
+from adapt_engine.api.decide import router as decide_router
 from adapt_engine.api.health import router as health_router
 from adapt_engine.api.keys import router as keys_router
 from adapt_engine.api.learners import router as learners_router
+from adapt_engine.api.mastery import router as mastery_router
+from adapt_engine.api.metrics import router as metrics_router
+from adapt_engine.api.observe import router as observe_router
 from adapt_engine.auth.audit import AuthFailureAuditor
 from adapt_engine.auth.rate_limit import FailureLimiter
 from adapt_engine.auth.touch import DEFAULT_FLUSH_INTERVAL_SECONDS as DEFAULT_FLUSH_INTERVAL
 from adapt_engine.auth.touch import LastUsedRecorder
 from adapt_engine.clock import Clock, SystemClock
 from adapt_engine.config import Settings
+from adapt_engine.connections.service import webhook_target
+from adapt_engine.console import router as console_router
 from adapt_engine.crypto.keyring import Keyring, UnknownKeyId
 from adapt_engine.crypto.store import DataKeyStore
 from adapt_engine.db import check_database, create_db_engine
@@ -40,6 +47,9 @@ from adapt_engine.errors import (
     validation_exception_handler,
 )
 from adapt_engine.logging import LoggingMiddleware, configure_logging
+from adapt_engine.observe.limits import IngestLimiter
+from adapt_engine.webhooks import dispatch as webhooks
+from adapt_engine.webhooks.transport import UrllibTransport
 
 
 def check_redis(redis_url: str) -> bool:
@@ -68,6 +78,7 @@ def create_app(
     redis_check: Callable[[], bool] | None = None,
     engine: Engine | None = None,
     auth_limiter: FailureLimiter | None = None,
+    ingest_limiter: IngestLimiter | None = None,
     auth_auditor: AuthFailureAuditor | None = None,
     last_used: LastUsedRecorder | None = None,
     flush_interval: float | None = None,
@@ -109,6 +120,15 @@ def create_app(
     app.state.auth_limiter = (
         auth_limiter if auth_limiter is not None else FailureLimiter(clock=active_clock)
     )
+    app.state.ingest_limiter = (
+        ingest_limiter
+        if ingest_limiter is not None
+        else IngestLimiter(
+            clock=active_clock,
+            rate_per_second=settings.observe_rps,
+            burst=settings.observe_burst,
+        )
+    )
     app.state.auth_auditor = (
         auth_auditor
         if auth_auditor is not None
@@ -119,6 +139,19 @@ def create_app(
         last_used
         if last_used is not None
         else LastUsedRecorder(active_engine, flush_interval=interval)
+    )
+    # Webhook delivery is off unless configured: the dispatcher exists so a
+    # delivery can be recorded and attempted deterministically, but nothing
+    # leaves the process until ADAPT_WEBHOOK_DELIVERY=enabled (DECISIONS §16).
+    app.state.webhooks = (
+        webhooks.Dispatcher(
+            UrllibTransport(),
+            target_for=lambda conn, connection_id: webhook_target(
+                conn, app.state.crypto, connection_id
+            ),
+        )
+        if settings.webhook_delivery == "enabled"
+        else None
     )
     app.state.db_check = db_check if db_check is not None else _default_db_check(settings)
     app.state.redis_check = (
@@ -132,7 +165,13 @@ def create_app(
     app.include_router(health_router)
     app.include_router(keys_router)
     app.include_router(learners_router)
+    app.include_router(observe_router)
+    app.include_router(mastery_router)
+    app.include_router(metrics_router)
+    app.include_router(console_router)
+    app.include_router(decide_router)
     app.include_router(credits_router)
+    app.include_router(connections_router)
     _install_openapi(app)
     return app
 

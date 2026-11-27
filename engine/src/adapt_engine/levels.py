@@ -93,4 +93,91 @@ def tier_entitlement(tier: str) -> int:
         raise ValueError(f"unknown tier {tier!r}; expected one of {sorted(levels)}") from exc
 
 
-__all__ = ["MAX_LEVEL", "TIE_ORDER", "LevelResolution", "resolve_level", "tier_entitlement"]
+#: What this build can do, per construct, at M1: L1 mastery, next-item choice,
+#: spacing and worked examples. Versioned so "the code can do it" is a
+#: published claim, not a sentence in a standup.
+CAPABILITY_LEVEL: Final = 1
+
+#: What the gates have earned at M1: G1 (deterministic replay), G2 (the guesser)
+#: and G3 (every recommendation cites a gated claim) all run in CI.
+VALIDATED_LEVEL: Final = 1
+
+#: The gate set the validated level refers to, served with every level object.
+VALIDATION_REF: Final = "gates/g1_g3@1"
+
+#: The population the validation is stated for (ADR-002: validation is per
+#: construct x profile x population, and a single global level would be a lie).
+DEFAULT_PROFILE: Final = "adult_general"
+
+#: The date the current validation level was earned.
+VALIDATED_SINCE: Final = "2026-11-18"
+
+
+def level_name(level: int) -> str:
+    """`L2`, not `2`: the wire format is a name, the arithmetic is an int."""
+    return f"L{level}"
+
+
+def level_object(tier: str, *, requested: int = 1) -> dict[str, object]:
+    """The ADR-002 `level` object served on `decide` and model responses.
+
+    Seven fields, one of which (`limited_by`) is always present and always
+    truthful: a Deep customer served L1 sees `limited_by: "validation"` rather
+    than a silently lower number.
+    """
+    entitlement = tier_entitlement(tier)
+    resolution = resolve_level(
+        requested=requested,
+        entitlement=entitlement,
+        capability=CAPABILITY_LEVEL,
+        validated=VALIDATED_LEVEL,
+    )
+    return {
+        "requested": level_name(requested),
+        "tier": tier,
+        "entitlement_level": level_name(entitlement),
+        "capability": level_name(CAPABILITY_LEVEL),
+        "validated": level_name(VALIDATED_LEVEL),
+        "served": level_name(resolution.served),
+        "limited_by": None if resolution.limited_by == "none" else resolution.limited_by,
+        "since": VALIDATED_SINCE,
+        "validation_ref": VALIDATION_REF,
+        "profile": DEFAULT_PROFILE,
+    }
+
+
+def flat_level_axes(tier: str) -> dict[str, object]:
+    """The same three axes, flat, as INTEGRATION §6B spells them on mastery.
+
+    Two shapes exist because two documents name them: §6B puts the axes at the
+    top level of a mastery response, ADR-002 nests them under `level` for
+    `decide`. Both come from `resolve_level`, so they cannot disagree about the
+    served level — only about where the words sit.
+    """
+    entitlement = tier_entitlement(tier)
+    resolution = resolve_level(
+        requested=1, entitlement=entitlement, capability=CAPABILITY_LEVEL, validated=VALIDATED_LEVEL
+    )
+    return {
+        "entitlement_level": level_name(entitlement),
+        "capability_level": level_name(CAPABILITY_LEVEL),
+        "validation_level": level_name(VALIDATED_LEVEL),
+        "served": level_name(resolution.served),
+        "limited_by": None if resolution.limited_by == "none" else resolution.limited_by,
+    }
+
+
+__all__ = [
+    "CAPABILITY_LEVEL",
+    "DEFAULT_PROFILE",
+    "MAX_LEVEL",
+    "TIE_ORDER",
+    "VALIDATED_LEVEL",
+    "VALIDATION_REF",
+    "LevelResolution",
+    "flat_level_axes",
+    "level_name",
+    "level_object",
+    "resolve_level",
+    "tier_entitlement",
+]

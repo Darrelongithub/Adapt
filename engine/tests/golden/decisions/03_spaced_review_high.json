@@ -1,0 +1,72 @@
+{
+  "name": "03_spaced_review_high",
+  "why": "G1 for decide: the body for these exact inputs, at this exact clock reading, through the same pure function the endpoint uses. A change here is a change in the advice a customer receives, and needs a version bump in DECISIONS.",
+  "input": {
+    "trials": 60,
+    "correct": 58,
+    "recent": [
+      true,
+      true,
+      true
+    ]
+  },
+  "clock": "2026-11-18T09:00:00+00:00",
+  "decision_id": "00000000-0000-4000-8000-000000000001",
+  "expected": {
+    "decision_id": "00000000-0000-4000-8000-000000000001",
+    "learner_id": "learn-decide-0001",
+    "skill": "skill.fractions",
+    "level": {
+      "requested": "L1",
+      "tier": "core",
+      "entitlement_level": "L1",
+      "capability": "L1",
+      "validated": "L1",
+      "served": "L1",
+      "limited_by": null,
+      "since": "2026-11-18",
+      "validation_ref": "gates/g1_g3@1",
+      "profile": "adult_general"
+    },
+    "issued_at": "2026-11-18T09:00:00+00:00",
+    "expires_at": "2026-11-18T09:15:00+00:00",
+    "action": "spaced_review",
+    "abstain": false,
+    "reason_codes": [
+      "high_mastery"
+    ],
+    "claim_ids": [
+      "clm_0003"
+    ],
+    "recommendations": [
+      {
+        "action": "spaced_review",
+        "confidence": {
+          "point": 0.9313,
+          "interval": {
+            "low": 0.8583,
+            "high": 0.9791,
+            "mass": 0.95
+          }
+        },
+        "why": "Mastery is 0.93 (95% interval 0.86-0.98), above the band where another immediate trial helps. The spacing evidence supports returning to this in 7 days rather than now.",
+        "cites": [
+          "clm_0003"
+        ],
+        "expires_at": "2026-11-18T09:15:00+00:00",
+        "review_after_days": 7,
+        "basis": "documented_default"
+      }
+    ],
+    "estimate": {
+      "value": 0.9313,
+      "interval": {
+        "low": 0.8583,
+        "high": 0.9791,
+        "mass": 0.95
+      },
+      "n": 60,
+      "estimator": "shrunk_rate"
+    }
+  }
+}
