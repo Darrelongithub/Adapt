@@ -122,8 +122,10 @@ justify.
   label, not a browser default `<h2>`.
 - **Body:** same system sans stack as today. 13px/1.55, `--ink-body`.
 - **Numbers:** `font-variant-numeric: tabular-nums`, `--ink`, 600. A number is never in the serif face.
-- **One type scale:** 26 / 19 / 15 / 13 / 12. No sizes between them; that is what makes it look drawn
-  rather than assembled.
+- **One type scale, six steps:** 26 / 19 / 15 / 13 / 12 / 11. No sizes between them; that is what makes it
+  look drawn rather than assembled. **11px is reserved** for inline chips and micro-labels — uppercase,
+  tracked, never a sentence. If a size is needed that is not on this list, the layout is wrong, not the
+  scale.
 - **Numbers are formatted by type, never printed raw.** JSON floats do not belong on a screen:
   rates as **one decimal and a `%` sign** (`0.0%`, `88.0%`); intervals as **two decimals in brackets**
   (`[0.33, 0.49]`, `[0.00, 0.15]`); estimates and probabilities as **two decimals** (`0.54`, `0.36`);
