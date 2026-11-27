@@ -24,6 +24,13 @@ different and worse one — accent everywhere highlights nothing.
 Per screen, **at most three accent-coloured elements.** If a fourth appears, something in the first
 three was not important enough to be there.
 
+**There is a floor as well as a ceiling, and it is structural.** The 2px `--accent` rule under the H1 is
+present on **every** screen and is not counted against the budget — it is the page's signature, the one
+mark that does not depend on whether today's numbers earned one. A screen with no earned accent is
+therefore never a screen with no terracotta: the rule is always there, the number marks come and go
+above it. This is why the discipline does not produce a grey product — the accent is anchored to the
+masthead, and the budget governs only how much of it moves.
+
 **The budget is a maximum, not a quota.** An accent spent on a number that says *nothing has happened
 yet* teaches the reader to read zero as a highlight — the console's own copy says "0% abstention on a
 quiet tenant is not success", and a terracotta `0.0%` above that sentence argues with it. The mark is
